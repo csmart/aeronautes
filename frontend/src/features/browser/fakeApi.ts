@@ -79,6 +79,14 @@ export function newFakeApi(): Api {
   // Instance copies: mutations must not leak into the shared fixtures.
   const containers = containersFixture.map((c) => ({ ...c }));
   const accountState = { meta: { ...accountFixture.meta }, quotaBytes: accountFixture.quotaBytes };
+  // TempURL key slot presence by canonical name; the fixture account has its
+  // first slot set, as the portrait has always shown. The fake keeps no
+  // values at all, as nothing ever reads one back.
+  const accountSlots = new Set<string>(["Temp-Url-Key"]);
+  const containerSlots: Record<string, Set<string>> = {};
+  function slotsOf(name: string): Set<string> {
+    return (containerSlots[name] ??= new Set());
+  }
   const objects: Record<string, FixtureObject[]> = Object.fromEntries(
     Object.entries(fixtureObjects).map(([name, list]) => [name, list.map((o) => ({ ...o }))]),
   );
@@ -163,7 +171,7 @@ export function newFakeApi(): Api {
       bytesUsed: accountFixture.bytes,
       quotaBytes: accountState.quotaBytes,
       meta: { ...accountState.meta },
-      tempUrlKeySlots: ["Temp-Url-Key"],
+      tempUrlKeySlots: [...accountSlots].sort(),
       editableFingerprint: accountFingerprint(),
     };
   }
@@ -266,7 +274,7 @@ export function newFakeApi(): Api {
       quotaCount: s.quotaCount,
       cors: Object.values(corsKeys).some((key) => (s.meta[key] ?? "") !== ""),
       staticWeb: Object.keys(s.meta).some(isStaticWebKey),
-      tempUrlKeySlots: [...slotsOf(name).keys()].sort(),
+      tempUrlKeySlots: [...slotsOf(name)].sort(),
       meta: { ...s.meta },
       rawHeaders: { "X-Trans-Id": "txfake" },
       transId: "txfake",
@@ -542,10 +550,10 @@ export function newFakeApi(): Api {
       for (const key of Object.keys(edit.meta ?? {})) {
         const lower = key.toLowerCase();
         if (lower.startsWith("temp-url-key")) {
-          throw new Error(`account metadata key "${key}" is a TempURL secret slot and cannot be set through the metadata editor`);
+          throw new Error(`metadata key "${key}" is a TempURL secret slot and cannot be set through the metadata editor`);
         }
         if (lower === "quota-bytes") {
-          throw new Error(`account metadata key "${key}" is the account quota; set QuotaBytes rather than a metadata entry`);
+          throw new Error(`metadata key "${key}" is a quota; set it through its own field rather than a metadata entry`);
         }
       }
       if (baseFingerprint !== "" && baseFingerprint !== accountFingerprint()) {
@@ -556,6 +564,33 @@ export function newFakeApi(): Api {
       accountState.quotaBytes = Math.max(edit.quotaBytes, 0);
       record("account.metadata.update", "account", "applied");
       return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: accountPortrait(scope) };
+    },
+
+    updateTempUrlKey: async (scope, edit): Promise<MutationResultDTO> => {
+      requireWriteScope(scope);
+      const slot = ["Temp-Url-Key", "Temp-Url-Key-2"].find((name) => name.toLowerCase() === edit.slot.toLowerCase());
+      if (!slot) throw new Error(`tempurl key slot "${edit.slot}" is not one of Temp-URL-Key or Temp-URL-Key-2`);
+      if (edit.clear && edit.secret !== "") throw new Error("a tempurl key clear carries no secret");
+      if (!edit.clear && edit.secret === "") throw new Error("tempurl key secret is empty; use clear to remove the slot");
+      if (!edit.clear && edit.secret.trim() !== edit.secret) {
+        throw new Error("tempurl key secret has leading or trailing ASCII spaces or tabs, which HTTP does not preserve");
+      }
+      const resource = edit.container === "" ? "account" : edit.container;
+      if (edit.container !== "" && !containers.some((c) => c.name === edit.container)) throw new Error("container not found");
+      const slots = edit.container === "" ? accountSlots : slotsOf(edit.container);
+      const presence = (names: Iterable<string>) => [...names].map((name) => name.toLowerCase()).sort().join(",");
+      const nothing = { mismatch: "", limitation: "", objectAfter: null, containerAfter: null, accountAfter: null };
+      if (presence(edit.baseSlots ?? []) !== presence(slots)) {
+        record("tempurl.key.update", resource, "conflict");
+        return { outcome: "conflict", transIds: ["txfake"], ...nothing };
+      }
+      if (edit.clear) slots.delete(slot);
+      else slots.add(slot);
+      record("tempurl.key.update", resource, "applied");
+      const after = edit.container === ""
+        ? { accountAfter: accountPortrait(scope) }
+        : { containerAfter: { ...containerDetailOf(edit.container), scope: { ...scope }, settings: rememberSettings(edit.container, scope.bookmarkId) } };
+      return { outcome: "applied", transIds: ["txfake", "txfake", "txfake"], ...nothing, ...after };
     },
 
     createContainer: async (scope, create) => {
