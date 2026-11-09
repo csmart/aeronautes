@@ -226,10 +226,13 @@ func literalMetadataRoundTrips(t *testing.T, h *Harness) {
 					objectApplied = receipt
 				}
 			case "container":
-				// Static web keys are part of the working copy (ADR 0090): a
-				// copy built from the detail carries the seeded one along.
+				// Static web and CORS keys are part of the working copy (ADR
+				// 0090, ADR 0101): a copy built from the detail carries the
+				// seeded ones along.
 				meta["Web-Index"] = "index.html"
 				wantMeta["Web-Index"] = "index.html"
+				meta["Access-Control-Allow-Origin"] = "https://fixture.invalid"
+				wantMeta["Access-Control-Allow-Origin"] = "https://fixture.invalid"
 				result, receipt := h.UpdateContainer(t.Context(), container, "", app.ContainerEditDTO{Meta: meta, VersioningMode: "off"})
 				if receipt.Err() != nil || receipt.Outcome() != "applied" {
 					t.Fatalf("literal container metadata failed: outcome=%q error=%v", receipt.Outcome(), receipt.Err())
@@ -238,7 +241,6 @@ func literalMetadataRoundTrips(t *testing.T, h *Harness) {
 					t.Fatalf("container result lost intended metadata: %+v", result.ContainerAfter)
 				}
 				containerApplied = receipt
-				wantMeta["Access-Control-Allow-Origin"] = "https://fixture.invalid"
 				wantMeta["Temp-Url-Key"] = "synthetic-fixture"
 				allowed, path = container, h.Primary.storageURL+"/"+container
 			case "create":
@@ -290,4 +292,43 @@ func TestLiteralMetadataRoundTripsMock(t *testing.T) {
 
 func TestLiteralMetadataRoundTripsRealSwift(t *testing.T) {
 	literalMetadataRoundTrips(t, New(t))
+}
+
+// Omitting the CORS row from a working copy removes it like any other key
+// (ADR 0101 decision 6), on the mock and on the owned Swift, while the
+// hidden TempURL slot and the unrelated row stay exactly as they were. The
+// removal is witnessed on the raw snapshot, not by the adapter under test.
+func TestCORSRowOmissionMock(t *testing.T)      { corsRowOmission(t, findMockHarness(t)) }
+func TestCORSRowOmissionRealSwift(t *testing.T) { corsRowOmission(t, New(t)) }
+
+func corsRowOmission(t *testing.T, h *Harness) {
+	t.Helper()
+	ctx := t.Context()
+	if _, err := h.Browse.Connect(ctx, h.Primary.BookmarkID); err != nil {
+		t.Fatal(err)
+	}
+	container := h.Container(h.Primary, "cors-omission")
+	h.rawPut(h.Primary, "/"+container, nil, map[string]string{
+		"X-Container-Meta-Keep":                        "sentinel",
+		"X-Container-Meta-Access-Control-Allow-Origin": "https://fixture.invalid",
+		"X-Container-Meta-Temp-Url-Key":                "synthetic-fixture",
+	})
+	detail, err := h.Inspector.Container(ctx, h.Primary.BookmarkID, container)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detail.CORS || detail.Meta["Access-Control-Allow-Origin"] != "https://fixture.invalid" {
+		t.Fatalf("detail meta = %v, cors = %v; want the CORS row in the editable set", detail.Meta, detail.CORS)
+	}
+	result, receipt := h.UpdateContainer(ctx, container, detail.EditableFingerprint, app.ContainerEditDTO{Meta: map[string]string{"Keep": "sentinel"}, VersioningMode: "off"})
+	if receipt.Err() != nil || receipt.Outcome() != "applied" {
+		t.Fatalf("edit omitting the CORS row: outcome %q, %v", receipt.Outcome(), receipt.Err())
+	}
+	if result.ContainerAfter == nil || result.ContainerAfter.CORS || result.ContainerAfter.Meta["Access-Control-Allow-Origin"] != "" {
+		t.Fatalf("after-state = %+v; want the CORS row gone and no badge", result.ContainerAfter)
+	}
+	raw := h.SnapshotNamespace(h.Primary).Containers[container].Meta
+	if raw["Access-Control-Allow-Origin"] != "" || raw["Keep"] != "sentinel" || raw["Temp-Url-Key"] != "synthetic-fixture" {
+		t.Fatalf("raw metadata after the omission = %v; want the CORS row removed, the sentinel and the hidden slot kept", raw)
+	}
 }
