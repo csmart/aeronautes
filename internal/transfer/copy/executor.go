@@ -841,7 +841,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 		if headErr != nil && !swiftcontrol.IsNotFound(headErr) {
 			return failed(EffectNotAttempted, StageCommit, CodeUnknown, "native-rehead", headErr)
 		}
-		replaces, stop := e.replaceAtFixedPoint(item.Name, shown, dstDetail, headErr == nil, EffectNotAttempted, "native")
+		replaces, stop := e.replaceAtFixedPoint(ctx, item.Name, shown, dstDetail, headErr == nil, EffectNotAttempted, "native")
 		if stop != nil {
 			return *stop
 		}
@@ -1042,7 +1042,7 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 	case err == nil && !acknowledged:
 		return e.withStageCleanup(ctx, stagedName, conflict(EffectUnresolved, nil, "destination appeared since planning"))
 	case acknowledged:
-		replaces, stop := e.replaceAtFixedPoint(item.Name, shown, dstDetail, err == nil, EffectUnresolved, "commit")
+		replaces, stop := e.replaceAtFixedPoint(ctx, item.Name, shown, dstDetail, err == nil, EffectUnresolved, "commit")
 		if stop != nil {
 			return e.withStageCleanup(ctx, stagedName, *stop)
 		}
@@ -1246,6 +1246,9 @@ func (e *Executor) copySymlink(ctx context.Context, name, srcName, dstName strin
 		}
 		if !acknowledged {
 			return conflict(priorEffect, nil, "destination appeared since planning")
+		}
+		if stop := e.versioningUnchanged(ctx, name, priorEffect); stop != nil {
+			return *stop
 		}
 		found, identifiable := shownFrom(dstDetail)
 		if !identifiable {

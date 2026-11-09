@@ -1,6 +1,8 @@
 package local
 
 import (
+	"context"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -19,14 +21,34 @@ import (
 // runs BEFORE the preparation that decision refuses to leave inside the window —
 // the native route hashes the whole local file after it — so the acknowledged
 // baseline and that record can agree while the replacement lands between them.
+// versioningHeld answers ADR 0102 decision 2's question for cases whose
+// subject is not the observation: the container still reports what the
+// question was composed from.
+func versioningHeld(context.Context, UploadItem) (string, error) { return "", nil }
+
+// liveContextKey marks the context a case hands the route, so a hook can
+// prove the route forwarded that context to it. It proves forwarding and no
+// more: context.WithoutCancel keeps values, so a marker cannot show that a
+// cancellation reaches the read; the app's held-response checks establish
+// that.
+type liveContextKey struct{}
+
 func TestFixedPointComparisonRefusesWhatWasNotAcknowledged(t *testing.T) {
 	const prior = "the bytes already there"
 	for _, c := range []struct {
 		name string
 		// arrange runs after the baseline is captured and before the
 		// publication, so it is the interleaving under test.
-		arrange   func(t *testing.T, s *swiftcontrol.Session, mock *swifttest.Server)
-		hook      func(t *testing.T, s *swiftcontrol.Session, item UploadItem) func(UploadItem) (ShownObject, bool, error)
+		arrange func(t *testing.T, s *swiftcontrol.Session, mock *swifttest.Server)
+		hook    func(t *testing.T, s *swiftcontrol.Session, item UploadItem) func(UploadItem) (ShownObject, bool, error)
+		// versioning answers ADR 0102 decision 2's question in place of the
+		// default that says the statement still holds; noVersioningHook
+		// leaves the question with nobody to answer it.
+		versioning       func(context.Context, UploadItem) (string, error)
+		noVersioningHook bool
+		// stopped says the run must stop as well as refuse: the refusal
+		// could not be recorded.
+		stopped   bool
 		published bool
 		// says is what the operator must be told, where the reason matters as
 		// much as the refusal.
@@ -68,6 +90,36 @@ func TestFixedPointComparisonRefusesWhatWasNotAcknowledged(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			// ADR 0102 decision 2: the container no longer reports what the
+			// question was composed from, so the replacement is refused before
+			// the object is compared, and the operator is told what changed.
+			// The hook sees the context the route was given: forwarding is
+			// what the marker proves, not that a cancellation reaches the read.
+			name: "the container no longer reports the versioning the question was composed from",
+			versioning: func(ctx context.Context, _ UploadItem) (string, error) {
+				if ctx.Value(liveContextKey{}) == nil {
+					return "", errors.New("the hook was asked with a context that is not the route's")
+				}
+				return "the container now reports versions_location; the question said none", nil
+			},
+			says: "the question said none",
+		},
+		{
+			name:             "nothing can ask whether the versioning still holds",
+			noVersioningHook: true,
+			says:             "versioning read again",
+		},
+		{
+			// A refusal that could not be recorded still refuses, and the run
+			// stops, as it does when an identity refusal has nowhere to go.
+			name: "the refusal on versioning could not be recorded",
+			versioning: func(context.Context, UploadItem) (string, error) {
+				return "", errors.New("the audit store is unavailable")
+			},
+			says:    "could not be recorded",
+			stopped: true,
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			mock := swifttest.New("test:tester", "testing")
@@ -96,18 +148,29 @@ func TestFixedPointComparisonRefusesWhatWasNotAcknowledged(t *testing.T) {
 			if c.arrange != nil {
 				c.arrange(t, s, mock)
 			}
-			run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook}}
+			recorder := &UploadRecorder{Acknowledged: hook, VersioningUnchanged: versioningHeld}
+			if c.versioning != nil {
+				recorder.VersioningUnchanged = c.versioning
+			}
+			if c.noVersioningHook {
+				recorder.VersioningUnchanged = nil
+			}
+			run := &uploadRun{report: &Report{}, recorder: recorder}
 			file, err := os.Open(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			result := nativeUpload(t.Context(), s, "media", item, file, true, run.confirmUnchanged())
+			live := context.WithValue(t.Context(), liveContextKey{}, true)
+			result := nativeUpload(live, s, "media", item, file, true, run.confirmUnchanged())
 
 			if c.published {
 				if result.Result != transfercopy.ResultCopied {
 					t.Fatalf("an unchanged name was refused: %+v %v", result.Observation, result.failure)
 				}
 				return
+			}
+			if (run.stopped != nil) != c.stopped {
+				t.Errorf("run stopped = %v, want %v", run.stopped, c.stopped)
 			}
 			// A conflict, because a concurrent change was detected; and
 			// nothing attempted, because the request was never sent. Those
@@ -266,7 +329,8 @@ func TestFixedPointRefusesAFreshReadItCannotIdentify(t *testing.T) {
 	// not be allowed to match it.
 	empty := ShownObject{Class: "plain", Length: 0, ETag: md5hex("")}
 	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{
-		Acknowledged: func(UploadItem) (ShownObject, bool, error) { return empty, true, nil }}}
+		Acknowledged:        func(UploadItem) (ShownObject, bool, error) { return empty, true, nil },
+		VersioningUnchanged: versioningHeld}}
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +375,7 @@ func TestStagedCommitComparesAfterOpeningThePublishingReader(t *testing.T) {
 		once = true
 		seed(mock, "media", "docs/object", intruder)
 	}
-	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook}}
+	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook, VersioningUnchanged: versioningHeld}}
 	result := commitStagedUpload(t.Context(), s, "media", stage, item, true, run.confirmUnchanged(), nil)
 	if result.Result != transfercopy.ResultConflict || result.Effect != transfercopy.EffectNotAttempted {
 		t.Fatalf("a writer arriving while the stage was opened was published over: %+v", result.Observation)

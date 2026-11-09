@@ -6,6 +6,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
 )
@@ -46,10 +47,18 @@ func copyItemObservation(observation transfercopy.Observation) jobs.ItemObservat
 // copyItemRecorder wires the executor's acknowledgements to the job ledger.
 // acknowledged holds the baselines captured when the operator confirmed
 // replacing live destinations, keyed by name; it is empty for an
-// unacknowledged copy, which then replaces nothing.
+// unacknowledged copy, which then replaces nothing. authorised is the
+// destination's versioning as observed for the question, which the fixed
+// point compares against a fresh read (ADR 0102 decision 2).
 func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, req CopyRequestDTO,
-	acknowledged map[string]jobs.ItemBaseline) *transfercopy.Recorder {
+	acknowledged map[string]jobs.ItemBaseline, authorised swiftcontrol.ContainerVersioning) *transfercopy.Recorder {
 	return &transfercopy.Recorder{
+		VersioningUnchanged: func(live context.Context, key string) (string, error) {
+			// The read on the route's live context, the record on this
+			// recorder's cancellation-free one, like every record here.
+			return s.versioningUnchanged(live, ctx, req.DestBookmarkID, req.DestContainer, authorised,
+				"transfer.copy.refused", req.DestContainer+"/"+req.DestPrefix+key)
+		},
 		Admit: func(admission transfercopy.Admission) error {
 			item := admission.Item
 			// A copied item must be admitted (the ledger refuses a copied

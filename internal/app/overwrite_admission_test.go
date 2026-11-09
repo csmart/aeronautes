@@ -402,6 +402,139 @@ func TestAcknowledgedUploadKeepsTheBaselineItWasShown(t *testing.T) {
 	}
 }
 
+// ADR 0102 decision 2, end to end: the container's versioning changes while the
+// operator is answering, so what the question was composed from is no longer
+// what the container reports at the fixed point. The replacement is refused as
+// a conflict that attempted nothing, the create beside it publishes, and both
+// observations are recorded for the name. The second case is the reason the
+// comparison is of observations and not of their sentences: the archive moves
+// to a name the question would display the same way, because the sentence
+// bounds the archive name.
+func TestAcknowledgedUploadRefusesAVersioningChangeDuringTheDialog(t *testing.T) {
+	sameShown := strings.Repeat("a", 80)
+	for _, c := range []struct {
+		name   string
+		before string // the archive the question is composed under, "" for none
+		after  string // the archive the container reports at the fixed point
+		// unreadable fails the fixed-point read instead of changing the mode.
+		unreadable bool
+		carries    []string
+		withholds  string
+	}{
+		{"the container starts keeping versions", "", "replaceable_archive", false,
+			[]string{"none: what is replaced is not kept", "versions_location", "replaceable_archive"}, ""},
+		{"the archive moves to a name shown the same way", sameShown + "A", sameShown + "B", false,
+			[]string{"versions_location"}, ""},
+		// ADR 0102 decision 2 records an unreadable re-read with the authorised
+		// observation beside it; the refusal is the same conflict.
+		{"the container's versioning cannot be read again", "", "", true,
+			[]string{"none: what is replaced is not kept", "could not be read again"}, ""},
+		// A legitimate archive name the audit store refuses to quote must not
+		// cost the record: both modes stay, the name is withheld.
+		{"the archive's name is one the record cannot quote", "", "password-archive", false,
+			[]string{"none: what is replaced is not kept", "versions_location", "withheld"}, "password"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newOverwriteFixture(t)
+			for _, archive := range []string{c.before, c.after} {
+				if archive != "" {
+					f.h.mock.AddContainer(archive, "standard")
+				}
+			}
+			if c.before != "" {
+				f.h.mock.EnableVersionArchive("replaceable", c.before, false)
+			}
+			f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+				if c.unreadable {
+					f.h.mock.FailNextContainerHEADs(1)
+					return
+				}
+				f.h.mock.EnableVersionArchive("replaceable", c.after, false)
+			}})
+
+			id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job := awaitTerminal(t, f.h, id)
+			if job.Counters.ObjectsCopied != 1 || job.Counters.Overwrites != 0 {
+				t.Errorf("the create beside the refused replacement did not publish alone: %+v", job.Counters)
+			}
+			if got := f.liveTag(t); got != f.tag {
+				t.Fatalf("the live object was replaced under a changed observation: %q, was %q", got, f.tag)
+			}
+			items, err := f.h.jobsSvc.Items(t.Context(), f.h.bookmarkID(), id, "", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var refused int
+			for _, item := range items.Items {
+				if item.Key != "live/taken" {
+					continue
+				}
+				if item.Execution == nil || item.Execution.Result != "conflict" || item.Execution.Effect != "not_attempted" {
+					t.Errorf("the refusal is not a conflict that attempted nothing: %+v", item.Execution)
+				}
+				refused++
+			}
+			if refused != 1 {
+				t.Fatalf("the replaced name was not reported once: %+v", items.Items)
+			}
+			events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 50})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record *audit.Event
+			for i, event := range events {
+				if event.Operation == "object.upload.refused" && event.Resource == "replaceable/live/taken" {
+					record = &events[i]
+				}
+			}
+			if record == nil {
+				t.Fatalf("the refusal left no record of the two observations: %+v", events)
+			}
+			if record.Result != audit.ResultConflict {
+				t.Errorf("the record is not a conflict: %+v", record)
+			}
+			for _, want := range c.carries {
+				if !strings.Contains(record.Summary, want) {
+					t.Errorf("the record does not carry %q: %q", want, record.Summary)
+				}
+			}
+			if c.withholds != "" && strings.Contains(record.Summary, c.withholds) {
+				t.Errorf("the record quotes %q: %q", c.withholds, record.Summary)
+			}
+		})
+	}
+}
+
+// A versioning refusal whose record cannot be written still refuses the name,
+// and the run stops rather than publishing on, because a refusal that left no
+// record is the loss the trail exists to prevent (ADR 0085, carried into ADR
+// 0102 decision 2). The trigger fails exactly that one insert.
+func TestAcknowledgedUploadStopsWhenAVersioningRefusalCannotBeRecorded(t *testing.T) {
+	f := newOverwriteFixture(t)
+	f.h.mock.AddContainer("replaceable_archive", "standard")
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
+		f.h.mock.EnableVersionArchive("replaceable", "replaceable_archive", false)
+	}})
+	refuseSQL(t, f.h, `CREATE TRIGGER refuse_versioning_record BEFORE INSERT ON audit_events
+		WHEN NEW.operation='object.upload.refused' AND NEW.resource='replaceable/live/taken'
+		BEGIN SELECT RAISE(ABORT, 'audit store unavailable for this record'); END`)
+
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, f.h, id)
+	if job.State == "complete" || !strings.Contains(job.Error, "could not be recorded") {
+		t.Fatalf("the run did not stop on the unrecorded refusal: %s %q", job.State, job.Error)
+	}
+	if got := f.liveTag(t); got != f.tag {
+		t.Fatalf("the live object was replaced: %q, was %q", got, f.tag)
+	}
+}
+
 // ADR 0085's fixed-point comparison, end to end and through the dialog that
 // makes it matter. A writer arrives while the operator is answering: the
 // acknowledgement was taken against one object and the publication would land on

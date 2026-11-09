@@ -42,6 +42,9 @@ func publishReplacement(t *testing.T, s *swiftcontrol.Session, run *uploadRun, i
 	if run.recorder != nil && run.recorder.Acknowledged == nil {
 		run.recorder.Acknowledged = acknowledgedAsLive(t, s, "media")
 	}
+	if run.recorder != nil && run.recorder.VersioningUnchanged == nil {
+		run.recorder.VersioningUnchanged = versioningHeld
+	}
 	result := nativeUpload(t.Context(), s, "media", item, file, present, run.confirmUnchanged())
 	return run.reclaim(t.Context(), s, item, result)
 }
@@ -76,7 +79,7 @@ func countPUTs(mock *swifttest.Server) int {
 func comparesAgainstLive(t *testing.T, s *swiftcontrol.Session, container string, item UploadItem) unchangedSince {
 	t.Helper()
 	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{
-		Acknowledged: acknowledgedNow(t, s, container, item)}}
+		Acknowledged: acknowledgedNow(t, s, container, item), VersioningUnchanged: versioningHeld}}
 	return run.confirmUnchanged()
 }
 
@@ -124,6 +127,7 @@ func acknowledgedAsLive(t *testing.T, s *swiftcontrol.Session, container string)
 
 func (r *reclaimRecorder) recorder() *UploadRecorder {
 	return &UploadRecorder{
+		VersioningUnchanged: versioningHeld,
 		Replacing: func(_ UploadItem, observed ObservedPredecessor) error {
 			r.observed = append(r.observed, observed)
 			return nil

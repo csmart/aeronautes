@@ -382,8 +382,9 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	// fixed-point comparison rests on. An unacknowledged copy skips it and
 	// refuses every overwrite in the executor, exactly as it does today.
 	var acknowledged map[string]jobs.ItemBaseline
+	var authorised swiftcontrol.ContainerVersioning
 	if req.AcknowledgeOverwrite {
-		acknowledged, err = s.confirmCopyOverwrite(ctx, req, src, dst)
+		acknowledged, authorised, err = s.confirmCopyOverwrite(ctx, req, src, dst)
 		if err != nil {
 			return "", err
 		}
@@ -419,7 +420,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		return "", fmt.Errorf("start audit unavailable: %w", err)
 	}
 	owner.launch(job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
-		s.runCopy(runCtx, job.ID, req, src, dst, engine, acknowledged)
+		s.runCopy(runCtx, job.ID, req, src, dst, engine, acknowledged, authorised)
 	}, func(background context.Context) {
 		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")
 	})
@@ -438,7 +439,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 // store once each item row exists. An empty map with no error means there was
 // nothing live to replace, so the copy proceeds with every name conditional.
 func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequestDTO,
-	src, dst *swiftcontrol.Session) (map[string]jobs.ItemBaseline, error) {
+	src, dst *swiftcontrol.Session) (map[string]jobs.ItemBaseline, swiftcontrol.ContainerVersioning, error) {
 	// Changed and Unknown are the join's two "a destination exists" verdicts;
 	// New has no destination and Same needs no replacement. The plan is advisory
 	// — the executor re-reads at the fixed point — so this pass only names the
@@ -453,7 +454,7 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 			}
 			return nil
 		}); err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	// HEAD each candidate to capture what the operator is about to be shown. A
 	// name the plan called a candidate but that no longer identifies anything is
@@ -468,7 +469,7 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 			if swiftcontrol.IsNotFound(err) {
 				continue
 			}
-			return nil, fmt.Errorf("reading %s before asking to replace it: %w", name, err)
+			return nil, swiftcontrol.ContainerVersioning{}, fmt.Errorf("reading %s before asking to replace it: %w", name, err)
 		}
 		baseline, ok := copyShownFrom(detail)
 		if !ok {
@@ -478,52 +479,56 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 		names = append(names, name)
 	}
 	if len(names) == 0 {
-		return map[string]jobs.ItemBaseline{}, nil
+		return map[string]jobs.ItemBaseline{}, swiftcontrol.ContainerVersioning{}, nil
 	}
 	if s.overwrites == nil {
-		return nil, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+		return nil, swiftcontrol.ContainerVersioning{}, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
 	}
-	versioning, err := s.observedVersioning(ctx, req.DestBookmarkID, req.DestContainer)
+	observed, err := s.readVersioning(ctx, req.DestBookmarkID, req.DestContainer)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
+	}
+	versioning, err := versioningStatement(observed)
+	if err != nil {
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	// Both generations are observed either side of the dialog: an answer given
 	// about one account's credentials must not authorise a write once either
 	// account's credentials have rotated under it.
 	srcBefore, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	dstBefore, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	question, err := copyOverwriteQuestion(
 		s.connections.displayName(ctx, req.SourceBookmarkID), accountSuffix(src.StorageURL()),
 		s.connections.displayName(ctx, req.DestBookmarkID), accountSuffix(dst.StorageURL()),
 		req.DestContainer, req.DestPrefix, versioning, names)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	if !yes {
-		return nil, errors.New("the replacement was not confirmed; nothing was written")
+		return nil, swiftcontrol.ContainerVersioning{}, errors.New("the replacement was not confirmed; nothing was written")
 	}
 	srcAfter, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	dstAfter, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
 	if err != nil {
-		return nil, err
+		return nil, swiftcontrol.ContainerVersioning{}, err
 	}
 	if srcAfter.generation != srcBefore.generation || dstAfter.generation != dstBefore.generation {
-		return nil, errors.New("an account's credentials changed while you were answering; start again")
+		return nil, swiftcontrol.ContainerVersioning{}, errors.New("an account's credentials changed while you were answering; start again")
 	}
-	return baselines, nil
+	return baselines, observed, nil
 }
 
 // copyShownFrom reads a destination HEAD into the baseline the fixed-point
@@ -630,7 +635,8 @@ var errCollisionSetChanged = errors.New("the set of destinations to replace chan
 // full listing pass) → Verifying → terminal, with reconciliation on
 // every exit path.
 func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyRequestDTO,
-	src, dst *swiftcontrol.Session, engine transfercopy.Engine, acknowledged map[string]jobs.ItemBaseline) {
+	src, dst *swiftcontrol.Session, engine transfercopy.Engine, acknowledged map[string]jobs.ItemBaseline,
+	authorised swiftcontrol.ContainerVersioning) {
 
 	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
 	counters := jobs.Counters{}
@@ -688,7 +694,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
 		JobID:    jobID,
-		Recorder: s.copyItemRecorder(background, jobID, req, acknowledged),
+		Recorder: s.copyItemRecorder(background, jobID, req, acknowledged, authorised),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
 			switch outcome.Outcome {

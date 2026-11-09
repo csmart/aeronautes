@@ -126,6 +126,32 @@ func (e *Executor) overwriteRefused(name string, effect Effect, detail string) e
 	return result
 }
 
+// versioningUnchanged is ADR 0102 decision 2's question at the fixed point:
+// does the destination container still report the versioning the replacement
+// was authorised under? The hook answers from a fresh read; a changed or
+// unreadable observation, or no hook to ask, refuses the name as a
+// commit-stage conflict with the live object untouched, and the run goes on
+// with its other items.
+func (e *Executor) versioningUnchanged(ctx context.Context, name string, effect Effect) *executionResult {
+	if e.cfg.Recorder == nil || e.cfg.Recorder.VersioningUnchanged == nil {
+		result := e.overwriteRefused(name, effect, "replacing needs the destination's versioning read again before publishing, and this run has no way to ask for it")
+		return &result
+	}
+	refusal, err := e.cfg.Recorder.VersioningUnchanged(ctx, name)
+	if err != nil {
+		// Refused either way; the run stops because the refusal left no
+		// record, as recordRefused stops it for an identity refusal.
+		e.stop(fmt.Errorf("replacing %s was refused on its versioning and the refusal could not be recorded: %w", name, err))
+		result := e.overwriteRefused(name, effect, "the destination's versioning refused the replacement and the refusal could not be recorded: "+err.Error())
+		return &result
+	}
+	if refusal != "" {
+		result := e.overwriteRefused(name, effect, refusal)
+		return &result
+	}
+	return nil
+}
+
 // replaceAtFixedPoint is the comparison ADR 0085 keeps immediately before a
 // publishing request, for a name the operator acknowledged replacing, given
 // the fresh reading of its destination. Live and still what was shown: what
@@ -138,7 +164,7 @@ func (e *Executor) overwriteRefused(name string, effect Effect, detail string) e
 // first, as the predecessor this contract's race admits (decision 7). It
 // reports whether the publication replaces, or the result that stops it; a
 // route adds its own cleanup to that result.
-func (e *Executor) replaceAtFixedPoint(name string, shown ShownObject, dst *swiftcontrol.ObjectDetail, live bool, effect Effect, route string) (replaces bool, stop *executionResult) {
+func (e *Executor) replaceAtFixedPoint(ctx context.Context, name string, shown ShownObject, dst *swiftcontrol.ObjectDetail, live bool, effect Effect, route string) (replaces bool, stop *executionResult) {
 	if !live {
 		if recErr := e.replacing(name, ObservedPredecessor{Present: false}); recErr != nil {
 			e.stop(recErr)
@@ -146,6 +172,11 @@ func (e *Executor) replaceAtFixedPoint(name string, shown ShownObject, dst *swif
 			return false, &result
 		}
 		return false, nil
+	}
+	// The destination was read by the caller, so this container read sits
+	// between that read and the request: ADR 0102 states the widening.
+	if stop := e.versioningUnchanged(ctx, name, effect); stop != nil {
+		return false, stop
 	}
 	// The fresh read answers the same completeness rule as the capture: a
 	// HEAD stating no entity tag or no length identifies nothing, and a zero

@@ -34,6 +34,18 @@ type Recorder struct {
 	// point: the one acknowledged and the one found there. The run's own failure
 	// list cannot carry them, so a refusal that cannot be recorded stops the run.
 	Refused func(name string, acknowledged, found ShownObject) error
+	// VersioningUnchanged asks whether the destination container still
+	// reports the versioning the question was composed from when the
+	// operator authorised replacing (ADR 0102 decision 2). It is asked at
+	// the fixed point with the route's live context, so a cancelled job stops
+	// the read, and answered from a fresh read of the container. A non-empty
+	// refusal is the name's recorded refusal, carrying both observations, and
+	// the route publishes nothing for it. An error means the refusal could
+	// not be recorded: the name is still refused, and the run stops as it
+	// does for any lost record. A replacing name with no hook is refused
+	// rather than published under versioning nobody re-read, as the other
+	// hooks are.
+	VersioningUnchanged func(ctx context.Context, name string) (refusal string, err error)
 }
 
 type Admission struct {

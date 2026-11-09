@@ -691,6 +691,24 @@ func (u *uploadRun) confirmUnchanged() unchangedSince {
 		if !identified {
 			return fmt.Errorf("replacing %s was acknowledged without identifying what was there, so this publication has nothing to compare against", item.Name)
 		}
+		// The container's versioning is read again here, BEFORE the object
+		// comparison, so the window ADR 0085 keeps between that read and the
+		// request is not widened by it (ADR 0102 decision 2).
+		if u.recorder.VersioningUnchanged == nil {
+			return fmt.Errorf("replacing %s needs the destination's versioning read again before publishing, and this run has no way to ask for it", item.Name)
+		}
+		refusal, err := u.recorder.VersioningUnchanged(ctx, item)
+		if err != nil {
+			// Refused either way; the run stops because the refusal left no
+			// record, which is the loss the identity refusal below also
+			// refuses to let pass in silence.
+			refused := fmt.Errorf("replacing %s was refused on its versioning and the refusal could not be recorded: %w", item.Name, err)
+			u.stop(refused)
+			return refused
+		}
+		if refusal != "" {
+			return fmt.Errorf("replacing %s: %s", item.Name, refusal)
+		}
 		detail, err := dst.ObjectDetail(ctx, container, item.Name)
 		switch {
 		case swiftcontrol.IsNotFound(err):

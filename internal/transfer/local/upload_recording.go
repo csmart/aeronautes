@@ -57,6 +57,19 @@ type UploadRecorder struct {
 	// refused in the same run would leave no durable trace of what was
 	// found at it.
 	Refused func(item UploadItem, acknowledged, found ShownObject) error
+	// VersioningUnchanged asks whether the destination container still
+	// reports the versioning the question was composed from when the
+	// operator authorised replacing (ADR 0102 decision 2). It is asked at
+	// the fixed point, before the object comparison, with the route's live
+	// context so a cancelled job stops the read, and the answer must come
+	// from a fresh read of the container. A non-empty refusal is this
+	// replacement's recorded refusal, carrying both observations, and the
+	// route publishes nothing for the item. An error means the refusal
+	// could not be recorded: the item is still refused, and the run stops
+	// as it does for any lost record. Like Acknowledged it is optional, and
+	// like it a replacing item with no hook is refused rather than published
+	// under versioning nobody re-read.
+	VersioningUnchanged func(ctx context.Context, item UploadItem) (refusal string, err error)
 }
 
 // ReclaimPlan is what may be reclaimed for one replaced item, answered by
