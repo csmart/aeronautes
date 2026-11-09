@@ -16,6 +16,11 @@ func (h *Harness) UpdateAccountMetadata(ctx context.Context, baseFingerprint str
 	return result, &Receipt{h: h, action: "MutateService.UpdateAccountMetadata", outcome: result.Outcome, err: err}
 }
 
+func (h *Harness) UpdateTempURLKey(ctx context.Context, edit app.TempURLKeyEditDTO) (app.MutationResultDTO, *Receipt) {
+	result, err := h.Mutate.UpdateTempURLKey(ctx, h.ActiveScope(ctx), edit)
+	return result, &Receipt{h: h, action: "MutateService.UpdateTempURLKey", outcome: result.Outcome, err: err}
+}
+
 func (h *Harness) CreateContainer(ctx context.Context, create app.ContainerCreateDTO) (app.ContainerDetailDTO, *Receipt) {
 	result, err := h.Mutate.CreateContainer(ctx, h.ActiveScope(ctx), create)
 	return result, &Receipt{h: h, action: "MutateService.CreateContainer", err: err}
