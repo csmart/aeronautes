@@ -88,7 +88,30 @@ func validUploadPath(path string) bool {
 // only into the job staging namespace and each name commits natively with
 // a conditional create (§28.6, Upload).
 func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
-	return preflightUpload(ctx, dst, container, prefix, paths, false)
+	return preflightUpload(ctx, dst, container, prefix, sourcesByBaseName(paths), false)
+}
+
+// PreflightUploadSources is PreflightUpload for a selection that names each
+// file's destination itself, which a folder pick does (ADR 0103 decision 4);
+// a name is taken as given under the prefix, never derived from the path.
+func PreflightUploadSources(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
+	return preflightUpload(ctx, dst, container, prefix, sources, false)
+}
+
+// PreflightUploadSourcesReplacing is PreflightUploadReplacing for named
+// sources, separate for the reason PreflightUploadReplacing gives.
+func PreflightUploadSourcesReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
+	return preflightUpload(ctx, dst, container, prefix, sources, true)
+}
+
+// sourcesByBaseName is the file pick's rule: each path is named by its base
+// name under the prefix.
+func sourcesByBaseName(paths []string) []UploadSource {
+	sources := make([]UploadSource, len(paths))
+	for i, p := range paths {
+		sources[i] = UploadSource{Path: p, Name: filepath.Base(p)}
+	}
+	return sources
 }
 
 // PreflightUploadReplacing is the same report for a caller that holds the
@@ -102,7 +125,7 @@ func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 // the only caller that names it is the admission that raised the
 // confirmation.
 func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
-	return preflightUpload(ctx, dst, container, prefix, paths, true)
+	return preflightUpload(ctx, dst, container, prefix, sourcesByBaseName(paths), true)
 }
 
 // listingPageSize is the page size this route asks the store for, kept here
@@ -257,7 +280,7 @@ type uploadCandidate struct {
 	problem *Problem
 }
 
-func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string,
+func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource,
 	replacing bool) (*UploadPreflight, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return nil, fmt.Errorf("prefix %q must be empty or end with '/'", prefix)
@@ -268,9 +291,10 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 	// missing file or a directory is this report's finding and must not be
 	// replaced by a destination failure on a name that could never have
 	// become an item.
-	candidates := make([]uploadCandidate, 0, len(paths))
+	candidates := make([]uploadCandidate, 0, len(sources))
 	seen := map[string]string{}
-	for index, path := range paths {
+	for index, source := range sources {
+		path := source.Path
 		// Between candidates, before any further filesystem call. Deciding
 		// everything local first removed the context-aware request that used
 		// to end this loop early, so a cancelled start would otherwise go on
@@ -287,7 +311,14 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 			}})
 			continue
 		}
-		name := prefix + filepath.Base(path)
+		if source.Name == "" || strings.HasPrefix(source.Name, "/") || strings.Contains(source.Name, "//") {
+			candidates = append(candidates, uploadCandidate{path: path, problem: &Problem{
+				Name: fmt.Sprintf("selection %d", index+1), Kind: "source-name",
+				Detail: "the selection names a destination this upload cannot take: empty, absolute or with an empty component", Reject: true,
+			}})
+			continue
+		}
+		name := prefix + source.Name
 		info, err := os.Stat(path)
 		switch {
 		case err != nil:

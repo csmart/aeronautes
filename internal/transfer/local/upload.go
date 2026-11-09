@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -61,7 +62,10 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			_ = recovery("captured", p.Container, p.Prefix, "")
 		}
 	}
-	byDir := map[string][]UploadItem{}
+	// Engine-route items are staged a source directory at a time, each group
+	// under its own relative directory of the stage prefix, so two files of
+	// one name in different folders stage apart (ADR 0103 decision 4).
+	groups := map[string]*stageGroup{}
 	var dirs []string
 	defer func() {
 		if runErr == nil || recorder == nil {
@@ -70,7 +74,11 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		// Buffered groups never entered an engine; a missing final record
 		// must not silently suggest an attempt when storage can retain this fact.
 		for _, dir := range dirs {
-			for _, item := range byDir[dir] {
+			group := groups[dir]
+			if group == nil {
+				continue // this group reached its engine and was deleted
+			}
+			for _, item := range group.items {
 				observation := transfercopy.Observation{Result: transfercopy.ResultNotAttempted, Effect: transfercopy.EffectNotAttempted,
 					Diagnostic: transfercopy.ClassifyDiagnostic(transfercopy.StageEngine, transfercopy.CodeIncomplete, runErr)}
 				if err := recorder.Execute(item, observation); err != nil {
@@ -86,7 +94,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		}
 		staging := ""
 		if item.Route != "native" {
-			staging = stagePrefix + filepath.Base(item.Path)
+			staging = stageObject(stagePrefix, prefix, item)
 		}
 		if err := u.admit(item, staging); err != nil {
 			return report, err
@@ -115,23 +123,28 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			}
 			continue
 		}
-		dir := filepath.Dir(item.Path)
-		if _, exists := byDir[dir]; !exists {
-			dirs = append(dirs, dir)
+		dir, relDir := filepath.Dir(item.Path), relativeDir(prefix, item)
+		key := dir + "\x00" + relDir
+		group, exists := groups[key]
+		if !exists {
+			group = &stageGroup{dir: dir, relDir: relDir}
+			groups[key] = group
+			dirs = append(dirs, key)
 		}
-		byDir[dir] = append(byDir[dir], item)
+		group.items = append(group.items, item)
 	}
-	for _, dir := range dirs {
+	for _, key := range dirs {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		items := byDir[dir]
+		group := groups[key]
+		items := group.items
 		var names []string
 		for _, item := range items {
 			names = append(names, filepath.Base(item.Path))
 		}
-		delete(byDir, dir)
-		result, err := u.copy(ctx, dst, engine, dir, dstSpec+"/"+strings.TrimSuffix(stagePrefix, "/"), names, capture)
+		delete(groups, key)
+		result, err := u.copy(ctx, dst, engine, group.dir, dstSpec+"/"+strings.TrimSuffix(stagePrefix+group.relDir, "/"), names, capture)
 		if result != nil {
 			for _, p := range result.SegmentPrefixes {
 				report.CapturedPrefixes = append(report.CapturedPrefixes, p.Canonical())
@@ -161,7 +174,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				return report, err
 			}
-			outcome := commitStagedUpload(ctx, dst, container, stagePrefix+filepath.Base(item.Path), item, present, u.confirmUnchanged(), recovery)
+			outcome := commitStagedUpload(ctx, dst, container, stageObject(stagePrefix, prefix, item), item, present, u.confirmUnchanged(), recovery)
 			if err := u.settle(ctx, dst, item, outcome, progress); err != nil {
 				return report, err
 			}
@@ -183,6 +196,32 @@ func (u *uploadRun) copy(ctx context.Context, session *swiftcontrol.Session, eng
 		}
 		return result, nil
 	}
+}
+
+// stageGroup is one engine copy: the files of one source directory that
+// share one relative directory under the stage prefix.
+type stageGroup struct {
+	dir, relDir string
+	items       []UploadItem
+}
+
+// stageObject names an item's staging object: the job's stage prefix, the
+// item's relative directory under the request's prefix, and its file name,
+// which is what the engine writes when it copies the group there. Two
+// files of one name in different folders therefore stage apart (ADR 0103
+// decision 4); a file pick's relative directory is empty, which leaves its
+// stage name as it has always been.
+func stageObject(stagePrefix, prefix string, item UploadItem) string {
+	return stagePrefix + relativeDir(prefix, item) + filepath.Base(item.Path)
+}
+
+// relativeDir is the directory part of an item's name under the request's
+// prefix, slash-terminated, or empty at the top.
+func relativeDir(prefix string, item UploadItem) string {
+	if dir := path.Dir(strings.TrimPrefix(item.Name, prefix)); dir != "." && dir != "/" {
+		return dir + "/"
+	}
+	return ""
 }
 
 // verifyUpload asks the live name what it holds, after the publication exists.
