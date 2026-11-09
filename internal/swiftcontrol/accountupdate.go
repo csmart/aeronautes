@@ -43,24 +43,17 @@ type AccountUpdateResult struct {
 // skips conflict detection.
 //
 // The TempURL key slots are never touched: AccountPortrait keeps them out
-// of the editable Meta, so the additive delta below can neither change nor
-// remove X-Account-Meta-Temp-URL-Key (K-SEC-006). Editing account metadata
-// must not be a way to wipe a secret the operator cannot see.
+// of the editable Meta, so the additive delta below cannot remove
+// X-Account-Meta-Temp-URL-Key, and a working copy that names a slot or the
+// quota is refused before any I/O so the delta cannot set one either
+// (K-SEC-006). Editing account metadata must not be a way to wipe or
+// replace a secret the operator cannot see.
 func (s *Session) UpdateAccount(ctx context.Context, baseFingerprint string, edit AccountEdit) (*AccountUpdateResult, error) {
 	if err := validateMetadata(edit.Meta, false); err != nil {
 		return nil, err
 	}
-	// Reserved keys are refused before any I/O, not silently filtered: a
-	// TempURL key slot would otherwise be SET by the delta below to a
-	// caller-supplied value, overwriting the secret the portrait hides, and
-	// Quota-Bytes in the map would change the quota behind the typed field.
-	for key := range edit.Meta {
-		switch {
-		case isTempURLKey(key):
-			return nil, fmt.Errorf("account metadata key %q is a TempURL secret slot and cannot be set through the metadata editor", key)
-		case strings.EqualFold(key, "Quota-Bytes"):
-			return nil, fmt.Errorf("account metadata key %q is the account quota; set QuotaBytes rather than a metadata entry", key)
-		}
+	if err := refuseReservedMetadata(edit.Meta, "Quota-Bytes"); err != nil {
+		return nil, err
 	}
 	result := &AccountUpdateResult{}
 	before, err := s.AccountPortrait(ctx)

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/swifttest"
 	"github.com/ncw/swift/v2"
 )
 
@@ -107,6 +108,58 @@ func TestUpdateContainerAppliesDelta(t *testing.T) {
 	}
 	if !result2.After.CORS || len(result2.After.TempURLKeySlots) != 1 {
 		t.Error("CORS or TempURL configuration was destroyed by the second edit")
+	}
+}
+
+// A working copy that names a TempURL slot or a quota key is refused before
+// any I/O. The detail keeps those keys out of Meta, so the delta would
+// otherwise SET the caller's value: a slot would be overwritten behind the
+// redaction and a quota changed behind its typed field, each surfacing only
+// as a verify mismatch after the effect (K-SEC-006, ADR 0101).
+func TestUpdateContainerRejectsReservedKeys(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &swift.Connection{AuthUrl: srv.URL + "/auth/v1.0", UserName: "test:tester", ApiKey: "testing", AuthVersion: 1}
+	ctx := context.Background()
+	if err := conn.ContainerCreate(ctx, "media", swift.Headers{
+		"X-Container-Meta-Temp-URL-Key": "sekrit",
+		"X-Container-Meta-Quota-Bytes":  "500",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range []string{"Temp-URL-Key", "temp-url-key", "Temp-URL-Key-2", "Quota-Bytes", "quota-count"} {
+		before := mock.Requests()
+		_, err := s.UpdateContainer(ctx, "media", "", ContainerEdit{Meta: map[string]string{key: "intruder"}})
+		if err == nil {
+			t.Errorf("reserved key %q was admitted", key)
+		}
+		if got := mock.Requests(); got != before {
+			t.Errorf("reserved key %q issued %d storage request(s) before refusal", key, got-before)
+		}
+	}
+
+	// A normal key still round-trips, with the slot and the quota untouched.
+	base, err := s.ContainerDetail(ctx, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.UpdateContainer(ctx, "media", base.EditableFingerprint, ContainerEdit{
+		Meta: map[string]string{"Project": "atlas"}, QuotaBytes: 500,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != UpdateApplied || result.After.Meta["Project"] != "atlas" {
+		t.Fatalf("normal edit outcome = %q meta = %v", result.Outcome, result.After.Meta)
+	}
+	if len(result.After.TempURLKeySlots) != 1 || result.After.QuotaBytes != 500 {
+		t.Errorf("slots = %v quota = %d; want the secret slot and the quota untouched", result.After.TempURLKeySlots, result.After.QuotaBytes)
 	}
 }
 
