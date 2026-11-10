@@ -331,12 +331,13 @@ func TestPrefixSweepLaterPassRequestsOnlyNewNames(t *testing.T) {
 	seedObject(h.mock, "sweep", "scope/a.txt", "alpha", nil)
 	seedObject(h.mock, "sweep", "scope/b.txt", "bravo", nil)
 	h.mock.PutObject("sweep", "scope/link", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "sweep/keep.txt"})
-	written := false
+	// The sweep deletes with several workers and the mock serves each request
+	// from its own goroutine, so this one-shot guard must be atomic.
+	var written atomic.Bool
 	h.mock.AfterRequest = func(method, path string) {
 		// A writer lands under the scope after the first pass listed it and
 		// before the second pass lists it.
-		if method == "DELETE" && strings.Contains(path, "/sweep/scope/") && !written {
-			written = true
+		if method == "DELETE" && strings.Contains(path, "/sweep/scope/") && written.CompareAndSwap(false, true) {
 			seedObject(h.mock, "sweep", "scope/late.txt", "late", nil)
 		}
 	}
