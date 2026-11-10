@@ -15,8 +15,13 @@
 // It never runs in the default build (the "realcloud" tag excludes it) and is
 // never a required check. Credentials are read from a clouds.yaml at run time
 // with a typed decode and validated, endpoint policy included, before anything
-// is logged. Nothing secret is logged, and user/project identifiers stay out of
-// success and failure output alike. Every fixture it creates has a random,
+// is logged. Nothing secret is logged, and nothing that names the provider or
+// the account reaches success or failure output: a run is labelled by its
+// backend, an ad-hoc clouds.yaml key is used only to find its entry, a
+// failure prints the error's kind and types, never its text (oracleFailure),
+// and nothing a server returned as text is printed: a body, an entity tag or
+// a content type is reported by its length, its digest or whether it matches.
+// Every fixture it creates has a random,
 // unique name and is torn down only when this run actually created it. Run it
 // from the repo root:
 //
@@ -35,19 +40,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"net/url"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
-
-var oracleBackends = []struct{ name, cloud, backend string }{
-	{"ceph", "aeronautes-ceph", "Ceph RGW Swift"},
-	{"swift", "aeronautes-swift", "OpenStack Swift"},
-}
 
 func TestKeystoneV3Oracle(t *testing.T) {
 	runOnOracleBackends(t, runOracle)
@@ -57,7 +55,7 @@ func TestKeystoneV3Oracle(t *testing.T) {
 // clouds.yaml selection and skip rules every real-cloud test shares, so a
 // second oracle cannot drift from the first in how it finds, validates or
 // declines a cloud.
-func runOnOracleBackends(t *testing.T, run func(t *testing.T, cloudName, backend string, c oracleCloud)) {
+func runOnOracleBackends(t *testing.T, run func(t *testing.T, label, backend string, c oracleCloud)) {
 	path, err := resolveCloudsPath()
 	if err != nil {
 		// An explicitly selected source that cannot be used is an error, never
@@ -69,40 +67,31 @@ func runOnOracleBackends(t *testing.T, run func(t *testing.T, cloudName, backend
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
+		t.Fatalf("the selected clouds.yaml could not be read (%s)", oracleFailure(err))
 	}
-	backends := oracleBackends
-	if only := os.Getenv("ORACLE_CLOUD"); only != "" {
-		sel := struct{ name, cloud, backend string }{only, only, "ad-hoc"}
-		for _, b := range oracleBackends {
-			if b.name == only || b.cloud == only {
-				sel = b
-				break
-			}
-		}
-		backends = []struct{ name, cloud, backend string }{sel}
-	}
-	for _, b := range backends {
-		t.Run(b.name, func(t *testing.T) {
+	// Only the label is printed from here on; the path and the clouds.yaml
+	// key can each be named for a provider.
+	for _, b := range selectOracleBackends(os.Getenv("ORACLE_CLOUD")) {
+		t.Run(b.label, func(t *testing.T) {
 			cloud, err := loadCloud(raw, b.cloud)
 			switch {
 			case errors.Is(err, errCloudAbsent):
-				t.Skipf("cloud %q not in %s; skipping (%s)", b.cloud, path, b.backend)
+				t.Skipf("the %s entry is not in the selected clouds.yaml; skipping (%s)", b.label, b.backend)
 			case errors.Is(err, errNoPassword):
-				t.Skipf("cloud %q has no password in clouds.yaml; add it to run the oracle", b.cloud)
+				t.Skipf("the %s entry has no password in clouds.yaml; add it to run the oracle", b.label)
 			case err != nil:
-				t.Fatalf("cloud %q misconfigured: %v", b.cloud, err)
+				t.Fatalf("the %s entry is misconfigured: %v", b.label, err)
 			}
-			run(t, b.cloud, b.backend, cloud)
+			run(t, b.label, b.backend, cloud)
 		})
 	}
 }
 
-func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
-	// loadCloud has applied the endpoint policy, so this URL carries no userinfo
-	// or query; the password is never logged and user/project identifiers are
-	// deliberately omitted from every diagnostic.
-	t.Logf("[%s] backend=%s auth=%s region=%s", cloudName, backend, c.AuthURL, c.Region)
+func runOracle(t *testing.T, label, backend string, c oracleCloud) {
+	// Nothing that names the provider is logged, on success or failure: no
+	// endpoint, region or host, as well as no password, user or project. A run's
+	// output is evidence that gets kept and pasted, and a CI log is public.
+	t.Logf("[%s] backend=%s", label, backend)
 
 	s, err := swiftcontrol.New(swiftcontrol.Config{
 		AuthVersion:   3,
@@ -115,15 +104,15 @@ func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
 		Region:        c.Region,
 	})
 	if err != nil {
-		t.Fatalf("New(v3): %s", redactIdentifiers(err.Error(), c, ""))
+		t.Fatalf("New(v3): %s", oracleFailure(err))
 	}
 	defer s.Close()
-	// fail reports an operation error with account identifiers redacted: a
-	// transport or status error carries the full request URL, whose path names
-	// the project.
+	// fail reports which operation failed and what kind of error it met. The
+	// error's text is never printed: it carries the request URL, whose path
+	// names the project, and hosts no configured value can predict.
 	fail := func(op string, err error) {
 		t.Helper()
-		t.Fatalf("%s: %s", op, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		t.Fatalf("%s: %s", op, oracleFailure(err))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -131,20 +120,12 @@ func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
 
 	// (1) The real test: guardedAuth against a genuine Keystone token+catalog.
 	if err := s.Authenticate(ctx); err != nil {
-		fail("Authenticate (guardedAuth v3) against "+cloudName, err)
+		fail("Authenticate (guardedAuth v3) against "+label, err)
 	}
-	storageURL := s.StorageURL()
 	expires := s.TokenExpires()
-	host := storageURL
-	if u, perr := url.Parse(storageURL); perr == nil && u.Host != "" {
-		host = u.Host // the endpoint host, never the AUTH_<project> path
-	}
-	t.Logf("AUTH OK: endpoint host=%s, token expires in %s", host, time.Until(expires).Round(time.Second))
+	t.Logf("AUTH OK: token expires in %s", time.Until(expires).Round(time.Second))
 	if expires.IsZero() {
 		t.Error("v3 token expiry should be captured (Keystone advertises expires_at)")
-	}
-	if !strings.Contains(strings.ToLower(storageURL), strings.ToLower(c.Region)) {
-		t.Logf("note: endpoint host %q does not contain region %q (endpoint naming is cloud-specific)", host, c.Region)
 	}
 
 	// (2) Authenticated account read.
@@ -169,17 +150,16 @@ func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
 	t.Logf("created probe container %s", probe)
 
 	body := []byte("aeronautes keystone v3 oracle probe\n")
-	etag, err := s.PutObject(ctx, probe, objName, bytes.NewReader(body), "text/plain", nil)
-	if err != nil {
+	if _, err := s.PutObject(ctx, probe, objName, bytes.NewReader(body), "text/plain", nil); err != nil {
 		fail("PutObject", err)
 	}
-	t.Logf("PUT %s/%s etag=%s", probe, objName, etag)
+	t.Logf("PUT %s/%s", probe, objName)
 
 	detail, err := s.ObjectDetail(ctx, probe, objName)
 	if err != nil {
 		fail("ObjectDetail after put", err)
 	}
-	t.Logf("HEAD: contentType=%s etag=%s", detail.ContentType, detail.ETag)
+	t.Logf("HEAD: length=%d", detail.ContentLength)
 
 	rc, err := s.OpenObjectContent(ctx, probe, objName)
 	if err != nil {
@@ -190,8 +170,8 @@ func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
 	if err != nil {
 		fail("read body", err)
 	}
-	if !bytes.Equal(got, body) {
-		t.Fatalf("GET body mismatch: got %q want %q", got, body)
+	if line := bodyMismatch("GET body", got, body); line != "" {
+		t.Fatal(line)
 	}
 	t.Logf("GET body round-trips (%d bytes)", len(got))
 
@@ -207,7 +187,7 @@ func runOracle(t *testing.T, cloudName, backend string, c oracleCloud) {
 	if err := s.DeleteContainer(ctx, probe); err != nil {
 		fail("DeleteContainer", err)
 	}
-	t.Logf("deleted probe container %s — full v3 round-trip OK against %s (%s)", probe, cloudName, backend)
+	t.Logf("deleted probe container %s — full v3 round-trip OK against %s (%s)", probe, label, backend)
 }
 
 // randomSuffix is a collision-free container-name suffix (16 hex chars).

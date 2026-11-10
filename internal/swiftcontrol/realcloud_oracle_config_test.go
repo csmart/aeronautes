@@ -5,12 +5,16 @@
 package swiftcontrol_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -51,15 +55,17 @@ func resolveCloudsPath() (string, error) {
 	for _, key := range []string{"ORACLE_CLOUDS", "OS_CLIENT_CONFIG_FILE"} {
 		if p := os.Getenv(key); p != "" {
 			if _, err := os.Stat(p); err != nil {
-				return "", fmt.Errorf("%s is set but unusable: %w", key, err)
+				// The variable is named and the path is not: a file can be
+				// named for the provider whose entries it holds.
+				return "", fmt.Errorf("%s is set but the file it names cannot be used (%s)", key, oracleFailure(err))
 			}
 			return p, nil
 		}
 	}
-	for _, p := range []string{
-		filepath.Join(os.Getenv("HOME"), ".config", "openstack", "clouds.yaml"),
-		"clouds.yaml",
-	} {
+	// No fallback to a clouds.yaml in the working directory: that is the
+	// package directory, inside the repository, where a credentials file
+	// could be staged by accident.
+	if p := filepath.Join(os.Getenv("HOME"), ".config", "openstack", "clouds.yaml"); os.Getenv("HOME") != "" {
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
@@ -73,7 +79,7 @@ func resolveCloudsPath() (string, error) {
 // here so a URL with embedded credentials or a query is refused before anything
 // is logged. An absent entry or a missing password is a skip for the caller;
 // a malformed file or an unusable entry is an error whose text never includes
-// a field value.
+// a field value or the entry's own name, which can be a provider's.
 func loadCloud(raw []byte, name string) (oracleCloud, error) {
 	var doc struct {
 		Clouds map[string]struct {
@@ -124,28 +130,89 @@ func loadCloud(raw []byte, name string) (oracleCloud, error) {
 		}
 	}
 	if len(missing) > 0 {
-		return oracleCloud{}, fmt.Errorf("cloud %q is missing required fields: %s", name, strings.Join(missing, ", "))
+		return oracleCloud{}, fmt.Errorf("the cloud entry is missing required fields: %s", strings.Join(missing, ", "))
 	}
 	// ValidateEndpointURL's messages name the rule, never the URL.
 	if err := swiftcontrol.ValidateEndpointURL(c.AuthURL, swiftcontrol.TLSModeSystem); err != nil {
-		return oracleCloud{}, fmt.Errorf("cloud %q auth_url: %w", name, err)
+		return oracleCloud{}, fmt.Errorf("the cloud entry's auth_url: %w", err)
 	}
 	return c, nil
 }
 
-var authAccountRe = regexp.MustCompile(`AUTH_[^/\s"']+`)
+// oracleBackend is one cloud the oracles run against. label is the only name
+// that reaches a subtest name or a line of output; cloud is the clouds.yaml
+// key and is used to find the entry and for nothing else.
+type oracleBackend struct{ label, cloud, backend string }
 
-// redactIdentifiers strips the account identifiers an operation error can
-// carry: the storage URL (whose path names the project), any AUTH_ account
-// segment, the username and the project name. A failure diagnostic keeps the
-// operation and the status without saying whose account it was.
-func redactIdentifiers(msg string, c oracleCloud, storageURL string) string {
-	for _, v := range []string{storageURL, c.Username, c.ProjectName} {
-		if v != "" {
-			msg = strings.ReplaceAll(msg, v, "<redacted>")
+var oracleBackends = []oracleBackend{
+	{"ceph", "aeronautes-ceph", "Ceph RGW Swift"},
+	{"swift", "aeronautes-swift", "OpenStack Swift"},
+}
+
+// selectOracleBackends applies ORACLE_CLOUD. A known label or key selects that
+// backend. Any other key is an ad-hoc entry, which runs under a fixed label:
+// an operator may well have named the entry for its provider.
+func selectOracleBackends(only string) []oracleBackend {
+	if only == "" {
+		return oracleBackends
+	}
+	for _, b := range oracleBackends {
+		if b.label == only || b.cloud == only {
+			return []oracleBackend{b}
 		}
 	}
-	return authAccountRe.ReplaceAllString(msg, "AUTH_<redacted>")
+	return []oracleBackend{{"adhoc", only, "ad-hoc"}}
+}
+
+// oracleFailure says what kind of failure an operation met without printing
+// any of the error's own text. A transport or TLS error names hosts the
+// configuration never held, a certificate's alternative names among them, so
+// no list of substitutions makes that text safe to keep in a log. The
+// adapter's error kind, the HTTP status and the Go types in the chain are
+// fixed vocabulary and are enough to tell an auth refusal from a DNS failure.
+func oracleFailure(err error) string {
+	var types []string
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		types = append(types, fmt.Sprintf("%T", e))
+	}
+	out := "error text withheld; types " + strings.Join(types, " > ")
+	var se *swiftcontrol.SwiftError
+	if errors.As(err, &se) {
+		kind := string(se.Kind)
+		if se.HTTPStatus != 0 {
+			kind += fmt.Sprintf(", HTTP %d", se.HTTPStatus)
+		}
+		out = kind + "; " + out
+	}
+	return out
+}
+
+// describeBody stands for bytes a server returned in a line of output. The
+// oracles print nothing a server sent as text: an unexpected body can be
+// anything, a proxy's branded sign-in page for one. The length and the start
+// of the digest are enough to tell which of the bodies a run wrote came back,
+// or that none did.
+func describeBody(b []byte) string {
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("%d bytes (SHA-256 %x…)", len(b), sum[:6])
+}
+
+// describeBodies is describeBody over what an archive held, in order.
+func describeBodies(bodies []string) string {
+	described := make([]string, len(bodies))
+	for i, body := range bodies {
+		described[i] = describeBody([]byte(body))
+	}
+	return "[" + strings.Join(described, ", ") + "]"
+}
+
+// bodyMismatch is the failure line for a body that is not the one expected,
+// or "" when it is.
+func bodyMismatch(what string, got, want []byte) string {
+	if bytes.Equal(got, want) {
+		return ""
+	}
+	return fmt.Sprintf("%s: read %s, want %s", what, describeBody(got), describeBody(want))
 }
 
 // teardownProbe removes the probe object and container, best-effort, on its own
@@ -194,8 +261,8 @@ func TestOracleCloudsPathSelection(t *testing.T) {
 }
 
 func TestOracleLoadCloud(t *testing.T) {
-	const noPassword = "clouds:\n  aeronautes-ceph:\n    auth:\n      auth_url: https://identity.example/\n      username: someone\n      project_name: \"12345\"\n    region_name: SYD\n"
-	const valid = "clouds:\n  aeronautes-ceph:\n    auth:\n      auth_url: https://identity.example/\n      username: someone\n      password: \"pw\"\n      project_name: \"12345\"\n    region_name: SYD\n"
+	const noPassword = "clouds:\n  aeronautes-ceph:\n    auth:\n      auth_url: https://identity.example/\n      username: someone\n      project_name: \"00000000\"\n    region_name: r1\n"
+	const valid = "clouds:\n  aeronautes-ceph:\n    auth:\n      auth_url: https://identity.example/\n      username: someone\n      password: \"pw\"\n      project_name: \"00000000\"\n    region_name: r1\n"
 	cases := []struct {
 		name, yaml, cloud string
 		want              error // sentinel for errors.Is; nil means a valid decode
@@ -216,7 +283,7 @@ func TestOracleLoadCloud(t *testing.T) {
 			if err != nil {
 				t.Fatalf("valid entry: %v", err)
 			}
-			if got.AuthURL != "https://identity.example/v3" || got.ProjectDomain != "Default" || got.Region != "SYD" || got.ProjectName != "12345" {
+			if got.AuthURL != "https://identity.example/v3" || got.ProjectDomain != "Default" || got.Region != "r1" || got.ProjectName != "00000000" {
 				t.Fatalf("unexpected decode: %+v", got)
 			}
 		})
@@ -252,18 +319,78 @@ func TestOracleRefusalsCarryNoFieldValue(t *testing.T) {
 	}
 }
 
-func TestOracleRedactIdentifiers(t *testing.T) {
-	c := oracleCloud{Username: "user-abc123", ProjectName: "proj-9876"}
-	const storageURL = "https://storage.example/v1/AUTH_deadbeefcafe"
-	msg := "GET " + storageURL + "/cont/obj: EOF (user user-abc123, project proj-9876)"
-	got := redactIdentifiers(msg, c, storageURL)
-	for _, leak := range []string{"AUTH_deadbeefcafe", "user-abc123", "proj-9876", storageURL} {
-		if strings.Contains(got, leak) {
-			t.Fatalf("%q survived redaction: %q", leak, got)
+// A failure line must carry nothing that names where the oracle ran, however
+// the error spells it: the host with and without its port, a name that only a
+// certificate holds, the request URL and its account path.
+func TestOracleFailureCarriesNoErrorText(t *testing.T) {
+	const tokens = "https://identity.provider.example:5000/v3/auth/tokens"
+	dns := &url.Error{Op: "Post", URL: tokens, Err: &net.OpError{Op: "dial", Net: "tcp",
+		Err: &net.DNSError{Err: "no such host", Name: "identity.provider.example", IsNotFound: true}}}
+	tls := &url.Error{Op: "Post", URL: tokens, Err: x509.HostnameError{
+		Certificate: &x509.Certificate{DNSNames: []string{"alternate.provider.example"}}, Host: "identity.provider.example"}}
+	refused := fmt.Errorf("GET https://storage.provider.example/v1/AUTH_deadbeefcafe/cont: %w",
+		&swiftcontrol.SwiftError{Kind: swiftcontrol.KindForbidden, HTTPStatus: 403, Message: "Forbidden", TransID: "tx-provider-region"})
+	for name, err := range map[string]error{"dns": swiftcontrol.Normalize(dns), "tls": swiftcontrol.Normalize(tls), "refused": refused} {
+		got := oracleFailure(err)
+		for _, leak := range []string{"provider", "example", "5000", "AUTH_", "deadbeef", "tx-"} {
+			if strings.Contains(got, leak) {
+				t.Errorf("%s: %q reached the failure line: %s", name, leak, got)
+			}
+		}
+		if !strings.Contains(got, "types ") {
+			t.Errorf("%s: the failure line says nothing about the error: %s", name, got)
 		}
 	}
-	if !strings.Contains(got, "GET") || !strings.Contains(got, "EOF") {
-		t.Fatalf("redaction dropped the operation or status: %q", got)
+	if got := oracleFailure(refused); !strings.Contains(got, "forbidden, HTTP 403") {
+		t.Errorf("a refused request lost its kind and status: %s", got)
+	}
+}
+
+// A body that is not the one written fails the run without being printed: the
+// line carries lengths and digests, which still tell the two bodies apart.
+func TestOracleBodyMismatchPrintsNoContent(t *testing.T) {
+	wrote := []byte("aeronautes keystone v3 oracle probe\n")
+	page := []byte("<html>Sign in to identity.provider.example</html>")
+	got := bodyMismatch("GET body", page, wrote)
+	if got == "" {
+		t.Fatal("a different body was not reported as a mismatch")
+	}
+	for _, leak := range []string{"provider", "Sign in", "html", "oracle probe"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q reached the mismatch line: %s", leak, got)
+		}
+	}
+	if describeBody(page) == describeBody(wrote) {
+		t.Errorf("the line cannot tell the two bodies apart: %s", got)
+	}
+	if line := bodyMismatch("GET body", wrote, wrote); line != "" {
+		t.Errorf("the body that was written is reported as a mismatch: %s", line)
+	}
+}
+
+// An ad-hoc ORACLE_CLOUD key finds its entry and is never a label, so an entry
+// named for its provider cannot become a subtest name or a line of output; the
+// two configured backends are selected by either of their names.
+func TestOracleAdHocKeyIsNeverALabel(t *testing.T) {
+	got := selectOracleBackends("provider-production")
+	if len(got) != 1 || got[0].cloud != "provider-production" {
+		t.Fatalf("the ad-hoc key does not select its own entry: %+v", got)
+	}
+	if strings.Contains(got[0].label+got[0].backend, "provider") {
+		t.Fatalf("the ad-hoc key reached a displayed name: %+v", got[0])
+	}
+	for _, only := range []string{"ceph", "aeronautes-ceph"} {
+		if got := selectOracleBackends(only); len(got) != 1 || got[0].label != "ceph" {
+			t.Errorf("ORACLE_CLOUD=%s selected %+v, want the ceph backend", only, got)
+		}
+	}
+	if got := selectOracleBackends(""); len(got) != len(oracleBackends) {
+		t.Errorf("no selection ran %d backends, want all %d", len(got), len(oracleBackends))
+	}
+	// The refusals a misnamed entry can reach do not echo the key either.
+	_, err := loadCloud([]byte("clouds:\n  provider-production:\n    auth:\n      password: pw\n"), "provider-production")
+	if err == nil || strings.Contains(err.Error(), "provider") {
+		t.Fatalf("a refused entry's error names its key: %v", err)
 	}
 }
 
