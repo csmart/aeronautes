@@ -33,6 +33,11 @@ func (s *Session) CreateContainer(ctx context.Context, create ContainerCreateReq
 	if err := validateMetadata(create.Meta, false); err != nil {
 		return nil, err
 	}
+	// The same rule as the container editor (ADR 0101 decision 1): creation
+	// is another way to write these keys, so it refuses them too.
+	if err := refuseReservedMetadata(create.Meta, "Quota-Bytes", "Quota-Count"); err != nil {
+		return nil, err
+	}
 	if _, err := s.ContainerDetail(ctx, create.Name); err == nil {
 		return nil, fmt.Errorf("container %q: %w", create.Name, ErrAlreadyExists)
 	} else {
