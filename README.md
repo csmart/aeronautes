@@ -13,7 +13,6 @@ beauty are features.**
 ![Browser and inspector](docs/assets/screenshots/02-inspector-dlo.png)
 
 *The DLO inspector against real Swift: logical vs listed size, the exact manifest and its segment table.
-This historical capture also shows manifest deletion, which v1 defers.
 More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
 
 ## What it is
@@ -22,8 +21,8 @@ More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL key slots are
   set and cleared from the inspector (key values are never shown), and CORS and staticweb are
   edited as typed fields over their metadata rows.
-- **v1 scope**: browse, inspect, download, upload, object and container metadata read and write, container creation and prefix-marker creation.
-  Copy, Mirror execution and bulk deletion are deferred and refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md); upload joined that scope on 16 October 2026 under its decision 9.
+- **v1 scope**: browse, inspect, download, upload of files and folders, copy between containers and accounts, deletion of an object, a selection, a prefix or a container, object, container and account metadata read and write, container creation and prefix-marker creation, and pause and resume of an upload, download or copy, with up to four jobs running at once (two by default).
+  Mirror execution and benchmarks are refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md), whose decisions 9 and 11 to 14 record when upload, object deletion, copy, marker and manifest deletion and bulk deletion each joined that scope.
 - **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.
 - **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
   build targets); v1 supports Linux only, and the macOS and Windows builds are development
@@ -44,7 +43,7 @@ future option, ADR 0006).
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) — authoritative product + engineering design (66 sections).
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — compact normative requirement IDs for phase gates.
-- [`docs/adr/`](docs/adr/) — architecture decision records (0001–0012; 0006 still proposed).
+- [`docs/adr/`](docs/adr/) — architecture decision records, numbered from 0001; each states its own status.
 - [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the app against containerized Swift.
 - [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
@@ -85,9 +84,11 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    installation resolved. A source checkout has no bundled engine: put the official pinned binary
    on `PATH` (`scripts/fetch-rclone.sh linux amd64 <dir>`) — any other version is refused, and
    transfers are then disabled while browsing still works.
-2. Launch `bin/aeronautes`, click **Add**, and create a bookmark: display name, TempAuth v1 auth
-   URL (`https://cluster/auth/v1.0`), `account:user`, API key. The key goes to the OS keychain;
-   if none is reachable the app says so and keeps it for the session only.
+2. Launch `bin/aeronautes`, click **Add**, and create a bookmark: display name and either TempAuth
+   v1 (auth URL `https://cluster/auth/v1.0`, `account:user`, API key) or Keystone v3 (identity
+   URL, user, password, project, their domains, and the region, which a Keystone v3 bookmark always needs).
+   The key or password goes to the OS keychain; if none is reachable the app says so and keeps
+   it for the session only.
 3. **TLS**: the default verifies against the system trust store. For a cluster with a private
    CA choose **Custom CA** and paste the PEM bundle — trust is per-bookmark, applies to both
    the native client and the rclone child, and never changes another endpoint's verification.
@@ -99,18 +100,22 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    Its **Job history** tab pages through older retained jobs; expand a job to inspect every saved item, its exact quoted locations and separate execution and verification observations.
    Missing records, uncaptured history and unavailable reads are shown explicitly; an active job's records are incomplete, and the displayed issue counts can overlap.
    Older jobs without retained item records say so; interrupted counters are labelled as the last saved progress.
-6. Metadata: use the object or container inspector to view and edit metadata.
+6. Metadata: use the object, container or account inspector to view and edit metadata.
+7. Upload, copy and delete from the working list and the inspector.
+   Uploads, copies and the deletion of a selection, a prefix, a container or a manifest with its segments run as jobs in the drawer; deleting one object, marker or manifest is done at once and its result is shown in the dialog and the audit trail.
+   Every deletion, and every replacement of an existing object, is confirmed before it runs.
 
-Copy, Mirror execution, upload, bulk deletion, marker and manifest deletion, benchmarks and job re-runs are unavailable in v1.
-Their write controls are hidden and requests to the deferred actions are refused.
+Mirror execution and benchmarks are unavailable in v1.
+Their controls are hidden and requests to them are refused.
 
 ### Before trusting a release against production
 
 The [project audit](docs/audits/2026-09-05/README.md) still blocks use of mutation, recovery and transfer paths on valuable data.
-Credential replacement now preserves the previously published key if a save fails, but retired and unused keys remain tracked in credential storage until verified cleanup is implemented.
+Credential replacement preserves the previously published key if a save fails.
+On Linux, with a verified persistent keychain, a key the application retired is removed after its bookmark is deleted or its key is changed ([ADR 0076](docs/adr/0076-physical-credential-cleanup.md)); on a session-only or legacy store retired keys stay tracked and are never cleaned, because their absence there proves nothing.
 Open **key cleanup** in the status bar to see recorded old keys, unfinished saves and saves in progress.
 The view refreshes after bookmark changes and reports unavailable state explicitly; its counts cannot confirm native keychain erasure.
-Deleting a bookmark removes its saved configuration and cached connection; it does not yet prove physical key removal or revoke every previously held session.
+Deleting a bookmark removes its saved configuration and cached connection; it does not revoke every previously held session, and outside the Linux case above it does not prove physical key removal.
 These remaining [credential lifetime and recovery gates](docs/adr/0015-credential-bindings.md) must close before that hold is lifted.
 
 The [representative deployment smoke](docs/DESIGN.md#574-real-swiftstack-release-gate) remains a **manual operator step**.
@@ -119,7 +124,6 @@ Connect over TLS, browse a large fixture container and inspect known objects.
 Download a small selection and compare its contents independently, then edit and read back object and container metadata on those fixtures.
 Check that `/info`-gated features match the cluster and that reported results and retained records agree with the observed effects.
 Keep the tested artifact identity, deployment details and results with the release evidence.
-Copy is deferred and cannot serve as the v1 smoke journey.
 `scripts/smoke.sh` exercises a local mock; it does not satisfy this deployment gate or the separate native and platform checks.
 
 To exercise the app or the integration suite against a real local Swift:
@@ -135,8 +139,8 @@ WebKitGTK 6 and is served via Flatpak later (§6.6).
 
 ## Who it's for
 
-OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, downloading, uploading and editing metadata.
-Cross-account replication and destructive operations remain deferred beyond the current v1 scope.
+OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, downloading, uploading, copying between containers and accounts, deleting and editing metadata.
+Mirroring one scope onto another, which deletes what the source does not have, remains outside the current v1 scope.
 
 ## Licence
 
