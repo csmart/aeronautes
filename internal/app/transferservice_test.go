@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,6 +61,9 @@ type engineBarrier struct {
 	release     chan struct{}
 	enterOnce   sync.Once
 	releaseOnce sync.Once
+	// entries counts the engine runs that have reached the barrier, for a
+	// test that needs several jobs held in their engines together.
+	entries atomic.Int32
 }
 
 func newEngineBarrier(t *testing.T) *engineBarrier {
@@ -75,6 +79,17 @@ func (b *engineBarrier) waitUntilEntered(t *testing.T) {
 	case <-b.entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("job never reached the engine barrier")
+	}
+}
+
+func (b *engineBarrier) waitUntilHolding(t *testing.T, runs int32) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for b.entries.Load() < runs {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d engine runs reached the barrier, want %d held together", b.entries.Load(), runs)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -202,6 +217,7 @@ func escapePath(p string) string {
 func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	if e.block != nil {
 		e.block.enterOnce.Do(func() { close(e.block.entered) })
+		e.block.entries.Add(1)
 		select {
 		case <-e.block.release:
 		case <-ctx.Done():
