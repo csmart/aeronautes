@@ -6,6 +6,26 @@
 
 import type { Api, AppSettingsDTO, RestoreResultDTO } from "../../lib/api";
 
+// isRefusal tells a save the settings service refused before writing
+// anything from one whose outcome is unknown. The service marks such a
+// refusal in the error's fields, which the bridge passes on as the
+// rejection's cause. Everything else is unknown: a lost reply, a cancelled
+// call, a broken binding, a write that did not finish, and a panic in the
+// service, which the bridge names as it names a returned error.
+function isRefusal(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false;
+  const cause: unknown = error.cause;
+  return typeof cause === "object" && cause !== null && (cause as { refused?: unknown }).refused === true;
+}
+
+/** What became of the last save that changed the active-job budget. */
+export type BudgetAttempt = {
+  value: number;
+  state: "pending" | "acknowledged" | "unconfirmed" | "refused";
+  /** The service's words, for a refusal. */
+  reason?: string;
+};
+
 export class SettingsState {
   #api: Api;
   // What the owner does once a restore has finished: a restore may add
@@ -21,7 +41,7 @@ export class SettingsState {
   status = $state<"unavailable" | "current" | "stale" | "unconfirmed">("unavailable");
   operation = $state<"get" | "set" | null>(null);
   readError = $state(false);
-  attempt = $state<{ value: number; state: "pending" | "acknowledged" | "unconfirmed" } | null>(null);
+  attempt = $state<BudgetAttempt | null>(null);
   get canSave(): boolean {
     return this.operation === null && this.status === "current" && this.document !== null;
   }
@@ -49,15 +69,27 @@ export class SettingsState {
       throw new Error("Refresh settings before making another change.");
     }
     const request = { ...settings };
+    // Every setting is saved through here, and the attempt speaks of the
+    // budget: a save that leaves the budget alone has none.
+    const budget = request.maxActiveJobs === this.document!.maxActiveJobs ? null : request.maxActiveJobs;
+    const attempted = (state: BudgetAttempt["state"], reason?: string) => {
+      this.attempt = budget === null ? null : { value: budget, state, reason };
+    };
     this.operation = "set";
-    this.attempt = { value: request.maxActiveJobs, state: "pending" };
+    attempted("pending");
     try {
       this.document = await this.#api.saveAppSettings(request);
       this.status = "current";
-      this.attempt = { value: request.maxActiveJobs, state: "acknowledged" };
+      attempted("acknowledged");
     } catch (error) {
-      this.status = "unconfirmed";
-      this.attempt = { value: request.maxActiveJobs, state: "unconfirmed" };
+      if (isRefusal(error)) {
+        // The service answered, and it stores nothing of a document it
+        // refuses, so what was read before the save is still current.
+        attempted("refused", error.message);
+      } else {
+        this.status = "unconfirmed";
+        attempted("unconfirmed");
+      }
       throw error;
     } finally {
       this.#endOperation();
