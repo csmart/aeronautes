@@ -1,8 +1,8 @@
 # ADR 0095 — delete a prefix or a container by the verified per-name protocol
 
-**Status:** Accepted on 28 October 2026 and implemented behind the gate for the 0.2.x step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md), the bulk deletion of a prefix or a container, whose protocol [ADR 0085](0085-reobserved-destructive-identity.md) decided and recorded as owed and which [ADR 0093](0093-selected-set-deletion.md) decision 7 named as the next record.
+**Status:** Accepted on 28 October 2026, implemented, and returned to the release on 1 November 2026 by [ADR 0052](0052-v1-capability-gate.md) decision 14; written for the 0.2.x step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md), the bulk deletion of a prefix or a container, whose protocol [ADR 0085](0085-reobserved-destructive-identity.md) decided and recorded as owed and which [ADR 0093](0093-selected-set-deletion.md) decision 7 named as the next record.
 The bulk deletion runs the verified per-name sweep and the manifest-with-segments deletion is a job that owns the reviewed graph; the two contract rows take the drift decision 9 named, recorded in [the baseline record](../experiments/2026-10-28-bulk-delete-baseline.md).
-Nothing here returns a capability: the actions stay under "Bulk delete" with the `bulk-delete` token until the operator's word, recorded in [ADR 0052](0052-v1-capability-gate.md) when given.
+This record itself returns no capability: the actions stayed under "Bulk delete" with the `bulk-delete` token until the operator's word, which ADR 0052 decision 14 records, and that token no longer exists.
 **Scope:** `DeleteService.StartDelete` in its three modes, a prefix, a container's contents and a container, `DeleteService.PreviewDelete`, and `DeleteService.DeleteManifestWithSegments`, whose two branches run the same sweeps.
 Benchmark, which writes objects and sweeps them away, follows this record and is not decided here; Mirror is not admitted and is not a step closer.
 

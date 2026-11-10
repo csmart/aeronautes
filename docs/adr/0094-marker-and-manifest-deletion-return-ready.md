@@ -1,8 +1,8 @@
 # ADR 0094 — make marker and manifest deletion return-ready
 
-**Status:** Proposed on 27 October 2026 for the 0.2.0 step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md) that returns marker and manifest deletion, the pair [ADR 0052](0052-v1-capability-gate.md) decision 7 deferred with the destructive work.
+**Status:** Accepted and delivered: both actions were returned to the release on 1 November 2026 by [ADR 0052](0052-v1-capability-gate.md) decision 13, and the `marker-manifest-delete` token named below no longer exists. Proposed on 27 October 2026 for the 0.2.0 step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md) that returns marker and manifest deletion, the pair [ADR 0052](0052-v1-capability-gate.md) decision 7 deferred with the destructive work.
 Written for review before any implementation, and implemented on 27 October 2026 behind the `marker-manifest-delete` token: the shared session protocol, the bound services with their ledger, the browser-owned dialogs and the public proof on both fixtures are in the range that carries this sentence, with the capability renamed and still deferred.
-Nothing here returns a capability: the return is the operator's word, recorded in ADR 0052 when given, as the earlier returns were.
+This record itself returns no capability: the return was the operator's word, recorded in ADR 0052 decision 13, as the earlier returns were.
 This record decides what the two actions must be before that word can be asked for.
 **Scope:** `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the session protocol behind each, the interface that offers them behind the `marker-manifest-delete` token, and their public proof.
 Deleting a manifest together with its segments stays force-only with bulk deletion; selected sets are [ADR 0093](0093-selected-set-deletion.md); prefixes, containers and symbolic links keep their own records.
