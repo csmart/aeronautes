@@ -1,6 +1,7 @@
 # ADR 0104: a job pauses at a unit boundary, keeps what it holds, and resumes its own run
 
 **Status:** Accepted for 0.5.0 (10 November 2026), delivered with this record's series.
+Decision 5 is amended by [ADR 0105](0105-concurrent-jobs.md): more than one job now runs at a time, a resumed job takes any free slot, and what keeps a paused job and a running one apart is that record's decisions 2 and 3 rather than the argument decision 5 makes; decision 2's allowance above the queue depth is the active slots, up to four.
 Finish-line decision 17 asked for a contract of its own, and the roadmap puts pause and resume in this release.
 **Scope:** How a transfer job is paused, what a paused job holds and gives up, how it resumes, how else it ends, and what the drawer shows.
 It changes neither the single active slot ([ADR 0047](0047-single-active-job.md)), the queue depth and the units the routes hand to the engine ([ADR 0074](0074-workload-bounds.md) decisions 2 and 3, [ADR 0103](0103-directory-upload.md) decision 4), the download destination reservation ([ADR 0078](0078-overlapping-download-destinations.md)), the outcome rules of an interrupted local transfer ([ADR 0025](0025-local-interruption-outcomes.md)), the per-item records ([ADR 0031](0031-upload-item-recording.md)), the overwrite acknowledgement and its fixed point ([ADR 0081](0081-upload-overwrite-acknowledgement.md), [ADR 0085](0085-reobserved-destructive-identity.md), [ADR 0102](0102-versioning-matrix-fixed-point-and-archives.md)), nor the interrupted-job disclosure ([ADR 0088](0088-interrupted-job-disclosure.md)).
@@ -36,7 +37,7 @@ Finish-line decision 17 recorded a reading, not a decision: a pause that finishe
    It gives up the job slot, so another job may run while it waits, and takes a place in the queue instead.
    A paused job counts against the queue depth of ADR 0074 decision 2 from the moment it parks until it is running again or has ended, so a start is refused when the jobs waiting and the jobs paused together fill the queue, and the refusal says so.
    A job that parks was running, and so was counted as neither waiting nor paused when it was admitted; it parks even when the queue is full, because refusing would leave a running job that cannot be paused.
-   The jobs waiting and paused together can therefore exceed the depth by the number of active slots, which is one, and by no more.
+   The jobs waiting and paused together can therefore exceed the depth by the number of active slots, and by no more.
    What parked runs retain, their plans, sessions, bookmark leases, download roots and copy spools, is bounded by the depth and that allowance; no second budget or setting is added.
    At the boundary it holds no engine child, no request in flight and no unit half done.
 3. **Resume continues the same run.**
@@ -96,7 +97,7 @@ Showing a resumed job that waits for the slot as `queued` was considered and not
 - A resumed job waits while another job holds the slot, stays `paused`, and runs when the slot frees.
 - Cancel while paused, on each route: the terminal state the route's rules give, including `partial` for a run whose earlier unit failed with nothing landed and for a copy whose earlier name was refused for a conflict; the admitted, unstarted items recorded as not attempted and none invented for names not yet admitted or listed; and no request sent after the cancel.
 - A paused download cancelled while another job, on a destination that does not overlap, holds the slot: an unchanged stage the job owns is removed with the directories it planned; a stage an existing guard refuses is retained and reported as it is for a running job; and the reservation and pins are released only when that finalisation has returned.
-- The queue: a start is refused once the jobs waiting and the jobs paused fill it, a paused job that ends frees its place, and a resume asked while the queue is full is accepted and waits in the place the job already holds; a running job parks although the queue is full, which leaves the jobs waiting and paused one above the depth and no more.
+- The queue: a start is refused once the jobs waiting and the jobs paused fill it, a paused job that ends frees its place, and a resume asked while the queue is full is accepted and waits in the place the job already holds; a running job parks although the queue is full, which leaves the jobs waiting and paused above the depth by no more than the active slots.
 - A pause asked while a delivered batch is being placed, or during a native-routed item, takes effect at the next unit head and not inside the unit; a copy whose plan ends with an engine batch still pending parks before that batch is dispatched, and a cancel there records its names as not attempted.
 - A row left `paused` by a dead process is recorded as interrupted while running and refuses a resume; shutting down with a paused job returns.
 - The same pause and resume of an upload with two folders passes against the mock and the owned Swift fixture.

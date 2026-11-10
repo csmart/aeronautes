@@ -1,6 +1,7 @@
 # ADR 0011 — Typed Wails service surface
 
 **Status:** Accepted (2026-08-29)
+It calls the job queue first-in first-out, which the runner has never promised: a waiting job takes a slot when one frees, in no stated order ([ADR 0105](0105-concurrent-jobs.md)).
 **Detail:** `DESIGN.md` §55; requirement K-SEC-002
 
 ## Context

@@ -3,6 +3,8 @@
 ## Status
 
 Accepted for v1 by operator decision on 14 September 2026, and deliberately reversible.
+[ADR 0105](0105-concurrent-jobs.md) reversed the number for 0.5.0: the ceiling is four and the default two.
+This record's decisions on where the ceiling is enforced, what the settings report and how a stored value above the ceiling is read stand with those numbers.
 
 ## Context
 
