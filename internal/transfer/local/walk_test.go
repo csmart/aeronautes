@@ -104,8 +104,8 @@ func TestWalkUploadDirectoryRefusals(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(sealed, 0o755) })
 		selection, err := WalkUploadDirectory(t.Context(), root, MaxDirectoryFiles)
-		if err == nil || !strings.Contains(err.Error(), "could not be read in full") {
-			t.Fatalf("got %+v, %v; want the walk refused with the unreadable directory named", selection, err)
+		if err == nil || !strings.Contains(err.Error(), "could not be read in full") || !strings.Contains(err.Error(), sealed) {
+			t.Fatalf("got %+v, %v; want the walk refused with %s named", selection, err, sealed)
 		}
 	})
 	t.Run("a file whose name the store cannot hold rejects the selection by name", func(t *testing.T) {
@@ -122,6 +122,41 @@ func TestWalkUploadDirectoryRefusals(t *testing.T) {
 			t.Fatalf("got %+v, %v; want the walk refused with %s named", selection, err, named)
 		}
 	})
+}
+
+// The two bounds ADR 0103 decision 3 states are refusals at their edge and not
+// before it: a folder of exactly the limit is taken whole, and a tree is
+// walked to the depth bound and refused one level past it.
+func TestWalkUploadDirectoryBoundsAreExact(t *testing.T) {
+	if selection, err := WalkUploadDirectory(t.Context(), folderFixture(t), 3); err != nil || len(selection.Sources) != 3 {
+		t.Fatalf("a folder of exactly the limit was not taken whole: %+v, %v", selection, err)
+	}
+	for _, c := range []struct {
+		levels  int
+		refused bool
+	}{{maxFolderDepth - 1, false}, {maxFolderDepth, true}} {
+		deep := filepath.Join(t.TempDir(), "deep")
+		bottom := deep
+		for range c.levels {
+			bottom = filepath.Join(bottom, "d")
+		}
+		if err := os.MkdirAll(bottom, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bottom, "leaf"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		selection, err := WalkUploadDirectory(t.Context(), deep, MaxDirectoryFiles)
+		if c.refused {
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("more than %d levels deep", maxFolderDepth)) {
+				t.Errorf("%d levels below the root: %+v, %v; want the depth refusal", c.levels, selection, err)
+			}
+			continue
+		}
+		if err != nil || len(selection.Sources) != 1 {
+			t.Errorf("%d levels below the root: %+v, %v; want the one file at the bottom", c.levels, selection, err)
+		}
+	}
 }
 
 // The report bounds what it retains: every skipped entry is counted, the
