@@ -416,7 +416,7 @@ func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO,
 	// question stated what was true when the operator was asked, and
 	// what matters now is what is true now. A mode this build cannot
 	// describe declines rather than proceeding.
-	versioning, versioningErr := s.observedVersioning(ctx, req.BookmarkID, req.Container)
+	versioning, versioningErr := s.readVersioning(ctx, req.BookmarkID, req.Container)
 	if versioningErr != nil {
 		return local.ReclaimPlan{Declined: "the container's versioning could not be read, so nothing was removed"}, nil
 	}

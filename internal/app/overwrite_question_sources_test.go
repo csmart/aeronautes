@@ -103,7 +103,7 @@ func assertCannotAddALine(t *testing.T, lines []string) {
 	}
 }
 
-// Path one: the archive name, which observedVersioning interpolates straight
+// Path one: the archive name, which versioningStatement interpolates straight
 // from the container's headers.
 func TestTheArchiveNameCannotAddALineToTheQuestion(t *testing.T) {
 	f := newHostileFixture(t, "taken")

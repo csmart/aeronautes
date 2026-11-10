@@ -585,7 +585,7 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	label, account, _ := s.pickBinding(ctx, scope)
 	// Bound rather than passed inline, because the reading carries the
 	// baseline as well as the counts the question states.
-	plan := s.fragmentPlanFor(ctx, req, preflight, versioning)
+	plan := s.fragmentPlanFor(ctx, req, preflight, observed)
 	question, authorises, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names, plan)
 	if err != nil {
 		return answeredFragments{}, err
@@ -734,7 +734,7 @@ func overwriteQuestion(label, account, container, prefix, versioning string, nam
 // halves of the sentence cannot disagree. Reclamation reads the mode again at
 // the time it would run, because what matters then is what is true then.
 func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequestDTO,
-	preflight *local.UploadPreflight, versioning string) fragmentPlan {
+	preflight *local.UploadPreflight, versioning swiftcontrol.ContainerVersioning) fragmentPlan {
 	plan := fragmentPlan{Reclaiming: s.reclaimsReplacedFragments(ctx)}
 	if keepsVersions(versioning) {
 		plan.Skipped = "the container keeps versions, and those segments belong to a retained version"
@@ -766,12 +766,12 @@ func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequest
 	return plan
 }
 
-// keepsVersions reads the versioning sentence the question states. The modes
-// this build admits are named by observedVersioning, and only the legacy ones
-// carry an archive, which is what makes reclamation the wrong thing to do.
-func keepsVersions(versioning string) bool {
-	return strings.Contains(versioning, string(swiftcontrol.VersioningVersionsLocation)) ||
-		strings.Contains(versioning, string(swiftcontrol.VersioningHistoryLocation))
+// keepsVersions reports whether the container keeps what is replaced, which is
+// what makes reclaiming a predecessor's segments the wrong thing to do: they
+// belong to a version that is retained. It reads the observation itself, so
+// the decision cannot drift from how the question happens to word it.
+func keepsVersions(observed swiftcontrol.ContainerVersioning) bool {
+	return observed.Mode != swiftcontrol.VersioningOff && observed.Mode != ""
 }
 
 // fragmentPlan is what the question has to say about the predecessor's
@@ -850,22 +850,6 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-// observedVersioning is what the container said about keeping versions,
-// worded as an observation rather than a promise (ADR 0081 decision 8),
-// and an error when the mode does not admit an overwrite at all.
-//
-// A mode this build cannot reason about is refused rather than described:
-// modern object versioning, which ADR 0054 already refuses to edit, and a
-// container whose mode could not be read. Not knowing and knowing there is
-// none are different answers, and only one of them may carry a write.
-func (s *TransferService) observedVersioning(ctx context.Context, bookmarkID, container string) (string, error) {
-	observed, err := s.readVersioning(ctx, bookmarkID, container)
-	if err != nil {
-		return "", err
-	}
-	return versioningStatement(observed)
-}
-
 // readVersioning is the exact observation the question is composed from and
 // the fixed point compares against (ADR 0102 decision 2): the mode and the
 // archive as the container reports them, before any wording.
@@ -886,6 +870,11 @@ func (s *TransferService) readVersioning(ctx context.Context, bookmarkID, contai
 // only: the archive name is bounded and sanitised here, so two archives can
 // read alike, which is why the fixed point compares observations and not
 // statements.
+//
+// A mode this build cannot reason about, modern object versioning, which ADR
+// 0054 already refuses to edit, is refused rather than described: not knowing
+// and knowing there is none are different answers, and only one of them may
+// carry a write.
 func versioningStatement(observed swiftcontrol.ContainerVersioning) (string, error) {
 	switch observed.Mode {
 	case swiftcontrol.VersioningOff, "":
