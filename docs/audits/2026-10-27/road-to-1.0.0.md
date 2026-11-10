@@ -74,7 +74,7 @@ Owed: [ADR 0087](../../adr/0087-copy-overwrite-on-upload-terms.md), which lifts 
 ### 0.4.0 — what a restart lost, complete job records, and durability evidence
 
 ADR 0088 slice 2: the bounded read of undisclosed interrupted jobs, the notice at startup and its dismissal, with the new bridge action taking the drift route.
-P28 for UI-09 and UI-10 is mostly delivered — operation counters, transaction identifiers, complete failure access (the job-item records page through every retained item), account-bound audit views, and the retention and export policy — and one presentation clause is still owed: the live effective (resolved) per-job configuration, including the empty-versus-unavailable distinction when a settings record is missing or malformed (the jobs drawer shows defaults rather than distinguishing them).
+P28 for UI-09 and UI-10 is delivered — operation counters, transaction identifiers, complete failure access (the job-item records page through every retained item), account-bound audit views, and the retention and export policy — and so is the presentation clause that was owed when this was written: the jobs drawer shows each job's recorded configuration, with where each value came from wherever the job recorded it (today a copy), and says "not recorded" for a settings record that is missing or malformed rather than showing defaults.
 Three further items were settled by operator decision on 4 November 2026, recorded in the [finish line](../2026-09-05/linux-finish-line.md): support diagnostics are the native About dialog plus a levelled application log ([ADR 0099](../../adr/0099-application-log.md)) in lieu of a packaged diagnostics bundle; backup and restore is of the configuration only ([ADR 0098](../../adr/0098-settings-backup-and-restore.md)) — the application settings and bookmarks, never credentials — which re-scopes the "database and the keychain items" wording; and the durability measurement below is deferred.
 The durability residual is now bounded to the recorded fsync and power-loss limits (P12 and P28) and the implemented, component-tested crash-recovery behaviour (ADR 0088 slice 2 and the startup `FailInterrupted`); its one remaining piece, a desktop start recovering from an abrupt in-flight crash measured through the real binary, is deferred to nearer 1.0.0 by the same decision as the end-to-end measurement receipt rather than missing behaviour.
 The three clauses the register reconciliation could not establish are resolved here, one of which, shutdown ownership of credential publication and cleanup, is on an enabled path today.
@@ -83,10 +83,10 @@ The three clauses the register reconciliation could not establish are resolved h
 
 Versioning (P26): the container editor already switches legacy versioning off or to a versions or history location with its archive container, and refuses an edit whose preflight is unestablished.
 [ADR 0102](../../adr/0102-versioning-matrix-fixed-point-and-archives.md) closed the item's remaining asks on 9 November 2026: the legacy matrix is measured on a genuine Swift through the product's own routes and renewable with the real-cloud oracle, the modern mode is measured on the fixture and stays display-only, an upload or copy replacement is committed only under the versioning observation it was authorised under, and the bulk delete preview names the containers that archive into the one being emptied.
-TempURL keys and CORS management, which the README tracks as v1.x work.
-Directory upload and account metadata (P27).
-Pause and resume (finish line decision 17), feasible since the batching of ADR 0074.
-Raising the active-job budget: four at most and two by default, under [ADR 0105](../../adr/0105-concurrent-jobs.md).
+TempURL keys and CORS management, delivered under [ADR 0101](../../adr/0101-tempurl-key-slots-and-cors-editing.md).
+Directory upload ([ADR 0103](../../adr/0103-directory-upload.md)) and account metadata (P27), delivered.
+Pause and resume (finish line decision 17), delivered under [ADR 0104](../../adr/0104-pause-and-resume.md).
+Raising the active-job budget: four at most and two by default, delivered under [ADR 0105](../../adr/0105-concurrent-jobs.md).
 [ADR 0078](../../adr/0078-overlapping-download-destinations.md) had made two downloads safe, and ADR 0105 decides what keeps any two running jobs apart.
 Keystone authentication is here by finish-line decision 31: a bookmark authentication type beside TempAuth v1, the session's auth version and a Keystone-shaped fixture for its proof, kept cheap because the engine never speaks to Keystone (K-SEC-001); the vault fallback belongs here if the operator decides it is in 1.0.0.
 
@@ -128,7 +128,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 
 | §63 area | Item | State | Release |
 | --- | --- | --- | --- |
-| Browse | save multiple bookmarks | shipped, TempAuth v1 only; Keystone joins under decision 31 | 0.5.0 |
+| Browse | save multiple bookmarks | shipped, TempAuth v1 and Keystone v3 (decision 31, ADR 0100) | 0.5.0 |
 | Browse | browse containers without loading the account namespace | shipped | — |
 | Browse | browse very large containers page by page | shipped | — |
 | Browse | navigate marker-backed and implied prefixes | shipped | — |
@@ -142,35 +142,35 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Inspect | confirmed, declared and suspected segment stores | shipped | — |
 | Mutate | edit object metadata without dropping keys | shipped | — |
 | Mutate | edit DLO metadata without breaking the manifest | shipped | — |
-| Mutate | edit container and account metadata | container shipped; account not built | 0.5.0 |
+| Mutate | edit container and account metadata | shipped | 0.5.0 |
 | Mutate | edit container ACLs | shipped, with the public-read acknowledgement | — |
 | Mutate | create containers with the correct policy | shipped | — |
-| Mutate | configure supported container features | presets, quotas and legacy versioning locations shipped; modern versioning read-only; TempURL and CORS read-only | 0.5.0 |
+| Mutate | configure supported container features | presets, quotas, legacy versioning locations, TempURL keys and CORS shipped (ADR 0101, ADR 0102); modern versioning read-only | 0.5.0 |
 | Mutate | meaningful diffs and conflicts | shipped | — |
 | Transfer | upload | shipped, with acknowledged replacement | — |
 | Transfer | download | shipped | — |
-| Transfer | upload directories and multiple files | multiple files shipped; directories not built | 0.5.0 |
-| Transfer | copy across bookmarks | gated | 0.3.0 |
+| Transfer | upload directories and multiple files | shipped (ADR 0103) | 0.5.0 |
+| Transfer | copy across bookmarks | shipped; returned on 31 October 2026 (ADR 0052 decision 12) | 0.3.0 |
 | Transfer | mirror | refused under ADR 0020 | decision at 1.0.0 |
-| Transfer | progress, throughput and worker allocation | progress and throughput shipped, and the jobs drawer shows each job's recorded settings; the remaining UI-09 counters are owed | 0.4.0 |
+| Transfer | progress, throughput and worker allocation | shipped: progress, throughput, and each job's recorded settings, with their origins where recorded (a copy) (UI-09) | 0.4.0 |
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | shipped: the local transfer dialog names the destination DLO placement for an upload that segments, as the copy preview does behind the gate; chunk sizing and collision preflight shipped | — |
 | Delete | delete ordinary objects | shipped; returned to the release on 29 October 2026 (ADR 0092, ADR 0052 decision 11) | 0.2.0 |
 | Delete | delete the selected objects as one job | shipped; returned on 29 October 2026 (ADR 0093, ADR 0052 decision 11), with multi-selection of the loaded rows | 0.2.0 |
-| Delete | remove markers | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
-| Delete | recursively delete normal prefixes | gated; implemented behind the token (ADR 0095) | 0.2.x |
-| Delete | empty containers | gated; implemented behind the token (ADR 0095) | 0.2.x |
-| Delete | delete SLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
-| Delete | delete SLOs with exact segments | gated with bulk delete, force-only with typed confirmation; ownership advisory; implemented as a job (ADR 0095) | 0.2.x |
-| Delete | delete DLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
-| Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory; implemented as a job (ADR 0095) | 0.2.x |
-| Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
+| Delete | remove markers | shipped; returned on 1 November 2026 (ADR 0094, ADR 0052 decision 13) | 0.2.0 |
+| Delete | recursively delete normal prefixes | shipped; returned on 1 November 2026 (ADR 0095, ADR 0052 decision 14) | 0.2.x |
+| Delete | empty containers | shipped; returned on 1 November 2026 (ADR 0095, ADR 0052 decision 14) | 0.2.x |
+| Delete | delete SLO manifests | shipped; returned on 1 November 2026 (ADR 0094, ADR 0052 decision 13) | 0.2.0 |
+| Delete | delete SLOs with exact segments | shipped with bulk delete, force-only with typed confirmation; ownership advisory; a job (ADR 0095, ADR 0052 decision 14) | 0.2.x |
+| Delete | delete DLO manifests | shipped; returned on 1 November 2026 (ADR 0094, ADR 0052 decision 13) | 0.2.0 |
+| Delete | clean known-owned DLO segments | shipped, prefix-scoped and force-only; ownership advisory; a job (ADR 0095, ADR 0052 decision 14) | 0.2.x |
+| Delete | deliberate Backstage cleanup | shipped with bulk delete, force and typed confirmation (ADR 0052 decision 14) | 0.2.x |
 | Performance | global resource budgets | the active-job budget (ADR 0105) and the bounds of ADR 0074 are settings; the whole-application worker and memory ceilings are not built | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
-| Performance | per-job overrides | built behind copy; the local transfer dialog sends defaults though the bridge accepts overrides | 0.3.0 with copy; 0.6.0 for local transfers |
-| Performance | Auto, Balanced, Aggressive and Custom | built behind copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |
+| Performance | per-job overrides | shipped with copy; the local transfer dialog sends defaults though the bridge accepts overrides | 0.3.0 with copy; 0.6.0 for local transfers |
+| Performance | Auto, Balanced, Aggressive and Custom | shipped with copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |
 | Performance | benchmark a bookmark | gated | 0.6.0 or re-scoped |
-| Performance | report throughput and effective configuration | throughput and recorded settings shipped; effective-setting disclosure owed under UI-09 | 0.4.0 |
+| Performance | report throughput and effective configuration | shipped: throughput and recorded settings, with their origins where recorded (a copy) (UI-09) | 0.4.0 |
 | Performance | choose among native and engine strategies | shipped | — |
 | Safety | the eight prohibitions | enforced by refusals and maintained tests | — |
 
