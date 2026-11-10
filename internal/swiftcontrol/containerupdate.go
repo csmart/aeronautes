@@ -80,6 +80,9 @@ func (s *Session) UpdateContainer(ctx context.Context, name, baseFingerprint str
 	}
 	result.Before = before
 	result.observeTransID(before.TransID)
+	// An edit that leaves modern versioning as it is writes no versioning
+	// header and is not refused here; the editor refuses every save on such
+	// a container (ADR 0102 decision 4), so no product caller sends one.
 	if before.Versioning.Mode == VersioningEnabled && edit.Versioning.Mode != VersioningEnabled {
 		return result, fmt.Errorf("%s: %w — manage it with swift/CLI", name, ErrModernVersioning)
 	}

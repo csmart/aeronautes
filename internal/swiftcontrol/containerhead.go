@@ -41,8 +41,8 @@ type ContainerDetail struct {
 	BytesUsed   int64
 	// StoragePolicy is read-only after creation (§20).
 	StoragePolicy string
-	// ReadACL/WriteACL are the raw ACL strings, displayed verbatim (§19);
-	// parsing/editing is a later phase.
+	// ReadACL/WriteACL are the raw ACL strings, displayed verbatim and
+	// edited as whole strings by the container editor (§19).
 	ReadACL    string
 	WriteACL   string
 	Versioning ContainerVersioning

@@ -312,8 +312,9 @@ export interface ContainerDetailDTO {
     "writeAcl": string;
 
     /**
-     * VersioningMode: off | versions_location | history_location (§21
-     * display profile).
+     * VersioningMode: off | versions_location | history_location | enabled
+     * (§21 display profile). enabled is modern object versioning, which is
+     * shown and never edited (ADR 0102 decision 4).
      */
     "versioningMode": string;
     "versioningArchive": string;
@@ -359,7 +360,9 @@ export interface ContainerEditDTO {
     "writeAcl": string;
 
     /**
-     * off | versions_location | history_location
+     * VersioningMode: off | versions_location | history_location, or enabled
+     * only to leave modern object versioning as it is; this build never
+     * sets or clears that mode (ADR 0102 decision 4).
      */
     "versioningMode": string;
     "versioningArchive": string;
@@ -1152,11 +1155,12 @@ export interface MutationResultDTO {
     "transIds": string[] | null;
 
     /**
-     * Limitation states what a COMPLETED save does not establish, and is
-     * empty when nothing was written. An applied outcome means written
-     * and verified, never exclusive: this path cannot distinguish a
-     * concurrent write from an undisturbed one, so the qualification is
-     * unconditional (ADR 0046).
+     * Limitation states what a COMPLETED object metadata save does not
+     * establish, and is empty when nothing was written. An applied outcome
+     * means written and verified, never exclusive: that path cannot
+     * distinguish a concurrent write from an undisturbed one, so every
+     * completed object save carries the qualification. The container and
+     * account saves share the shape and do not set it yet (ADR 0046).
      */
     "limitation": string;
 

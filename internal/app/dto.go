@@ -1,10 +1,13 @@
 package app
 
-// Bridge DTOs (§55, ADR 0011): everything that crosses to the webview is
-// declared here, so "what can the frontend see" is one reviewable file.
-// No secret, token, or credential field may ever appear — bookmarks are
-// summarised with HasCredential only, and a credential crosses one way
-// (frontend → Go) as a Save argument.
+// Bridge DTOs (§55, ADR 0011): the types shared by several services are
+// declared here. A service's own DTOs sit beside the service, and the two
+// preflight reports cross from internal/transfer/local, so "what can the
+// frontend see" is answered by the generated bindings, not by this file
+// alone. The rule is the same wherever a DTO is declared: no secret, token,
+// or credential field may ever appear — bookmarks are summarised with
+// HasCredential only, and a credential crosses one way (frontend → Go) as a
+// Save argument.
 
 // BookmarkDTO is the frontend's view of a saved endpoint.
 type BookmarkDTO struct {
@@ -102,8 +105,9 @@ type ContainerDetailDTO struct {
 	StoragePolicy string `json:"storagePolicy"`
 	ReadACL       string `json:"readAcl"`
 	WriteACL      string `json:"writeAcl"`
-	// VersioningMode: off | versions_location | history_location (§21
-	// display profile).
+	// VersioningMode: off | versions_location | history_location | enabled
+	// (§21 display profile). enabled is modern object versioning, which is
+	// shown and never edited (ADR 0102 decision 4).
 	VersioningMode    string            `json:"versioningMode"`
 	VersioningArchive string            `json:"versioningArchive"`
 	QuotaBytes        int64             `json:"quotaBytes"`
@@ -261,13 +265,16 @@ type TempURLKeyEditDTO struct {
 // ContainerEditDTO states the complete intended editable surface of a
 // container (§18, §19, §21).
 type ContainerEditDTO struct {
-	Meta              map[string]string `json:"meta"`
-	ReadACL           string            `json:"readAcl"`
-	WriteACL          string            `json:"writeAcl"`
-	VersioningMode    string            `json:"versioningMode"` // off | versions_location | history_location
-	VersioningArchive string            `json:"versioningArchive"`
-	QuotaBytes        int64             `json:"quotaBytes"`
-	QuotaCount        int64             `json:"quotaCount"`
+	Meta     map[string]string `json:"meta"`
+	ReadACL  string            `json:"readAcl"`
+	WriteACL string            `json:"writeAcl"`
+	// VersioningMode: off | versions_location | history_location, or enabled
+	// only to leave modern object versioning as it is; this build never
+	// sets or clears that mode (ADR 0102 decision 4).
+	VersioningMode    string `json:"versioningMode"`
+	VersioningArchive string `json:"versioningArchive"`
+	QuotaBytes        int64  `json:"quotaBytes"`
+	QuotaCount        int64  `json:"quotaCount"`
 	// AckPublic must be true to set a world-readable (.r:*) read ACL
 	// — the operator explicitly acknowledged public exposure (§19.1).
 	AckPublic bool `json:"ackPublic"`
@@ -287,11 +294,12 @@ type MutationResultDTO struct {
 	Outcome  string   `json:"outcome"`
 	Mismatch string   `json:"mismatch"`
 	TransIDs []string `json:"transIds"`
-	// Limitation states what a COMPLETED save does not establish, and is
-	// empty when nothing was written. An applied outcome means written
-	// and verified, never exclusive: this path cannot distinguish a
-	// concurrent write from an undisturbed one, so the qualification is
-	// unconditional (ADR 0046).
+	// Limitation states what a COMPLETED object metadata save does not
+	// establish, and is empty when nothing was written. An applied outcome
+	// means written and verified, never exclusive: that path cannot
+	// distinguish a concurrent write from an undisturbed one, so every
+	// completed object save carries the qualification. The container and
+	// account saves share the shape and do not set it yet (ADR 0046).
 	Limitation string `json:"limitation"`
 	// ObjectAfter / ContainerAfter carry the verified post-write state
 	// for whichever resource was edited (nil otherwise, and nil on
