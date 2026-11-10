@@ -140,14 +140,14 @@
     <div class="modes" role="radiogroup" aria-label="Scope">
       {#if hasPrefix}
         <label class="mode">
-          <input type="radio" value="prefix" bind:group={mode} onchange={invalidate} />
+          <input type="radio" name="delete-scope" value="prefix" bind:group={mode} onchange={invalidate} />
           <span>
             Delete prefix <span class="type-mono">{browser.containerName}/{browser.prefix}</span>
           </span>
         </label>
       {/if}
       <label class="mode">
-        <input type="radio" value="empty" bind:group={mode} onchange={invalidate} />
+        <input type="radio" name="delete-scope" value="empty" bind:group={mode} onchange={invalidate} />
         <span>
           Empty container <span class="type-mono">{browser.containerName}</span> — contents go,
           the container and all its configuration stay
@@ -156,6 +156,7 @@
       <label class="mode">
         <input
           type="radio"
+          name="delete-scope"
           value="delete_container"
           bind:group={mode}
           onchange={invalidate}
@@ -168,7 +169,7 @@
     </div>
 
     {#if error}
-      <p class="error">{error}</p>
+      <p class="error" role="alert">{error}</p>
     {/if}
 
     {#if preview}
