@@ -595,6 +595,10 @@ describe("folder upload", () => {
     expect(f.root.textContent).toContain("Folder photos: 2 files to upload; 2 entries skipped");
     expect(f.root.textContent).toContain("1 empty directory produces nothing");
     expect(f.startButton()?.disabled).toBe(false);
+    // Starting spends the selection, so nothing goes on describing it.
+    f.startButton()!.click();
+    flushSync();
+    expect(f.root.textContent).not.toContain("Folder photos");
   });
 
   it("shows a folder that holds nothing to upload and starts nothing", async () => {
