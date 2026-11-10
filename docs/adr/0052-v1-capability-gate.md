@@ -6,9 +6,11 @@ Accepted.
 Refusal at the service entry point and hiding of deferred affordances are delivered
 with this decision.
 
-Two parts remain the lead author's reading awaiting the operator's confirmation, and
-are marked where they appear: that deferral should mean refusal rather than mere absence
-of proof, and where the boundary falls inside `MutateService`.
+Two parts were the lead author's reading when this was accepted: that deferral should
+mean refusal rather than mere absence of proof, and where the boundary falls inside
+`MutateService`.
+The operator's later decisions, 7 to 14 below, were made on the first and settled the
+second.
 
 ## Context
 

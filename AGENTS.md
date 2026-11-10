@@ -28,10 +28,13 @@ commit, phase by phase, following the design.
 - **Automatic segment deletion needs `ExclusiveOwnershipProof`** through the destructive effect.
   Generated prefixes prove creation and `Confirmed` proves a reference; neither excludes sharing or concurrent writers.
   Recovery retains uncertain data and records under ADR 0020; explicit force cleanup is a separate action. (§28.6, K-SEG-004)
-- **Changed existing Copy destinations are refused before staging**, including uncertain pairs resolved as unequal.
+- **An existing Copy destination is replaced only when the operator acknowledged it (ADR 0087)**: the preview names the collisions, the confirmation is asked on a native dialog, and each replacement is compared at its fixed point against what was shown and refused if it changed.
+  A collision the plan found is refused before staging unless it was acknowledged, including uncertain pairs resolved as unequal.
+  On either route a destination that changed, or appeared without acknowledgement, after the plan refuses publication; on the staged route the data is staged before that check, and a staged copy follows the staged-cleanup and residue rules, while the native route checks an acknowledged destination with HEAD, then publishes with a separate PUT, and stages nothing.
   Eligible new names use conditional native creation; unconditional fallback is forbidden.
   A refused overwrite produces a partial job, is counted separately and cannot consume copied-object verification evidence.
-  Mirror starts are refused under ADR 0020; P14 must establish the concurrency boundary before either capability is restored. (§28.6)
+  A replaced large object's segments are kept, never reclaimed by Copy.
+  Mirror starts are refused under ADR 0020; ADR 0086 is a proposal for it and is not built. (§28.6)
 - **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
   retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
 - **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
@@ -91,7 +94,7 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   New work follows the frozen [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and the risk-based evidence and review rules in DESIGN §65.12.
   Name the behaviour oracle and keep changes atomic; review a new or changed locked contract before dependent code.
   Safety changes retain catching system regressions and independent reproduction; ordinary UI and prose use the lighter tiers without weakening required CI.
-  The preceding dated capability list is historical: Copy now refuses overwrites, and Mirror supports comparison preview only and refuses every start until P14 establishes the required concurrency boundary.
+  The preceding dated capability list is historical: Copy replaces an existing destination only on ADR 0087's acknowledged terms, and Mirror supports comparison preview only and refuses every start.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in

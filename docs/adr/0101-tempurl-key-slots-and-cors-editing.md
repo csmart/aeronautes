@@ -3,7 +3,7 @@
 **Status:** Accepted for 0.5.0 (9 November 2026).
 The roadmap the operator accepted as finish-line decision 31 names the feature, and DESIGN §22 names its priorities.
 **Scope:** How the inspector sets and clears the TempURL key slots of an account and a container, how the Go model and the container editor treat the CORS metadata family, and what the durable facts and the audit trail record about a key change.
-It lifts [ADR 0090](0090-container-presets.md)'s exclusion of the CORS family from the editable surface (decision 6), and changes neither the metadata editors' per-key delta (§17.2), the public-read acknowledgement, the settings badges ([ADR 0071](0071-container-settings-indicators.md)), nor the v1 capability gate ([ADR 0052](0052-v1-capability-gate.md)).
+It lifts [ADR 0090](0090-container-presets.md)'s exclusion of the CORS family from the editable surface (decision 6), and changes neither the metadata editors' per-key delta (§17.2), the public-read acknowledgement, nor the v1 capability gate ([ADR 0052](0052-v1-capability-gate.md)); of the settings badges ([ADR 0071](0071-container-settings-indicators.md)) only the CORS badge changes, as decision 6 says.
 
 ## Context
 
@@ -73,7 +73,7 @@ An editor that shows every value cannot hold a value it must never show, and a c
 
 - Go, adapter: setting and clearing each slot at both levels on the mock; refusal before any request of a wrong slot name, an empty secret, a secret of spaces, a secret with a leading or trailing space or tab, a control byte and an over-long secret; a preflight that lists different slots is a conflict with no POST; a verify HEAD that returns another value, or keeps a cleared slot, is a verify mismatch whose description carries neither value; an account edit and a container edit that name a slot in `Meta`, in either letter case, are refused before any I/O, and an unrelated edit leaves both hidden slots in place; the CORS rows round-trip through the container edit and their omission removes them, on the mock and on the owned Swift, with the literal round-trip test carrying the CORS row in its working copy as it carries `Web-Index`.
 - Go, service: intent before POST, outcome and audit after, the residue error when the outcome cannot be recorded after a POST, and the secret absent from the mutation facts, the audit trail, the returned DTO and the captured application log, by searching each for the literal value.
-- System: the three war-room scenarios on the mock and the owned Swift, with a slot set then cleared (`happy`), a wrong slot refused before any request (`refusal`) and a stale slot list refused (`conflict`), each proving nothing else in the namespace changed.
+- System: the three war-room scenarios for a container on the mock and the owned Swift and for the account on the mock only, because the owned Swift's account is shared between test processes and its two slots are not unique to one of them, with a slot set then cleared (`happy`), a wrong slot refused before any request (`refusal`) and a stale slot list refused (`conflict`), each proving nothing else in the namespace changed.
 - Frontend: the slot rows render presence, set and clear from the detail; the set dialog refuses an empty secret, shows a generated key once and sends it once; the CORS section reads the three rows, rewrites only its own row, refuses a malformed origin or age in a field the operator changed, and lets an unrelated change save over an untouched row it would have refused.
 
 ## Limits
