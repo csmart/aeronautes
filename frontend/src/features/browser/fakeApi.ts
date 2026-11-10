@@ -871,6 +871,21 @@ export function newFakeApi(): Api {
       }
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
+    // The fake has no unit in hand to finish, so a pause takes effect at once.
+    pauseJob: async (jobId) => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job || !["queued", "planning", "running"].includes(job.state)) {
+        throw new Error(`job ${jobId} cannot be paused`);
+      }
+      job.state = "paused";
+    },
+    resumeJob: async (jobId) => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job || job.state !== "paused") {
+        throw new Error(`job ${jobId} is not paused in this process and cannot be resumed`);
+      }
+      job.state = "running";
+    },
     pickUploadFiles: async () => ({
       token: "fake-selection", files: ["fake-a.txt", "fake-b.txt"],
       folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0,

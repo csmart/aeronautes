@@ -183,14 +183,52 @@
     }
   }
 
-  let rerunError: string | null = $state(null);
+  let actionError: string | null = $state(null);
 
   async function rerun(job: JobDTO) {
-    rerunError = null;
+    actionError = null;
     try {
       await browser.rerunJob(job.id);
     } catch (e) {
-      rerunError = e instanceof Error ? e.message : String(e);
+      actionError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // Only these jobs pause, and only before they are finishing (ADR 0104
+  // decisions 1 and 7); the backend refuses the rest, so they are not offered.
+  const PAUSABLE_TYPES = ["upload", "download", "copy"];
+  const PAUSABLE_STATES = ["queued", "planning", "running"];
+
+  function canPause(job: JobDTO): boolean {
+    return PAUSABLE_TYPES.includes(job.type) && PAUSABLE_STATES.includes(job.state) && job.pause === "";
+  }
+
+  // A pause can be withdrawn before it takes effect as well as after.
+  function canResume(job: JobDTO): boolean {
+    return job.pause === "pausing" || (job.state === "paused" && job.pause === "");
+  }
+
+  function pauseNote(job: JobDTO): string {
+    if (job.pause === "pausing") return "Pauses when the current batch finishes.";
+    if (job.pause === "resuming") return "Resumes when a job slot is free.";
+    if (job.state === "paused") return "Paused. Nothing more is transferred until it is resumed.";
+    return "";
+  }
+
+  // One request per job at a time: a second Resume sent before the list
+  // refreshes would be refused as having nothing to withdraw.
+  let pauseBusy: string | null = $state(null);
+
+  async function pauseOrResume(job: JobDTO, action: "pause" | "resume") {
+    actionError = null;
+    pauseBusy = job.id;
+    try {
+      if (action === "pause") await browser.pauseJob(job.id);
+      else await browser.resumeJob(job.id);
+    } catch (e) {
+      actionError = e instanceof Error ? e.message : String(e);
+    } finally {
+      pauseBusy = null;
     }
   }
 
@@ -715,8 +753,8 @@
             {/if}
           </form>
         {/if}
-        {#if rerunError}
-          <p class="empty bad" role="alert">{rerunError}</p>
+        {#if actionError}
+          <p class="empty bad" role="alert">{actionError}</p>
         {/if}
         {#if browser.jobs.error}
           <p class="empty">jobs unavailable: {browser.jobs.error}</p>
@@ -768,6 +806,11 @@
                 </span>
                 <span class="row-actions">
                   {#if isActive(job)}
+                    {#if canPause(job)}
+                      <button class="pause" disabled={pauseBusy === job.id} onclick={() => pauseOrResume(job, "pause")}>Pause</button>
+                    {:else if canResume(job)}
+                      <button class="resume" disabled={pauseBusy === job.id} onclick={() => pauseOrResume(job, "resume")}>Resume</button>
+                    {/if}
                     <button class="cancel" disabled={!canCancel(job.id)} onclick={() => cancel(job.id)}>
                       {cancelLabel(job.id)}
                     </button>
@@ -789,6 +832,9 @@
                 </span>
                 {#if progressOf(job) !== null}
                   <div class="progress" style="--p: {(progressOf(job) ?? 0) * 100}%"></div>
+                {/if}
+                {#if pauseNote(job)}
+                  <p class="pause-note">{pauseNote(job)}</p>
                 {/if}
                 {#if job.error}
                   <p class="error">{job.error}</p>
@@ -1112,7 +1158,8 @@
     margin: 0;
   }
 
-  .recovery-row {
+  .recovery-row,
+  .pause-note {
     grid-column: 1 / -1;
     margin: 0;
     color: var(--color-text-secondary);
@@ -1169,7 +1216,9 @@
     align-items: baseline;
   }
 
-  .rerun {
+  .rerun,
+  .pause,
+  .resume {
     font: inherit;
     font-size: var(--text-xs);
     padding: 0 var(--space-2);
@@ -1377,6 +1426,7 @@
   .badge.queued,
   .badge.planning,
   .badge.running,
+  .badge.paused,
   .badge.verifying {
     color: var(--color-accent);
     background: var(--color-bg-card);

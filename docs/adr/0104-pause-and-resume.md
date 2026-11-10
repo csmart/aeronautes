@@ -1,6 +1,6 @@
 # ADR 0104: a job pauses at a unit boundary, keeps what it holds, and resumes its own run
 
-**Status:** Proposed for 0.5.0 (10 November 2026).
+**Status:** Accepted for 0.5.0 (10 November 2026), delivered with this record's series.
 Finish-line decision 17 asked for a contract of its own, and the roadmap puts pause and resume in this release.
 **Scope:** How a transfer job is paused, what a paused job holds and gives up, how it resumes, how else it ends, and what the drawer shows.
 It changes neither the single active slot ([ADR 0047](0047-single-active-job.md)), the queue depth and the units the routes hand to the engine ([ADR 0074](0074-workload-bounds.md) decisions 2 and 3, [ADR 0103](0103-directory-upload.md) decision 4), the download destination reservation ([ADR 0078](0078-overlapping-download-destinations.md)), the outcome rules of an interrupted local transfer ([ADR 0025](0025-local-interruption-outcomes.md)), the per-item records ([ADR 0031](0031-upload-item-recording.md)), the overwrite acknowledgement and its fixed point ([ADR 0081](0081-upload-overwrite-acknowledgement.md), [ADR 0085](0085-reobserved-destructive-identity.md), [ADR 0102](0102-versioning-matrix-fixed-point-and-archives.md)), nor the interrupted-job disclosure ([ADR 0088](0088-interrupted-job-disclosure.md)).

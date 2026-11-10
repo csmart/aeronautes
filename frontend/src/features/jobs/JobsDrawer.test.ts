@@ -235,3 +235,64 @@ it("does not claim no request was made for a queued bulk-delete interruption", a
   expect(section.textContent).not.toContain("no request was made");
   expect(section.textContent).not.toContain("Never started");
 });
+
+function transferJob(over: Partial<JobDTO>): JobDTO {
+  return {
+    id: "transfer", type: "upload", state: "running", source: "local", destination: "dest/",
+    sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "rclone", settings: "", error: "", recoveryRecords: 0, pause: "",
+    counters: { objectsPlanned: 10, objectsCopied: 4, objectsVerified: 4, objectsFailed: 0,
+      bytesPlanned: 100, bytesCopied: 40, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+    ...over,
+  };
+}
+
+function rowButtons(): string[] {
+  return [...document.querySelectorAll<HTMLButtonElement>(".row-actions button:not(.details)")]
+    .map((button) => button.textContent!.trim());
+}
+
+// ADR 0104 decision 6: what each state offers and what the row says while a
+// pause or a resume is waiting. A deletion job and a finishing job never pause.
+it.each([
+  { name: "a running upload", job: { }, buttons: ["Pause", "Cancel"], note: null },
+  { name: "a queued download", job: { type: "download", state: "queued" }, buttons: ["Pause", "Cancel"], note: null },
+  { name: "a pause waiting for its boundary", job: { pause: "pausing" }, buttons: ["Resume", "Cancel"],
+    note: "Pauses when the current batch finishes." },
+  { name: "a paused copy", job: { type: "copy", state: "paused" }, buttons: ["Resume", "Cancel"],
+    note: "Paused. Nothing more is transferred until it is resumed." },
+  { name: "a resume waiting for a slot", job: { state: "paused", pause: "resuming" }, buttons: ["Cancel"],
+    note: "Resumes when a job slot is free." },
+  { name: "a verifying upload", job: { state: "verifying" }, buttons: ["Cancel"], note: null },
+  { name: "a running deletion", job: { type: "delete_prefix" }, buttons: ["Cancel"], note: null },
+])("offers $name the controls its state allows", async ({ job, buttons, note }) => {
+  const api = newFakeApi();
+  api.jobs = async () => [transferJob(job)];
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".badge")).not.toBeNull());
+  expect(rowButtons()).toEqual(buttons);
+  expect(document.querySelector(".pause-note")?.textContent ?? null).toBe(note);
+  // A paused job keeps what it had done on the row.
+  expect(document.querySelector(".counts")?.textContent).toMatch(/4\s*\/10/);
+});
+
+it("pauses and resumes a job through the bridge and reports a refusal", async () => {
+  const api = newFakeApi();
+  let current = transferJob({});
+  api.jobs = async () => [current];
+  api.pauseJob = vi.fn(async () => { current = transferJob({ state: "paused" }); });
+  api.resumeJob = vi.fn(async () => { throw new Error("job transfer is not paused in this process and cannot be resumed"); });
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(rowButtons()).toEqual(["Pause", "Cancel"]));
+
+  document.querySelector<HTMLButtonElement>(".row-actions .pause")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("paused"));
+  expect(api.pauseJob).toHaveBeenCalledExactlyOnceWith("transfer");
+
+  document.querySelector<HTMLButtonElement>(".row-actions .resume")!.click();
+  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent)
+    .toBe("job transfer is not paused in this process and cannot be resumed"));
+  expect(api.resumeJob).toHaveBeenCalledExactlyOnceWith("transfer");
+  // The refusal changed nothing, so the row still offers the resume.
+  expect(rowButtons()).toEqual(["Resume", "Cancel"]);
+});
