@@ -3,8 +3,10 @@ package local
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/transfer/copy"
@@ -103,5 +105,65 @@ func TestNamedSourcesStageApart(t *testing.T) {
 	}
 	if _, ok := objects[want[1]]; ok {
 		t.Fatal("the published group left its stage behind")
+	}
+}
+
+// ADR 0104 decision 1: the route asks to pause at the head of each unit and
+// nowhere else, a native-routed item and an engine group each being one. A
+// cancellation returned from that wait ends the run as a cancel seen at the
+// same boundary does: what was published stays, and the groups never started
+// are recorded as not attempted.
+func TestUploadAsksToPauseAtUnitHeadsOnly(t *testing.T) {
+	s, _ := session(t)
+	dirA, dirB, dirN := t.TempDir(), t.TempDir(), t.TempDir()
+	sources := func(under string) []UploadSource {
+		return []UploadSource{
+			// A newline in a name is what routes a file natively.
+			{Path: writeFile(t, dirN, "line\nname", "native"), Name: under + "line\nname"},
+			{Path: writeFile(t, dirA, "one", "alpha"), Name: under + "a/one"},
+			{Path: writeFile(t, dirA, "two", "alpha two"), Name: under + "a/two"},
+			{Path: writeFile(t, dirB, "three", "bravo"), Name: under + "b/three"},
+		}
+	}
+	run := func(under string, pause func(asked int) error) (*Report, error, int, map[string]copy.Result) {
+		t.Helper()
+		preflight, err := PreflightUploadSources(t.Context(), s, "media", "live/", sources(under))
+		if err != nil || preflight.Rejected() || len(preflight.Items) != 4 {
+			t.Fatalf("preflight: %+v %v", preflight, err)
+		}
+		asked := 0
+		executed := map[string]copy.Result{}
+		recorder := &UploadRecorder{
+			Admit:   func(UploadAdmission) error { return nil },
+			Execute: func(item UploadItem, o copy.Observation) error { executed[item.Name] = o.Result; return nil },
+			Verify:  func(UploadItem, copy.Observation) error { return nil },
+			Pause: func(context.Context) error {
+				asked++
+				return pause(asked)
+			},
+		}
+		report, runErr := Upload(t.Context(), s, &fsEngine{s}, "aeronautes_dst:media", "media", "live/", "pause-"+strings.Trim(under, "/"), preflight, nil, nil, recorder)
+		return report, runErr, asked, executed
+	}
+
+	report, err, asked, _ := run("first/", func(int) error { return nil })
+	if err != nil || report.Done != 4 || asked != 3 {
+		t.Fatalf("report = %+v, %v; asked %d times, want once for the native item and once for each of the two groups", report, err, asked)
+	}
+
+	// The second ask is the head of the first group: the native item is done.
+	report, err, asked, executed := run("second/", func(asked int) error {
+		if asked == 2 {
+			return context.Canceled
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || report.Done != 1 || asked != 2 {
+		t.Fatalf("report = %+v, %v after %d asks; want the cancel with only the native item done", report, err, asked)
+	}
+	for _, name := range []string{"live/second/a/one", "live/second/a/two", "live/second/b/three"} {
+		if executed[name] != copy.ResultNotAttempted {
+			t.Errorf("%s = %q, want it recorded as not attempted", name, executed[name])
+		}
 	}
 }

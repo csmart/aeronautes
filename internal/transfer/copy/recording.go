@@ -46,6 +46,18 @@ type Recorder struct {
 	// rather than published under versioning nobody re-read, as the other
 	// hooks are.
 	VersioningUnchanged func(ctx context.Context, name string) (refusal string, err error)
+	// Pause is asked at the head of each unit and nowhere else (ADR 0104
+	// decision 1): before anything is done for an item the plan hands over,
+	// and before an engine batch is dispatched, whether the batch filled or
+	// the plan ended. Names buffered for the engine are admitted and not yet
+	// sent, so nothing is in flight at either place. It returns at once
+	// unless the job has been asked to pause; then it returns when the job
+	// may carry on, or with the context's error when the job was cancelled
+	// while it waited, which the executor treats as a cancel seen at that
+	// boundary. Any other error means the job could not be paused or resumed
+	// because its records can no longer be written, and stops the run as a
+	// lost record does. A run with no hook never pauses.
+	Pause func(ctx context.Context) error
 }
 
 type Admission struct {
@@ -188,6 +200,19 @@ func (r *executionResult) addProblem(stage Stage, err error) {
 		r.Effect = EffectUnresolved
 	}
 	r.problem = errors.Join(r.problem, err)
+}
+
+// pause parks the run at a unit head when the job has been asked to pause;
+// see Recorder.Pause for what its errors mean.
+func (e *Executor) pause(ctx context.Context) error {
+	if e.cfg.Recorder == nil || e.cfg.Recorder.Pause == nil {
+		return nil
+	}
+	err := e.cfg.Recorder.Pause(ctx)
+	if cancelled := ctx.Err(); err == nil || (cancelled != nil && errors.Is(err, cancelled)) {
+		return err
+	}
+	return e.stop(err)
 }
 
 func (e *Executor) stop(err error) error {

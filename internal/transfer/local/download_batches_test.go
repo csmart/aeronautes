@@ -255,3 +255,27 @@ func TestDownloadBatchesByNamesAndPlannedBytes(t *testing.T) {
 		t.Fatalf("count bound: %v", got)
 	}
 }
+
+// ADR 0104 decision 1: the download route asks to pause at the head of each
+// engine batch and nowhere else, so not while a delivered batch is being
+// placed. A cancellation returned from that wait leaves the batch before it
+// placed and the batch after it never given to a child.
+func TestDownloadAsksToPauseAtBatchHeadsOnly(t *testing.T) {
+	n := transfercopy.DefaultBatchNames
+	f, source := newBatchFixture(t, n+1)
+	engine := &batchCountingEngine{Engine: &fsEngine{session: source}}
+	asked := 0
+	f.recorder.Pause = func(context.Context) error {
+		asked++
+		if asked == 2 {
+			return context.Canceled
+		}
+		return nil
+	}
+	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
+	if !errors.Is(err, context.Canceled) || asked != 2 || len(engine.calls) != 1 || report.Done != int64(n) {
+		t.Fatalf("report = %+v, %v; asked %d times with %d children, want one batch placed and the cancel at the next head", report, err, asked, len(engine.calls))
+	}
+	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
+	f.expectExecute(t, n, n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
+}

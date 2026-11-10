@@ -89,6 +89,13 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		}
 	}()
 	for _, item := range preflight.Items {
+		if item.Route == "native" {
+			// A native-routed item is a unit of its own; an engine-routed
+			// one is only buffered here and pauses with its group below.
+			if err := u.pause(ctx); err != nil {
+				return report, err
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
@@ -134,6 +141,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		group.items = append(group.items, item)
 	}
 	for _, key := range order {
+		if err := u.pause(ctx); err != nil {
+			return report, err
+		}
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
