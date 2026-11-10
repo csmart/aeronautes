@@ -165,6 +165,26 @@ describe("TempURL key slots (ADR 0101)", () => {
     expect(f.slotRows()[1]).toBe("Temp-URL-Key-2 set Replace… Clear…");
   });
 
+  // The account's slots belong to the connection, not to what is being
+  // browsed: a key change that returns after the operator opened a container
+  // is still the account's verified state, and dropping it showed the slot as
+  // not set until a second attempt was refused as a conflict.
+  it("adopts an account key change that returns after the operator moved to a container", async () => {
+    const f = await show();
+    const pending = deferred<void>();
+    const real = f.api.updateTempUrlKey.bind(f.api);
+    vi.spyOn(f.api, "updateTempUrlKey").mockImplementation(async (scope, edit) => {
+      const result = await real(scope, edit);
+      await pending.promise;
+      return result;
+    });
+    const write = f.browser.updateTempUrlKey({ container: "", slot: "Temp-URL-Key-2", baseSlots: ["Temp-Url-Key"], secret: "typed-key", clear: false });
+    await f.browser.openContainer("fixtures");
+    pending.resolve();
+    expect((await write).outcome).toBe("applied");
+    expect(f.browser.account?.tempUrlKeySlots).toEqual(["Temp-Url-Key", "Temp-Url-Key-2"]);
+  });
+
   it("keeps a failed account reload visible and retryable", async () => {
     const f = await show();
     await f.api.updateTempUrlKey(f.browser.account!.scope, { container: "", slot: "Temp-URL-Key-2", baseSlots: ["Temp-Url-Key"], secret: "elsewhere", clear: false });
