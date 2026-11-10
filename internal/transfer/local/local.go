@@ -37,7 +37,9 @@ type Problem struct {
 // UploadItem is one file cleared for upload.
 type UploadItem struct {
 	Path string `json:"path"`
-	// Name is the destination object name (prefix + basename).
+	// Name is the destination object name: the prefix and the name its
+	// source carries, a base name for a file pick and the folder with the
+	// file's relative path for a folder pick.
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
 	Route string `json:"route"` // "rclone" | "native"

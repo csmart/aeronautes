@@ -10,9 +10,10 @@ import (
 
 const containerMetaPrefix = "X-Container-Meta-"
 
-// VersioningMode is the container-versioning *display* profile (§21).
-// The behavioural model for the v1 target is still an owner decision;
-// this only says what the headers say.
+// VersioningMode is what the container's headers say about versioning
+// (§21). It is an observation, not a promise about behaviour: the overwrite
+// question is composed from it and the fixed point compares it against a
+// fresh read (ADR 0102 decision 2).
 type VersioningMode string
 
 const (

@@ -52,7 +52,9 @@ export interface UploadItem {
     "path": string;
 
     /**
-     * Name is the destination object name (prefix + basename).
+     * Name is the destination object name: the prefix and the name its
+     * source carries, a base name for a file pick and the folder with the
+     * file's relative path for a folder pick.
      */
     "name": string;
     "size": number;

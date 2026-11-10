@@ -463,10 +463,6 @@ func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
 	return nil
 }
 
-// FragmentReading is what one question could learn about the segments
-// backing the names it is about, kept as separate facts because a question
-// that cannot tell "nothing is there" from "this could not be read" states
-// a falsehood in the case that matters most.
 // ShownObject is what an authoritative HEAD reported for one name: the three
 // facts ADR 0085 makes the acknowledged baseline, from the read the
 // acknowledgement already takes to say what backs the name.
@@ -481,6 +477,10 @@ type ShownObject struct {
 	ETag   string
 }
 
+// FragmentReading is what one question could learn about the segments
+// backing the names it is about, kept as separate facts because a question
+// that cannot tell "nothing is there" from "this could not be read" states
+// a falsehood in the case that matters most.
 type FragmentReading struct {
 	// Whole is how many recorded whole segments reclamation would remove.
 	// It counts only entries an inventory could NAME, because those are the

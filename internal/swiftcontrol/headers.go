@@ -43,8 +43,11 @@ func metaSuffix(key, prefix string) string {
 	return ""
 }
 
-// isTempURLKey reports whether a metadata name is a TempURL key slot
-// (Temp-URL-Key, Temp-URL-Key-2).
+// isTempURLKey reports whether a metadata name is to be treated as a TempURL
+// key slot. It is deliberately broader than the two names Swift reads
+// (Temp-URL-Key, Temp-URL-Key-2), matching any name that begins like one, so
+// that withholding and refusing err towards secrecy; the slot write accepts
+// only the exact two names.
 func isTempURLKey(metaName string) bool {
 	return strings.HasPrefix(strings.ToLower(metaName), "temp-url-key")
 }
