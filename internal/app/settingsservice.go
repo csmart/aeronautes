@@ -280,20 +280,38 @@ func (s *SettingsService) getFrom(ctx context.Context, q dbQuerier) (AppSettings
 	return settings, nil
 }
 
+// settingsRefusal is a save refused before anything was written. The bridge
+// hands a returned error's exported fields to the window as the rejection's
+// cause, and Refused is how the window knows that this save stored and
+// applied nothing, so that what it read before is still current. Any other
+// failure, a write that did not finish or a panic in this method, carries no
+// such field, and the window treats its outcome as unknown until it reads the
+// settings again.
+type settingsRefusal struct {
+	Refused bool   `json:"refused"`
+	Reason  string `json:"reason"`
+}
+
+func (e *settingsRefusal) Error() string { return e.Reason }
+
+func refuseSettings(format string, args ...any) error {
+	return &settingsRefusal{Refused: true, Reason: fmt.Sprintf(format, args...)}
+}
+
 // Set validates, persists, and applies the settings.
 func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
 	// Refused rather than clamped: a control that appears to change
 	// something it cannot is worse than no control (ADR 0047). One range
 	// and one sentence (ADR 0105 decision 7).
 	if settings.MaxActiveJobs < 1 || settings.MaxActiveJobs > maxActiveJobsCeiling {
-		return AppSettingsDTO{}, fmt.Errorf("max active jobs %d is out of range: choose 1 to %d", settings.MaxActiveJobs, maxActiveJobsCeiling)
+		return AppSettingsDTO{}, refuseSettings("max active jobs %d is out of range: choose 1 to %d", settings.MaxActiveJobs, maxActiveJobsCeiling)
 	}
 	if _, err := profileBase(Profile(settings.DefaultProfile)); err != nil {
-		return AppSettingsDTO{}, err
+		return AppSettingsDTO{}, refuseSettings("%v", err)
 	}
 	if settings.AuditRetentionDays < 0 || settings.AuditRetentionDays > 3650 ||
 		settings.JobRetentionDays < 0 || settings.JobRetentionDays > 3650 {
-		return AppSettingsDTO{}, fmt.Errorf("retention days out of range 0..3650")
+		return AppSettingsDTO{}, refuseSettings("retention days out of range 0..3650")
 	}
 	// A document without the ceiling (an older client, or a test that
 	// names only what it changes) keeps the default rather than refusing.
@@ -301,28 +319,28 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 		settings.DownloadObjectCeiling = defaultDownloadObjectCeiling
 	}
 	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
-		return AppSettingsDTO{}, fmt.Errorf("download object ceiling %d out of range %d..%d", settings.DownloadObjectCeiling, minDownloadObjectCeiling, maxDownloadObjectCeiling)
+		return AppSettingsDTO{}, refuseSettings("download object ceiling %d out of range %d..%d", settings.DownloadObjectCeiling, minDownloadObjectCeiling, maxDownloadObjectCeiling)
 	}
 	if settings.BrowserRetentionCeiling == 0 {
 		settings.BrowserRetentionCeiling = defaultBrowserRetentionCeiling
 	}
 	if settings.BrowserRetentionCeiling < minBrowserRetentionCeiling || settings.BrowserRetentionCeiling > maxBrowserRetentionCeiling {
-		return AppSettingsDTO{}, fmt.Errorf("browser retention ceiling %d out of range %d..%d", settings.BrowserRetentionCeiling, minBrowserRetentionCeiling, maxBrowserRetentionCeiling)
+		return AppSettingsDTO{}, refuseSettings("browser retention ceiling %d out of range %d..%d", settings.BrowserRetentionCeiling, minBrowserRetentionCeiling, maxBrowserRetentionCeiling)
 	}
 	if settings.MaxQueuedJobs == 0 {
 		settings.MaxQueuedJobs = defaultMaxQueuedJobs
 	}
 	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
-		return AppSettingsDTO{}, fmt.Errorf("max queued jobs %d out of range %d..%d", settings.MaxQueuedJobs, minMaxQueuedJobs, maxMaxQueuedJobs)
+		return AppSettingsDTO{}, refuseSettings("max queued jobs %d out of range %d..%d", settings.MaxQueuedJobs, minMaxQueuedJobs, maxMaxQueuedJobs)
 	}
 	if settings.MaxConnsPerHost == 0 {
 		settings.MaxConnsPerHost = defaultMaxConnsPerHost
 	}
 	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
-		return AppSettingsDTO{}, fmt.Errorf("max connections per host %d out of range %d..%d", settings.MaxConnsPerHost, minMaxConnsPerHost, maxMaxConnsPerHost)
+		return AppSettingsDTO{}, refuseSettings("max connections per host %d out of range %d..%d", settings.MaxConnsPerHost, minMaxConnsPerHost, maxMaxConnsPerHost)
 	}
 	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
-		return AppSettingsDTO{}, fmt.Errorf("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
+		return AppSettingsDTO{}, refuseSettings("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
 	}
 	s.saving.Lock()
 	defer s.saving.Unlock()

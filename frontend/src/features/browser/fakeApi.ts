@@ -90,6 +90,15 @@ function corsConfigured(meta: Record<string, string>): boolean {
   return Object.values(corsKeys).some((key) => (meta[key] ?? "") !== "");
 }
 
+/** A settings save refused before anything was written, as the bridge
+ * delivers it: the runtime names a returned error "RuntimeError" and passes
+ * the service's fields on as its cause. */
+export function settingsRefusal(message: string): Error {
+  const error = new Error(message, { cause: { refused: true, reason: message } });
+  error.name = "RuntimeError";
+  return error;
+}
+
 export function newFakeApi(): Api {
   let nextId = 1;
   const bookmarks: BookmarkDTO[] = [];
@@ -1090,7 +1099,14 @@ export function newFakeApi(): Api {
       browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
       reclaimReplacedFragments: true, railWidthPx: 0,
     }),
-    saveAppSettings: async (settings) => settings,
+    // The service's own range (ADR 0105), so no journey saves a budget the
+    // product would refuse.
+    saveAppSettings: async (settings) => {
+      if (settings.maxActiveJobs < 1 || settings.maxActiveJobs > 4) {
+        throw settingsRefusal(`max active jobs ${settings.maxActiveJobs} is out of range: choose 1 to 4`);
+      }
+      return settings;
+    },
     startFind: async (container, prefix, query, bookmarkId, countOnly = false) => {
       readScope(bookmarkId);
       if (!countOnly && query.trim() === "") throw new Error("container and a non-empty query are required");

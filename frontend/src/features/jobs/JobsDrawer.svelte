@@ -18,11 +18,19 @@
   let open = $state(false);
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
-  const budgetValue = $derived(String(
-    browser.settings.operation === "set" || browser.settings.status === "unconfirmed"
-      ? browser.settings.attempt?.value ?? ""
-      : browser.settings.document?.maxActiveJobs ?? "",
-  ));
+  // The budgets the service accepts (ADR 0105): one it would refuse is not
+  // offered.
+  const BUDGET_CHOICES = [1, 2, 3, 4];
+  // While a budget save is unanswered, or its outcome is unknown and no read
+  // has followed, the control shows the budget that save asked for;
+  // otherwise what was last read. Other writes hold the settings too, a rail
+  // resize or a restore, and say nothing about the budget.
+  const budgetAsked = $derived.by(() => {
+    const attempt = browser.settings.attempt;
+    const unknown = attempt?.state === "unconfirmed" && browser.settings.status === "unconfirmed";
+    return attempt?.state === "pending" || unknown ? attempt?.value : undefined;
+  });
+  const budgetValue = $derived(String(budgetAsked ?? browser.settings.document?.maxActiveJobs ?? ""));
   type CancellationNotice = {
     jobId: string;
     state: "pending" | "requested" | "unconfirmed";
@@ -238,8 +246,9 @@
       void browser.jobs.loadRecoveryStatus();
     };
     refresh();
-    // Reopening the drawer is not the explicit recovery read after a lost reply.
-    if (browser.settings.attempt?.state !== "unconfirmed") void browser.settings.load();
+    // Reopening the drawer is not the explicit recovery read after a lost
+    // reply, whichever setting that save was for.
+    if (browser.settings.status !== "unconfirmed") void browser.settings.load();
     const tick = setInterval(refresh, 1500);
     return () => {
       disposed = true;
@@ -259,15 +268,6 @@
       return `~${seconds}s`;
     }
     return `~${Math.round(seconds / 60)}m`;
-  }
-
-  async function saveBudget(value: number) {
-    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
-    try {
-      await browser.settings.save({ ...browser.settings.document, maxActiveJobs: value });
-    } catch {
-      // BrowserState retains the unconfirmed attempt even if this drawer unmounts.
-    }
   }
 
   // The download selection ceiling (ADR 0072): refused by the backend
@@ -531,23 +531,28 @@
         >
         {#if tab === "jobs"}
           {#if browser.settings.document}
-            <label class="filter" title="whole-application active-job ceiling">
+            <label class="filter" title="how many jobs run at once; a further start waits in the queue (1 to 4)">
               <span>Active-job budget</span>
               <select
                 value={budgetValue}
                 disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-budget-status`}
+                aria-describedby={`${id}-budget-note ${id}-budget-status`}
                 onchange={(e) => {
                   const value = Number(e.currentTarget.value);
                   e.currentTarget.value = budgetValue;
-                  void saveBudget(value);
+                  // The outcome is stated in the budget status below, which
+                  // outlives this drawer; nothing is reported here.
+                  void saveBound({ maxActiveJobs: value }, () => {});
                 }}
               >
-                {#each [1, 2, 4, 8] as n (n)}
+                {#each BUDGET_CHOICES as n (n)}
                   <option value={String(n)}>{n}</option>
                 {/each}
               </select>
             </label>
+            <span class="budget-note" id={`${id}-budget-note`}>
+              each job brings its own engine settings, so a profile's transfers and limits apply per job, not in total
+            </span>
             <label class="filter" title="the most objects one download selection may hold; a wider prefix is refused rather than cut short (1,000 to 5,000,000)">
               <span>Download ceiling</span>
               <input
@@ -694,6 +699,8 @@
             <span>Saving budget {browser.settings.attempt.value}…</span>
           {:else if browser.settings.attempt?.state === "unconfirmed"}
             <span>Budget change to {browser.settings.attempt.value} is unconfirmed.</span>
+          {:else if browser.settings.attempt?.state === "refused"}
+            <span>Budget change to {browser.settings.attempt.value} was refused: {browser.settings.attempt.reason}.</span>
           {:else if browser.settings.attempt?.state === "acknowledged"}
             <span>Budget change acknowledged.</span>
           {/if}
@@ -1033,7 +1040,8 @@
     width: 9em;
   }
 
-  .ceiling-status {
+  .ceiling-status,
+  .budget-note {
     font-size: var(--text-xs);
     color: var(--color-text-faint);
   }

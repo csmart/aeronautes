@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { AppSettingsDTO } from "../../lib/api";
+import type { AppSettingsDTO, RestoreResultDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
-import { newFakeApi } from "../browser/fakeApi";
+import { newFakeApi, settingsRefusal } from "../browser/fakeApi";
 import JobsDrawer from "./JobsDrawer.svelte";
 
 const original: AppSettingsDTO = {
@@ -83,7 +83,7 @@ it("preserves the whole document and choices while awaiting acknowledgement", as
   await vi.waitFor(() => expect(select()?.disabled).toBe(false));
   expect(select()?.value).toBe("4");
   expect(browser.settings.document).toEqual({ ...original, maxActiveJobs: 4 });
-  expect([...select()!.options].map((option) => option.value)).toEqual(["1", "2", "4", "8"]);
+  expect([...select()!.options].map((option) => option.value)).toEqual(["1", "2", "3", "4"]);
 });
 
 it("shows a cold pending read then unavailable feedback and a read-only retry", async () => {
@@ -120,7 +120,7 @@ it("qualifies a cached failed read and blocks writes until a successful refresh"
   await show(browser);
   await vi.waitFor(() => expect(select()?.value).toBe("2"));
   api.appSettings = vi.fn().mockRejectedValueOnce(new Error("private refresh failure"))
-    .mockResolvedValueOnce({ ...original, maxActiveJobs: 8 });
+    .mockResolvedValueOnce({ ...original, maxActiveJobs: 3 });
   await browser.settings.load();
   flushSync();
   expect(select()?.value).toBe("2");
@@ -128,7 +128,7 @@ it("qualifies a cached failed read and blocks writes until a successful refresh"
   expect(feedback()).toContain("stale");
   expect(feedback()).toContain("Last observed budget: 2");
   button("Refresh settings").click();
-  await vi.waitFor(() => expect(select()?.value).toBe("8"));
+  await vi.waitFor(() => expect(select()?.value).toBe("3"));
   expect(select()?.disabled).toBe(false);
   expect(api.saveAppSettings).not.toHaveBeenCalled();
 });
@@ -167,6 +167,46 @@ it.each([false, true])("retains an uncertain save and observes recovery without 
   expect(api.saveAppSettings).toHaveBeenCalledTimes(1);
 });
 
+// ADR 0105 decision 7: a save the service refuses is shown as refused, in the
+// service's words, and leaves every control usable; and the control says what
+// a larger budget multiplies.
+it("shows a refused budget as refused, with the reason, and stays editable", async () => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(select()?.value).toBe("2"));
+  expect(document.body.textContent).toContain("each job brings its own engine settings");
+  api.saveAppSettings = vi.fn(async () => { throw settingsRefusal("the job store has stopped recording"); });
+  choose("4");
+  await vi.waitFor(() => expect(browser.settings.attempt?.state).toBe("refused"));
+  flushSync();
+  expect(feedback()).toContain("Budget change to 4 was refused: the job store has stopped recording.");
+  expect(feedback()).not.toContain("unconfirmed");
+  expect(feedback()).not.toContain("Refresh settings before another change");
+  expect(select()?.value).toBe("2");
+  expect(select()?.disabled).toBe(false);
+  expect(reclaimBox()?.disabled).toBe(false);
+});
+
+// After a refused budget change, another write that holds the settings, here
+// a restore waiting on its file dialog, shows the budget that was read, not
+// the one refused.
+it("shows the read budget while another write holds the settings", async () => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(select()?.value).toBe("2"));
+  api.saveAppSettings = vi.fn(async () => { throw settingsRefusal("refused for this test"); });
+  choose("4");
+  await vi.waitFor(() => expect(browser.settings.attempt?.state).toBe("refused"));
+  let pick!: () => void;
+  api.importSettings = vi.fn(() => new Promise<RestoreResultDTO | null>((done) => { pick = () => done(null); }));
+  const restoring = browser.settings.restore();
+  flushSync();
+  expect(browser.settings.operation).toBe("set");
+  expect(select()?.value, "BUDGET-DURING-RESTORE").toBe("2");
+  pick();
+  await restoring;
+});
+
 it("does not replace uncertainty with a failed read or an automatic remount read", async () => {
   const { api, browser } = fixture();
   await show(browser);
@@ -197,12 +237,12 @@ it("rejects a second same-turn change and restores the admitted choice", async (
   await show(browser);
   await vi.waitFor(() => expect(select()?.value).toBe("2"));
   choose("4");
-  choose("8");
+  choose("3");
   flushSync();
   expect.soft(api.saveAppSettings, "BUDGET-DUPLICATE-DOM").toHaveBeenCalledTimes(1);
   expect(select()?.value, "BUDGET-ADMITTED-CHOICE").toBe("4");
   expect(feedback()).toContain("Saving budget 4");
-  choose("8");
+  choose("3");
   flushSync();
   expect(select()?.value).toBe("4");
   expect(api.saveAppSettings).toHaveBeenCalledTimes(1);
@@ -248,7 +288,7 @@ it("blocks writes and duplicate refresh clicks while a cached Get is pending", a
   api.appSettings = vi.fn(() => reply.promise);
   button("Refresh settings").click();
   button("Refresh settings").click();
-  choose("8");
+  choose("3");
   flushSync();
   expect(api.appSettings, "BUDGET-DUPLICATE-GET-DOM").toHaveBeenCalledTimes(1);
   expect(api.saveAppSettings, "BUDGET-PENDING-GET-DOM").not.toHaveBeenCalled();

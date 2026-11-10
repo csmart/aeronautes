@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -102,6 +103,26 @@ func TestSettingsStateTheEffectiveBudget(t *testing.T) {
 			t.Fatalf("a budget of %d: %v; want a refusal naming the range", outside, err)
 		}
 	}
+	// A refused save stores and applies nothing, whichever field it was
+	// refused for, and says so in the fields the bridge hands to the window
+	// as the rejection's cause. The window relies on both: it goes on
+	// treating what it read before the save as current only for such a
+	// refusal.
+	_, err = service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 3, DefaultProfile: "no such profile"})
+	if err == nil {
+		t.Fatal("a document with an unknown profile was saved")
+	}
+	// The bridge's own encoding of a returned error (Wails' default
+	// error marshaller).
+	if cause, marshalErr := json.Marshal(&err); marshalErr != nil || !strings.Contains(string(cause), `"refused":true`) {
+		t.Fatalf("the refusal reaches the window as %s, %v; want it marked refused", cause, marshalErr)
+	}
+	runner.mu.Lock()
+	capacity := runner.capacity
+	runner.mu.Unlock()
+	if settings, err := service.Get(ctx); err != nil || settings.MaxActiveJobs != 2 || capacity != 2 {
+		t.Fatalf("after refused saves the budget reads %d and the runner admits %d, %v; want both unchanged at two", settings.MaxActiveJobs, capacity, err)
+	}
 	for _, inside := range []int{1, 3, 4} {
 		if saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: inside, DefaultProfile: "auto"}); err != nil || saved.MaxActiveJobs != inside {
 			t.Fatalf("a budget of %d was not kept: %+v %v", inside, saved, err)
@@ -127,7 +148,7 @@ func TestSettingsStateTheEffectiveBudget(t *testing.T) {
 	runner2 := newJobRunner(nil, nil)
 	NewSettingsService(d, runner2)
 	runner2.mu.Lock()
-	capacity := runner2.capacity
+	capacity = runner2.capacity
 	runner2.mu.Unlock()
 	if capacity != maxActiveJobsCeiling {
 		t.Fatalf("a stored 16 seeded capacity %d at construction, want %d", capacity, maxActiveJobsCeiling)
