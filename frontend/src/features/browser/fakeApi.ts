@@ -844,7 +844,7 @@ export function newFakeApi(): Api {
       }
       if (job.type === "copy" && job.counters.overwritesRefused > 0) {
         job.state = "partial";
-        job.error = "1 overwrite refused: concurrent changes cannot be protected; context canceled";
+        job.error = "1 overwrite refused: each refused name was left as it was, and its record says why; context canceled";
       } else {
         job.state = "cancelled";
       }

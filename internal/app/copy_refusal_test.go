@@ -72,7 +72,7 @@ func TestCopyRefusalJobOutcomes(t *testing.T) {
 			if job.State != "partial" || job.Counters.OverwritesRefused != 1 || job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != copied || job.Counters.BytesCopied != 9*copied {
 				t.Fatalf("refusal lost its partial outcome or copied totals: %+v", job)
 			}
-			if !strings.Contains(job.Error, "1 overwrite refused") || !strings.Contains(job.Error, "concurrent changes cannot be protected") {
+			if !strings.Contains(job.Error, "1 overwrite refused") || !strings.Contains(job.Error, "its record says why") {
 				t.Errorf("refusal reason missing: %q", job.Error)
 			}
 			switch outcome {

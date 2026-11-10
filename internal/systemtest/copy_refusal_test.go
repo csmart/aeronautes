@@ -59,7 +59,7 @@ func TestCopyRefusesOverwritesRealSwift(t *testing.T) {
 	if job.State != "partial" || job.Counters.OverwritesRefused != 210 || job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != 2 || job.Counters.BytesCopied != 16 || job.Counters.ObjectsVerified != 3 || job.Counters.ObjectsFailed != 0 {
 		t.Fatalf("mixed Copy outcome: %+v", job)
 	}
-	if !strings.Contains(job.Error, "210 overwrites refused") || !strings.Contains(job.Error, "concurrent changes cannot be protected") {
+	if !strings.Contains(job.Error, "210 overwrites refused") || !strings.Contains(job.Error, "its record says why") {
 		t.Fatalf("refusal detail missing: %q", job.Error)
 	}
 	events, err := h.Audit.RecentFor(t.Context(), h.Primary.BookmarkID, 20)
