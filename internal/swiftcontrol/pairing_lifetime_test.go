@@ -59,9 +59,13 @@ func newPairingFixture(t *testing.T, change string, handle http.HandlerFunc) *pa
 	t.Cleanup(first.Close)
 	second := httptest.NewServer(storage)
 	t.Cleanup(second.Close)
-	f.urls = [2]string{first.URL + "/v1/AUTH_a", second.URL + "/v1/AUTH_b"}
-	if change == "account" {
-		f.urls[1] = first.URL + "/v1/AUTH_b"
+	// Every change keeps one account, because a session refuses a
+	// re-authentication that names another (ADR 0105): "origin" moves the
+	// host, as a VIP does, and "path" moves the prefix in front of the
+	// account on one host.
+	f.urls = [2]string{first.URL + "/v1/AUTH_a", second.URL + "/v1/AUTH_a"}
+	if change == "path" {
+		f.urls[1] = first.URL + "/alt/v1/AUTH_a"
 	}
 	advertised := f.urls
 	override := ""
@@ -156,7 +160,7 @@ func TestDirectTargetRefusesMissingSnapshot(t *testing.T) {
 }
 
 func TestDirectLibraryTargetKeepsPair(t *testing.T) {
-	for _, change := range []string{"origin", "account", "override"} {
+	for _, change := range []string{"origin", "path", "override"} {
 		t.Run(change, func(t *testing.T) {
 			f := newPairingFixture(t, change, nil)
 			ctx := context.Background()
@@ -179,7 +183,7 @@ func TestDirectLibraryTargetKeepsPair(t *testing.T) {
 }
 
 func TestLibraryPairingUnderConcurrentAuthentication(t *testing.T) {
-	for _, change := range []string{"origin", "account", "override"} {
+	for _, change := range []string{"origin", "path", "override"} {
 		t.Run(change, func(t *testing.T) {
 			f := newPairingFixture(t, change, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -284,7 +288,7 @@ func TestPreparedLibraryRequestSurvivesAuthentication(t *testing.T) {
 }
 
 func TestLibraryPutReplayKeepsPairAndBody(t *testing.T) {
-	for _, change := range []string{"origin", "account", "override"} {
+	for _, change := range []string{"origin", "path", "override"} {
 		t.Run(change, func(t *testing.T) {
 			const body = "fixture payload through a token rollover"
 			var received atomic.Int64
@@ -376,7 +380,7 @@ func TestLibraryLazyPagesReselectPair(t *testing.T) {
 }
 
 func TestLibraryStreamReopenReselectsPair(t *testing.T) {
-	f := newPairingFixture(t, "account", func(w http.ResponseWriter, r *http.Request) {
+	f := newPairingFixture(t, "path", func(w http.ResponseWriter, r *http.Request) {
 		body := "abcdef"
 		if r.Header.Get("Range") == "bytes=3-" {
 			body = body[3:]
@@ -404,4 +408,65 @@ func TestLibraryStreamReopenReselectsPair(t *testing.T) {
 		t.Fatalf("reopened body=%q: %v", data, err)
 	}
 	f.check(t, 2, 2)
+}
+
+// ADR 0105 decision 3: a session keeps the account it first resolved, because
+// a running job's stage claim is taken for that account and is never re-read.
+// A re-authentication that names another account is refused before its
+// credentials are published, so the session stays on the token and URL it had
+// and nothing of its can reach the other account; the same account on another
+// host, a VIP or an alias, is accepted as it always was.
+func TestV1ReauthenticationKeepsTheAccount(t *testing.T) {
+	for _, tc := range []struct {
+		name, first, second string
+		refused             bool
+	}{
+		{"the same account on another host", "", "http://127.0.0.2/v1/AUTH_one", false},
+		{"another account on the same host", "", "http://127.0.0.1/v1/AUTH_two", true},
+		// Swift names accounts by their exact bytes.
+		{"an account that differs only in case", "", "http://127.0.0.1/v1/AUTH_ONE", true},
+		{"an account that cannot be read", "", "http://127.0.0.1", true},
+		{"a URL with no account, given again", "http://127.0.0.1", "http://127.0.0.1", false},
+		{"a URL with no account, then another", "http://127.0.0.1", "http://127.0.0.2", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := tc.first
+			if first == "" {
+				first = "http://127.0.0.1/v1/AUTH_one"
+			}
+			session, err := New(Config{AuthURL: "http://127.0.0.1/auth", Username: "fixture", APIKey: "fixture"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var auths, storage atomic.Int32
+			session.conn.Transport = pairingRoundTrip(func(request *http.Request) (*http.Response, error) {
+				if request.URL.Path != "/auth" {
+					storage.Add(1)
+					return nil, errors.New("unexpected storage request")
+				}
+				url, token := first, "first-token"
+				if auths.Add(1) > 1 {
+					url, token = tc.second, "second-token"
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{
+					"X-Storage-Url": {url}, "X-Auth-Token": {token},
+				}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			})
+			if err := session.Authenticate(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			err = session.Authenticate(t.Context())
+			got := session.auth.snapshot()
+			if tc.refused {
+				if err == nil || got.storageURL != first || got.token != "first-token" {
+					t.Fatalf("a re-authentication onto %s was not refused: error=%v, session on %s", tc.second, err, got.storageURL)
+				}
+			} else if err != nil || got.storageURL != tc.second || got.token != "second-token" {
+				t.Fatalf("a re-authentication onto %s was not accepted: error=%v, session on %s", tc.second, err, got.storageURL)
+			}
+			if auths.Load() != 2 || storage.Load() != 0 {
+				t.Fatalf("auth/storage requests = %d/%d, want 2/0", auths.Load(), storage.Load())
+			}
+		})
+	}
 }

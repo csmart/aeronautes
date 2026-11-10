@@ -108,12 +108,12 @@ func TestCredentialsAndBulkDeleteRemainCoherentDuringWireReauth(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/auth/") {
 			n := generation.Add(1)
-			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/v1/AUTH_%d", r.Host, n))
+			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/gen%d/v1/AUTH_test", r.Host, n))
 			w.Header().Set("X-Auth-Token", fmt.Sprint(n))
 			w.Header().Set("X-Auth-Token-Expires", fmt.Sprint(baseExpiry+n))
 			return
 		}
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/AUTH_"+r.Header.Get("X-Auth-Token") {
+		if r.Method != http.MethodPost || r.URL.Path != "/gen"+r.Header.Get("X-Auth-Token")+"/v1/AUTH_test" {
 			t.Error("bulk request mixed a storage URL and token from different auth responses")
 			http.Error(w, "credential mismatch", http.StatusForbidden)
 			return
@@ -147,7 +147,7 @@ func TestCredentialsAndBulkDeleteRemainCoherentDuringWireReauth(t *testing.T) {
 			break
 		}
 		n, err := strconv.ParseInt(credentials.Token, 10, 64)
-		if err != nil || credentials.StorageURL != fmt.Sprintf("%s/v1/AUTH_%d", srv.URL, n) || credentials.Expires.Unix() != baseExpiry+n {
+		if err != nil || credentials.StorageURL != fmt.Sprintf("%s/gen%d/v1/AUTH_test", srv.URL, n) || credentials.Expires.Unix() != baseExpiry+n {
 			t.Error("credential fields came from different auth responses")
 			break
 		}

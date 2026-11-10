@@ -17,7 +17,7 @@ func TestSymlinkRetryUsesNewStorageURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/auth/") {
 			n := generation.Add(1)
-			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/v1/AUTH_%d", r.Host, n))
+			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/gen%d/v1/AUTH_test", r.Host, n))
 			w.Header().Set("X-Auth-Token", fmt.Sprint(n))
 			return
 		}
@@ -25,7 +25,7 @@ func TestSymlinkRetryUsesNewStorageURL(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.URL.Path != "/v1/AUTH_"+r.Header.Get("X-Auth-Token")+"/owned/link" {
+		if r.URL.Path != "/gen"+r.Header.Get("X-Auth-Token")+"/v1/AUTH_test/owned/link" {
 			t.Error("symlink retry combined an old URL with the new token")
 			w.WriteHeader(http.StatusForbidden)
 		}
@@ -76,11 +76,11 @@ func TestSymlinkCredentialsRemainCoherentDuringWireReauth(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/auth/") {
 			n := generation.Add(1)
-			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/v1/AUTH_%d", r.Host, n))
+			w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/gen%d/v1/AUTH_test", r.Host, n))
 			w.Header().Set("X-Auth-Token", fmt.Sprint(n))
 			return
 		}
-		if r.URL.Path != "/v1/AUTH_"+r.Header.Get("X-Auth-Token")+"/owned/link" {
+		if r.URL.Path != "/gen"+r.Header.Get("X-Auth-Token")+"/v1/AUTH_test/owned/link" {
 			t.Error("symlink request mixed credentials from different auth responses")
 			w.WriteHeader(http.StatusForbidden)
 			return

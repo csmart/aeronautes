@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -72,6 +73,15 @@ func (a *v1Auth) Response(_ context.Context, resp *http.Response) error {
 	}
 	if err := ValidateStorageURL(a.authURL, storageURL, a.tlsMode); err != nil {
 		return err
+	}
+	// Bind the account: once a storage URL is in use, a re-authentication
+	// that names a different account must not move this session's requests,
+	// or a running job's stage claim, onto it (ADR 0105 decision 3). Another
+	// host for the same account is a VIP or an alias and is accepted as
+	// before; Keystone binds the whole endpoint (authv3.go). A refusal
+	// leaves the session on its previous token and URL.
+	if bound := a.snapshot().storageURL; bound != "" && !SameAccount(storageURL, bound) {
+		return errors.New("re-authentication returned a different account than the one in use; refusing to switch accounts mid-session")
 	}
 	a.headers = resp.Header
 	a.expires = parseV1Expiry(resp.Header.Get("X-Auth-Token-Expires"), time.Now())
