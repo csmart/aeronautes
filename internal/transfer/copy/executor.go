@@ -928,7 +928,7 @@ func (e *Executor) nativeCopy(ctx context.Context, item plan.Item) (result execu
 func (e *Executor) refuseOverwrite(item plan.Item) error {
 	result := executionResult{Observation: Observation{Result: ResultRefused, Effect: EffectNotAttempted,
 		Diagnostic: ClassifyDiagnostic(StagePlanning, CodeUnsupported, nil)},
-		detail: "overwriting existing destinations is unavailable while concurrent changes cannot be protected"}
+		detail: "the destination already holds this name, and replacing it was not confirmed for this copy"}
 	result.addProblem(StageRecording, e.refusals.append(item.Name))
 	return e.observe(item.Name, result)
 }

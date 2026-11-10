@@ -605,7 +605,7 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 		if counters.OverwritesRefused == 1 {
 			count = "1 overwrite refused"
 		}
-		refusal := count + ": overwriting existing destinations is unavailable while concurrent changes cannot be protected"
+		refusal := count + ": each refused name was left as it was, and its record says why"
 		message = joinNotes(refusal, message)
 		auditSummary += " · " + count
 	}
