@@ -37,6 +37,44 @@ func folderFixture(t *testing.T) string {
 	return root
 }
 
+// ADR 0105 decision 5: a folder that holds a download's stage directory or one
+// of its partial files is uploaded without them, and they are counted and
+// named with the skipped entries.
+func TestWalkUploadDirectorySkipsThisApplicationsLocalStaging(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "incoming")
+	for rel, content := range map[string]string{
+		"report.pdf":                      "done",
+		".aeronautes-stage-1b2c/half.bin": "staged",
+		"sub/.aeronautes-part-0011aabb":   "partial",
+		"sub/.aeronautes-stagehand-notes": "an ordinary file with a similar name",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selection, err := WalkUploadDirectory(t.Context(), root, MaxDirectoryFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, source := range selection.Sources {
+		names = append(names, source.Name)
+	}
+	sort.Strings(names)
+	if !reflect.DeepEqual(names, []string{"incoming/report.pdf", "incoming/sub/.aeronautes-stagehand-notes"}) {
+		t.Errorf("sources = %q, want the two ordinary files", names)
+	}
+	skipped := append([]string(nil), selection.SkippedSample...)
+	sort.Strings(skipped)
+	if selection.Skipped != 2 || !reflect.DeepEqual(skipped, []string{".aeronautes-stage-1b2c", "sub/.aeronautes-part-0011aabb"}) {
+		t.Errorf("skipped = %d %q, want the stage directory and the partial file named", selection.Skipped, selection.SkippedSample)
+	}
+}
+
 // ADR 0103 decisions 2 and 3: the folder arrives as a folder, hidden files are
 // files, links are skipped and named, an empty directory is counted, and
 // nothing outside the tree is read.

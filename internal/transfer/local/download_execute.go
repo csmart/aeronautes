@@ -19,6 +19,10 @@ import (
 
 const downloadStagePrefix = ".aeronautes-stage-"
 
+// downloadPartPrefix names a native-route download's partial file, beside the
+// file it will become.
+const downloadPartPrefix = ".aeronautes-part-"
+
 const downloadEnginePathnameRefusal = "the selected directory's pathname no longer names it and the engine can only be given a pathname; engine items were not attempted"
 
 // downloadEngineUncontainedRefusal gates the engine route where the child
@@ -449,7 +453,7 @@ func downloadTemporaryPath(destDir string, item DownloadItem) (string, error) {
 	if _, err := rand.Read(token[:]); err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(filepath.Join(destDir, item.RelPath)), ".aeronautes-part-"+hex.EncodeToString(token[:])), nil
+	return filepath.Join(filepath.Dir(filepath.Join(destDir, item.RelPath)), downloadPartPrefix+hex.EncodeToString(token[:])), nil
 }
 
 func materializeDownloadDirectory(ctx context.Context, destination *DestinationRoot, rel string) downloadResult {

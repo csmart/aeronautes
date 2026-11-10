@@ -38,8 +38,9 @@ type DirectorySelection struct {
 	// walk reads in bounded chunks and never holds a directory whole to
 	// sort it, and nothing downstream depends on the order.
 	Sources []UploadSource
-	// Skipped counts links and other non-regular entries, which the walk
-	// never follows; SkippedSample names the first maxFailures of them.
+	// Skipped counts what the walk leaves out: links and other non-regular
+	// entries, which it never follows, and a download's own stage directory
+	// and partial files. SkippedSample names the first maxFailures of them.
 	Skipped       int
 	SkippedSample []string
 	// EmptyDirectories counts directories with no entry at all, which
@@ -160,6 +161,15 @@ func (w *folderWalk) descend(ctx context.Context, dir *os.Root, rel string) erro
 
 func (w *folderWalk) visit(ctx context.Context, parent *os.Root, rel string, entry fs.DirEntry) error {
 	childRel := path.Join(rel, entry.Name())
+	// A download keeps its stage directory and its partial files inside its
+	// destination until it ends. A folder that holds one is uploaded without
+	// them, disclosed with the other skipped entries: they are this
+	// application's own unfinished work, and with several jobs at once the
+	// download may still be writing them (ADR 0105 decision 5).
+	if strings.HasPrefix(entry.Name(), downloadStagePrefix) || strings.HasPrefix(entry.Name(), downloadPartPrefix) {
+		w.skip(childRel)
+		return nil
+	}
 	if (entry.IsDir() || entry.Type().IsRegular()) && !utf8.ValidString(entry.Name()) {
 		// The store holds only UTF-8 names, and a file left out for its name
 		// would be a silent hole in the folder, so the pick is refused with the
