@@ -111,6 +111,8 @@ func TestPickUploadDirectoryUploadsAFolderAsAFolder(t *testing.T) {
 	}
 	if !reflect.DeepEqual(kinds, []string{"skipped:photos/link", "empty-directories:photos"}) {
 		t.Errorf("disclosures = %q", kinds)
+	} else if detail := report.Problems[1].Detail; detail != "1 empty directory produces no object: the store has no directories" {
+		t.Errorf("empty-directory disclosure = %q", detail)
 	}
 
 	id, err := h.transfer.StartUpload(ctx, req)

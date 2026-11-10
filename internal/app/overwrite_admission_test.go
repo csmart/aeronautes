@@ -504,6 +504,10 @@ func TestAcknowledgedUploadRefusesAVersioningChangeDuringTheDialog(t *testing.T)
 			if c.withholds != "" && strings.Contains(record.Summary, c.withholds) {
 				t.Errorf("the record quotes %q: %q", c.withholds, record.Summary)
 			}
+			// The sentence is read by an operator: each observation is said once.
+			if strings.Contains(record.Summary, "reports the container reports") {
+				t.Errorf("the record stutters: %q", record.Summary)
+			}
 		})
 	}
 }
