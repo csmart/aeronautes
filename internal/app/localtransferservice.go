@@ -1307,7 +1307,8 @@ func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, job
 	// directories are the intended outcome and the item records already
 	// carry them, so this says nothing there.
 	if report.CreatedDirectories > 0 && state != jobs.StateComplete {
-		created := fmt.Sprintf("created %d directories inside the selected directory that were not there before", report.CreatedDirectories)
+		count := fmt.Sprintf("created %d directories inside the selected directory that were not there before", report.CreatedDirectories)
+		created := count
 		if len(report.CreatedDirectorySamples) > 0 {
 			created += " (" + strings.Join(report.CreatedDirectorySamples, ", ")
 			if int64(len(report.CreatedDirectorySamples)) < report.CreatedDirectories {
@@ -1315,7 +1316,14 @@ func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, job
 			}
 			created += ")"
 		}
-		out = append(out, disclosure{message: created, audit: created})
+		recorded := created
+		if audit.SummaryRefusal(recorded) != "" {
+			// A directory name can carry a word the audit store refuses, and the
+			// store would then withhold this job's whole terminal sentence; the
+			// record keeps the count and the job's own message keeps the names.
+			recorded = count + "; their names are withheld from this record"
+		}
+		out = append(out, disclosure{message: created, audit: recorded})
 	}
 	return out, state
 }

@@ -75,7 +75,9 @@ func TestCompletionAtomicity(t *testing.T) {
 				}
 			}
 			err = s.Finish(t.Context(), id, result, trail)
-			if fault == "control" {
+			// A summary the audit filter refuses costs the trail its sentence,
+			// never the job its final state, so that case completes like the control.
+			if fault == "control" || fault == "secret_audit" {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -90,13 +92,16 @@ func TestCompletionAtomicity(t *testing.T) {
 				if err != nil || len(events) != 1 || events[0].Resource != result.Audit.Resource || events[0].Result != result.Audit.Result {
 					t.Fatalf("audit/retention differs: %+v %v", events, err)
 				}
+				if strings.Contains(events[0].Summary, "synthetic") {
+					t.Fatalf("a refused summary was stored: %q", events[0].Summary)
+				}
 				return
 			}
 			if err == nil {
 				t.Fatal("completion fault was ignored")
 			}
 			visible := s.Available()
-			if visible == nil || !strings.Contains(visible.Error(), "changes may already have occurred") || strings.Contains(visible.Error(), "private") || strings.Contains(visible.Error(), "synthetic") {
+			if visible == nil || !strings.Contains(visible.Error(), "changes may already have occurred") || strings.Contains(visible.Error(), "private") {
 				t.Fatalf("unsafe diagnostic: %v", visible)
 			}
 			if _, err := s.Get(t.Context(), job.ID); err != visible {
