@@ -73,10 +73,18 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 				// ADR 0088: the two interruption facts are written in the
 				// transaction that already classifies the job, so the count
 				// this returns and the set the notice derives cannot disagree.
+				// A paused job is a running job parked between two units (ADR
+				// 0104). What this column answers is whether any request was
+				// made (ADR 0088), and for that it was running; the schema's
+				// set of interrupted states is left as it is.
+				overwritten := job.state
+				if overwritten == string(StatePaused) {
+					overwritten = string(StateRunning)
+				}
 				result, err := tx.ExecContext(ctx, `UPDATE jobs
 					SET state=?, finished_at=?, counters_json=?, error=?, interrupted_at=?, interrupted_state=?
 					WHERE id=?`,
-					string(StateFailed), now, job.counters, reason, now, job.state, job.id)
+					string(StateFailed), now, job.counters, reason, now, overwritten, job.id)
 				if err != nil {
 					return err
 				}
