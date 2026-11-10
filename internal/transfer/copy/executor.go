@@ -313,7 +313,7 @@ func New(cfg Config) (*Executor, error) {
 	return &Executor{
 		cfg:     cfg,
 		report:  &Report{OldManifests: map[string]string{}},
-		stage:   cfg.DstPrefix + ".aeronautes/stage/" + cfg.JobID + "/",
+		stage:   cfg.DstPrefix + rclone.StageNamespace + cfg.JobID + "/",
 		printed: map[rclone.SegmentPrefix]bool{},
 	}, nil
 }
@@ -343,6 +343,9 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 	}
 	if err := e.admitItem(item); err != nil {
 		return err
+	}
+	if rclone.InStageNamespace(e.cfg.DstPrefix + item.Name) {
+		return e.refuseStaging(item)
 	}
 	switch item.Verdict {
 	case plan.VerdictSame:
@@ -944,6 +947,21 @@ func (e *Executor) refuseOverwrite(item plan.Item) error {
 		detail: "the destination already holds this name, and replacing it was not confirmed for this copy"}
 	result.addProblem(StageRecording, e.refusals.append(item.Name))
 	return e.observe(item.Name, result)
+}
+
+// refuseStaging records an item whose destination name is in a staging area.
+// No route publishes there (ADR 0105 decision 3): the name is, or will be,
+// some job's unpublished copy, and a replacement of it would go on to reclaim
+// segments that job is still using. It is refused whichever job is running,
+// because a copy cannot know which names a later job will stage.
+//
+// It is recorded as a name that could not be carried, with the reason in the
+// job's own account of its failures. The refused result is kept for a
+// replacement nobody acknowledged, which is what the job would otherwise say
+// of this name.
+func (e *Executor) refuseStaging(item plan.Item) error {
+	return e.observe(item.Name, failed(EffectNotAttempted, StagePlanning, CodeUnsupported, "staging-area",
+		errors.New("the destination name is in this application's staging area ("+rclone.StageNamespace+"), which is not a destination")))
 }
 
 // Close removes only this executor's private local refusal record.

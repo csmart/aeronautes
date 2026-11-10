@@ -44,6 +44,38 @@ func TestPreflightSourcesTakeTheirNamesAsGiven(t *testing.T) {
 	}
 }
 
+// ADR 0105 decision 3: the staging namespace is not a destination. A name
+// there is, or will be, some job's unpublished copy, so the preflight rejects
+// it whether the selection or the destination prefix puts it there, including
+// one aimed at a running job's staged manifest; a name that only resembles the
+// namespace is an ordinary name.
+func TestPreflightRejectsANameInTheStagingNamespace(t *testing.T) {
+	s, _ := session(t)
+	dir := t.TempDir()
+	path := writeFile(t, dir, "file", "x")
+	for _, tc := range []struct {
+		prefix, name string
+		staged       bool
+	}{
+		{"", ".aeronautes/stage/1b2c/batch/file", true},
+		{"backup/", ".aeronautes/stage/1b2c/file", true},
+		{"backup/.aeronautes/stage/1b2c/", "file", true},
+		{"live/", "file", false},
+		{"", "x.aeronautes/stage/file", false},
+		{"", ".aeronautes/staged/file", false},
+	} {
+		report, err := PreflightUploadSources(t.Context(), s, "media", tc.prefix, []UploadSource{{Path: path, Name: tc.name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rejected := len(report.Problems) == 1 && report.Problems[0].Kind == "staging" && report.Problems[0].Reject && len(report.Items) == 0
+		admitted := len(report.Problems) == 0 && len(report.Items) == 1
+		if tc.staged && !rejected || !tc.staged && !admitted {
+			t.Errorf("%q + %q: items=%+v problems=%+v, want staged=%v", tc.prefix, tc.name, report.Items, report.Problems, tc.staged)
+		}
+	}
+}
+
 // ADR 0103 decision 4: two sources of one base name in different folders are
 // distinct items with distinct staging objects. The first group's engine run
 // fails after staging, so its stage is retained; the second group still runs,

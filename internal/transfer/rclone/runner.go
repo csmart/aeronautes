@@ -55,6 +55,18 @@ func checkPositionals(paths ...string) error {
 	return nil
 }
 
+// StageNamespace is the path every job stages under, beneath its destination
+// prefix: "<prefix>.aeronautes/stage/<job>/".
+const StageNamespace = ".aeronautes/stage/"
+
+// InStageNamespace reports whether an object name lies in a staging area: the
+// components ".aeronautes/stage/" at its start or after a "/". Such a name is,
+// or will be, some job's unpublished copy, so no transfer publishes there and
+// no deletion job sweeps an active one (ADR 0105 decision 3).
+func InStageNamespace(name string) bool {
+	return strings.HasPrefix(name, StageNamespace) || strings.Contains(name, "/"+StageNamespace)
+}
+
 // checkRemoteDestStaged mechanizes K-XFER-014 at the LAST boundary: a
 // REMOTE destination (our fixed remote names) must live under an
 // .aeronautes staging namespace — no caller, present or future, can

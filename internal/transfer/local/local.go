@@ -335,6 +335,15 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 			continue
 		}
 		name := prefix + source.Name
+		// The staging namespace is not a destination (ADR 0105 decision 3):
+		// a name there is, or will be, a job's unpublished copy, and an
+		// upload that replaced one would go on to reclaim its segments.
+		if rclone.InStageNamespace(name) {
+			candidates = append(candidates, uploadCandidate{path: path, name: name, problem: &Problem{
+				Name: name, Kind: "staging",
+				Detail: "the name is in this application's staging area (" + rclone.StageNamespace + "), which is not a destination", Reject: true}})
+			continue
+		}
 		info, err := os.Stat(path)
 		switch {
 		case err != nil:

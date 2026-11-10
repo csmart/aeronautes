@@ -225,6 +225,36 @@ func headDst(t *testing.T, w *world, name string) *swiftcontrol.ObjectDetail {
 	return d
 }
 
+// ADR 0105 decision 3: the staging namespace is not a destination. A source
+// that holds another job's stage is listed like any other, and the copy
+// refuses each item whose destination name would land in a staging area,
+// records it, creates nothing there and copies the rest.
+func TestCopyRefusesADestinationInTheStagingNamespace(t *testing.T) {
+	w := newWorld(t)
+	const staged = ".aeronautes/stage/0a1b/batch/part.bin"
+	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+	seed(w.srcMock, "media", staged, []byte("someone's stage"), nil)
+	engine := &fakeEngine{w: w, interruptAfter: -1}
+
+	report, err := newExecutor(t, w, engine).Run(context.Background(), []plan.Item{
+		{Name: staged, Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 15},
+		{Name: "a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The refusal is a failure of that one name with its reason, and not an
+	// overwrite refusal, which is what the job would otherwise report.
+	if report.Copied != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 1 ||
+		report.Failures[0].Name != staged || !strings.Contains(report.Failures[0].Err, "staging area") {
+		t.Fatalf("report = %+v, want the ordinary name copied and the staged one refused with its reason", report)
+	}
+	if _, err := w.dst.ObjectDetail(context.Background(), "backup", staged); err == nil {
+		t.Error("the copy published into the staging namespace")
+	}
+	headDst(t, w, "a.txt")
+}
+
 func TestPlannedNewBatchFinalizes(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
