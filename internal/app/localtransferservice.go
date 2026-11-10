@@ -500,7 +500,7 @@ func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection)
 	if walk.EmptyDirectories > 0 {
 		report.Problems = append(report.Problems, local.Problem{
 			Name: walk.Folder, Kind: "empty-directories",
-			Detail: fmt.Sprintf("%d empty %s produce no object: the store has no directories", walk.EmptyDirectories, plural(walk.EmptyDirectories, "directory", "directories"))})
+			Detail: fmt.Sprintf("%d empty %s no object: the store has no directories", walk.EmptyDirectories, plural(walk.EmptyDirectories, "directory produces", "directories produce"))})
 	}
 }
 
@@ -634,7 +634,7 @@ func (s *TransferService) versioningUnchanged(live, record context.Context, book
 	compose := func(withArchive bool) string {
 		found := "the container's versioning could not be read again before publishing"
 		if err == nil {
-			found = "the container now reports " + describeVersioning(now, withArchive)
+			found = "the read before publishing found: " + describeVersioning(now, withArchive)
 		}
 		return "replacement refused at the last observation: the question said " +
 			describeVersioning(authorised, withArchive) + ", and " + found
