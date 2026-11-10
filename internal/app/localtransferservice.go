@@ -482,7 +482,7 @@ func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection)
 	for _, rel := range walk.SkippedSample {
 		report.Problems = append(report.Problems, local.Problem{
 			Name: walk.Folder + "/" + rel, Kind: "skipped",
-			Detail: "a link or other special entry, which a folder upload never follows; not uploaded"})
+			Detail: "a link, another special entry or a download's own staging, which a folder upload leaves out; not uploaded"})
 	}
 	if walk.Skipped > len(walk.SkippedSample) {
 		report.Problems = append(report.Problems, local.Problem{
