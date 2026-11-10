@@ -19,7 +19,7 @@ function job(type: string, state = "running", counters: Partial<JobDTO["counters
     id: "presentation-job", type, state, source: "source/scope/", destination: "target/scope/",
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "2026-09-12T00:00:00Z",
     startedAt: "2026-09-12T00:00:01Z", finishedAt: state === "running" ? "" : "2026-09-12T00:00:09Z",
-    engine: "native", settings: '{"transfers":2,"checkers":4}', error: "", recoveryRecords: 0,
+    engine: "native", settings: '{"transfers":2,"checkers":4}', error: "", recoveryRecords: 0, pause: "",
     counters: {
       objectsPlanned: 10, objectsCopied: 3, objectsVerified: 0, objectsFailed: 0,
       bytesPlanned: 80, bytesCopied: 24, overwrites: 0, overwritesRefused: 0,

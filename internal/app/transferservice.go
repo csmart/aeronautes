@@ -834,6 +834,11 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 			finish(jobs.StatePartial, fmt.Sprintf("execution failed (example: %s: %s); %s", report.Failures[0].Name, report.Failures[0].Err, planErr.Error()))
 		} else if report.Copied > 0 {
 			finish(jobs.StatePartial, planErr.Error())
+		} else if n := len(report.Conflicts); n > 0 {
+			// A name that was refused for a conflict is an outcome the run
+			// holds beside the cancellation, so the job is partial even
+			// when nothing was copied (ADR 0025).
+			finish(jobs.StatePartial, fmt.Sprintf("%d conflicts (destination changed externally); %s", n, planErr.Error()))
 		} else if errors.Is(planErr, context.Canceled) {
 			message := ""
 			if report.OverwritesRefused > 0 {
@@ -926,6 +931,41 @@ func (s *TransferService) CancelJob(ctx context.Context, jobID string) error {
 	return nil
 }
 
+// PauseJob asks an upload, a download or a copy to pause at its next unit
+// boundary (ADR 0104): the unit in hand finishes and is recorded, nothing is
+// killed, and the job is then paused until it is resumed or cancelled. A
+// deletion job is not paused, and neither is a job that is finishing.
+func (s *TransferService) PauseJob(ctx context.Context, jobID string) error {
+	job, err := s.jobs.Get(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	switch job.Type {
+	case jobs.TypeUpload, jobs.TypeDownload, jobs.TypeCopy:
+	default:
+		return fmt.Errorf("job %s cannot be paused: only an upload, a download or a copy pauses", jobID)
+	}
+	switch job.State {
+	case jobs.StateQueued, jobs.StatePlanning, jobs.StateRunning:
+	default:
+		return fmt.Errorf("job %s is %s and cannot be paused", jobID, job.State)
+	}
+	if !s.runner.requestPause(jobID) {
+		return fmt.Errorf("job %s is not running in this process", jobID)
+	}
+	return nil
+}
+
+// ResumeJob withdraws a pause: a job that has not reached its boundary
+// carries on, and a paused one waits for a slot and runs its next unit.
+// Nothing resumes a job this process is not holding.
+func (s *TransferService) ResumeJob(ctx context.Context, jobID string) error {
+	if !s.runner.requestResume(jobID) {
+		return fmt.Errorf("job %s is not paused in this process and cannot be resumed", jobID)
+	}
+	return nil
+}
+
 func (s *TransferService) record(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result) {
 	if bookmarkID == "" {
 		bookmarkID = s.connections.ActiveBookmarkID()
@@ -951,16 +991,38 @@ type JobDTO struct {
 	// Settings is the §45 effective-configuration JSON ("" when none).
 	Settings        string `json:"settings"`
 	RecoveryRecords int64  `json:"recoveryRecords"`
+	// Pause is what is pending on the job beside its state (ADR 0104):
+	// "pausing" while a pause waits for the unit in hand to finish,
+	// "resuming" while a resumed job waits for a slot, and "" otherwise.
+	Pause string `json:"pause"`
 }
 
 // JobService is the read-only §47 drawer surface.
 type JobService struct {
 	jobs *jobs.Store
+	// runner knows what is pending on a job that its stored state does not
+	// say. It is nil for a service built only to read stored jobs.
+	runner *jobRunner
 }
 
-// NewJobService builds the service.
+// NewJobService builds the service over stored jobs alone.
 func NewJobService(jobStore *jobs.Store) *JobService {
 	return &JobService{jobs: jobStore}
+}
+
+// NewJobServiceWithRunner builds the service the shell binds: it also reports
+// a pause or a resume the running job has not yet reached.
+func NewJobServiceWithRunner(jobStore *jobs.Store, runner *jobRunner) *JobService {
+	return &JobService{jobs: jobStore, runner: runner}
+}
+
+// dto is one job as the drawer shows it.
+func (s *JobService) dto(j jobs.Job) JobDTO {
+	out := jobDTO(j)
+	if s.runner != nil {
+		out.Pause = s.runner.pauseStatus(j.ID)
+	}
+	return out
 }
 
 type RecoveryStatusDTO struct {
@@ -987,7 +1049,7 @@ func (s *JobService) List(ctx context.Context, bookmarkID string, activeOnly boo
 	}
 	out := make([]JobDTO, 0, len(list))
 	for _, j := range list {
-		out = append(out, jobDTO(j))
+		out = append(out, s.dto(j))
 	}
 	return out, nil
 }
@@ -998,7 +1060,7 @@ func (s *JobService) Get(ctx context.Context, bookmarkID, jobID string) (*JobDTO
 	if err != nil {
 		return nil, err
 	}
-	dto := jobDTO(j)
+	dto := s.dto(j)
 	return &dto, nil
 }
 

@@ -117,6 +117,9 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"MutateService.UpdateTempURLKey": true,
 		"SettingsService.Get":            true, "SettingsService.Set": true,
 		"TransferService.CancelJob": true, "TransferService.PickDownloadDir": true,
+		// Pause and resume (ADR 0104) control the kept transfers, as cancel
+		// does, and are kept with them.
+		"TransferService.PauseJob": true, "TransferService.ResumeJob": true,
 		"TransferService.PreflightDownload": true, "TransferService.StartDownload": true,
 	}
 	var unclassified, both []string
@@ -169,6 +172,10 @@ func TestKeptActionsAreNotRefused(t *testing.T) {
 		"MutateService.DeleteObject",
 		"DeleteService.StartSelectedDelete",
 		"TransferService.CancelJob",
+		// Pause and resume (ADR 0104) are controls on the kept transfers,
+		// as cancel is.
+		"TransferService.PauseJob",
+		"TransferService.ResumeJob",
 		"MutateService.UpdateObjectMetadata",
 		"MutateService.UpdateContainer",
 		"MutateService.UpdateAccountMetadata",

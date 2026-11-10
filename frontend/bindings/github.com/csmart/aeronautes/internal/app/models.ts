@@ -865,6 +865,13 @@ export interface JobDTO {
      */
     "settings": string;
     "recoveryRecords": number;
+
+    /**
+     * Pause is what is pending on the job beside its state (ADR 0104):
+     * "pausing" while a pause waits for the unit in hand to finish,
+     * "resuming" while a resumed job waits for a slot, and "" otherwise.
+     */
+    "pause": string;
 }
 
 export interface JobHistoryDTO {

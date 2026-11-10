@@ -141,7 +141,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 		Mutate:    app.NewMutateService(connections, auditStore, ev),
 		Transfer:  transfer,
 		Delete:    app.NewDeleteService(connections, jobStore, runner, ev),
-		Jobs:      app.NewJobService(jobStore),
+		Jobs:      app.NewJobServiceWithRunner(jobStore, runner),
 		Audit:     app.NewAuditService(auditStore),
 		Find:      app.NewFindService(connections),
 		Settings:  settings,

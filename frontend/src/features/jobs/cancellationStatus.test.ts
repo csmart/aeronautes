@@ -32,7 +32,7 @@ function job(id = "job-a", state = "running"): JobDTO {
   return {
     id, type: "copy", state, source: "source/file", destination: "dest/file",
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
-    engine: "native", settings: "", error: "", recoveryRecords: 0,
+    engine: "native", settings: "", error: "", recoveryRecords: 0, pause: "",
     counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
       bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0,
       nativeRouted: 0, objectsDeleted: 0 },

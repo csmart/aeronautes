@@ -24,6 +24,9 @@ func downloadItemIdentity(req DownloadRequestDTO, root string, item local.Downlo
 
 func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string, req DownloadRequestDTO, root string) *local.DownloadRecorder {
 	return &local.DownloadRecorder{
+		Pause: func(live context.Context) error {
+			return s.runner.checkpoint(live, jobID, req.BookmarkID)
+		},
 		Admit: func(admission local.DownloadAdmission) error {
 			identity, err := downloadItemIdentity(req, root, admission.Item)
 			if err != nil {

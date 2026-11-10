@@ -26,7 +26,7 @@ it.each([undefined, false, true])("qualifies deletion counters and retains histo
   const job: JobDTO = {
     id: "delete-accounting", type: "delete_container", state: "partial", source: "selected/", destination: "(deleted)",
     sourceBookmarkId: "a", destBookmarkId: "", createdAt: "2000-01-01T00:00:00Z", startedAt: "", finishedAt: "",
-    engine: "native", settings: "", recoveryRecords: 0,
+    engine: "native", settings: "", recoveryRecords: 0, pause: "",
     error: "Deletion stopped; inspect retained admitted-attempt evidence at the recorded path.",
     counters: { objectsPlanned: 10, objectsCopied: 2, objectsVerified: 2, objectsFailed: 3,
       bytesPlanned: 100, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0,
@@ -68,7 +68,7 @@ it.each([false, true])("shows unavailable status over a stale active count (%s)"
   if (stale) {
     browser.jobs.list = [{ id: "stale", state: "running", type: "upload", source: "local", destination: "dest/",
       sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
-      engine: "rclone+native", settings: "", error: "", recoveryRecords: 1,
+      engine: "rclone+native", settings: "", error: "", recoveryRecords: 1, pause: "",
       counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
         bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
     }];
@@ -89,7 +89,7 @@ it("shows refused overwrites separately from copied and failed objects", async (
   const job: JobDTO = {
     id: "partial", type: "copy", state: "partial", source: "source/", destination: "dest/",
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
-    engine: "native", settings: "", error: "261 overwrites refused; 1 unverified", recoveryRecords: 1,
+    engine: "native", settings: "", error: "261 overwrites refused; 1 unverified", recoveryRecords: 1, pause: "",
     counters: { objectsPlanned: 263, objectsCopied: 2, objectsVerified: 1, objectsFailed: 1,
       bytesPlanned: 1000, bytesCopied: 16, overwrites: 0, overwritesRefused: 261, nativeRouted: 1, objectsDeleted: 0 },
   };
@@ -107,7 +107,7 @@ it("shows global and per-job retained records without changing a completed resul
   const job: JobDTO = {
     id: "finished", type: "copy", state: "complete", source: "source/file", destination: "dest/file",
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
-    engine: "native", settings: "", error: "", recoveryRecords: 3,
+    engine: "native", settings: "", error: "", recoveryRecords: 3, pause: "",
     counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
       bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 1, objectsDeleted: 0 },
   };
@@ -129,7 +129,7 @@ it("shows upload cleanup issues without inventing a failed transfer", async () =
   const job: JobDTO = {
     id: "upload", type: "upload", state: "partial", source: "1 local file", destination: "dest/live/",
     sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
-    engine: "rclone+native", settings: "", recoveryRecords: 4,
+    engine: "rclone+native", settings: "", recoveryRecords: 4, pause: "",
     error: "1 post-commit issue (first: live/file: staging-cleanup: delete staging object failed)",
     counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
       bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },

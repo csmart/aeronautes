@@ -829,7 +829,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
-        recoveryRecords: 0,
+        recoveryRecords: 0, pause: "",
         counters: {
           objectsPlanned: 5,
           objectsCopied: 2,
@@ -916,7 +916,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
-        recoveryRecords: 0,
+        recoveryRecords: 0, pause: "",
         counters: {
           objectsPlanned: paths.length,
           objectsCopied: 0,
@@ -960,7 +960,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "rclone+native",
         settings: "",
-        recoveryRecords: 0,
+        recoveryRecords: 0, pause: "",
         counters: {
           objectsPlanned: 1,
           objectsCopied: 0,
@@ -1004,7 +1004,7 @@ export function newFakeApi(): Api {
         finishedAt: "",
         engine: "native",
         settings: "",
-        recoveryRecords: 0,
+        recoveryRecords: 0, pause: "",
         counters: {
           objectsPlanned: 42,
           objectsCopied: 0,
@@ -1044,7 +1044,7 @@ export function newFakeApi(): Api {
       jobs.push({
         id, type: "delete_selected", state: "complete", source: req.container, destination: "(deleted)",
         sourceBookmarkId: req.scope.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
-        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0,
+        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0, pause: "",
         counters: { objectsPlanned: members.length, objectsCopied: members.length, objectsVerified: 0, objectsFailed: 0,
           bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: members.length },
         error: "",
@@ -1129,7 +1129,7 @@ export function newFakeApi(): Api {
       jobs.push({
         id, type: "delete_segments", state: "complete", source: `${req.container}/${req.name}`, destination: "(manifest + segments)",
         sourceBookmarkId: req.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
-        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0,
+        startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0, pause: "",
         counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0,
           bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 },
         error: "",
