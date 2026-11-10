@@ -341,3 +341,70 @@ it("keeps showing the last observed setting until a save is acknowledged", async
   reply.resolve({ ...original, reclaimReplacedFragments: false });
   await vi.waitFor(() => expect(reclaimBox()!.checked).toBe(false));
 });
+
+function numberInput(label: string): HTMLInputElement | null {
+  return [...document.querySelectorAll("label")].find((node) =>
+    node.querySelector("span")?.textContent?.trim() === label)?.querySelector("input") ?? null;
+}
+
+function statusOf(input: HTMLInputElement): string {
+  return document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent?.trim() ?? "";
+}
+
+// The four numeric settings are one control written once. Each saves its own
+// field and nothing else, says what the saved value means, and shows the
+// service's refusal beside itself while it goes on showing what was last read.
+it.each([
+  ["Download ceiling", "downloadObjectCeiling", 12_000, "ceiling 12,000 objects"],
+  ["Browser retention", "browserRetentionCeiling", 50_000, "keeps 50,000 rows"],
+  ["Queue depth", "maxQueuedJobs", 32, "32 waiting at most"],
+  ["Connection cap", "maxConnsPerHost", 8, "8 connections per host on the next connect"],
+] as const)("saves %s as its own field and shows a refusal beside it", async (label, field, value, sentence) => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(numberInput(label)).not.toBeNull());
+  const input = numberInput(label)!;
+  input.value = String(value);
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => expect(statusOf(input)).toBe(sentence));
+  expect(api.saveAppSettings).toHaveBeenCalledExactlyOnceWith({ ...original, [field]: value });
+
+  // Above every setting's range, so the product refuses it as the stub does.
+  api.saveAppSettings = vi.fn(async () => { throw settingsRefusal(`${label} out of range`); });
+  input.value = "999999999";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => expect(statusOf(input)).toBe(`${label} out of range`));
+  expect(input.value).toBe(String(value));
+
+  // A number that is not whole is not sent: the bridge would refuse to
+  // decode it, and that refusal looks like a lost reply.
+  input.value = "1.5";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  flushSync();
+  expect(statusOf(input)).toBe(`${label} takes a whole number`);
+  expect(api.saveAppSettings).toHaveBeenCalledTimes(1);
+  expect(input.value).toBe(String(value));
+});
+
+// A lost reply to another setting's save leaves every control waiting for an
+// explicit read, as one for the budget does, and a reopened drawer does not
+// make that read on its own.
+it("treats a lost reply to another setting like a lost budget reply", async () => {
+  const { api, browser } = fixture();
+  await show(browser);
+  await vi.waitFor(() => expect(numberInput("Queue depth")).not.toBeNull());
+  api.saveAppSettings = vi.fn(async () => { throw new Error("owned lost reply"); });
+  const input = numberInput("Queue depth")!;
+  input.value = "32";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => expect(browser.settings.status).toBe("unconfirmed"));
+  flushSync();
+  expect(feedback()).toContain("Refresh settings before another change");
+  expect(select()?.disabled).toBe(true);
+  expect(select()?.value, "BUDGET-UNTOUCHED").toBe("2");
+  await unmount(drawer!);
+  drawer = null;
+  await show(browser);
+  expect(api.appSettings, "OTHER-SETTING-EXPLICIT-READ").toHaveBeenCalledTimes(1);
+  expect(browser.settings.status).toBe("unconfirmed");
+});

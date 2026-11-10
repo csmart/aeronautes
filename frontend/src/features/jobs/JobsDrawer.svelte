@@ -119,10 +119,11 @@
     if (planned <= 0 || !isActive(job) || job.counters.deletionAccountingIncomplete) {
       return null;
     }
-    // Operation-specific numerators: a delete job's progress is its
-    // deletions, not a repurposed copied counter.
+    // A mirror copies and deletes, so its bar follows whichever count is
+    // further along. A deletion's copied counter is already its settled
+    // members (see isDeletionFamily), which is the progress its bar shows.
     const done =
-      job.type === "delete" || job.type === "mirror"
+      job.type === "mirror"
         ? Math.max(job.counters.objectsCopied, job.counters.objectsDeleted)
         : job.counters.objectsCopied;
     return Math.min(1, done / planned);
@@ -270,32 +271,53 @@
     return `~${Math.round(seconds / 60)}m`;
   }
 
-  // The download selection ceiling (ADR 0072): refused by the backend
-  // outside 1,000..5,000,000 rather than clamped, so the control shows the
-  // last observed value until a save is acknowledged.
-  const ceilingValue = $derived(String(browser.settings.document?.downloadObjectCeiling ?? ""));
-  let ceilingError: string | null = $state(null);
-  async function saveCeiling(value: number) {
-    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
-    ceilingError = null;
-    try {
-      await browser.settings.save({ ...browser.settings.document, downloadObjectCeiling: value });
-    } catch (err) {
-      ceilingError = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  // The browser retention ceiling and the queue depth (ADR 0074 decisions
-  // 1 and 2) take the ceiling's treatment: the backend refuses a value
-  // outside the range rather than clamping it.
-  const retentionValue = $derived(String(browser.settings.document?.browserRetentionCeiling ?? ""));
-  let retentionError: string | null = $state(null);
-  const queueDepthValue = $derived(String(browser.settings.document?.maxQueuedJobs ?? ""));
-  let queueDepthError: string | null = $state(null);
-  // The native client's per-host connection cap (ADR 0074 decision 4)
-  // applies to sessions opened after the save.
-  const connectionCapValue = $derived(String(browser.settings.document?.maxConnsPerHost ?? ""));
-  let connectionCapError: string | null = $state(null);
+  // The numeric settings share one treatment: the service refuses a value
+  // outside the range rather than clamping it, so each control shows the last
+  // observed value until a save is acknowledged, and a refusal beside itself.
+  type BoundedSetting = {
+    field: "downloadObjectCeiling" | "browserRetentionCeiling" | "maxQueuedJobs" | "maxConnsPerHost";
+    /** Names the control's status element. */
+    slug: string;
+    label: string;
+    title: string;
+    min: number;
+    max: number;
+    step: number;
+    /** What the observed value means, in the operator's terms. */
+    says: (value: string) => string;
+  };
+  const BOUNDED_SETTINGS: BoundedSetting[] = [
+    {
+      // ADR 0072.
+      field: "downloadObjectCeiling", slug: "ceiling", label: "Download ceiling",
+      title: "the most objects one download selection may hold; a wider prefix is refused rather than cut short (1,000 to 5,000,000)",
+      min: 1000, max: 5_000_000, step: 1000,
+      says: (value) => `ceiling ${value} objects`,
+    },
+    {
+      // ADR 0074 decision 1.
+      field: "browserRetentionCeiling", slug: "retention", label: "Browser retention",
+      title: "the most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000)",
+      min: 1000, max: 5_000_000, step: 1000,
+      says: (value) => `keeps ${value} rows`,
+    },
+    {
+      // ADR 0074 decision 2.
+      field: "maxQueuedJobs", slug: "queue-depth", label: "Queue depth",
+      title: "the most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000)",
+      min: 1, max: 1000, step: 1,
+      says: (value) => `${value} waiting at most`,
+    },
+    {
+      // ADR 0074 decision 4: the native client's cap applies to sessions
+      // opened after the save.
+      field: "maxConnsPerHost", slug: "connection-cap", label: "Connection cap",
+      title: "the most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound; applies to sessions opened after the save (1 to 256)",
+      min: 1, max: 256, step: 1,
+      says: (value) => `${value} connections per host on the next connect`,
+    },
+  ];
+  let boundedErrors: Partial<Record<BoundedSetting["field"], string | null>> = $state({});
   // Whether an acknowledged overwrite of a large object removes the segment
   // objects its manifest named once the replacement verifies (ADR 0081
   // decision 5). Defaults to removing them, which is what rclone's own
@@ -553,90 +575,37 @@
             <span class="budget-note" id={`${id}-budget-note`}>
               each job brings its own engine settings, so a profile's transfers and limits apply per job, not in total
             </span>
-            <label class="filter" title="the most objects one download selection may hold; a wider prefix is refused rather than cut short (1,000 to 5,000,000)">
-              <span>Download ceiling</span>
-              <input
-                class="ceiling num"
-                type="number"
-                min="1000"
-                max="5000000"
-                step="1000"
-                value={ceilingValue}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-ceiling-status`}
-                onchange={(e) => {
-                  const value = Number(e.currentTarget.value);
-                  e.currentTarget.value = ceilingValue;
-                  void saveCeiling(value);
-                }}
-              />
-            </label>
-            <span class="ceiling-status" id={`${id}-ceiling-status`} role="status">
-              {#if ceilingError}{ceilingError}{:else if browser.settings.document}ceiling {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects{/if}
-            </span>
-            <label class="filter" title="the most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000)">
-              <span>Browser retention</span>
-              <input
-                class="ceiling retention num"
-                type="number"
-                min="1000"
-                max="5000000"
-                step="1000"
-                value={retentionValue}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-retention-status`}
-                onchange={(e) => {
-                  const value = Number(e.currentTarget.value);
-                  e.currentTarget.value = retentionValue;
-                  void saveBound({ browserRetentionCeiling: value }, (message) => (retentionError = message));
-                }}
-              />
-            </label>
-            <span class="ceiling-status" id={`${id}-retention-status`} role="status">
-              {#if retentionError}{retentionError}{:else if browser.settings.document}keeps {browser.settings.document.browserRetentionCeiling.toLocaleString("en-US")} rows{/if}
-            </span>
-            <label class="filter" title="the most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000)">
-              <span>Queue depth</span>
-              <input
-                class="ceiling queue-depth num"
-                type="number"
-                min="1"
-                max="1000"
-                step="1"
-                value={queueDepthValue}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-queue-depth-status`}
-                onchange={(e) => {
-                  const value = Number(e.currentTarget.value);
-                  e.currentTarget.value = queueDepthValue;
-                  void saveBound({ maxQueuedJobs: value }, (message) => (queueDepthError = message));
-                }}
-              />
-            </label>
-            <span class="ceiling-status" id={`${id}-queue-depth-status`} role="status">
-              {#if queueDepthError}{queueDepthError}{:else if browser.settings.document}{browser.settings.document.maxQueuedJobs.toLocaleString("en-US")} waiting at most{/if}
-            </span>
-            <label class="filter" title="the most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound; applies to sessions opened after the save (1 to 256)">
-              <span>Connection cap</span>
-              <input
-                class="ceiling connection-cap num"
-                type="number"
-                min="1"
-                max="256"
-                step="1"
-                value={connectionCapValue}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-connection-cap-status`}
-                onchange={(e) => {
-                  const value = Number(e.currentTarget.value);
-                  e.currentTarget.value = connectionCapValue;
-                  void saveBound({ maxConnsPerHost: value }, (message) => (connectionCapError = message));
-                }}
-              />
-            </label>
-            <span class="ceiling-status" id={`${id}-connection-cap-status`} role="status">
-              {#if connectionCapError}{connectionCapError}{:else if browser.settings.document}{browser.settings.document.maxConnsPerHost.toLocaleString("en-US")} connections per host on the next connect{/if}
-            </span>
+            {#each BOUNDED_SETTINGS as setting (setting.field)}
+              {@const observed = browser.settings.document[setting.field]}
+              <label class="filter" title={setting.title}>
+                <span>{setting.label}</span>
+                <input
+                  class="ceiling num"
+                  type="number"
+                  min={setting.min}
+                  max={setting.max}
+                  step={setting.step}
+                  value={String(observed)}
+                  disabled={!browser.settings.canSave}
+                  aria-describedby={`${id}-${setting.slug}-status`}
+                  onchange={(e) => {
+                    const value = Number(e.currentTarget.value);
+                    e.currentTarget.value = String(observed);
+                    // The service takes whole numbers. Anything else would
+                    // fail the bridge's decoding, which the window cannot
+                    // tell from a lost reply, so it is not sent.
+                    if (!Number.isInteger(value)) {
+                      boundedErrors[setting.field] = `${setting.label} takes a whole number`;
+                      return;
+                    }
+                    void saveBound({ [setting.field]: value }, (message) => (boundedErrors[setting.field] = message));
+                  }}
+                />
+              </label>
+              <span class="ceiling-status" id={`${id}-${setting.slug}-status`} role="status">
+                {boundedErrors[setting.field] || setting.says(observed.toLocaleString("en-US"))}
+              </span>
+            {/each}
             <label class="filter" title="when an acknowledged overwrite replaces a large object, remove the segment objects its manifest named once the replacement verifies; off keeps them, and a container that keeps versions keeps them either way">
               <span>Reclaim replaced segments</span>
               <input
