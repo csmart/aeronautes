@@ -601,6 +601,36 @@ describe("folder upload", () => {
     expect(f.root.textContent).not.toContain("Folder photos");
   });
 
+  // ADR 0103 decision 6: what the walk left out comes back in the report as
+  // rows that reject nothing, so they render among the warnings, the count of
+  // those not named included, and the upload can still start.
+  it("renders what the walk left out among the warnings and still starts", async () => {
+    const f = show("upload");
+    f.chooseFolder();
+    f.folders[0].resolve({ token: "folder-0", files: ["photos/a.txt"], folder: "photos", skipped: 3, skippedSample: ["x", "sub/y"], emptyDirectories: 1 });
+    await settle();
+    const skipped = "a link or other special entry, which a folder upload never follows; not uploaded";
+    f.uploads[0].resolve({
+      items: [{ path: "", name: "selected/photos/a.txt", size: 5, route: "rclone" }], totalBytes: 5, largeObjectsAsDlo: false,
+      problems: [
+        { name: "photos/x", kind: "skipped", detail: skipped, reject: false },
+        { name: "photos/sub/y", kind: "skipped", detail: skipped, reject: false },
+        { name: "photos", kind: "skipped", detail: "3 entries were skipped in all; the first 2 are named above", reject: false },
+        { name: "photos", kind: "empty-directories", detail: "1 empty directory produces no object: the store has no directories", reject: false },
+      ],
+    });
+    await settle();
+    const rows = [...f.root.querySelectorAll(".warn-row")].map((row) => row.textContent!.replace(/\s+/g, " ").trim());
+    expect(rows).toEqual([
+      `skipped photos/x ${skipped}`,
+      `skipped photos/sub/y ${skipped}`,
+      "skipped photos 3 entries were skipped in all; the first 2 are named above",
+      "empty-directories photos 1 empty directory produces no object: the store has no directories",
+    ]);
+    expect(f.root.textContent).not.toContain("Rejected");
+    expect(f.startButton()?.disabled).toBe(false);
+  });
+
   it("shows a folder that holds nothing to upload and starts nothing", async () => {
     const f = show("upload");
     f.chooseFolder();
