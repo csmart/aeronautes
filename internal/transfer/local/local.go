@@ -162,8 +162,8 @@ const livenessListingFloor = 2
 //     them for certain, while another page settles them only if they happen to
 //     be in it. That bounds the whole resolution at about twice the selection
 //     even against a server that answers one row at a time, and it costs two
-//     requests whenever the prefix fits in a response or two — which is the
-//     ordinary case.
+//     requests whenever the directory it lists fits in a response or two —
+//     which is the ordinary case.
 //   - Nothing is concluded from the SHAPE of a page. A full one does not prove
 //     another follows and a short one does not prove the listing is finished
 //     (ADR 0021); only the empty page the iterator consumes means exhaustion.
@@ -211,15 +211,20 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 	if len(wanted) > livenessListingFloor {
 		exhausted = true
 		spent := 0
-		// Deep, which is the stream jobs consume. It is not load-bearing for
-		// matching today, because every candidate name is the prefix plus one
-		// path base and so has no further slash, which the delimiter view
-		// would return as a direct child anyway. It is the right default all
-		// the same: a selection that ever preserved directory structure would
-		// produce names the delimiter view groups into rows that name no
-		// object, and this would then silently find no collisions.
+		// A folder pick's names all sit under the folder, so the pass lists
+		// the tightest directory that holds every candidate. Listing the
+		// request's prefix instead would read whatever else it holds, which
+		// can be the whole container, before the budget below gave up.
+		scope := prefix
+		if common := commonDirectory(names); strings.HasPrefix(common, prefix) {
+			scope = common
+		}
+		// Deep, which is the stream jobs consume, and load-bearing since the
+		// folder pick: its names carry further slashes, which the delimiter
+		// view groups into rows that name no object, and this would then
+		// silently find no collisions.
 		for page, err := range dst.ObjectPages(ctx, container, swiftcontrol.ObjectListOptions{
-			Prefix: prefix, PageSize: listingPageSize, Deep: true}) {
+			Prefix: scope, PageSize: listingPageSize, Deep: true}) {
 			if err != nil {
 				// A listing that stopped says nothing about the names it never
 				// reached, and treating those as free would admit a
@@ -267,6 +272,24 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 		}
 	}
 	return wanted, nil
+}
+
+// commonDirectory is the longest prefix every name shares that ends at a
+// slash, or "" when they share none. A slash byte never falls inside a
+// multi-byte character, so the cut is always a whole name prefix.
+func commonDirectory(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	common := names[0]
+	for _, name := range names[1:] {
+		shared := 0
+		for shared < len(common) && shared < len(name) && common[shared] == name[shared] {
+			shared++
+		}
+		common = common[:shared]
+	}
+	return common[:strings.LastIndexByte(common, '/')+1]
 }
 
 // uploadCandidate is one selected path after everything decidable WITHOUT
