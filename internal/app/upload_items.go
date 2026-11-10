@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 )
@@ -450,6 +452,20 @@ func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO,
 		plan.LeftBehind = fmt.Sprintf("the predecessor named %d segments and this build recorded %d of them, so the rest were left where they are",
 			record.Counted, record.Named)
 	}
+	// An unreadable account is compared as any account, so the check below
+	// keeps a segment it cannot place rather than removing it.
+	account := ""
+	if session, err := s.connections.SessionFor(ctx, req.BookmarkID); err == nil && session != nil {
+		account = swiftcontrol.AccountIdentity(session.StorageURL())
+	}
+	// Each holder with how many of the segments are in its stage, in the
+	// order they were met, so the record names every job and not only one.
+	type holding struct {
+		holder string
+		count  int
+	}
+	var holders []holding
+	staged := 0
 	for _, fragment := range record.Fragments {
 		// Only a private whole object. A ranged entry references a
 		// containing object and a nested entry names another
@@ -457,10 +473,45 @@ func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO,
 		if fragment.Shape != jobs.FragmentWhole {
 			continue
 		}
+		// An ordinary live object can name segments that a job of ours is
+		// still staging, this one included; those are that job's, and are
+		// kept and recorded like the other shapes this operation leaves
+		// (ADR 0105 decision 3).
+		if holder, held := s.runner.stagedByLiveJob(account, fragment.Container, fragment.Object); held {
+			staged++
+			if i := slices.IndexFunc(holders, func(h holding) bool { return h.holder == holder }); i >= 0 {
+				holders[i].count++
+			} else {
+				holders = append(holders, holding{holder: holder, count: 1})
+			}
+			continue
+		}
 		plan.Fragments = append(plan.Fragments, local.Fragment{
 			Container: fragment.Container, Name: fragment.Object, Shape: local.FragmentWhole})
 	}
-	if len(plan.Fragments) == 0 {
+	if staged > 0 {
+		var kept string
+		if len(holders) == 1 {
+			kept = fmt.Sprintf("%d of the segments it named %s in the staging area of %s, which is still running, so %s left alone",
+				staged, plural(staged, "is", "are"), holders[0].holder, plural(staged, "it was", "they were"))
+		} else {
+			parts := make([]string, 0, len(holders))
+			for _, h := range holders {
+				parts = append(parts, fmt.Sprintf("%d in that of %s", h.count, h.holder))
+			}
+			kept = fmt.Sprintf("%d of the segments it named are in the staging areas of jobs that are still running, so they were left alone: %s",
+				staged, strings.Join(parts, ", "))
+		}
+		if plan.Retained != "" {
+			kept = plan.Retained + "; " + kept
+		}
+		plan.Retained = kept
+	}
+	switch {
+	case len(plan.Fragments) > 0:
+	case staged > 0:
+		plan.Declined = "every segment the predecessor's record named is in a running job's staging area"
+	default:
 		// Nothing this operation may remove, which is a decision
 		// taken and not a removal of none (db:756 finding 4).
 		plan.Declined = "nothing the predecessor's record named is a private whole object"
