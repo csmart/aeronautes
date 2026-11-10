@@ -434,6 +434,24 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		return "", err
 	}
 	owner.hold(releasePins)
+	// The manifest and a static object's reviewed entries are fixed names,
+	// checked now; a dynamic object's namespace is swept, so it is claimed
+	// like any sweep (ADR 0105 decision 3).
+	account := swiftcontrol.AccountIdentity(session.StorageURL())
+	if err := s.runner.refuseStagedName(account, req.Container, req.Name); err != nil {
+		return "", err
+	}
+	if detail.Class == swiftcontrol.ClassDLO {
+		if err := owner.claim(sweepClaim(account, job.segContainer, job.namespace)); err != nil {
+			return "", err
+		}
+	} else {
+		for _, entry := range req.Reviewed.Entries {
+			if err := s.runner.refuseStagedName(account, entry.Container, entry.Object); err != nil {
+				return "", err
+			}
+		}
+	}
 	// The reviewed identity and scope are part of the job's own durable record,
 	// written with the row that admits the job, so the authority that bounds
 	// this deletion exists before any effect (ADR 0095 decision 8). Recording

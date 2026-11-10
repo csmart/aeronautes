@@ -1058,6 +1058,12 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if preflight.Rejected() {
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
+	// Claimed before the selection is consumed, so a start refused for
+	// another job's sweep leaves the pick usable. An upload stages at the
+	// container root whatever its prefix (ADR 0105 decision 3).
+	if err := owner.claim(stageClaims(swiftcontrol.AccountIdentity(session.StorageURL()), req.Container, "")...); err != nil {
+		return "", err
+	}
 	// The start consumes the selection, so a confirmed pick cannot be
 	// replayed into further jobs; two concurrent starts cannot both win.
 	scope, _, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)

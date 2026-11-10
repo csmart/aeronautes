@@ -98,6 +98,14 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		return "", err
 	}
 	owner.hold(releasePins)
+	// The selection may be rows of another job's stage, which the working
+	// list shows like any others (ADR 0105 decision 3).
+	account := swiftcontrol.AccountIdentity(entry.session.StorageURL())
+	for _, member := range req.Members {
+		if err := s.runner.refuseStagedName(account, req.Container, member.Name); err != nil {
+			return "", err
+		}
+	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobs.TypeDeleteSelected, ItemRecordsVersion: 1,
 		Source: req.Container, Destination: "(deleted)", SourceBookmarkID: bookmarkID, Engine: "native",

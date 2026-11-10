@@ -198,6 +198,12 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if _, err := session.FetchCapabilities(ctx); err != nil {
 		return "", err
 	}
+	// A sweep deletes every row it lists, and another job's stage is ordinary
+	// rows, so the sweep claims what it will list and is refused while a
+	// transfer is staging inside it (ADR 0105 decision 3).
+	if err := owner.claim(sweepClaim(swiftcontrol.AccountIdentity(session.StorageURL()), req.Container, req.Prefix)); err != nil {
+		return "", err
+	}
 	jobType := map[DeleteMode]jobs.Type{
 		ModePrefix: jobs.TypeDeletePrefix, ModeEmpty: jobs.TypeEmpty, ModeDeleteContainer: jobs.TypeDeleteCont,
 	}[req.Mode]

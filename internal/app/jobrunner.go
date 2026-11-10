@@ -63,6 +63,11 @@ type jobOwner struct {
 	// (hold). A start that stops before launch releases them itself; a
 	// launched job releases them after its whole body has returned.
 	pins func()
+	// claims are what the job stages into or sweeps (claim), and jobID names
+	// it once its row exists; both are read and written under the runner's
+	// mutex, and both leave with the owner.
+	claims []scopeClaim
+	jobID  string
 }
 
 // NewJobRunner is the exported constructor for the shell (main.go).
@@ -144,6 +149,9 @@ func (o *jobOwner) finishStart() {
 
 func (o *jobOwner) launch(jobID, bookmarkID string, body, queuedCancel func(context.Context)) {
 	o.handedOff = true
+	o.runner.mu.Lock()
+	o.jobID = jobID
+	o.runner.mu.Unlock()
 	o.runner.launchWithQueuedOutcome(o.ctx, jobID, bookmarkID, func() {
 		// Slots and terminal records can disappear before handles and
 		// pins; only the end of this cleanup permits the owner to leave.
