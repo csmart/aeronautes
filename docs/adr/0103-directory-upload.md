@@ -37,7 +37,7 @@ Before this record a folder of files could not be uploaded without selecting its
    The containment this gives is the walk's: the files are reopened when they are published, and a path replaced between the walk and that open uploads what the open finds, as [ADR 0080](0080-upload-content-binding.md) already states for a file pick.
 4. **Nothing downstream changes but the staging name, which becomes the member's relative name.**
    An item is a path, a name and a size, and the walked files take the preflight's liveness pass, its duplicate rule, the overwrite acknowledgement, the publication routes, the fixed point, the records and the reclaim decision unchanged.
-   The preflight gains an entry point that takes explicit path-and-name sources; the two existing entry points keep the base-name rule and their callers.
+   The preflight takes explicit path-and-name sources; a file pick names its sources by base name through one stated rule, and the earlier path-based entry points remain only for the route's own tests.
    The engine route stages each source directory's files under the job's stage prefix by base name, so two members called `image.jpg` in different folders would stage to one object, and a retained stage from a failed or refused group would be overwritten by the next; the stage object is therefore the member's relative name under the stage prefix, each directory group staging under its own relative directory, which for a file pick is the base name it is today.
    The recorded staging location is the mapped one, carried through admission, publication and recovery as [ADR 0031](0031-upload-item-recording.md) records it.
 5. **Surface and gate.**

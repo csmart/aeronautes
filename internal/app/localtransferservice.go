@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/applog"
@@ -176,13 +175,10 @@ func (s *TransferService) PickUploadFiles(ctx context.Context, scope SelectionSc
 	if err := s.endPick(ctx, observed, bound); err != nil {
 		return nil, err
 	}
-	// The file pick's rule: each file is named by its base name under the
-	// prefix.
-	names := make([]string, len(paths))
-	sources := make([]local.UploadSource, len(paths))
-	for i, p := range paths {
-		names[i] = filepath.Base(p)
-		sources[i] = local.UploadSource{Path: p, Name: names[i]}
+	sources := local.SourcesByBaseName(paths)
+	names := make([]string, len(sources))
+	for i, source := range sources {
+		names[i] = source.Name
 	}
 	return &PickedFilesDTO{Token: s.selections.putSources(bound, sources, nil), Files: names}, nil
 }
