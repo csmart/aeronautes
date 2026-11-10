@@ -48,3 +48,7 @@ matrix-report.txt
 
 # Python tool caches (scripts/ helpers)
 __pycache__/
+
+# OpenStack credentials for the real-cloud oracle: never committed (docs/CI.md)
+clouds.yaml
+ci-clouds.yaml

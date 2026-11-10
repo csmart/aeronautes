@@ -12,7 +12,7 @@
 // content. A backend whose /info does not allow a mode skips that mode: the
 // editor never offers it there. Cleanup removes only what this run created
 // and reports anything it could not remove. It shares the clouds.yaml
-// selection, the redaction and the make target with the Keystone oracle:
+// selection, the failure line and the make target with the Keystone oracle:
 //
 //	make oracle CLOUDS=/path/to/clouds.yaml [CLOUD=swift]
 package swiftcontrol_test
@@ -29,7 +29,7 @@ import (
 )
 
 func TestLegacyVersioningOracle(t *testing.T) {
-	runOnOracleBackends(t, func(t *testing.T, cloudName, backend string, c oracleCloud) {
+	runOnOracleBackends(t, func(t *testing.T, label, backend string, c oracleCloud) {
 		s, err := swiftcontrol.New(swiftcontrol.Config{
 			AuthVersion:   3,
 			AuthURL:       c.AuthURL,
@@ -41,25 +41,28 @@ func TestLegacyVersioningOracle(t *testing.T) {
 			Region:        c.Region,
 		})
 		if err != nil {
-			t.Fatalf("New(v3): %s", redactIdentifiers(err.Error(), c, ""))
+			t.Fatalf("New(v3): %s", oracleFailure(err))
 		}
 		defer s.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := s.Authenticate(ctx); err != nil {
-			t.Fatalf("Authenticate against %s: %s", cloudName, redactIdentifiers(err.Error(), c, s.StorageURL()))
+			t.Fatalf("Authenticate against %s: %s", label, oracleFailure(err))
 		}
 		caps, err := s.FetchCapabilities(ctx)
 		if err != nil {
-			t.Fatalf("FetchCapabilities: %s", redactIdentifiers(err.Error(), c, s.StorageURL()))
+			t.Fatalf("FetchCapabilities: %s", oracleFailure(err))
 		}
-		t.Logf("[%s] backend=%s versioned_writes flags=%v", cloudName, backend, caps.VersioningAllowedFlags())
+		// The flags themselves are the store's strings; whether each mode is
+		// allowed is all the matrix needs to say.
+		t.Logf("[%s] backend=%s allows versions_location=%v history_location=%v", label, backend,
+			caps.AllowsVersioningMode(swiftcontrol.VersioningVersionsLocation), caps.AllowsVersioningMode(swiftcontrol.VersioningHistoryLocation))
 		for _, mode := range []swiftcontrol.VersioningMode{swiftcontrol.VersioningVersionsLocation, swiftcontrol.VersioningHistoryLocation} {
 			t.Run(string(mode), func(t *testing.T) {
 				if !caps.AllowsVersioningMode(mode) {
 					t.Skipf("%s does not advertise %s; the editor never offers it there", backend, mode)
 				}
-				measureLegacyMode(t, s, c, mode)
+				measureLegacyMode(t, s, mode)
 			})
 		}
 	})
@@ -68,12 +71,12 @@ func TestLegacyVersioningOracle(t *testing.T) {
 // measureLegacyMode runs the overwrite-then-delete matrix for one mode and
 // asserts the behaviour the SAIO record states, so a real store that differs
 // fails the run instead of being described wrongly in a dialog.
-func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mode swiftcontrol.VersioningMode) {
+func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, mode swiftcontrol.VersioningMode) {
 	// fail must be built per subtest: FailNow on a parent test from a subtest
-	// goroutine is an error of its own, and the redaction needs this session.
+	// goroutine is an error of its own.
 	fail := func(op string, err error) {
 		t.Helper()
-		t.Fatalf("%s: %s", op, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		t.Fatalf("%s: %s", op, oracleFailure(err))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -82,7 +85,7 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 	owner := "aeronautes-oracle-versioned-" + suffix
 	archive := "aeronautes-oracle-archive-" + suffix
 	var created []string
-	defer func() { teardownVersioningProbe(t, s, c, created) }()
+	defer func() { teardownVersioningProbe(t, s, created) }()
 	for _, name := range []string{owner, archive} {
 		if _, err := s.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: name}); err != nil {
 			fail("CreateContainer "+name, err)
@@ -102,7 +105,8 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 		fail("UpdateContainer versioning", err)
 	}
 	if res.Outcome != swiftcontrol.UpdateApplied || res.After.Versioning != edit.Versioning {
-		t.Fatalf("versioning edit: outcome=%s shown=%+v want %+v", res.Outcome, res.After.Versioning, edit.Versioning)
+		t.Fatalf("versioning edit: outcome=%s; the container shows the mode asked for: %v, the archive asked for: %v",
+			res.Outcome, res.After.Versioning.Mode == mode, res.After.Versioning.Archive == archive)
 	}
 	t.Logf("%s set on %s with archive %s", mode, owner, archive)
 
@@ -114,8 +118,8 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 			fail("PutObject", err)
 		}
 	}
-	expectCurrent(t, ctx, s, c, owner, name, second)
-	expectArchive(t, ctx, s, c, archive, first)
+	expectCurrent(t, ctx, s, owner, name, second)
+	expectArchive(t, ctx, s, archive, first)
 	t.Logf("after two writes: the name serves the second body, the archive holds the first")
 
 	// The delete goes through the product's protocol, whose literal read
@@ -138,8 +142,8 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 		if del.After == nil {
 			t.Fatalf("the delete should leave the archived predecessor at the name; the read saw absence")
 		}
-		expectCurrent(t, ctx, s, c, owner, name, first)
-		expectArchive(t, ctx, s, c, archive)
+		expectCurrent(t, ctx, s, owner, name, first)
+		expectArchive(t, ctx, s, archive)
 		t.Logf("delete reverted the name to the first body (successor reported, length %d) and emptied the archive", del.After.ContentLength)
 
 		restored, err := s.ObjectDetail(ctx, owner, name)
@@ -153,8 +157,8 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 		if !again.Accepted || again.Outcome != swiftcontrol.UpdateApplied || again.After != nil {
 			t.Fatalf("second delete: accepted=%v outcome=%s successor=%v", again.Accepted, again.Outcome, again.After != nil)
 		}
-		expectAbsent(t, ctx, s, c, owner, name)
-		expectArchive(t, ctx, s, c, archive)
+		expectAbsent(t, ctx, s, owner, name)
+		expectArchive(t, ctx, s, archive)
 		t.Logf("a second delete destroyed the restored body; nothing archived")
 	case swiftcontrol.VersioningHistoryLocation:
 		// Both bodies end in the archive with a zero-byte deletion marker, and
@@ -162,43 +166,43 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, c oracleCloud, mod
 		if del.After != nil {
 			t.Fatalf("the delete should leave the name absent; the read saw a successor of length %d", del.After.ContentLength)
 		}
-		expectAbsent(t, ctx, s, c, owner, name)
-		expectArchive(t, ctx, s, c, archive, first, second, "")
+		expectAbsent(t, ctx, s, owner, name)
+		expectArchive(t, ctx, s, archive, first, second, "")
 		t.Logf("delete moved the second body to the archive beside the first and wrote a marker")
 	}
 }
 
 // expectCurrent asserts the object at name has body by HEAD length and by
 // reading it: the matrix is about content, not about a row existing.
-func expectCurrent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c oracleCloud, container, name, body string) {
+func expectCurrent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, container, name, body string) {
 	t.Helper()
 	detail, err := s.ObjectDetail(ctx, container, name)
 	if err != nil {
-		t.Fatalf("ObjectDetail %s: %s", name, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		t.Fatalf("ObjectDetail %s: %s", name, oracleFailure(err))
 	}
 	if detail.ContentLength != int64(len(body)) {
 		t.Fatalf("%s: HEAD length %d, want %d", name, detail.ContentLength, len(body))
 	}
-	if got := readBody(t, ctx, s, c, container, name); got != body {
-		t.Fatalf("%s: body %q, want %q", name, got, body)
+	if line := bodyMismatch(name, []byte(readBody(t, ctx, s, container, name)), []byte(body)); line != "" {
+		t.Fatal(line)
 	}
 }
 
-func expectAbsent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c oracleCloud, container, name string) {
+func expectAbsent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, container, name string) {
 	t.Helper()
 	_, err := s.ObjectDetail(ctx, container, name)
 	switch {
 	case err == nil:
 		t.Fatalf("%s: still present, want not found", name)
 	case !swiftcontrol.IsNotFound(err):
-		t.Fatalf("ObjectDetail %s: %s", name, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		t.Fatalf("ObjectDetail %s: %s", name, oracleFailure(err))
 	}
 }
 
 // expectArchive asserts the archive holds exactly the given bodies ("" is a
 // zero-byte marker), read back one by one. The listing is retried briefly
 // because a real cluster's container listing can trail the object write.
-func expectArchive(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c oracleCloud, archive string, want ...string) {
+func expectArchive(t *testing.T, ctx context.Context, s *swiftcontrol.Session, archive string, want ...string) {
 	t.Helper()
 	slices.Sort(want)
 	var got []string
@@ -206,10 +210,10 @@ func expectArchive(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c
 		got = got[:0]
 		for entry, err := range s.Objects(ctx, archive, swiftcontrol.ObjectListOptions{Deep: true}) {
 			if err != nil {
-				t.Fatalf("list %s: %s", archive, redactIdentifiers(err.Error(), c, s.StorageURL()))
+				t.Fatalf("list %s: %s", archive, oracleFailure(err))
 			}
 			if obj, ok := entry.(swiftcontrol.ObjectEntry); ok {
-				got = append(got, readBody(t, ctx, s, c, archive, obj.Name))
+				got = append(got, readBody(t, ctx, s, archive, obj.Name))
 			}
 		}
 		slices.Sort(got)
@@ -218,19 +222,21 @@ func expectArchive(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("archive %s holds %q, want %q", archive, got, want)
+	t.Fatalf("archive %s holds %s, want %s", archive, describeBodies(got), describeBodies(want))
 }
 
-func readBody(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c oracleCloud, container, name string) string {
+func readBody(t *testing.T, ctx context.Context, s *swiftcontrol.Session, container, name string) string {
 	t.Helper()
 	rc, err := s.OpenObjectContent(ctx, container, name)
 	if err != nil {
-		t.Fatalf("open %s: %s", name, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		// The name can be one the store listed, so the container this run
+		// named stands for it.
+		t.Fatalf("open an object in %s: %s", container, oracleFailure(err))
 	}
 	defer rc.Close()
 	body, err := io.ReadAll(rc)
 	if err != nil {
-		t.Fatalf("read %s: %s", name, redactIdentifiers(err.Error(), c, s.StorageURL()))
+		t.Fatalf("read an object in %s: %s", container, oracleFailure(err))
 	}
 	return string(body)
 }
@@ -241,7 +247,7 @@ func readBody(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c orac
 // archives into the other container; the sweep still repeats, because a
 // failed switch-off leaves either effect possible. A container that remains
 // is reported: litter in a real account is a failure, not a shrug.
-func teardownVersioningProbe(t *testing.T, s *swiftcontrol.Session, c oracleCloud, created []string) {
+func teardownVersioningProbe(t *testing.T, s *swiftcontrol.Session, created []string) {
 	t.Helper()
 	if len(created) == 0 {
 		return
@@ -264,7 +270,7 @@ func teardownVersioningProbe(t *testing.T, s *swiftcontrol.Session, c oracleClou
 	}
 	for _, container := range created {
 		if err := s.DeleteContainer(ctx, container); err != nil {
-			t.Errorf("probe container %s was not removed: %s", container, redactIdentifiers(err.Error(), c, s.StorageURL()))
+			t.Errorf("probe container %s was not removed: %s", container, oracleFailure(err))
 		}
 	}
 }

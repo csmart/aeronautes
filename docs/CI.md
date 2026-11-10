@@ -47,7 +47,10 @@ The real Keystone endpoints are an external dependency, so an outage or an expir
 It reports its own status and skips green when its secret is absent, so fork pull requests, which receive no secrets, and a repository without the secret configured both pass it without contacting any cloud.
 The job reads a `clouds.yaml` from the `ORACLE_CLOUDS_YAML` repository secret, writes it to a temporary file for the run, and removes it with the runner.
 Populate the secret with `gh secret set ORACLE_CLOUDS_YAML --repo <owner>/<repo> < ci-clouds.yaml` from a `clouds.yaml` holding the backend-named `aeronautes-ceph` and `aeronautes-swift` entries.
-The test keeps passwords, tokens and account identifiers (username, project) out of its output, failure diagnostics included; only the auth endpoint, region and storage host appear in the log.
+The test keeps passwords, tokens and account identifiers (username, project) out of its output, and prints no auth endpoint, region or storage host either, so a log does not name the provider.
+A failure prints the kind of error, its HTTP status and the Go types in its chain, never the error's text, because a transport or certificate error can name a host no configured value predicts.
+A run is labelled by its backend, and a clouds.yaml key or path, which can each be named for a provider, is used only to find the entry.
+Nothing a server returned as text is printed either: a body that is not the one written, which could be a proxy's sign-in page, is reported by its length and digest, and entity tags, content types and versioning flags are reported only by whether they match.
 Rotate the credential by re-running `gh secret set`.
 
 
