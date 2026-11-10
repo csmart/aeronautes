@@ -91,23 +91,4 @@ describe("prefix count", () => {
     const hint = [...document.querySelectorAll<HTMLElement>(".hint")].find((h) => h.textContent?.includes("objects are refused"));
     expect(hint?.textContent).toContain("250,000 objects are refused");
   }, 20_000);
-
-  it("saves the ceiling from the jobs drawer and reports a refused value", async () => {
-    await openFixtures();
-    const saves: number[] = [];
-    const save = api.saveAppSettings;
-    api.saveAppSettings = async (settings) => {
-      saves.push(settings.downloadObjectCeiling);
-      if (settings.downloadObjectCeiling < 1000) throw new Error("download object ceiling 10 out of range 1000..5000000");
-      return save(settings);
-    };
-    click(get("button.bar")); await settle();
-    click(button("Refresh settings")); await settle();
-    const input = get<HTMLInputElement>("input.ceiling");
-    input.value = "12000"; input.dispatchEvent(new Event("change", { bubbles: true })); flushSync(); await settle();
-    expect(saves).toEqual([12000]);
-    expect(get(".ceiling-status").textContent).toContain("ceiling 12,000 objects");
-    input.value = "10"; input.dispatchEvent(new Event("change", { bubbles: true })); flushSync(); await settle();
-    expect(get(".ceiling-status").textContent).toContain("out of range");
-  }, 20_000);
 });

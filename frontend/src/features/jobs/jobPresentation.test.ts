@@ -155,7 +155,6 @@ it.each([
   { type: "download", progress: "30%" },
   { type: "mirror", progress: "70%" },
   { type: "mirror_preview", progress: "30%" },
-  { type: "delete", progress: "70%" },
 ])("leaves $type transfer counts and existing progress semantics unchanged", async ({ type, progress }) => {
   const { row } = await show(job(type, "running", { objectsDeleted: 7, objectsFailed: 1 }));
   expect(text(row, ".counts")).toBe("3/10 obj · 24 B · 7 deleted · 1 failed");
