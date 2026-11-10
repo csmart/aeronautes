@@ -80,6 +80,22 @@ type AccountDTO struct {
 	// the write refuses a stale base rather than overwriting a change made
 	// since the account was read.
 	EditableFingerprint string `json:"editableFingerprint"`
+	// PolicyUsage is what the account holds under each storage policy it
+	// uses, as the account reply reports it, ordered by policy name. A
+	// cluster that reports none leaves it empty.
+	PolicyUsage []AccountPolicyUsageDTO `json:"policyUsage"`
+	// RawHeaders is every header of the account reply, with the TempURL key
+	// values replaced by a placeholder, as the container and object
+	// inspectors show theirs.
+	RawHeaders map[string]string `json:"rawHeaders"`
+}
+
+// AccountPolicyUsageDTO is one storage policy's share of an account.
+type AccountPolicyUsageDTO struct {
+	Policy         string `json:"policy"`
+	BytesUsed      int64  `json:"bytesUsed"`
+	ObjectCount    int64  `json:"objectCount"`
+	ContainerCount int64  `json:"containerCount"`
 }
 
 // ContainerRowDTO is one container listing row. Class is the §24

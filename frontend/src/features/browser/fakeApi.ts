@@ -202,6 +202,17 @@ export function newFakeApi(): Api {
       meta: { ...accountState.meta },
       tempUrlKeySlots: [...accountSlots].sort(),
       editableFingerprint: accountFingerprint(),
+      policyUsage: [
+        { policy: "gold", bytesUsed: 47_000_000_000, objectCount: 20, containerCount: 4 },
+        { policy: "standard", bytesUsed: accountFixture.bytes - 47_000_000_000, objectCount: accountFixture.objects - 20, containerCount: containers.length - 4 },
+      ],
+      rawHeaders: {
+        "X-Account-Bytes-Used": String(accountFixture.bytes),
+        "X-Account-Container-Count": String(containers.length),
+        "X-Account-Object-Count": String(accountFixture.objects),
+        ...Object.fromEntries([...accountSlots].map((slot) => [`X-Account-Meta-${slot}`, "[redacted]"])),
+        "X-Trans-Id": "tx-fixture-account",
+      },
     };
   }
 

@@ -45,7 +45,7 @@ async function show(kind: Kind, meta: Record<string, string> = { Keep: "untouche
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
   browser.account = { name: "AUTH_source", containers: 1, objects: 1, bytesUsed: 0,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope: { bookmarkId: "source", generation: 1 }, editableFingerprint: "" };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], policyUsage: [], rawHeaders: {}, scope: { bookmarkId: "source", generation: 1 }, editableFingerprint: "" };
   await browser.loadContainers();
   await browser.openContainer("fixtures");
   if (kind === "object") {

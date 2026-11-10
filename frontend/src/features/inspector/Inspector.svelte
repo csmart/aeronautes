@@ -86,11 +86,9 @@ import { isLink } from "../browser/browserState.svelte";
       .sort(([a], [b]) => a.localeCompare(b));
   }
 
-  const rawHeaderText = $derived(
-    sortedEntries(detail?.rawHeaders ?? null)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join("\n"),
-  );
+  function plural(count: number, one: string, many: string): string {
+    return `${formatCount(count)} ${count === 1 ? one : many}`;
+  }
 </script>
 
 {#snippet kv(label: string, value: string, mono?: boolean)}
@@ -98,6 +96,17 @@ import { isLink } from "../browser/browserState.svelte";
     <span class="kv-label">{label}</span>
     <span class="kv-value {mono ? 'type-mono' : ''} num">{value}</span>
   </div>
+{/snippet}
+
+<!-- Every header of the reply, secrets already redacted by the backend. It
+  is for diagnosing what the store said, so it starts closed. -->
+{#snippet rawHeaders(record: { [key: string]: string | undefined } | null)}
+  <details class="card raw-card">
+    <summary class="card-title">Raw headers</summary>
+    <pre class="raw type-mono">{sortedEntries(record)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n")}</pre>
+  </details>
 {/snippet}
 
 <aside class="pane" aria-label="Inspector">
@@ -294,10 +303,7 @@ import { isLink } from "../browser/browserState.svelte";
     {/if}
 
     {#if detail}
-      <section class="card">
-        <h3 class="card-title">Raw headers</h3>
-        <pre class="raw type-mono">{rawHeaderText}</pre>
-      </section>
+      {@render rawHeaders(detail.rawHeaders)}
     {/if}
   {:else if entry && entry.kind === "prefix"}
     {@const pd = browser.prefixDetail}
@@ -448,12 +454,7 @@ import { isLink } from "../browser/browserState.svelte";
       <ContainerEditPanel {browser} detail={cd} onDone={() => (editingContainer = false)} />
     {/if}
     {#if cd}
-      <section class="card">
-        <h3 class="card-title">Raw headers</h3>
-        <pre class="raw type-mono">{sortedEntries(cd.rawHeaders)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join("\n")}</pre>
-      </section>
+      {@render rawHeaders(cd.rawHeaders)}
     {/if}
   {:else if browser.account}
     <header class="head">
@@ -468,6 +469,14 @@ import { isLink } from "../browser/browserState.svelte";
         {@render kv("Quota", formatBytes(browser.account.quotaBytes))}
       {/if}
     </section>
+    {#if (browser.account.policyUsage ?? []).length > 0}
+      <section class="card">
+        <h3 class="card-title">Storage policies</h3>
+        {#each browser.account.policyUsage ?? [] as usage (usage.policy)}
+          {@render kv(usage.policy, `${formatBytes(usage.bytesUsed)} · ${plural(usage.objectCount, "object", "objects")} · ${plural(usage.containerCount, "container", "containers")}`)}
+        {/each}
+      </section>
+    {/if}
     <TempUrlKeys {browser} slots={browser.account.tempUrlKeySlots ?? []} />
     {#if editingAccount}
       <AccountEditPanel {browser} account={browser.account} onDone={() => (editingAccount = false)} />
@@ -482,6 +491,7 @@ import { isLink } from "../browser/browserState.svelte";
       {/if}
       <button class="edit-btn" onclick={() => (editingAccount = true)}>Edit metadata</button>
     {/if}
+    {@render rawHeaders(browser.account.rawHeaders)}
   {:else}
     <header class="head">
       <h2 class="title type-display">Aeronautes</h2>
@@ -543,6 +553,15 @@ import { isLink } from "../browser/browserState.svelte";
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
+  }
+
+  .raw-card > summary {
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .raw-card[open] > summary {
+    margin-bottom: var(--space-2);
   }
 
   .card-title {

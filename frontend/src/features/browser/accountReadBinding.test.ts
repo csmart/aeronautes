@@ -76,7 +76,7 @@ async function fixture() {
   const state = new BrowserState(api);
   state.connectedBookmarkId = bookmark;
   state.account = { name: "AUTH_fixture", containers: 1, objects: 4, bytesUsed: 1,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope, editableFingerprint: "" };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], policyUsage: [], rawHeaders: {}, scope, editableFingerprint: "" };
   await state.openContainer("fixtures");
   await settle();
   return { state, samples };

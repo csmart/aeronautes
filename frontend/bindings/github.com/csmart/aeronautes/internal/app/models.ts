@@ -69,6 +69,20 @@ export interface AccountDTO {
      * since the account was read.
      */
     "editableFingerprint": string;
+
+    /**
+     * PolicyUsage is what the account holds under each storage policy it
+     * uses, as the account reply reports it, ordered by policy name. A
+     * cluster that reports none leaves it empty.
+     */
+    "policyUsage": AccountPolicyUsageDTO[] | null;
+
+    /**
+     * RawHeaders is every header of the account reply, with the TempURL key
+     * values replaced by a placeholder, as the container and object
+     * inspectors show theirs.
+     */
+    "rawHeaders": { [_ in string]?: string } | null;
 }
 
 /**
@@ -79,6 +93,16 @@ export interface AccountDTO {
 export interface AccountEditDTO {
     "meta": { [_ in string]?: string } | null;
     "quotaBytes": number;
+}
+
+/**
+ * AccountPolicyUsageDTO is one storage policy's share of an account.
+ */
+export interface AccountPolicyUsageDTO {
+    "policy": string;
+    "bytesUsed": number;
+    "objectCount": number;
+    "containerCount": number;
 }
 
 /**
