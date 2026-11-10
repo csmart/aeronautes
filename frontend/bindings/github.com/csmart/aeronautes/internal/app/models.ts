@@ -86,9 +86,9 @@ export interface AccountEditDTO {
  */
 export interface AppSettingsDTO {
     /**
-     * MaxActiveJobs is the §38 whole-application ceiling. For v1 it is
-     * enforced at one (ADR 0047), so reads report the effective value and
-     * a write above it is refused rather than stored with no effect.
+     * MaxActiveJobs is how many jobs run at once (§38): one to four, two
+     * by default (ADR 0105). Reads report the effective value, and a write
+     * outside the range is refused rather than stored with no effect.
      */
     "maxActiveJobs": number;
 

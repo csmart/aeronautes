@@ -193,10 +193,10 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 4, DefaultProfile: "ludicrous"}); err == nil {
 		t.Fatal("unknown default profile accepted")
 	}
-	// Four was a valid save until the §38 ceiling became a limit rather
-	// than a default (ADR 0047). It is now refused, naming the ceiling,
-	// rather than stored as a value that would not apply.
-	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 4, DefaultProfile: "aggressive"}); err == nil {
+	// Five is above the §38 ceiling, which is a limit rather than a default
+	// (ADR 0105). It is refused rather than stored as a value that would
+	// not apply.
+	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 5, DefaultProfile: "aggressive"}); err == nil {
 		t.Fatal("a budget above the enforced ceiling was accepted")
 	}
 	saved, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "aggressive"})

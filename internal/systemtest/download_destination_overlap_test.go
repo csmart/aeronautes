@@ -27,6 +27,15 @@ func TestDownloadDestinationOverlapRealSwift(t *testing.T) {
 // once both jobs have ended the directory is free again.
 func downloadDestinationOverlap(t *testing.T, h *Harness) {
 	t.Helper()
+	// One slot, so the sibling queues behind the running job.
+	settings, err := h.Settings.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.MaxActiveJobs = 1
+	if _, err := h.Settings.Set(t.Context(), settings); err != nil {
+		t.Fatal(err)
+	}
 	source := h.Container(h.Primary, "download-overlap")
 	body := []byte("overlap bytes")
 	h.Seed(h.Primary, source, "scope/one.bin", body, nil)

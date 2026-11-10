@@ -15,35 +15,44 @@ import (
 //go:embed migrations/*.sql
 var publicationMigrations embed.FS
 
+// databaseAtVersion builds a database as an older release left it: the
+// migrations up to version applied and recorded, and nothing later. The caller
+// writes the rows that release would hold and closes raw before opening it.
+func databaseAtVersion(t *testing.T, version int) (path string, raw *sql.DB) {
+	t.Helper()
+	path = filepath.Join(t.TempDir(), "state.sqlite")
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	if _, err := raw.ExecContext(t.Context(), `CREATE TABLE schema_migrations (
+		version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for applied := 1; applied <= version; applied++ {
+		files, err := fs.Glob(publicationMigrations, fmt.Sprintf("migrations/%04d_*.sql", applied))
+		if err != nil || len(files) != 1 {
+			t.Fatalf("historical migration %d: files=%v error=%v", applied, files, err)
+		}
+		body, err := publicationMigrations.ReadFile(files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(t.Context(), string(body)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(t.Context(), `INSERT INTO schema_migrations VALUES (?, ?, 'historical')`, applied, filepath.Base(files[0])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path, raw
+}
+
 func TestDownloadPublicationUpgradePreservesHistory(t *testing.T) {
 	for _, boundary := range []int{10, 11, 12} {
 		t.Run(fmt.Sprint(boundary), func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "state.sqlite")
-			raw, err := sql.Open("sqlite", "file:"+path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer raw.Close()
-			if _, err := raw.ExecContext(t.Context(), `CREATE TABLE schema_migrations (
-				version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
-				t.Fatal(err)
-			}
-			for version := 1; version <= boundary; version++ {
-				files, err := fs.Glob(publicationMigrations, fmt.Sprintf("migrations/%04d_*.sql", version))
-				if err != nil || len(files) != 1 {
-					t.Fatalf("historical migration %d: files=%v error=%v", version, files, err)
-				}
-				body, err := publicationMigrations.ReadFile(files[0])
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := raw.ExecContext(t.Context(), string(body)); err != nil {
-					t.Fatal(err)
-				}
-				if _, err := raw.ExecContext(t.Context(), `INSERT INTO schema_migrations VALUES (?, ?, 'historical')`, version, filepath.Base(files[0])); err != nil {
-					t.Fatal(err)
-				}
-			}
+			path, raw := databaseAtVersion(t, boundary)
 			const counters = `{"objectsCopied":1,"objectsVerified":1,"bytesCopied":10}`
 			if _, err := raw.ExecContext(t.Context(), `INSERT INTO jobs
 				(id, type, state, created_at, finished_at, counters_json, error, item_records_version)

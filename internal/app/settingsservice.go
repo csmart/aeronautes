@@ -7,6 +7,7 @@ import (
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
@@ -21,16 +22,26 @@ import (
 type SettingsService struct {
 	db     *db.DB
 	runner *jobRunner
+	// saving is held across a save's write and its application to the
+	// runner, so that two saves cannot leave the runner on one budget and
+	// the store on the other.
+	saving sync.Mutex
 }
 
 // NewSettingsService wires the service; it applies the persisted
 // budget to the runner at construction.
 func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
 	s := &SettingsService{db: database, runner: runner}
-	if settings, err := s.Get(context.Background()); err == nil {
-		runner.setMaxActiveJobs(settings.MaxActiveJobs)
-		runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
+	settings, err := s.Get(context.Background())
+	if err != nil {
+		// The runner keeps the defaults it was built with. Said aloud,
+		// because a budget that quietly differs from the stored one cannot
+		// be explained afterwards.
+		applog.Errorf("the settings could not be read at startup, so the job budget and the queue depth are the defaults: %v", err)
+		return s
 	}
+	runner.setMaxActiveJobs(settings.MaxActiveJobs)
+	runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
 	return s
 }
 
@@ -63,9 +74,9 @@ func (s *SettingsService) runRetention(ctx context.Context, jobStore *jobs.Store
 
 // AppSettingsDTO is the whole application-settings document.
 type AppSettingsDTO struct {
-	// MaxActiveJobs is the §38 whole-application ceiling. For v1 it is
-	// enforced at one (ADR 0047), so reads report the effective value and
-	// a write above it is refused rather than stored with no effect.
+	// MaxActiveJobs is how many jobs run at once (§38): one to four, two
+	// by default (ADR 0105). Reads report the effective value, and a write
+	// outside the range is refused rather than stored with no effect.
 	MaxActiveJobs int `json:"maxActiveJobs"`
 	// DefaultProfile seeds transfer dialogs (§40).
 	DefaultProfile string `json:"defaultProfile"`
@@ -240,9 +251,13 @@ func (s *SettingsService) getFrom(ctx context.Context, q dbQuerier) (AppSettings
 	// Report what will happen, not what is stored. A value persisted
 	// before the ceiling was enforced must not be read back as though it
 	// still applied; the stored row is deliberately left as written so a
-	// later revert restores the operator's earlier intent (ADR 0047).
+	// later revert restores the operator's earlier intent (ADR 0047). A
+	// stored value below one reads as the default the runner applies.
 	if settings.MaxActiveJobs > maxActiveJobsCeiling {
 		settings.MaxActiveJobs = maxActiveJobsCeiling
+	}
+	if settings.MaxActiveJobs < 1 {
+		settings.MaxActiveJobs = defaultMaxActiveJobs
 	}
 	// A stored ceiling outside the range (or none) reads back as the
 	// default the preflight will actually apply.
@@ -267,15 +282,11 @@ func (s *SettingsService) getFrom(ctx context.Context, q dbQuerier) (AppSettings
 
 // Set validates, persists, and applies the settings.
 func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
-	if settings.MaxActiveJobs < 1 || settings.MaxActiveJobs > 16 {
-		return AppSettingsDTO{}, fmt.Errorf("max active jobs %d out of range 1..16", settings.MaxActiveJobs)
-	}
 	// Refused rather than clamped: a control that appears to change
-	// something it cannot is worse than no control (ADR 0047).
-	if settings.MaxActiveJobs > maxActiveJobsCeiling {
-		return AppSettingsDTO{}, fmt.Errorf(
-			"max active jobs %d exceeds the enforced ceiling of %d",
-			settings.MaxActiveJobs, maxActiveJobsCeiling)
+	// something it cannot is worse than no control (ADR 0047). One range
+	// and one sentence (ADR 0105 decision 7).
+	if settings.MaxActiveJobs < 1 || settings.MaxActiveJobs > maxActiveJobsCeiling {
+		return AppSettingsDTO{}, fmt.Errorf("max active jobs %d is out of range: choose 1 to %d", settings.MaxActiveJobs, maxActiveJobsCeiling)
 	}
 	if _, err := profileBase(Profile(settings.DefaultProfile)); err != nil {
 		return AppSettingsDTO{}, err
@@ -313,6 +324,8 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
 		return AppSettingsDTO{}, fmt.Errorf("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
 	}
+	s.saving.Lock()
+	defer s.saving.Unlock()
 	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		for key, value := range map[string]string{
 			"max_active_jobs":           strconv.Itoa(settings.MaxActiveJobs),

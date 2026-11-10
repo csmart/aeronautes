@@ -22,6 +22,8 @@ func TestDownloadRefusesOverlappingDestinations(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
 	h.connect(t)
+	// One slot, so the sibling below is still queued when it is checked.
+	h.transfer.runner.setMaxActiveJobs(1)
 	bookmark := h.transfer.connections.ActiveBookmarkID()
 	h.mock.AddContainer("media", "standard")
 	// The two selections carry distinct names, so a directory that has
