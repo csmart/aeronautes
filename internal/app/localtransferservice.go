@@ -68,9 +68,9 @@ type SelectionScopeDTO struct {
 type PickedFilesDTO struct {
 	Token string   `json:"token"`
 	Files []string `json:"files"`
-	// Folder and the three counts are a folder pick's summary (ADR 0103
-	// decision 1): the chosen folder's own name, how many entries the walk
-	// skipped, the first of them named, and how many directories were
+	// Folder, the two counts and the sample are a folder pick's summary (ADR
+	// 0103 decision 1): the chosen folder's own name, how many entries the
+	// walk skipped, the first of them named, and how many directories were
 	// empty. A file pick leaves them zero. A folder with no regular file
 	// returns the summary with no token and no names.
 	Folder           string   `json:"folder"`
@@ -253,8 +253,6 @@ func (s *TransferService) PickDownloadDir(ctx context.Context, scope SelectionSc
 	return &PickedDirDTO{Token: s.selections.putDir(bound, dir), Dir: dir}, nil
 }
 
-// pickScope reads the account half of the binding from the connection
-// registry and joins it to the remote scope the pick is for.
 // activeObservation is the connection endpoint as it stood at one
 // moment, including the honest absence of one. The pick compares the
 // observation either side of the dialog, so a connection that moved —
@@ -396,15 +394,13 @@ func shortenText(text string, limit int) string {
 	return string(out[:limit]) + "…"
 }
 
-// stillPicking re-reads the registry when the native dialog returns.
-// The picker blocks, so a page can connect elsewhere while the user is
-// choosing; a selection made under a connection that has since moved is
-// refused rather than issued. These are two observations and not a
-// record of every transient change (ADR 0041).
-// endPick re-reads both halves when the dialog returns. The endpoint
-// must be the same observation it was, and the named bookmark must still
-// be at the generation the selection is about to record. These are two
-// observations and not a record of every transient change (ADR 0041).
+// endPick re-reads both halves when the dialog returns. The picker blocks,
+// so a page can connect elsewhere while the user is choosing; a selection
+// made under a connection that has since moved is refused rather than
+// issued. The endpoint must be the same observation it was, and the named
+// bookmark must still be at the generation the selection is about to
+// record. These are two observations and not a record of every transient
+// change (ADR 0041).
 func (s *TransferService) endPick(ctx context.Context, before activeObservation, bound selectionScope) error {
 	if after := s.observeConnection(); after != before {
 		return errors.New("the connected account changed while you were choosing; pick again")

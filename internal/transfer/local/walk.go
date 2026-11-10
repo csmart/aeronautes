@@ -53,8 +53,9 @@ const (
 	// walkReadChunk bounds the entries one directory read returns, so a
 	// directory of any size costs one chunk of memory at a time.
 	walkReadChunk = 256
-	// maxFolderDepth bounds the open handles a descent holds, one per
-	// level; a tree deeper than this is refused rather than walked.
+	// maxFolderDepth bounds the open handles a descent holds, two per level,
+	// the directory and its listing; a tree deeper than this is refused
+	// rather than walked.
 	maxFolderDepth = 128
 )
 
@@ -92,7 +93,7 @@ func WalkUploadDirectory(ctx context.Context, root string, limit int) (*Director
 		return nil, fmt.Errorf("the selected folder could not be opened: %w", err)
 	}
 	defer opened.Close()
-	w := &folderWalk{path: root, limit: limit, selection: &DirectorySelection{Folder: filepath.Base(root)}}
+	w := &folderWalk{root: root, limit: limit, selection: &DirectorySelection{Folder: filepath.Base(root)}}
 	if err := w.descend(ctx, opened, ""); err != nil {
 		return nil, err
 	}
@@ -100,29 +101,32 @@ func WalkUploadDirectory(ctx context.Context, root string, limit int) (*Director
 }
 
 type folderWalk struct {
-	path      string
+	root      string
 	limit     int
 	selection *DirectorySelection
 	depth     int
 }
 
-// display is an entry's pathname as the operator can find it, for errors
-// and samples only; no effect resolves it.
-func (w *folderWalk) display(rel string) string {
-	return filepath.Join(w.path, filepath.FromSlash(rel))
+// sourcePath is an entry's pathname under the chosen root. The walk itself
+// never resolves it: it descends by handle and uses this only to name an
+// entry in an error. It is also the path each source carries out of the walk,
+// which the upload opens later; that later open is the limit ADR 0103
+// decision 3 states.
+func (w *folderWalk) sourcePath(rel string) string {
+	return filepath.Join(w.root, filepath.FromSlash(rel))
 }
 
 // descend reads the directory the handle is bound to in bounded chunks and
 // visits each entry; subdirectories are opened beneath the handle.
 func (w *folderWalk) descend(ctx context.Context, dir *os.Root, rel string) error {
 	if w.depth >= maxFolderDepth {
-		return fmt.Errorf("the folder nests more than %d levels deep at %s", maxFolderDepth, w.display(rel))
+		return fmt.Errorf("the folder nests more than %d levels deep at %s", maxFolderDepth, w.sourcePath(rel))
 	}
 	w.depth++
 	defer func() { w.depth-- }()
 	listing, err := dir.Open(".")
 	if err != nil {
-		return fmt.Errorf("the folder could not be read in full: %w", atPath(err, "open", w.display(rel)))
+		return fmt.Errorf("the folder could not be read in full: %w", atPath(err, "open", w.sourcePath(rel)))
 	}
 	defer listing.Close()
 	seen := false
@@ -141,7 +145,7 @@ func (w *folderWalk) descend(ctx context.Context, dir *os.Root, rel string) erro
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("the folder could not be read in full: %w", atPath(err, "readdir", w.display(rel)))
+			return fmt.Errorf("the folder could not be read in full: %w", atPath(err, "readdir", w.sourcePath(rel)))
 		}
 	}
 	if !seen {
@@ -157,13 +161,13 @@ func (w *folderWalk) visit(ctx context.Context, parent *os.Root, rel string, ent
 		// would be a silent hole in the folder, so the pick is refused with the
 		// entry named, its undecodable bytes shown as replacement characters.
 		return fmt.Errorf("%s has a name that is not valid UTF-8, which the store cannot hold; rename it and choose the folder again",
-			strings.ToValidUTF8(w.display(childRel), "\uFFFD"))
+			strings.ToValidUTF8(w.sourcePath(childRel), "\uFFFD"))
 	}
 	switch {
 	case entry.IsDir():
 		// Listed as a directory; the open inspects it again by handle, so a
 		// link that took the name meanwhile is skipped, not followed.
-		child, err := openFolderComponent(parent, entry.Name(), w.display(childRel))
+		child, err := openFolderComponent(parent, entry.Name(), w.sourcePath(childRel))
 		if errors.Is(err, errNotOrdinaryDirectory) {
 			w.skip(childRel)
 			return nil
@@ -177,7 +181,7 @@ func (w *folderWalk) visit(ctx context.Context, parent *os.Root, rel string, ent
 			return fmt.Errorf("the folder holds more than %d files; choose a smaller folder or upload it in parts", w.limit)
 		}
 		w.selection.Sources = append(w.selection.Sources, UploadSource{
-			Path: w.display(childRel), Name: w.selection.Folder + "/" + childRel})
+			Path: w.sourcePath(childRel), Name: w.selection.Folder + "/" + childRel})
 	default:
 		w.skip(childRel)
 	}

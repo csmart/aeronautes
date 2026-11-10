@@ -66,15 +66,15 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	// under its own relative directory of the stage prefix, so two files of
 	// one name in different folders stage apart (ADR 0103 decision 4).
 	groups := map[string]*stageGroup{}
-	var dirs []string
+	var order []string // group keys in first-seen order
 	defer func() {
 		if runErr == nil || recorder == nil {
 			return
 		}
 		// Buffered groups never entered an engine; a missing final record
 		// must not silently suggest an attempt when storage can retain this fact.
-		for _, dir := range dirs {
-			group := groups[dir]
+		for _, key := range order {
+			group := groups[key]
 			if group == nil {
 				continue // this group reached its engine and was deleted
 			}
@@ -129,11 +129,11 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		if !exists {
 			group = &stageGroup{dir: dir, relDir: relDir}
 			groups[key] = group
-			dirs = append(dirs, key)
+			order = append(order, key)
 		}
 		group.items = append(group.items, item)
 	}
-	for _, key := range dirs {
+	for _, key := range order {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
@@ -316,14 +316,14 @@ func heldDigest(file io.ReadSeeker) (string, error) {
 // localDigest is the MD5 of the file at path. The engine route holds no
 // descriptor of its own, so its staged comparison can only ask what the
 // pathname holds now; ADR 0080's consequences state what that costs.
-func localDigest(path string) (string, error) {
-	file, err := os.Open(path)
+func localDigest(file string) (string, error) {
+	opened, err := os.Open(file)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer opened.Close()
 	sum := md5.New()
-	if _, err := io.Copy(sum, file); err != nil {
+	if _, err := io.Copy(sum, opened); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
