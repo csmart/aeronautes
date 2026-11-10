@@ -70,6 +70,26 @@ export const fakeContainerDetailFailures = new Set<string>();
  * state, not observed facts, so the rows start unchecked. */
 export const fakeContainerSeeds = new Map<string, { readAcl?: string; writeAcl?: string }>();
 
+// The product refuses a working copy that names a key the typed surface owns
+// before any request (ADR 0101 decision 1). The fake refuses the same keys in
+// the same words, so no test passes on a write the product would refuse.
+function refuseReservedMetadata(meta: { [key: string]: string | undefined } | null | undefined, quotaKeys: string[]) {
+  for (const key of Object.keys(meta ?? {}).sort()) {
+    const lower = key.toLowerCase();
+    if (lower.startsWith("temp-url-key")) {
+      throw new Error(`metadata key "${key}" is a TempURL secret slot and cannot be set through the metadata editor`);
+    }
+    if (quotaKeys.includes(lower)) {
+      throw new Error(`metadata key "${key}" is a quota; set it through its own field rather than a metadata entry`);
+    }
+  }
+}
+
+// One source for the detail and for the settings badge, as in the product.
+function corsConfigured(meta: Record<string, string>): boolean {
+  return Object.values(corsKeys).some((key) => (meta[key] ?? "") !== "");
+}
+
 export function newFakeApi(): Api {
   let nextId = 1;
   const bookmarks: BookmarkDTO[] = [];
@@ -241,7 +261,7 @@ export function newFakeApi(): Api {
       versioningMode: s.versioningMode,
       versioningArchive: s.versioningArchive,
       quota: s.quotaBytes > 0 || s.quotaCount > 0,
-      cors: false,
+      cors: corsConfigured(s.meta),
       readAcl: s.readAcl,
       writeAcl: s.writeAcl,
       observedAt: "2026-09-23T07:00:00Z",
@@ -272,7 +292,7 @@ export function newFakeApi(): Api {
       versioningArchive: s.versioningArchive,
       quotaBytes: s.quotaBytes,
       quotaCount: s.quotaCount,
-      cors: Object.values(corsKeys).some((key) => (s.meta[key] ?? "") !== ""),
+      cors: corsConfigured(s.meta),
       staticWeb: Object.keys(s.meta).some(isStaticWebKey),
       tempUrlKeySlots: [...slotsOf(name)].sort(),
       meta: { ...s.meta },
@@ -501,6 +521,7 @@ export function newFakeApi(): Api {
 
     updateContainer: async (scope, name, baseFingerprint, edit): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
+      refuseReservedMetadata(edit.meta, ["quota-bytes", "quota-count"]);
       if (!containers.some((c) => c.name === name)) {
         throw new Error("container not found");
       }
@@ -547,15 +568,7 @@ export function newFakeApi(): Api {
 
     updateAccountMetadata: async (scope, baseFingerprint, edit): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
-      for (const key of Object.keys(edit.meta ?? {})) {
-        const lower = key.toLowerCase();
-        if (lower.startsWith("temp-url-key")) {
-          throw new Error(`metadata key "${key}" is a TempURL secret slot and cannot be set through the metadata editor`);
-        }
-        if (lower === "quota-bytes") {
-          throw new Error(`metadata key "${key}" is a quota; set it through its own field rather than a metadata entry`);
-        }
-      }
+      refuseReservedMetadata(edit.meta, ["quota-bytes"]);
       if (baseFingerprint !== "" && baseFingerprint !== accountFingerprint()) {
         record("account.metadata.update", "account", "conflict");
         return { outcome: "conflict", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
@@ -572,21 +585,28 @@ export function newFakeApi(): Api {
       if (!slot) throw new Error(`tempurl key slot "${edit.slot}" is not one of Temp-URL-Key or Temp-URL-Key-2`);
       if (edit.clear && edit.secret !== "") throw new Error("a tempurl key clear carries no secret");
       if (!edit.clear && edit.secret === "") throw new Error("tempurl key secret is empty; use clear to remove the slot");
-      if (!edit.clear && edit.secret.trim() !== edit.secret) {
-        throw new Error("tempurl key secret has leading or trailing ASCII spaces or tabs, which HTTP does not preserve");
+      if (!edit.clear) {
+        // The product's limits, in its order and words (ADR 0101 decision 2).
+        const bytes = new TextEncoder().encode(edit.secret).length;
+        if (bytes > 256) throw new Error(`tempurl key secret is ${bytes} bytes; Swift keeps at most 256`);
+        if (/^[ \t]|[ \t]$/.test(edit.secret)) {
+          throw new Error("tempurl key secret has leading or trailing ASCII spaces or tabs, which HTTP does not preserve");
+        }
+        if (/[\x00-\x1f\x7f]/.test(edit.secret)) throw new Error("tempurl key secret contains an HTTP header control byte");
       }
       const resource = edit.container === "" ? "account" : edit.container;
+      const operation = edit.container === "" ? "account.tempurl.update" : "container.tempurl.update";
       if (edit.container !== "" && !containers.some((c) => c.name === edit.container)) throw new Error("container not found");
       const slots = edit.container === "" ? accountSlots : slotsOf(edit.container);
       const presence = (names: Iterable<string>) => [...names].map((name) => name.toLowerCase()).sort().join(",");
       const nothing = { mismatch: "", limitation: "", objectAfter: null, containerAfter: null, accountAfter: null };
       if (presence(edit.baseSlots ?? []) !== presence(slots)) {
-        record("tempurl.key.update", resource, "conflict");
+        record(operation, resource, "conflict");
         return { outcome: "conflict", transIds: ["txfake"], ...nothing };
       }
       if (edit.clear) slots.delete(slot);
       else slots.add(slot);
-      record("tempurl.key.update", resource, "applied");
+      record(operation, resource, "applied");
       const after = edit.container === ""
         ? { accountAfter: accountPortrait(scope) }
         : { containerAfter: { ...containerDetailOf(edit.container), scope: { ...scope }, settings: rememberSettings(edit.container, scope.bookmarkId) } };
@@ -598,6 +618,7 @@ export function newFakeApi(): Api {
       if (create.policy !== "" && !capabilities.storagePolicies?.some((p) => p.name === create.policy)) {
         throw new Error(`cluster does not advertise storage policy "${create.policy}"`);
       }
+      refuseReservedMetadata(create.meta, ["quota-bytes", "quota-count"]);
       if (containers.some((c) => c.name === create.name)) {
         throw new Error("already exists");
       }
