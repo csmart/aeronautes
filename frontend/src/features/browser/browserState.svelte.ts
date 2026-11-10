@@ -1596,12 +1596,15 @@ export class BrowserState {
     return result;
   }
 
-  /** True while scope and the account-request sequence still name the
-   * operation that started: a later save or reload supersedes an in-flight
-   * one, so its stale reply cannot replace the current working-copy
-   * baseline (the sequence check the container reader uses). */
-  #currentAccount(scope: number, seq: number): boolean {
-    return !this.connecting && scope === this.#scopeRevision && seq === this.#accountSeq;
+  /** True while the connection and the account-request sequence still name
+   * the operation that started: a later save or reload supersedes an
+   * in-flight one, so its stale reply cannot replace the current
+   * working-copy baseline (the sequence check the container reader uses).
+   * The account belongs to the connection, not to the container or prefix
+   * being browsed, so moving between those while a write is pending does
+   * not drop its verified after-state. */
+  #currentAccount(connection: number, seq: number): boolean {
+    return !this.connecting && connection === this.#connectionRevision && seq === this.#accountSeq;
   }
 
   /** Save an account metadata and quota edit for the connected account.
@@ -1617,20 +1620,20 @@ export class BrowserState {
     if (!account || this.connecting || !bookmarkId) {
       throw new Error("no connected account — reconnect before editing");
     }
-    const scope = this.#scopeRevision;
+    const connection = this.#connectionRevision;
     const seq = ++this.#accountSeq;
     const portrait = this.#portrait();
     const base = force ? "" : account.editableFingerprint;
     const result = await this.#api.updateAccountMetadata(account.scope, base, edit);
-    this.#adoptAccountAfter(result, scope, seq, bookmarkId, portrait);
+    this.#adoptAccountAfter(result, connection, seq, bookmarkId, portrait);
     await this.audit.loadRecent();
     return result;
   }
 
   /** Adopt a verified account after-state while it still names this
    * connection's generation and nothing newer has started since. */
-  #adoptAccountAfter(result: MutationResultDTO, scope: number, seq: number, bookmarkId: string, portrait: ListingScope | null) {
-    if (this.#currentAccount(scope, seq) && result.outcome === "applied" && result.accountAfter
+  #adoptAccountAfter(result: MutationResultDTO, connection: number, seq: number, bookmarkId: string, portrait: ListingScope | null) {
+    if (this.#currentAccount(connection, seq) && result.outcome === "applied" && result.accountAfter
       && this.#readerScopeMatches(result.accountAfter.scope, bookmarkId, portrait)) {
       this.account = result.accountAfter;
       this.accountError = null;
@@ -1658,14 +1661,14 @@ export class BrowserState {
     if (!bookmarkId || this.connecting) {
       throw new Error("no connected account — reconnect before changing a key");
     }
-    const scope = this.#scopeRevision;
     if (edit.container === "") {
       const account = this.account;
       if (!account) throw new Error("no connected account — reconnect before changing a key");
+      const connection = this.#connectionRevision;
       const seq = ++this.#accountSeq;
       const portrait = this.#portrait();
       const result = await this.#api.updateTempUrlKey(account.scope, edit);
-      this.#adoptAccountAfter(result, scope, seq, bookmarkId, portrait);
+      this.#adoptAccountAfter(result, connection, seq, bookmarkId, portrait);
       await this.audit.loadRecent();
       return result;
     }
@@ -1674,6 +1677,7 @@ export class BrowserState {
       || this.#containerDetailConnection !== this.#connectionRevision) {
       throw new Error("no current container detail open — reload before changing a key");
     }
+    const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
     const result = await this.#api.updateTempUrlKey(detail.scope, edit);
     this.#adoptContainerAfter(result, scope, seq, edit.container);
@@ -1691,7 +1695,7 @@ export class BrowserState {
   async refreshAccount(): Promise<boolean> {
     const bookmarkId = this.connectedBookmarkId;
     if (!bookmarkId || this.connecting) return false;
-    const scope = this.#scopeRevision;
+    const connection = this.#connectionRevision;
     const seq = ++this.#accountSeq;
     const portrait = this.#portrait();
     let failure: string | null = null;
@@ -1699,7 +1703,7 @@ export class BrowserState {
       failure = messageOf(err);
       return null;
     });
-    if (!this.#currentAccount(scope, seq)) return false;
+    if (!this.#currentAccount(connection, seq)) return false;
     if (fresh && this.#readerScopeMatches(fresh.scope, bookmarkId, portrait)) {
       this.account = fresh;
       this.accountError = null;
