@@ -65,7 +65,7 @@ export interface UploadItem {
     /**
      * Replaces marks a name the preflight found live and admitted anyway,
      * because the caller had the operator's acknowledgement for it
-     * (ADR 0081 decision 1). Only PreflightUploadReplacing sets it, and
+     * (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it, and
      * only the publication of such a name may drop its conditional create.
      */
     "replaces"?: boolean;

@@ -1148,8 +1148,8 @@ func TestLocalTransferRealSwift(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	preflight, err := localtransfer.PreflightUpload(ctx, h.Session, container, "up/",
-		[]string{filepath.Join(dir, "small.txt"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "line\nname")})
+	preflight, err := localtransfer.PreflightUploadSources(ctx, h.Session, container, "up/", localtransfer.SourcesByBaseName(
+		[]string{filepath.Join(dir, "small.txt"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "line\nname")}))
 	if err != nil || preflight.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, preflight)
 	}

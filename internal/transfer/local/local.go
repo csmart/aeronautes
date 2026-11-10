@@ -43,7 +43,7 @@ type UploadItem struct {
 	Route string `json:"route"` // "rclone" | "native"
 	// Replaces marks a name the preflight found live and admitted anyway,
 	// because the caller had the operator's acknowledgement for it
-	// (ADR 0081 decision 1). Only PreflightUploadReplacing sets it, and
+	// (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it, and
 	// only the publication of such a name may drop its conditional create.
 	Replaces bool `json:"replaces,omitempty"`
 }
@@ -81,41 +81,21 @@ func validUploadPath(path string) bool {
 	return utf8.ValidString(path) && filepath.IsAbs(path) && filepath.Clean(path) == path
 }
 
-// PreflightUpload maps the selected files onto container/prefix and
-// reports every problem before anything is written: unreadable or
-// non-regular paths, duplicate basenames in the selection, and names
-// already live at the destination, which it refuses. The engine writes
-// only into the job staging namespace and each name commits natively with
-// a conditional create (§28.6, Upload).
-func PreflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
-	return preflightUpload(ctx, dst, container, prefix, sourcesByBaseName(paths), false)
-}
-
-// PreflightUploadSources is PreflightUpload for a selection that names each
-// file's destination itself, which a folder pick does (ADR 0103 decision 4);
-// a name is taken as given under the prefix, never derived from the path.
+// PreflightUploadSources maps a selection onto container/prefix and reports
+// every problem before anything is written: unreadable or non-regular paths,
+// duplicate names in the selection, and names already live at the destination,
+// which it refuses. Each source names its own destination under the prefix
+// and the name is taken as given, never derived from the path: a file pick
+// names its files by base name (SourcesByBaseName), a folder pick by the
+// folder and the relative path (ADR 0103 decision 4). The engine writes only
+// into the job staging namespace and each name commits natively with a
+// conditional create (§28.6, Upload).
 func PreflightUploadSources(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
 	return preflightUpload(ctx, dst, container, prefix, sources, false)
 }
 
-// PreflightUploadSourcesReplacing is PreflightUploadReplacing for named
-// sources, separate for the reason PreflightUploadReplacing gives.
-func PreflightUploadSourcesReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
-	return preflightUpload(ctx, dst, container, prefix, sources, true)
-}
-
-// sourcesByBaseName is the file pick's rule: each path is named by its base
-// name under the prefix.
-func sourcesByBaseName(paths []string) []UploadSource {
-	sources := make([]UploadSource, len(paths))
-	for i, p := range paths {
-		sources[i] = UploadSource{Path: p, Name: filepath.Base(p)}
-	}
-	return sources
-}
-
-// PreflightUploadReplacing is the same report for a caller that holds the
-// operator's acknowledgement of an overwrite (ADR 0081 decision 1): a name
+// PreflightUploadSourcesReplacing is the same report for a caller that holds
+// the operator's acknowledgement of an overwrite (ADR 0081 decision 1): a name
 // already live becomes an item to replace rather than a rejecting problem,
 // and is still reported so the operator sees what will be replaced.
 //
@@ -124,8 +104,18 @@ func sourcesByBaseName(paths []string) []UploadSource {
 // replacing behaviour by passing a value: reaching it means naming it, and
 // the only caller that names it is the admission that raised the
 // confirmation.
-func PreflightUploadReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, paths []string) (*UploadPreflight, error) {
-	return preflightUpload(ctx, dst, container, prefix, sourcesByBaseName(paths), true)
+func PreflightUploadSourcesReplacing(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
+	return preflightUpload(ctx, dst, container, prefix, sources, true)
+}
+
+// SourcesByBaseName is the file pick's rule, stated once: each path is named
+// by its base name under the prefix.
+func SourcesByBaseName(paths []string) []UploadSource {
+	sources := make([]UploadSource, len(paths))
+	for i, p := range paths {
+		sources[i] = UploadSource{Path: p, Name: filepath.Base(p)}
+	}
+	return sources
 }
 
 // listingPageSize is the page size this route asks the store for, kept here
