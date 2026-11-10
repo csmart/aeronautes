@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -870,5 +871,122 @@ func TestReclamationObeysWhatIsTrueWhenItRuns(t *testing.T) {
 				t.Errorf("a reclamation that wrote nothing is recorded as %q", event.Result)
 			}
 		})
+	}
+}
+
+// ADR 0081 decision 5: after a reclamation the record must still say which
+// segments were removed, which the store refused and which are unknown. That
+// record is one trail sentence, and the trail withholds a sentence holding a
+// word such as "password", so a segment named for a credential is written in
+// a form the trail keeps and the dispositions of the others stand beside it.
+func TestReclaimRecordKeepsEveryDispositionWhenANameWouldBeWithheld(t *testing.T) {
+	const refused = "password"
+	if audit.SummaryRefusal(refused) == "" {
+		t.Fatalf("this test needs a substring the audit filter refuses; %q is not one", refused)
+	}
+	outcome := local.ReclaimOutcome{
+		Removed: []local.Fragment{{Container: "segs", Name: "gone/0001"}},
+		Failed: []local.ReclaimFailure{
+			{Fragment: local.Fragment{Container: "segs", Name: "100%/" + refused + "-kept"}, Detail: "403 Forbidden", Resolved: true},
+			{Fragment: local.Fragment{Container: "segs", Name: "plain-kept"}, Detail: "the X-Auth-Key was refused", Resolved: true},
+			{Fragment: local.Fragment{Container: "segs", Name: "unknown/0003"}},
+		},
+	}
+	summary := reclaimSummary(outcome)
+	if word := audit.SummaryRefusal(summary); word != "" {
+		t.Fatalf("the record would be withheld for %q: %s", word, summary)
+	}
+	for _, want := range []string{
+		"1 segment object", "the store refused 2 and kept them", "what the store did with 1 further name is unknown",
+		// segs/100%/password-kept, every byte percent-encoded.
+		"%73%65%67%73%2F%31%30%30%25%2F%70%61%73%73%77%6F%72%64%2D%6B%65%70%74 (403 Forbidden)",
+		"segs/plain-kept (text this trail does not store)",
+		"segs/unknown/0003",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("the record lacks %q: %s", want, summary)
+		}
+	}
+
+	// Through the store: the event is kept with its sentence, not a
+	// placeholder for one.
+	h := newHarness(t)
+	if err := h.auditSvc.audit.Append(t.Context(), audit.Event{
+		Operation: "object.upload.reclaim", Resource: "media/replaced", Summary: summary, Result: reclaimResult(outcome),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 5})
+	if err != nil || len(events) != 1 || events[0].Summary != summary {
+		t.Fatalf("stored record = %+v, %v; want the sentence as written", events, err)
+	}
+}
+
+// The record must say which segment each outcome belongs to, so every name
+// has one spelling that an ordinary percent-decoder turns back into exactly
+// that name, and no spelling the trail would withhold. The pair that once
+// shared a spelling, and a name whose refused word only appears after Unicode
+// lowercasing, are the cases an earlier rule got wrong.
+func TestTrailNameDecodesToTheExactName(t *testing.T) {
+	for _, fixture := range []struct {
+		name     string
+		withheld bool
+	}{
+		{name: "segs/plain/0001"},
+		{name: "segs/100%/half"},
+		{name: "segs/password", withheld: true},
+		{name: "segs/%70assword"},
+		// U+212A KELVIN SIGN lowercases to k and is three bytes long.
+		{name: "segs/API_\u212aEY", withheld: true},
+		{name: "segs/x-auth-key/\u00fc%", withheld: true},
+	} {
+		if got := audit.SummaryRefusal(fixture.name) != ""; got != fixture.withheld {
+			t.Fatalf("the fixture %q is withheld by the trail = %v, want %v", fixture.name, got, fixture.withheld)
+		}
+		written := trailName(fixture.name)
+		if word := audit.SummaryRefusal(written); word != "" {
+			t.Errorf("%q is written as %q, which the trail withholds for %q", fixture.name, written, word)
+		}
+		if back, err := url.PathUnescape(written); err != nil || back != fixture.name {
+			t.Errorf("%q is written as %q, which decodes to %q, %v", fixture.name, written, back, err)
+		}
+		// A name the trail keeps stays readable: only its percent signs change.
+		if !fixture.withheld && written != strings.ReplaceAll(fixture.name, "%", "%25") {
+			t.Errorf("an ordinary name %q is written as %q", fixture.name, written)
+		}
+	}
+}
+
+// A declined reclamation quotes the sentence the operator answered, and that
+// sentence names the object it could not read. A name the trail withholds
+// must cost the record the quotation only: the decision and the statement
+// that nothing was removed are what the record is for.
+func TestADeclinedReclaimKeepsItsDecisionWhenTheQuotedQuestionIsWithheld(t *testing.T) {
+	said, authorises := fragmentPlan{Unknown: "password/taken: the manifest could not be read"}.statement()
+	if authorises || audit.SummaryRefusal(said) == "" {
+		t.Fatalf("the fixture needs a non-removing question the trail would withhold: %v %q", authorises, said)
+	}
+	h := newHarness(t)
+	plan, err := h.transfer.reclaimPlan(t.Context(), UploadRequestDTO{}, "job", local.UploadItem{}, answeredFragments{Said: said})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := local.ReclaimOutcome{Declined: plan.Declined}
+	if err := h.auditSvc.audit.Append(t.Context(), audit.Event{
+		Operation: "object.upload.reclaim", Resource: "media/replaced", Summary: reclaimSummary(outcome), Result: reclaimResult(outcome),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	event := reclaimEvent(t, h)
+	if event == nil {
+		t.Fatal("no reclamation record was stored")
+	}
+	for _, want := range []string{
+		"removed none of the replaced object's segments",
+		"the confirmation that was answered did not say these segments would be removed",
+	} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the stored record lacks %q: %s", want, event.Summary)
+		}
 	}
 }
