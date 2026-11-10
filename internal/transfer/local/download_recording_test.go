@@ -343,7 +343,7 @@ func TestDownloadCancelledBodyClosure(t *testing.T) {
 			}}
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			outcome := nativeDownloadBody(ctx, wrapped, item, testDestination(t, root), temporary, ladderFor(t, nil))
+			outcome := nativeDownloadBody(ctx, wrapped, item, testDestination(t, root), temporary, ladderFor(t, nil), nil)
 			want := transfercopy.ResultNotAttempted
 			if closeFailure {
 				want = transfercopy.ResultFailed

@@ -45,7 +45,7 @@ func (b ItemBaseline) valid() bool {
 // two decisions, and silently keeping either would leave the comparison matching
 // against something the operator may not have been shown.
 func (s *Store) RecordAcknowledgedBaseline(ctx context.Context, jobID string, identity ItemIdentity, baseline ItemBaseline) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	if !identity.valid() || !baseline.valid() {
 		return ErrInvalidItemRecord
 	}

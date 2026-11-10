@@ -10,7 +10,7 @@ import (
 // Completion facts may still be saved after a later admission has latched
 // the store. They cannot authorise another transfer effect (ADR 0061).
 func (s *Store) RecordPublication(ctx context.Context, jobID string, identity ItemIdentity, observation ItemObservation) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	if !identity.valid() || !observation.validPublication() {
 		return ErrInvalidItemRecord
 	}

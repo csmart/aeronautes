@@ -259,7 +259,11 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 	}
 	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: req.BookmarkID, container: req.Container, prefix: req.Prefix, session: session}
 	sweep.run(ctx)
-	if lost := sweep.lostReason(); lost != "" {
+	lost := sweep.lostReason()
+	if lost == "" {
+		lost = s.storeStoppedBeside()
+	}
+	if lost != "" {
 		// The ledger's own latch: the job stays open with its status
 		// unavailable, no postcondition is run and no container is deleted
 		// (ADR 0095 decision 4).

@@ -37,7 +37,7 @@ type jobRunner struct {
 	// paused counts the runs parked at a unit boundary (ADR 0104). A parked
 	// run gives up its slot and holds a queue place instead, so admit counts
 	// it with the waiters and what parked runs retain stays bounded by the
-	// queue depth.
+	// queue depth and the active slots (ADR 0104 decision 2).
 	paused    int
 	pauses    map[string]*pauseGate
 	slotFreed *sync.Cond
@@ -88,7 +88,42 @@ func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 		drained:       make(chan struct{}),
 	}
 	r.slotFreed = sync.NewCond(&r.mu)
+	// A runner built without a store runs no job; some tests build one.
+	if jobStore != nil {
+		jobStore.OnStop(r.storeStopped)
+	}
 	return r
+}
+
+// storeStopped cancels every other job the runner holds once the job store
+// can no longer record (ADR 0105 decision 9). With several running, a sibling
+// whose items are admitted would otherwise go on publishing them, because
+// recording an outcome stays possible after the stop. Each route ends as it
+// does for a cancel, at the check that stands before each of its
+// publications, and a parked or queued job is woken to see it. New starts are
+// refused by the store itself. The store has already cancelled the jobs whose
+// bodies were running, before its failing write returned; this notice arrives
+// later and is what reaches the rest.
+//
+// The job whose record was lost is left alone. Its own write has told it, and
+// it ends on that account as it did when it was the only job; a cancel
+// arriving beside that error could change what it reports.
+func (r *jobRunner) storeStopped(failed string) {
+	r.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(r.owners))
+	for owner := range r.owners {
+		if failed != "" && owner.jobID == failed {
+			continue
+		}
+		cancels = append(cancels, owner.cancelOwned)
+	}
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	r.mu.Lock()
+	r.slotFreed.Broadcast()
+	r.mu.Unlock()
 }
 
 // Startup must be owned before it acquires pins or performs I/O, since
@@ -260,6 +295,9 @@ func (r *jobRunner) register(jobID string, cancel context.CancelFunc) {
 	r.cancels[jobID] = cancel
 	r.pauses[jobID] = &pauseGate{}
 	r.mu.Unlock()
+	if r.jobs != nil {
+		r.jobs.CancelOnStop(jobID, cancel)
+	}
 }
 
 func (r *jobRunner) release(jobID string) {
@@ -267,6 +305,9 @@ func (r *jobRunner) release(jobID string) {
 	delete(r.cancels, jobID)
 	delete(r.pauses, jobID)
 	r.mu.Unlock()
+	if r.jobs != nil {
+		r.jobs.ForgetOnStop(jobID)
+	}
 }
 
 func (r *jobRunner) cancel(jobID string) (context.CancelFunc, bool) {

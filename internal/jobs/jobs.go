@@ -127,6 +127,84 @@ type Store struct {
 	db          *db.DB
 	healthMu    sync.RWMutex
 	unavailable error
+	// onStop is told, once, that the store has stopped recording (OnStop).
+	onStop func(jobID string)
+	// running holds the cancel of each job whose body is running
+	// (CancelOnStop), so that a stop reaches them before the write that
+	// caused it returns.
+	running map[string]context.CancelFunc
+}
+
+// CancelOnStop registers the cancel of a job whose body is running, until
+// ForgetOnStop. When the store stops it cancels each of them, except the job
+// whose record failed, before the failing write returns. The notice OnStop
+// gives the runner arrives later, on a goroutine of its own, and in between a
+// sibling could begin another publication that nothing would stop (ADR 0105
+// decision 9). A context's cancel takes no lock of the caller's, which is why
+// the store may call it where it cannot call the runner.
+func (s *Store) CancelOnStop(jobID string, cancel context.CancelFunc) {
+	s.healthMu.Lock()
+	if s.running == nil {
+		s.running = map[string]context.CancelFunc{}
+	}
+	s.running[jobID] = cancel
+	s.healthMu.Unlock()
+}
+
+// ForgetOnStop removes a job's cancel once its body can publish nothing more.
+func (s *Store) ForgetOnStop(jobID string) {
+	s.healthMu.Lock()
+	delete(s.running, jobID)
+	s.healthMu.Unlock()
+}
+
+// OnStop registers what to tell when the store stops recording for the
+// session. With several jobs running, a record one job could not write would
+// otherwise leave the others publishing what they had already admitted, so
+// the runner asks to be told and cancels the jobs it holds (ADR 0105 decision
+// 9). The call is made once, on a goroutine of its own, because the store
+// stops in the middle of a write whose caller may hold locks of its own; the
+// running jobs have been cancelled by then (CancelOnStop), and the notice is
+// what reaches a job that is starting, queued or parked. It
+// names the job whose record could not be written, or "" when the stop was no
+// one job's: that job is told by the error its own write returns, and ends on
+// that account.
+func (s *Store) OnStop(notify func(jobID string)) {
+	s.healthMu.Lock()
+	s.onStop = notify
+	s.healthMu.Unlock()
+}
+
+// latch records why the store stopped, for the job whose record it was, and
+// returns the reason that stands. The first reason is kept unless the new one
+// overrides it, as a lost final result overrides a lost item record.
+func (s *Store) latch(jobID string, reason error, override bool) error {
+	s.healthMu.Lock()
+	// Which job stopped the store is decided here, with the transition,
+	// and not by whichever later write reaches the notice first: a sibling
+	// this stop cancels can fail its own final save in turn, and a notice
+	// naming it would cancel the job that actually failed.
+	first := s.unavailable == nil
+	var siblings []context.CancelFunc
+	if first {
+		for id, cancel := range s.running {
+			if id != jobID {
+				siblings = append(siblings, cancel)
+			}
+		}
+	}
+	if first || override {
+		s.unavailable = reason
+	}
+	visible, notify := s.unavailable, s.onStop
+	s.healthMu.Unlock()
+	for _, cancel := range siblings {
+		cancel()
+	}
+	if first && notify != nil {
+		go notify(jobID)
+	}
+	return visible
 }
 
 // NewStore builds a Store over the state database.
@@ -210,7 +288,7 @@ func (s *Store) Transition(ctx context.Context, id string, to State) error {
 		}
 		if version == 1 && Terminal(to) {
 			err := ErrItemCompletionRequired
-			s.itemWriteFailed(&err)
+			s.itemWriteFailed(id, &err)
 			return err
 		}
 		if !transitionLegal(State(current), to) {

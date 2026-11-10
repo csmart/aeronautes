@@ -27,6 +27,7 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 		Pause: func(live context.Context) error {
 			return s.runner.checkpoint(live, jobID, req.BookmarkID)
 		},
+		Stopped: s.jobs.Available,
 		Admit: func(admission local.DownloadAdmission) error {
 			identity, err := downloadItemIdentity(req, root, admission.Item)
 			if err != nil {

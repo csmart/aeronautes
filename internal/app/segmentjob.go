@@ -27,6 +27,9 @@ type segmentJob struct {
 	session    *swiftcontrol.Session
 
 	manifestListed jobs.ItemIntent
+	// lostSaid is set once the job has released itself and said that its
+	// records were lost, so a second reason for the same ending adds nothing.
+	lostSaid bool
 
 	// Dynamic large objects sweep a namespace for their segments; static ones
 	// delete the reviewed entries.
@@ -112,6 +115,10 @@ func (j *segmentJob) run(ctx context.Context) {
 	// Phase 2: the segments, now that the manifest is recorded deleted.
 	cancelled, listErr := j.deleteSegments(ctx, background)
 	if j.lostLatched(background) {
+		// The segment phase reports no reason of its own when the store
+		// stopped under it, whether for a record of this job's sweep or for
+		// another job's, so the job says so here unless it already has.
+		j.lost(background, j.s.storeStoppedBeside())
 		return
 	}
 	state, reason := j.segmentEnd(background, cancelled, listErr)
@@ -260,6 +267,10 @@ func (j *segmentJob) segmentEnd(ctx context.Context, cancelled bool, listErr err
 // the job stays open, new jobs are blocked, and the reopen rule settles the
 // members (ADR 0036, ADR 0095 decision 8).
 func (j *segmentJob) lost(ctx context.Context, reason string) {
+	if j.lostSaid {
+		return
+	}
+	j.lostSaid = true
 	j.s.runner.release(j.jobID)
 	j.s.runner.record(ctx, j.bookmarkID, "segments.delete.unavailable", j.resource, "job "+j.jobID+" · "+reason, audit.ResultUnverified)
 	applog.Warnf("job %s: %s", j.jobID, reason)

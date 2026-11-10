@@ -555,11 +555,12 @@ func TestCopyPausesAtTheNextItem(t *testing.T) {
 }
 
 // A parked upload has already admitted its remaining groups. If another job's
-// result cannot be saved while it waits, the store stops for the session, and
-// a resume must not carry the parked job on: it would stage and publish with
-// nothing able to record it. The resumed run asks at its boundary, as a
-// launch does, and ends there with nothing sent and nothing more published.
-func TestAResumeAfterTheStoreStoppedStartsNoFurtherUnit(t *testing.T) {
+// result cannot be saved while it waits, the store stops for the session and
+// the parked job must not carry on: it would stage and publish with nothing
+// able to record it. The runner wakes it, it asks the store at its boundary as
+// a launch does, and it ends there with nothing sent and nothing more
+// published. A resume after that has nothing to resume.
+func TestAStoppedStoreEndsAParkedJobWithoutAFurtherUnit(t *testing.T) {
 	h, bookmark, id, names := pausedUpload(t, false)
 	ctx := context.Background()
 	published := map[string]bool{}
@@ -567,40 +568,21 @@ func TestAResumeAfterTheStoreStoppedStartsNoFurtherUnit(t *testing.T) {
 		_, err := h.inspector.Object(ctx, bookmark, "media", name)
 		published[name] = err == nil
 	}
-	broken, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeUpload})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := h.transfer.jobs.Finish(ctx, broken.ID, jobs.Completion{State: jobs.StateFailed, Audit: audit.Event{}}, h.transfer.runner.audit); err == nil {
-		t.Fatal("the fixture must stop the store with a result that cannot be saved")
-	}
 	sent := len(h.mock.RequestLog())
-	if err := h.transfer.ResumeJob(ctx, id); err != nil {
-		t.Fatal(err)
-	}
+	stopStore(t, h)
 	// The store no longer answers for the job, so its end is read from the
 	// runner: the owner leaves when the whole body has returned.
-	runner := h.transfer.runner
-	deadline := time.Now().Add(terminalWait)
-	for {
-		runner.mu.Lock()
-		owners := len(runner.owners)
-		runner.mu.Unlock()
-		if owners == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the resumed job did not end")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	ownersGone(t, h)
 	if grown := h.mock.RequestLog()[sent:]; len(grown) != 0 {
-		t.Errorf("the resumed job sent requests after the store stopped: %v", grown)
+		t.Errorf("the parked job sent requests after the store stopped: %v", grown)
 	}
 	for _, name := range names {
 		if _, err := h.inspector.Object(ctx, bookmark, "media", name); (err == nil) != published[name] {
-			t.Errorf("%s: at the destination = %v, was %v before the resume", name, err == nil, published[name])
+			t.Errorf("%s: at the destination = %v, was %v before the store stopped", name, err == nil, published[name])
 		}
+	}
+	if err := h.transfer.ResumeJob(ctx, id); err == nil {
+		t.Error("a job the stopped store ended was resumed")
 	}
 }
 

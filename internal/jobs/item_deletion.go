@@ -15,7 +15,7 @@ import (
 // issued, because its request is over; marking an issued member again is the
 // same fact.
 func (s *Store) MarkIssued(ctx context.Context, jobID, key string) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		if err := s.Available(); err != nil {
 			return err
@@ -61,7 +61,7 @@ func (s *Store) MarkIssued(ctx context.Context, jobID, key string) (err error) {
 // nothing that could have been followed by a successor, and a member not
 // attempted was never compared, so it has no baseline.
 func (s *Store) RecordDeletion(ctx context.Context, jobID, key string, observation ItemObservation, successor *ItemSuccessor, baseline *MemberBaseline) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	if successor != nil {
 		if !successor.valid() {
 			return ErrInvalidItemRecord

@@ -188,7 +188,17 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			outcome = materializeDownloadDirectory(ctx, destination, item.RelPath)
 		} else {
 			report.NativeRouted++
-			outcome = nativeDownload(ctx, src, container, item, destination, staging, preflight.nativeSource[item.Name])
+			var stopped func() error
+			if d.recorder != nil {
+				stopped = d.recorder.Stopped
+			}
+			outcome = nativeDownload(ctx, src, container, item, destination, staging, preflight.nativeSource[item.Name], stopped)
+			if outcome.partialKept {
+				// A native item's temporary is its stage (ADR 0048), kept
+				// because the store stopped; the report says what the
+				// engine stage's own cleanup says in that case.
+				report.StageCleanup = &StageCleanupResult{Attempted: false, Retained: true}
+			}
 		}
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
@@ -246,9 +256,13 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		}
 	}()
 	defer func() {
+		if d.stopped == nil && d.recorder != nil && d.recorder.Stopped != nil {
+			d.stop(d.recorder.Stopped())
+		}
 		if d.stopped != nil {
-			// Recording failed, so cleanup was never attempted and the
-			// stage is still there. Both facts are stated (ADR 0048).
+			// Recording failed, for this run or because another job's
+			// record stopped the store, so cleanup was never attempted and
+			// the stage is still there. Both facts are stated (ADR 0048).
 			report.StageCleanup = &StageCleanupResult{Attempted: false, Retained: true}
 			return
 		}
@@ -662,7 +676,7 @@ func downloadPlacementFailed(label string, err error) downloadResult {
 	return result
 }
 
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, temporary string, source downloadSourceIdentity) downloadResult {
+func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, temporary string, source downloadSourceIdentity, stopped func() error) downloadResult {
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
@@ -681,10 +695,10 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIncomplete, "native-get",
 			errors.Join(fmt.Errorf("source states no usable content expectation: %w", ladderErr), body.Close()))
 	}
-	return nativeDownloadBody(ctx, body, item, destination, temporary, ladder)
+	return nativeDownloadBody(ctx, body, item, destination, temporary, ladder, stopped)
 }
 
-func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string, ladder transfercopy.Ladder) (result downloadResult) {
+func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadItem, destination *DestinationRoot, temporary string, ladder transfercopy.Ladder, stopped func() error) (result downloadResult) {
 	if err := ctx.Err(); err != nil {
 		if closeErr := body.Close(); closeErr != nil {
 			result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-close", closeErr)
@@ -728,7 +742,7 @@ func nativeDownloadBody(ctx context.Context, body io.ReadCloser, item DownloadIt
 		return result
 	}
 	base := filepath.Base(item.RelPath)
-	publish := publication{root: destination,
+	publish := publication{root: destination, stopped: stopped,
 		stagedRoot: parent, stagedBase: temporaryBase, stagedRel: filepath.Join(filepath.Dir(item.RelPath), temporaryBase), stagedDisplay: temporary,
 		targetRoot: parent, targetBase: base, targetRel: item.RelPath, targetDisplay: filepath.Join(destination.Path(), item.RelPath)}
 	return finishNativeDownload(ctx, body, temp, parent, publish, item.Size, ladder)

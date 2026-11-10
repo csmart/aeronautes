@@ -28,6 +28,13 @@ type DownloadRecorder struct {
 	// longer be written, and stops the run as a lost record does. A route
 	// with no hook never pauses.
 	Pause func(ctx context.Context) error
+	// Stopped reports why this job's records can no longer be written, or
+	// nil while they can. The route asks it once, where it would clean its
+	// stage: when the store has stopped, for this job's record or another's,
+	// nothing is removed and the stage is reported as retained, as it is
+	// when this run's own record failed (ADR 0048 decision 7, ADR 0105
+	// decision 9). A route with no hook cleans as it always did.
+	Stopped func() error
 }
 
 type DownloadAdmission struct {
@@ -46,6 +53,9 @@ type downloadResult struct {
 	label        string
 	failure      error
 	issues       []downloadIssue
+	// partialKept marks a native item whose temporary was left in place,
+	// unplaced, because the job store had stopped.
+	partialKept bool
 	// created names the directories the ancestor walk made for this
 	// item, relative to the held root, observed rather than inferred
 	// (ADR 0043). It is reported whatever the item's own outcome is,

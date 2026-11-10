@@ -161,7 +161,7 @@ func (p ItemPredecessor) Validate() error {
 // It is called before the publication it precedes, so a record that cannot
 // be saved stops the replacement rather than letting it land unrecorded.
 func (s *Store) RecordPredecessor(ctx context.Context, jobID string, identity ItemIdentity, observed ItemPredecessor) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	// Named is derived from what is handed over, so a caller cannot record
 	// a number of names it did not supply.
 	observed.Named = len(observed.Fragments)
