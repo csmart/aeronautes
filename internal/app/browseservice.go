@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,6 +53,11 @@ func (s *BrowseService) Account(ctx context.Context, bookmarkID string) (Account
 // It is the one place a portrait becomes an AccountDTO, shared by the
 // account read and the account metadata edit's verified after-state.
 func accountDTO(p *swiftcontrol.AccountPortrait, scope ListingScopeDTO, storageURL string) AccountDTO {
+	usage := make([]AccountPolicyUsageDTO, 0, len(p.PolicyUsage))
+	for policy, u := range p.PolicyUsage {
+		usage = append(usage, AccountPolicyUsageDTO{Policy: policy, BytesUsed: u.BytesUsed, ObjectCount: u.ObjectCount, ContainerCount: u.ContainerCount})
+	}
+	slices.SortFunc(usage, func(a, b AccountPolicyUsageDTO) int { return strings.Compare(a.Policy, b.Policy) })
 	return AccountDTO{
 		Scope:           scope,
 		Name:            storageURL[strings.LastIndex(storageURL, "/")+1:],
@@ -61,6 +67,8 @@ func accountDTO(p *swiftcontrol.AccountPortrait, scope ListingScopeDTO, storageU
 		QuotaBytes:      p.QuotaBytes,
 		Meta:            p.Meta,
 		TempURLKeySlots: p.TempURLKeySlots,
+		PolicyUsage:     usage,
+		RawHeaders:      p.RawHeaders,
 
 		EditableFingerprint: p.EditableFingerprint,
 	}

@@ -53,7 +53,7 @@ async function show() {
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
   browser.account = { name: "AUTH_source", containers: 1, objects: 2, bytesUsed: 1,
-    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], scope, editableFingerprint: "" };
+    quotaBytes: 0, meta: {}, tempUrlKeySlots: [], policyUsage: [], rawHeaders: {}, scope, editableFingerprint: "" };
   await browser.openContainer("fixtures");
   browser.select(0);
   await settle();
