@@ -161,6 +161,10 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	backupService := app.NewBackupService(database, bookmarkStore, settingsService)
 	app.WireBackupFilePicker(backupService, wailsPicker{})
 
+	// No Logger and no LogLevel are set, on purpose. Wails logs every bound
+	// call's arguments and result at debug level, and a bookmark's password
+	// and a TempURL key cross the bridge as arguments. The defaults keep that
+	// output out of every log; raising the level here would write those secrets.
 	options := application.Options{
 		Name:        "Aeronautes",
 		Description: "Desktop operator workbench for OpenStack Swift",
