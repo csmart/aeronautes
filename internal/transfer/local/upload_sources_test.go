@@ -21,6 +21,9 @@ func TestPreflightSourcesTakeTheirNamesAsGiven(t *testing.T) {
 		{Path: writeFile(t, dir, "two", "2"), Name: ""},
 		{Path: writeFile(t, dir, "three", "3"), Name: "/photos/three"},
 		{Path: writeFile(t, dir, "four", "4"), Name: "photos//four"},
+		// The engine stages a file under its base name, so a source renamed
+		// on the way would stage beside another file of that base name.
+		{Path: writeFile(t, dir, "five", "5"), Name: "photos/renamed"},
 	}
 	report, err := PreflightUploadSources(t.Context(), s, "media", "live/", sources)
 	if err != nil {
@@ -29,8 +32,8 @@ func TestPreflightSourcesTakeTheirNamesAsGiven(t *testing.T) {
 	if len(report.Items) != 1 || report.Items[0].Name != "live/photos/a/one" {
 		t.Fatalf("items = %+v, want the one well-named source under the prefix", report.Items)
 	}
-	if !report.Rejected() || len(report.Problems) != 3 {
-		t.Fatalf("problems = %+v, want the three bad names refused", report.Problems)
+	if !report.Rejected() || len(report.Problems) != 4 {
+		t.Fatalf("problems = %+v, want the four bad names refused", report.Problems)
 	}
 	for _, p := range report.Problems {
 		if p.Kind != "source-name" || !p.Reject {
