@@ -593,7 +593,8 @@ On 401:
 3. replay once;
 4. then fail.
 
-Keystone v2/v3 is not a v1 UI goal even if the underlying library supports it.
+Keystone v3 authentication, by the password method with project scope, joined v1 by finish-line decision 31 and is decided in [ADR 0100](adr/0100-keystone-v3-authentication.md): the storage URL the catalogue advertises is validated before a token travels, the object-store endpoint is bound to the bookmark's region, and the 401 rule above holds through the library's own re-authentication.
+Keystone v2, the other v3 methods and any Keystone management UI are not v1 goals.
 
 **Pin the auth target to a real cluster.** "SwiftStack" as a commercial product was discontinued after Nvidia's 2020 acquisition; "SwiftStack-compatible" here means the legacy/OpenStack Swift lineage those deployments run, and "SwiftStack v1 auth" is TempAuth-v1-style auth. Because there is no shipping SwiftStack release to certify against, the concrete auth flow, `/info` behaviour, and versioning model (§21) must be pinned to the **actual cluster the user operates**, and the "SwiftStack release gate" in §57.4 means "a representative instance of that real deployment", not a vendor product.
 
@@ -661,9 +662,14 @@ Bookmark
 
   protocol_profile
     SwiftStackV1
+    KeystoneV3                 # password method, project scope (ADR 0100)
 
   auth_url
   username
+  user_domain?                 # Keystone v3 only, "Default" when blank
+  project_name?                # Keystone v3 only
+  project_domain?              # Keystone v3 only, "Default" when blank
+  region?                      # Keystone v3 only, binds the object-store endpoint
   storage_url_override?
 
   secret_ref
@@ -1203,6 +1209,11 @@ cluster's `/info` (2026-08-29), so the pin matches the real deployment, not only
 
 The older paragraph's warning stands: these are different models with different UX; add depth
 only when a real cluster requires it.
+
+[ADR 0102](adr/0102-versioning-matrix-fixed-point-and-archives.md) records what 0.5.0 measured and decided on this pin.
+The legacy modes stay editable where `/info` allows them and modern versioning stays display-only.
+A replacement by upload or copy is committed only while the destination container still reports the versioning its confirmation was composed from.
+A bulk deletion's preview names the containers that keep their versions in the container being deleted from.
 
 ---
 
@@ -3129,8 +3140,8 @@ Deliver:
 - pinned rclone process manager;
 - local→Swift upload;
 - Swift→local download;
-- multi-file/directory upload;
-- Swift bookmark→Swift bookmark Copy (conditional creation of new names; changed existing destinations refused before staging, §28.6);
+- multi-file/directory upload (a folder pick walks the chosen directory under [ADR 0103](adr/0103-directory-upload.md));
+- Swift bookmark→Swift bookmark Copy (conditional creation of new names; an existing destination is replaced only on the acknowledged terms of [ADR 0087](adr/0087-copy-overwrite-on-upload-terms.md); a collision the plan found without that acknowledgement is refused before staging, and a destination that changes after the plan is refused at publication, §28.6);
 - comparison model + streaming merge-join preview (§15.2, §28.4);
 - Smart preflight;
 - staging, verification, post-job reconciliation;
@@ -3285,7 +3296,7 @@ Potential v1.x/v2 features:
 - server-side same-cluster copy fast path;
 - TempURL generator;
 - orphan analysis;
-- Keystone;
+- Keystone beyond the v3 password authentication of ADR 0100;
 - deeper version-history UX.
 
 ---
