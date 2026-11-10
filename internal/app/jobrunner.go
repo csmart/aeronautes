@@ -34,11 +34,17 @@ type jobRunner struct {
 	// so a burst of concurrent starts is admitted as before.
 	queueCapacity int
 	queued        int
-	slotFreed     *sync.Cond
-	cancels       map[string]context.CancelFunc
-	stopped       bool
-	owners        map[*jobOwner]struct{}
-	drained       chan struct{}
+	// paused counts the runs parked at a unit boundary (ADR 0104). A parked
+	// run gives up its slot and holds a queue place instead, so admit counts
+	// it with the waiters and what parked runs retain stays bounded by the
+	// queue depth.
+	paused    int
+	pauses    map[string]*pauseGate
+	slotFreed *sync.Cond
+	cancels   map[string]context.CancelFunc
+	stopped   bool
+	owners    map[*jobOwner]struct{}
+	drained   chan struct{}
 }
 
 var errJobRunnerStopped = errors.New("job shutdown has begun; new jobs are unavailable")
@@ -72,6 +78,7 @@ func newJobRunner(jobStore *jobs.Store, auditStore *audit.Store) *jobRunner {
 		ceiling:       maxActiveJobsCeiling,
 		queueCapacity: defaultMaxQueuedJobs,
 		cancels:       map[string]context.CancelFunc{},
+		pauses:        map[string]*pauseGate{},
 		owners:        map[*jobOwner]struct{}{},
 		drained:       make(chan struct{}),
 	}
@@ -93,12 +100,15 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 	// Once as many jobs wait for a slot as the queue depth allows, a new
 	// start is refused rather than queued without bound (ADR 0074
 	// decision 2).
-	if r.queued >= r.queueCapacity {
+	if held := r.queued + r.paused; held >= r.queueCapacity {
 		noun := "jobs are"
-		if r.queued == 1 {
+		if held == 1 {
 			noun = "job is"
 		}
-		return nil, nil, fmt.Errorf("%w: %d %s waiting; wait for one to finish or cancel one", errJobQueueFull, r.queued, noun)
+		if r.paused > 0 {
+			return nil, nil, fmt.Errorf("%w: %d %s waiting or paused; wait for one to finish, resume one or cancel one", errJobQueueFull, held, noun)
+		}
+		return nil, nil, fmt.Errorf("%w: %d %s waiting; wait for one to finish or cancel one", errJobQueueFull, held, noun)
 	}
 	startCtx, cancelStart := context.WithCancel(ctx)
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))
@@ -240,12 +250,14 @@ func (r *jobRunner) queueDepth() int {
 func (r *jobRunner) register(jobID string, cancel context.CancelFunc) {
 	r.mu.Lock()
 	r.cancels[jobID] = cancel
+	r.pauses[jobID] = &pauseGate{}
 	r.mu.Unlock()
 }
 
 func (r *jobRunner) release(jobID string) {
 	r.mu.Lock()
 	delete(r.cancels, jobID)
+	delete(r.pauses, jobID)
 	r.mu.Unlock()
 }
 
