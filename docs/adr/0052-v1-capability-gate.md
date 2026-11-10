@@ -178,6 +178,19 @@ inventory, with the two derivations agreeing.
     only benchmark now stays deferred with a token, and Mirror stays refused under
     [ADR 0020](0020-recovery-containment.md).
 
+15. **0.5.0, 10 November 2026.** The actions the release adds are kept from the start; none was born
+    deferred, so none leaves the deferred table. `MutateService.UpdateAccountMetadata` joins container
+    and object metadata writing in the v1 scope of reading and writing metadata: a bounded, verified,
+    reversible edit. `MutateService.UpdateTempURLKey` is key management, which DESIGN §22 lists among
+    the v1 priorities, and is kept with the metadata writes
+    ([ADR 0101](0101-tempurl-key-slots-and-cors-editing.md)); CORS is edited through the container's
+    metadata and adds no action. `TransferService.PickUploadDirectory` is upload's second selection
+    and is kept with it ([ADR 0103](0103-directory-upload.md)). Keystone v3 is a bookmark's
+    authentication and adds no action ([ADR 0100](0100-keystone-v3-authentication.md)).
+    `TransferService.PauseJob` and `TransferService.ResumeJob` stand beside `CancelJob` and are kept
+    with the transfers they control ([ADR 0104](0104-pause-and-resume.md)). The classification test
+    states each of these with its reason.
+
 ## What this does not establish
 
 It bounds what a v1 build offers.
