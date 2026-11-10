@@ -311,6 +311,16 @@ func TestCreateContainer(t *testing.T) {
 	if _, err := s.CreateContainer(ctx, ContainerCreateRequest{Name: "bad/name"}); err == nil {
 		t.Error("slash-bearing container name accepted")
 	}
+	// The keys the editors refuse are refused at creation too, before any
+	// request: a slot is a secret and a quota has its own field.
+	for _, key := range []string{"Temp-URL-Key-2", "Quota-Count"} {
+		if _, err := s.CreateContainer(ctx, ContainerCreateRequest{Name: "reserved", Meta: map[string]string{key: "1"}}); err == nil {
+			t.Errorf("creation accepted the reserved key %q", key)
+		}
+	}
+	if _, err := s.ContainerDetail(ctx, "reserved"); err == nil {
+		t.Error("a refused creation still created the container")
+	}
 }
 
 func TestMarkers(t *testing.T) {
