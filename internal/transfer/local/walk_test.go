@@ -108,6 +108,20 @@ func TestWalkUploadDirectoryRefusals(t *testing.T) {
 			t.Fatalf("got %+v, %v; want the walk refused with the unreadable directory named", selection, err)
 		}
 	})
+	t.Run("a file whose name the store cannot hold rejects the selection by name", func(t *testing.T) {
+		scans := filepath.Join(t.TempDir(), "scans")
+		if err := os.MkdirAll(scans, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(scans, "r\xe9sum\xe9.pdf"), []byte("x"), 0o600); err != nil {
+			t.Skipf("this filesystem refuses a name that is not UTF-8: %v", err)
+		}
+		selection, err := WalkUploadDirectory(t.Context(), scans, MaxDirectoryFiles)
+		named := filepath.Join(scans, "r\uFFFDsum\uFFFD.pdf")
+		if err == nil || !strings.Contains(err.Error(), "not valid UTF-8") || !strings.Contains(err.Error(), named) {
+			t.Fatalf("got %+v, %v; want the walk refused with %s named", selection, err, named)
+		}
+	})
 }
 
 // The report bounds what it retains: every skipped entry is counted, the

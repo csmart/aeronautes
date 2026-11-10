@@ -9,6 +9,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 )
 
 // UploadSource is one file an upload selection names: where it is on the
@@ -150,6 +152,13 @@ func (w *folderWalk) descend(ctx context.Context, dir *os.Root, rel string) erro
 
 func (w *folderWalk) visit(ctx context.Context, parent *os.Root, rel string, entry fs.DirEntry) error {
 	childRel := path.Join(rel, entry.Name())
+	if (entry.IsDir() || entry.Type().IsRegular()) && !utf8.ValidString(entry.Name()) {
+		// The store holds only UTF-8 names, and a file left out for its name
+		// would be a silent hole in the folder, so the pick is refused with the
+		// entry named, its undecodable bytes shown as replacement characters.
+		return fmt.Errorf("%s has a name that is not valid UTF-8, which the store cannot hold; rename it and choose the folder again",
+			strings.ToValidUTF8(w.display(childRel), "\uFFFD"))
+	}
 	switch {
 	case entry.IsDir():
 		// Listed as a directory; the open inspects it again by handle, so a
