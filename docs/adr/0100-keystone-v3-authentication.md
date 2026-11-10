@@ -26,7 +26,7 @@ That is substantial, security-adjacent protocol code we would rather not own, or
 Reuse ncw/swift's built-in Keystone v3 authenticator for the protocol, and wrap it.
 
 `guardedAuth` (`internal/swiftcontrol/authv3.go`) delegates `Request` and `Response` to the built-in, then — after the built-in has parsed the reply and selected the catalog's object-store endpoint — runs `ValidateStorageURL` on that endpoint and publishes the credential snapshot.
-The two Aeronautes invariants that must live in the auth exchange, the storage-URL gate and the R-06 snapshot, are therefore the only new auth code; the request, response and catalog parsing stay the library's well-exercised code.
+The Aeronautes invariants that must live in the auth exchange, the storage-URL gate, the R-06 snapshot and the region binding decided below, are therefore the only new auth code; the request, response and catalog parsing stay the library's well-exercised code.
 
 The built-in v3 authenticator type is unexported, so a caller that leaves `Connection.Auth` nil and sets `AuthVersion=3` gets it but no handle to wrap.
 A one-line, behaviour-preserving export, `NewV3Authenticator`, is added to the vendored source as a registered patch, `v3-authenticator-export.patch`, recorded in `third_party/ncw-swift/UPSTREAM.json` and verified by `scripts/check-swift-source.py` exactly like the existing patches.
@@ -68,11 +68,11 @@ The built-in already supports them, so widening later adds `Config` and DTO fiel
 
 The committed tests drive the real built-in parser against a mock Keystone endpoint (`/v3/auth/tokens`) in `internal/swifttest`: a happy path that validates and captures the catalog endpoint and then reads the account with the issued token, the storage-URL gate refusing a public `http://` catalog endpoint, a bad-credentials failure, and the two `New` guards.
 Because the protocol is the library's and only the gate and snapshot are ours, a mock is the right instrument for the committed tests.
-An independent oracle — a real Keystone stood up next to the SAIO, or a throwaway cloud Keystone wired into a pipeline — remains the follow-up for fixture faithfulness and end-to-end acceptance.
+An independent oracle — a real Keystone stood up next to the SAIO, or a throwaway cloud Keystone wired into a pipeline — was the follow-up for fixture faithfulness and end-to-end acceptance, and now exists as the real-cloud oracle (`internal/swiftcontrol/realcloud_oracle_test.go`), which runs against real Keystone backends when credentials are supplied from outside the repository and is not a required check.
 
 ## Consequences
 
 A Keystone v3 bookmark authenticates through the app session and works for browse, inspect, metadata and, through the token contract, engine transfers.
 The v1 authenticator keeps its behaviour but now shares the snapshot primitive.
 The vendored library carries one more registered patch, which the provenance gate verifies on every CI run.
-The app and frontend layers — the bookmark DTO fields and the auth-type selector — follow in later slices.
+The app and frontend layers — the bookmark DTO fields and the auth-type selector — followed in later slices and are in the tree.

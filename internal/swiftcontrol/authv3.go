@@ -10,7 +10,7 @@ import (
 )
 
 // guardedAuth wraps the wire library's built-in Keystone v3 authenticator
-// (swift.NewV3Authenticator) so two Aeronautes requirements hold for v3
+// (swift.NewV3Authenticator) so three Aeronautes requirements hold for v3
 // exactly as the hand-written v1 authenticator holds them for TempAuth:
 //
 //   - the storage URL the identity catalog advertises is validated before
@@ -28,7 +28,7 @@ import (
 //
 // It WRAPS rather than reimplements: the v3 request, response and catalog
 // parsing are the library's well-exercised code, so our surface is only
-// these two concerns (see the Keystone v3 auth ADR and the sibling
+// these concerns (see the Keystone v3 auth ADR and the sibling
 // v3-authenticator-export.patch, which exports the built-in so Aeronautes
 // can hold a handle to it). The storage-URL override that v1 needs does
 // not apply here: Keystone's catalog already distinguishes endpoints by
