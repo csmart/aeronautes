@@ -247,6 +247,10 @@ export interface Api {
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
   cancelJob(jobId: string): Promise<void>;
+  /** Ask an upload, a download or a copy to pause at its next unit boundary (ADR 0104); the unit in hand finishes and nothing is killed. */
+  pauseJob(jobId: string): Promise<void>;
+  /** Withdraw a pause (ADR 0104): a job that has not reached its boundary carries on, and a paused one waits for a job slot. */
+  resumeJob(jobId: string): Promise<void>;
   rerunJob(jobId: string): Promise<string>;
   jobs(bookmarkId: string, activeOnly: boolean, limit: number): Promise<JobDTO[]>;
   job(jobId: string, bookmarkId: string): Promise<JobDTO | null>;
@@ -345,6 +349,8 @@ export const liveApi: Api = {
   startCopy: (req) => TransferService.StartCopy(req),
   startMirror: (req) => TransferService.StartMirror(req),
   cancelJob: (jobId) => TransferService.CancelJob(jobId),
+  pauseJob: (jobId) => TransferService.PauseJob(jobId),
+  resumeJob: (jobId) => TransferService.ResumeJob(jobId),
   rerunJob: (jobId) => TransferService.RerunJob(jobId),
   jobs: async (bookmarkId, activeOnly, limit) =>
     (await JobService.List(bookmarkId, activeOnly, limit)) ?? [],

@@ -1300,6 +1300,16 @@ export class BrowserState {
     await this.jobs.load();
   }
 
+  async pauseJob(jobId: string) {
+    await this.#api.pauseJob(jobId);
+    await this.jobs.load();
+  }
+
+  async resumeJob(jobId: string) {
+    await this.#api.resumeJob(jobId);
+    await this.jobs.load();
+  }
+
   async rerunJob(jobId: string): Promise<string> {
     const id = await this.#api.rerunJob(jobId);
     await this.jobs.load();
