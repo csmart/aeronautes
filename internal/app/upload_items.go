@@ -358,6 +358,9 @@ func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, 
 				Result: audit.ResultConflict,
 			})
 		},
+		Pause: func(live context.Context) error {
+			return s.runner.checkpoint(live, jobID, req.BookmarkID)
+		},
 		VersioningUnchanged: func(live context.Context, item local.UploadItem) (string, error) {
 			// The read on the route's live context, the record on this
 			// recorder's cancellation-free one, like every record here.

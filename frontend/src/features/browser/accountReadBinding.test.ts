@@ -180,7 +180,7 @@ function retainedJob(type: "upload" | "download"): JobDTO {
   return { id: "old-job", state: "running", type, source: "source", destination: "destination",
     sourceBookmarkId: type === "download" ? bookmark : "", destBookmarkId: type === "upload" ? bookmark : "",
     createdAt: "2000-01-01T00:00:00Z", startedAt: "", finishedAt: "", engine: "native", settings: "",
-    error: "", recoveryRecords: 0, counters: { objectsPlanned: 0, objectsCopied: 0, objectsVerified: 0,
+    error: "", recoveryRecords: 0, pause: "", counters: { objectsPlanned: 0, objectsCopied: 0, objectsVerified: 0,
       objectsFailed: 0, bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0,
       nativeRouted: 0, objectsDeleted: 0 } };
 }

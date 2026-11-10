@@ -30,6 +30,16 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
 }
 
 /**
+ * PauseJob asks an upload, a download or a copy to pause at its next unit
+ * boundary (ADR 0104): the unit in hand finishes and is recorded, nothing is
+ * killed, and the job is then paused until it is resumed or cancelled. A
+ * deletion job is not paused, and neither is a job that is finishing.
+ */
+export function PauseJob(jobID: string): $CancellablePromise<void> {
+    return $Call.ByID(3131157495, jobID);
+}
+
+/**
  * PickDownloadDir opens the OS directory picker. Nil when cancelled.
  */
 export function PickDownloadDir(scope: $models.SelectionScopeDTO): $CancellablePromise<$models.PickedDirDTO | null> {
@@ -90,6 +100,15 @@ export function PreflightUpload(req: $models.UploadRequestDTO): $CancellableProm
  */
 export function RerunJob(jobID: string): $CancellablePromise<string> {
     return $Call.ByID(2171765979, jobID);
+}
+
+/**
+ * ResumeJob withdraws a pause: a job that has not reached its boundary
+ * carries on, and a paused one waits for a slot and runs its next unit.
+ * Nothing resumes a job this process is not holding.
+ */
+export function ResumeJob(jobID: string): $CancellablePromise<void> {
+    return $Call.ByID(2048213668, jobID);
 }
 
 /**

@@ -171,7 +171,7 @@ func (s *JobService) History(ctx context.Context, bookmarkID, cursor string, lim
 	}
 	out := JobHistoryDTO{Jobs: make([]JobDTO, 0, len(page.Jobs)), NextCursor: page.NextCursor}
 	for _, job := range page.Jobs {
-		out.Jobs = append(out.Jobs, jobDTO(job))
+		out.Jobs = append(out.Jobs, s.dto(job))
 	}
 	return out, nil
 }

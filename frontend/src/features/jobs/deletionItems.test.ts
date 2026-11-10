@@ -17,7 +17,7 @@ afterEach(async () => {
 
 function job(): JobDTO {
   return { id: "selected", state: "partial", type: "delete_selected", source: "fixtures", destination: "(deleted)", sourceBookmarkId: "a", destBookmarkId: "",
-    createdAt: "2026-10-27T00:00:00Z", startedAt: "", finishedAt: "2026-10-27T00:00:09Z", engine: "native", settings: "", error: "", recoveryRecords: 0,
+    createdAt: "2026-10-27T00:00:00Z", startedAt: "", finishedAt: "2026-10-27T00:00:09Z", engine: "native", settings: "", error: "", recoveryRecords: 0, pause: "",
     counters: { objectsPlanned: 8, objectsCopied: 7, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0, bytesCopied: 0,
       overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 2 } };
 }

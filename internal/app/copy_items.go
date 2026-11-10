@@ -53,6 +53,9 @@ func copyItemObservation(observation transfercopy.Observation) jobs.ItemObservat
 func (s *TransferService) copyItemRecorder(ctx context.Context, jobID string, req CopyRequestDTO,
 	acknowledged map[string]jobs.ItemBaseline, authorised swiftcontrol.ContainerVersioning) *transfercopy.Recorder {
 	return &transfercopy.Recorder{
+		Pause: func(live context.Context) error {
+			return s.runner.checkpoint(live, jobID, req.SourceBookmarkID)
+		},
 		VersioningUnchanged: func(live context.Context, key string) (string, error) {
 			// The read on the route's live context, the record on this
 			// recorder's cancellation-free one, like every record here.

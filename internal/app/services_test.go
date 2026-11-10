@@ -90,14 +90,15 @@ func newHarnessAt(t *testing.T, path, infoJSON string) *harness {
 	ev := evidence.NewStore(d)
 	auditStore := audit.NewStore(d)
 	jobStore := jobs.NewStore(d)
+	transfer := transferService(connections, jobStore, auditStore, ev)
 	return &harness{
 		bookmarks: NewBookmarkService(store, connections, jobStore),
 		browse:    NewBrowseService(connections, ev),
 		inspector: NewInspectorService(connections, ev),
 		mutate:    confirmedMutateService(connections, auditStore, ev),
 		auditSvc:  NewAuditService(auditStore),
-		transfer:  transferService(connections, jobStore, auditStore, ev),
-		jobsSvc:   NewJobService(jobStore),
+		transfer:  transfer,
+		jobsSvc:   NewJobServiceWithRunner(jobStore, transfer.runner),
 		evidence:  ev,
 		db:        d,
 		dbPath:    path,

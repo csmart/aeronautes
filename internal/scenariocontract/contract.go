@@ -163,6 +163,8 @@ var inventory = map[string]Action{
 	"TransferService.StartDownload":       {Kind: Job},
 	"TransferService.RerunJob":            {Kind: Job},
 	"TransferService.CancelJob":           {Kind: Session},
+	"TransferService.PauseJob":            {Kind: Session},
+	"TransferService.ResumeJob":           {Kind: Session},
 	// DeleteService
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},

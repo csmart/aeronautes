@@ -25,7 +25,7 @@ func BoundServices() []BoundService {
 		{"AuditService", "NewAuditService", &AuditService{}},
 		{"TransferService", "NewTransferServiceWithRunner", &TransferService{}},
 		{"DeleteService", "NewDeleteService", &DeleteService{}},
-		{"JobService", "NewJobService", &JobService{}},
+		{"JobService", "NewJobServiceWithRunner", &JobService{}},
 		{"FindService", "NewFindService", &FindService{}},
 		{"SettingsService", "NewSettingsService", &SettingsService{}},
 		{"BenchmarkService", "NewBenchmarkService", &BenchmarkService{}},

@@ -10,7 +10,7 @@ import (
 	"github.com/csmart/aeronautes/internal/secrets"
 )
 
-var ErrInUse = errors.New("a starting, queued or running job still uses this bookmark; wait for the job and its cleanup to finish")
+var ErrInUse = errors.New("a starting, queued, running or paused job still uses this bookmark; wait for the job and its cleanup to finish, or cancel it")
 
 // PinGeneration prevents a job's binding from changing after acquisition,
 // including before its durable row exists and while cancellation cleans up.
