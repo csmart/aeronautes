@@ -116,3 +116,22 @@ func TestArchiveOwnersReportsAFailedReadAsUnestablished(t *testing.T) {
 		t.Fatalf("a failed read did not leave the answer unestablished with the owner found: %+v", got)
 	}
 }
+
+// A container deleted between the listing and its own read is not an owner and
+// is not a doubt either: the answer stays established, with the owners found.
+func TestArchiveOwnersTreatsAContainerGoneSinceTheListingAsNoOwner(t *testing.T) {
+	gone := func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/gone") {
+			w.WriteHeader(http.StatusNotFound)
+			return true
+		}
+		return false
+	}
+	s, mock := archiveSession(t, gone, "archive", "gone", "owner")
+	mock.EnableVersionArchive("owner", "archive", true)
+
+	got := s.ArchiveOwners(context.Background(), "archive", 1000)
+	if !slices.Equal(got.Owners, []string{"owner"}) || got.Unestablished != "" {
+		t.Fatalf("a container that vanished left the answer in doubt or lost an owner: %+v", got)
+	}
+}
