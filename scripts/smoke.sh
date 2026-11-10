@@ -269,4 +269,4 @@ shot 02-browse
 n=$(curl -s "$U/smoke-src?format=json" -H "X-Auth-Token: $TOK" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 [ "$n" = "3" ] || fail "smoke-src listing has $n of 3 objects"
 
-say "PASS — browse landed; copy is deferred (ADR 0052). artifacts in $ART/"
+say "PASS — browse landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
