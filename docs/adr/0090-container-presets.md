@@ -3,6 +3,7 @@
 **Status:** Accepted (2026-10-27) — the operator's request of 26 October 2026, recorded as decision 27 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md); the model change and the editor change ship in the same range as this record.
 **Scope:** How the container editor presents the common settings (world read, public listing, static web) and how the Go container model classifies the `Web-*` metadata family.
 It changes neither the public-read acknowledgement and its native confirmation ([ADR 0073](0073-selected-resource-acknowledgement.md), §19.1), the settings badges ([ADR 0071](0071-container-settings-indicators.md)), the bridge signatures, nor the exclusion of CORS and TempURL metadata from the editable surface.
+[ADR 0101](0101-tempurl-key-slots-and-cors-editing.md) decision 6 later lifted the exclusion of CORS, which is now ordinary editable metadata; the TempURL key slots stay out of the metadata editors and have their own operation there.
 
 ## The request
 

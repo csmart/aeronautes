@@ -1,6 +1,8 @@
 # ADR 0086 — a mirror deletes what the source does not have, and says what it cannot hold
 
 **Status:** Proposed. Written for review before any implementation, as ADR 0085 was. Nothing here is built: `TransferService.StartMirror` is a stub that refuses, and this record does not change that. Enabling Mirror is the operator's decision and this is the statement they would be deciding on.
+Since this was written, [ADR 0087](0087-copy-overwrite-on-upload-terms.md) accepted and delivered Copy's overwrite on upload's terms, which is the amendment to ADR 0081 that decision 4 below calls owed.
+The passages below that say Copy's overwrite is refused describe the tree when this record was written, and a revision of this proposal starts from ADR 0087.
 **Scope:** What a mirror does to a destination scope, and what it must refuse. Its three effects do not stand on the same ground, and this summary says which is which because it is the first thing an operator reads.
 Its **creates** are a copy route's, and both routes are already bound and implemented: [ADR 0042](0042-source-content-ladder.md) for the staged route, [ADR 0083](0083-native-copy-content-binding.md) for the native one as amended by [ADR 0084](0084-held-manifest-copy.md).
 Its **replacements** have no accepted path at all — Copy's overwrite is refused today — so this record **proposes new route authority** for them, which is the part that is not yet anyone's decision.

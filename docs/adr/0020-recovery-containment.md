@@ -3,6 +3,8 @@
 **Status:** Accepted after independent local design review under the authorised audit remediation plan.
 **Scope:** The P01 ownership, concurrency and durability decisions needed by P04 recovery containment and P05 transfer refusal.
 Implementation and release evidence remain separate gates.
+Amended since: [ADR 0081](0081-upload-overwrite-acknowledgement.md) lifted the transfer-overwrite refusal for the upload route and added one named exception to the refusal of reclamation, and [ADR 0087](0087-copy-overwrite-on-upload-terms.md) extended that lift to the copy route.
+Every other refusal here stands.
 
 ## Problem and oracle
 
