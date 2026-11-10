@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/applog"
 )
 
 func itemError(err error) error {
@@ -28,6 +30,9 @@ func (s *Store) itemWriteFailed(err *error) {
 	// A later item error must not replace an earlier terminal-save diagnostic.
 	if s.unavailable == nil {
 		s.unavailable = ErrItemRecordsUnavailable
+		// What is returned below is reduced to a fixed sentence, so the cause
+		// of the session-wide stop is logged once, here.
+		applog.Errorf("transfer item records are unavailable from here on: %v", *err)
 	}
 	visible := s.unavailable
 	s.healthMu.Unlock()

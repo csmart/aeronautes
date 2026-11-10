@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 )
 
@@ -44,6 +45,9 @@ func (s *Store) FinishFromItems(ctx context.Context, id string, result Completio
 func (s *Store) finish(ctx context.Context, id string, result Completion, trail *audit.Store, fromItems bool) (err error) {
 	defer func() {
 		if err != nil {
+			// Callers reduce this error to a fixed sentence before they report
+			// it, so the cause is logged here, where it is still whole.
+			applog.Errorf("job %s final result was not saved: %v", id, err)
 			s.healthMu.Lock()
 			s.unavailable = errors.New("a job's final result could not be saved; changes may already have occurred. Job status is unavailable and new jobs are blocked for this session. Inspect retained data before retrying")
 			s.healthMu.Unlock()
