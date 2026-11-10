@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "1645a7c66a2d5da8d575b932587409c83530c26b",
+    "commit": "ca0bc9a7e177a7454d67b7602550bab8411ee2f7",
     "go_version": "go1.27.3",
-    "run_id": "42563896295",
-    "run_attempt": "1"
+    "run_id": "42712452878",
+    "run_attempt": "2"
   },
-  "contractHash": "acfe7de61c274f2e",
+  "contractHash": "fd91196825416b86",
   "actions": [
     {
       "action": "AppService.About",
@@ -438,6 +438,13 @@
     },
     {
       "action": "TransferService.PickDownloadDir",
+      "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.PickUploadDirectory",
       "kind": "session",
       "required": [
         "happy"
@@ -879,10 +886,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-09-tempurl-key-baseline.md",
-    "mainReportSHA256": "cc989c2238d8db285c933642df4b6c1dd08f9b2a47f714ddf5a650592cb8a709",
-    "mainReceiptSHA256": "faa4b1a334c5f13363f92f2479aa60e0839ef8ec991da2618f7ed6bfa30df5ba",
-    "heavyReportSHA256": "29241eb54245a4fa4ede7f6b4791f85e77dccb30bba668ca6a6662a6636fedfe",
-    "heavyReceiptSHA256": "4ca5aaac396407f594585f23bf42403124748ecbeaa83dd82a506b9e821348dc"
+    "reference": "docs/experiments/2026-11-10-directory-upload-baseline.md",
+    "mainReportSHA256": "ec6e816dfe5ea38b8b24b0b49df1fa9906142dcf338b61280029ee2c0bffffa7",
+    "mainReceiptSHA256": "1c94498b596831c00a7dcb6a32dabe738802d49d7acca9214716a875a68be7f3",
+    "heavyReportSHA256": "057b1e24c2819960ce4f185ad48bdb5038991bafda7655f070973f1f42bf7e01",
+    "heavyReceiptSHA256": "018a0b72241128437060afd3f8f08372210eda3b8294423bf55d5d825ce3f1a6"
   }
 }
