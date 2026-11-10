@@ -18,7 +18,7 @@ func TestDirectLibraryCallsRefreshStorageURL(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(r.URL.Path, "/auth/") {
 					n := generation.Add(1)
-					w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/v1/AUTH_%d", r.Host, n))
+					w.Header().Set("X-Storage-Url", fmt.Sprintf("http://%s/gen%d/v1/AUTH_test", r.Host, n))
 					w.Header().Set("X-Auth-Token", fmt.Sprint(n))
 					return
 				}
@@ -26,7 +26,7 @@ func TestDirectLibraryCallsRefreshStorageURL(t *testing.T) {
 					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
-				if r.URL.Path != "/v1/AUTH_"+r.Header.Get("X-Auth-Token")+"/owned/object" {
+				if r.URL.Path != "/gen"+r.Header.Get("X-Auth-Token")+"/v1/AUTH_test/owned/object" {
 					t.Error("library retry did not refresh its storage URL")
 					w.WriteHeader(http.StatusForbidden)
 					return

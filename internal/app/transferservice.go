@@ -214,7 +214,7 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 		!provenDistinctAccounts(src.StorageURL(), dst.StorageURL()) {
 		return nil, nil, false, fmt.Errorf(
 			"source and destination overlap: container %q with nested prefixes (%q / %q), and the two endpoints are not PROVABLY different accounts (%s vs %s) — a run could consume its own output; use disjoint prefixes, another container, or endpoints with distinct account identifiers",
-			req.SourceContainer, req.SourcePrefix, req.DestPrefix, accountIdentity(src.StorageURL()), accountIdentity(dst.StorageURL()))
+			req.SourceContainer, req.SourcePrefix, req.DestPrefix, swiftcontrol.AccountIdentity(src.StorageURL()), swiftcontrol.AccountIdentity(dst.StorageURL()))
 	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
 	if err != nil {
@@ -1159,34 +1159,13 @@ func splitLocator(locator string) (container, prefix string, ok bool) {
 	return locator, "", true
 }
 
-// accountIdentity extracts the authoritative account segment from a v1
-// storage URL path (the ".../v1/AUTH_xxx" tail), lowercased — the part
-// that stays equal across host aliases/VIPs for one Swift account and
-// differs between accounts. "" when it cannot be found.
-func accountIdentity(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
-	for i, seg := range segments {
-		if seg == "v1" && i+1 < len(segments) {
-			return strings.ToLower(segments[i+1])
-		}
-	}
-	if n := len(segments); n > 0 {
-		return strings.ToLower(segments[n-1])
-	}
-	return ""
-}
-
 // provenDistinctAccounts reports whether two storage URLs are
 // DEMONSTRABLY different accounts. It returns true ONLY when both
 // account identifiers parse and differ — anything ambiguous (a missing
 // identifier, an unparseable URL) is NOT proven distinct, so the
 // overlap guard fails closed (review R-04).
 func provenDistinctAccounts(a, b string) bool {
-	idA, idB := accountIdentity(a), accountIdentity(b)
+	idA, idB := swiftcontrol.AccountIdentity(a), swiftcontrol.AccountIdentity(b)
 	return idA != "" && idB != "" && idA != idB
 }
 

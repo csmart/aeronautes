@@ -286,7 +286,7 @@ func TestObjectContentNativeCredentialLifetime(t *testing.T) {
 }
 
 func TestObjectContentKeepsPairAcrossUnauthorizedRetry(t *testing.T) {
-	for _, change := range []string{"origin", "account", "override"} {
+	for _, change := range []string{"origin", "path", "override"} {
 		t.Run(change, func(t *testing.T) {
 			var requests atomic.Int32
 			fixture := newPairingFixture(t, change, func(w http.ResponseWriter, request *http.Request) {
@@ -325,7 +325,7 @@ func TestObjectContentAuthCloseFailureKeepsCoherentTuple(t *testing.T) {
 				t.Fatal(err)
 			}
 			var storageRequests, authRequests atomic.Int32
-			const target, token = "http://127.0.0.1/v1/AUTH_new", "new-fixture-token"
+			const target, token = "http://127.0.0.1/new/v1/AUTH_fixture", "new-fixture-token"
 			session.conn.Transport = redirectRefusingTransport{inner: admissionRoundTrip(func(request *http.Request) (*http.Response, error) {
 				if request.URL.Path != "/auth" {
 					storageRequests.Add(1)
@@ -333,7 +333,7 @@ func TestObjectContentAuthCloseFailureKeepsCoherentTuple(t *testing.T) {
 				}
 				if authRequests.Add(1) == 1 && primed {
 					return &http.Response{StatusCode: 200, Header: http.Header{
-						"X-Storage-Url": {"http://127.0.0.1/v1/AUTH_old"}, "X-Auth-Token": {"old-fixture-token"}, "X-Auth-Token-Expires": {"3600"},
+						"X-Storage-Url": {"http://127.0.0.1/old/v1/AUTH_fixture"}, "X-Auth-Token": {"old-fixture-token"}, "X-Auth-Token-Expires": {"3600"},
 					}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 				}
 				return &http.Response{StatusCode: 200, Header: http.Header{
