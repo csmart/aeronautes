@@ -113,17 +113,20 @@ func (r *jobRunner) refuseStagedName(account, container, name string) error {
 	return nil
 }
 
-// stagedByAnother reports the job, other than jobID, in whose own stage
-// directory an object name lies. Reclamation asks it for each old segment: an
-// ordinary live object can name segments another job is still staging, and
-// those are kept (ADR 0105 decision 3). The directory, not the root, is
-// compared, because every large object's segments stay under the stage root of
-// the job that uploaded it.
-func (r *jobRunner) stagedByAnother(jobID, account, container, name string) (string, bool) {
+// stagedByLiveJob reports the live job in whose own stage directory an object
+// name lies. Reclamation asks it for each old segment: an ordinary live object
+// can name segments a job is still staging, and those are kept (ADR 0105
+// decision 3). The directory, not the root, is compared, because every large
+// object's segments stay under the stage root of the job that uploaded it.
+//
+// The reclaiming job is not excepted. A dynamic predecessor is inventoried by
+// listing its prefix after this job has staged, so a prefix that covers this
+// job's directory lists the segments of the object it is about to publish.
+func (r *jobRunner) stagedByLiveJob(account, container, name string) (string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for owner := range r.owners {
-		if owner.jobID == "" || owner.jobID == jobID {
+		if owner.jobID == "" {
 			continue
 		}
 		for _, held := range owner.claims {

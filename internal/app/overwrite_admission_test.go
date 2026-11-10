@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -708,10 +707,24 @@ func TestARefusalThatCouldNotBeRecordedIsVisibleBehindAnEarlierOne(t *testing.T)
 // entries the record should hold, which include the inline one in place.
 func seedStaticLargeObject(t *testing.T, h *harness, container, name string) (parts, entries []jobs.ItemFragment) {
 	t.Helper()
+	return seedStaticLargeObjectOver(t, h, container, name, name)
+}
+
+// seedStaticLargeObjectOver is seedStaticLargeObject with its segments under
+// a prefix of the caller's choosing in the segments container.
+func seedStaticLargeObjectOver(t *testing.T, h *harness, container, name, segments string) (parts, entries []jobs.ItemFragment) {
+	t.Helper()
+	return seedStaticLargeObjectParts(t, h, container, name, segments+"/0000001", segments+"/0000002")
+}
+
+// seedStaticLargeObjectParts is seedStaticLargeObject with its two segments
+// at the names given in the segments container.
+func seedStaticLargeObjectParts(t *testing.T, h *harness, container, name, first, second string) (parts, entries []jobs.ItemFragment) {
+	t.Helper()
 	h.mock.AddContainer(container+"_segments", "standard")
 	var digests string
 	for i, content := range []string{"01234567", "89abcdef"} {
-		part := fmt.Sprintf("%s/%07d", name, i+1)
+		part := []string{first, second}[i]
 		seedObject(h.mock, container+"_segments", part, content, nil)
 		parts = append(parts, jobs.ItemFragment{Container: container + "_segments", Object: part,
 			Shape: jobs.FragmentWhole})

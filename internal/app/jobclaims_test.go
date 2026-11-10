@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -332,5 +333,183 @@ func TestAnUploadRefusedForASweepKeepsItsSelection(t *testing.T) {
 	}
 	if job := awaitTerminal(t, h, uploadID); job.State != string(jobs.StateComplete) {
 		t.Fatalf("the upload after the sweep: %s %+v", job.State, job.Counters)
+	}
+}
+
+// ADR 0105 decision 3: an ordinary live object can name segments that lie in
+// the stage directory of another job that is still alive. Replacing that
+// object does not reclaim them: they are kept and recorded as kept with the
+// job named. The same replacement with no such job removes them, which
+// TestReclamationRemovesTheRecordedSegments shows for segments elsewhere.
+func TestReclamationKeepsSegmentsInAnotherLiveJobsStage(t *testing.T) {
+	for _, alive := range []bool{true, false} {
+		t.Run(map[bool]string{true: "the staging job is alive", false: "no job holds that stage"}[alive], func(t *testing.T) {
+			f := newOverwriteFixture(t)
+			const other = "0f1e2d3c4b5a6978"
+			parts, _ := seedStaticLargeObjectOver(t, f.h, "replaceable", "live/taken", ".aeronautes/stage/"+other+"/batch/live/taken")
+			f.tag = f.liveTag(t)
+			wireReclamation(t, f.h, true)
+			f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+			if alive {
+				// Another transfer into the container, admitted and named as a
+				// launched job is, holding its stage claim.
+				runner := f.h.transfer.runner
+				owner, _, err := runner.admit(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer owner.finishStart()
+				if err := owner.claim(stageClaims("auth_test", "replaceable", "")...); err != nil {
+					t.Fatal(err)
+				}
+				runner.mu.Lock()
+				owner.jobID = other
+				runner.mu.Unlock()
+			}
+			id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+				t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+			}
+			left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts))
+			event := reclaimEvent(t, f.h)
+			if event == nil {
+				t.Fatal("the replacement left no reclamation record")
+			}
+			if !alive {
+				if left != 0 || event.Result != audit.ResultApplied {
+					t.Fatalf("with no job holding the stage: %d segments left, record %+v", left, event)
+				}
+				return
+			}
+			if left != len(parts) {
+				t.Fatalf("%d of %d segments in a live job's stage were removed", len(parts)-left, len(parts))
+			}
+			for _, want := range []string{"removed none", "2 of the segments it named are in the staging area of job " + other, "still running"} {
+				if !strings.Contains(event.Summary, want) {
+					t.Errorf("the record does not say %q: %s", want, event.Summary)
+				}
+			}
+		})
+	}
+}
+
+// When the kept segments lie in the stages of two live jobs, the record names
+// both, with how many are in each.
+func TestReclamationNamesEveryJobWhoseStageItKept(t *testing.T) {
+	f := newOverwriteFixture(t)
+	const one, two = "0f1e2d3c4b5a6978", "8796a5b4c3d2e1f0"
+	parts, _ := seedStaticLargeObjectParts(t, f.h, "replaceable", "live/taken",
+		".aeronautes/stage/"+one+"/batch/live/taken/0000001", ".aeronautes/stage/"+two+"/batch/live/taken/0000002")
+	f.tag = f.liveTag(t)
+	wireReclamation(t, f.h, true)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+	runner := f.h.transfer.runner
+	for _, id := range []string{one, two} {
+		owner, _, err := runner.admit(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer owner.finishStart()
+		if err := owner.claim(stageClaims("auth_test", "replaceable", "")...); err != nil {
+			t.Fatal(err)
+		}
+		runner.mu.Lock()
+		owner.jobID = id
+		runner.mu.Unlock()
+	}
+	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
+		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+	}
+	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts)); left != len(parts) {
+		t.Fatalf("%d of %d segments in live jobs' stages were removed", len(parts)-left, len(parts))
+	}
+	event := reclaimEvent(t, f.h)
+	if event == nil {
+		t.Fatal("the replacement left no reclamation record")
+	}
+	for _, want := range []string{"2 of the segments it named are in the staging areas of jobs that are still running", "1 in that of job " + one, "1 in that of job " + two} {
+		if !strings.Contains(event.Summary, want) {
+			t.Errorf("the record does not say %q: %s", want, event.Summary)
+		}
+	}
+}
+
+// A dynamic large object names every object under its prefix, and its
+// inventory is a listing taken when the replacement is about to publish. By
+// then this upload has staged its own segments, so a predecessor whose prefix
+// covers this job's stage directory would list them, and reclaiming them would
+// destroy the object the job had just published. Two things stand in the way.
+// Staging under that prefix changes what the predecessor is, so the
+// replacement is refused at its last observation and nothing is reclaimed:
+// that is this test. And reclamation keeps a segment in any live job's stage
+// directory, the reclaiming job's own included, for a store whose reads
+// disagree: TestASegmentInAnyLiveJobsStageIsKept states that rule on its own.
+func TestAPredecessorCoveringTheJobsOwnStageIsNotReplaced(t *testing.T) {
+	f := newOverwriteFixture(t)
+	ctx := t.Context()
+	f.h.installChunkingEngine(nil, 8)
+	f.h.mock.AddContainer("replaceable_segments", "standard")
+	old := []string{"old/000000", "old/000001"}
+	for _, name := range old {
+		seedObject(f.h.mock, "replaceable_segments", name, "old bytes", nil)
+	}
+	// The whole segments container is this object's prefix.
+	f.h.mock.PutObject("replaceable", "live/taken", swifttest.Object{Manifest: "replaceable_segments/"})
+	f.tag = f.liveTag(t)
+	wireReclamation(t, f.h, true)
+	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
+
+	id, err := f.h.transfer.StartUpload(ctx, f.request(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, f.h, id); job.State != "partial" || job.Counters.Overwrites != 0 {
+		t.Fatalf("the replacement = %s %+v; want it refused and the other file published", job.State, job.Counters)
+	}
+	session := f.h.transfer.connections.sessions[f.bookmark].session
+	if detail, err := session.ObjectDetail(ctx, "replaceable", "live/taken"); err != nil || detail.Manifest != "replaceable_segments/" {
+		t.Fatalf("the predecessor is no longer at the name: %+v %v", detail, err)
+	}
+	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", old); left != len(old) {
+		t.Errorf("%d of the predecessor's %d segments were removed though it was not replaced", len(old)-left, len(old))
+	}
+	if event := reclaimEvent(t, f.h); event != nil {
+		t.Errorf("a refused replacement left a reclamation record: %+v", event)
+	}
+}
+
+// The second guard, at the rule itself: a name in a live job's own stage
+// directory is that job's, whichever job asks, and a name under the stage root
+// that is in no live job's directory is nobody's.
+func TestASegmentInAnyLiveJobsStageIsKept(t *testing.T) {
+	h := newHarness(t)
+	runner := h.transfer.runner
+	owner, _, err := runner.admit(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.finishStart()
+	if err := owner.claim(stageClaims("auth_test", "media", "live/")...); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	owner.jobID = "0f1e2d3c4b5a6978"
+	runner.mu.Unlock()
+	for name, want := range map[string]bool{
+		"live/.aeronautes/stage/0f1e2d3c4b5a6978/batch/big/000000": true,
+		"live/.aeronautes/stage/another/batch/big/000000":          false,
+		"live/elsewhere/000000":                                    false,
+	} {
+		holder, held := runner.stagedByLiveJob("auth_test", "media_segments", name)
+		if held != want || held && holder != "job 0f1e2d3c4b5a6978" {
+			t.Errorf("%s: held by %q = %v, want %v", name, holder, held, want)
+		}
 	}
 }
