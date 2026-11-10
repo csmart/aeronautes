@@ -22,21 +22,17 @@ func itemError(err error) error {
 	return ErrItemStorage
 }
 
-func (s *Store) itemWriteFailed(err *error) {
+func (s *Store) itemWriteFailed(jobID string, err *error) {
 	if *err == nil {
 		return
 	}
-	s.healthMu.Lock()
-	// A later item error must not replace an earlier terminal-save diagnostic.
-	if s.unavailable == nil {
-		s.unavailable = ErrItemRecordsUnavailable
+	if s.Available() == nil {
 		// What is returned below is reduced to a fixed sentence, so the cause
 		// of the session-wide stop is logged once, here.
 		applog.Errorf("transfer item records are unavailable from here on: %v", *err)
 	}
-	visible := s.unavailable
-	s.healthMu.Unlock()
-	*err = errors.Join(visible, itemError(*err))
+	// A later item error must not replace an earlier terminal-save diagnostic.
+	*err = errors.Join(s.latch(jobID, ErrItemRecordsUnavailable, false), itemError(*err))
 }
 
 func itemJob(ctx context.Context, tx *sql.Tx, id string, writing bool) error {
@@ -71,7 +67,7 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 	if err := s.Available(); err != nil {
 		return err
 	}
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	if len(items) < 1 || len(items) > 500 {
 		return ErrInvalidItemRecord
 	}
@@ -145,7 +141,7 @@ func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) 
 }
 
 func (s *Store) RecordExecution(ctx context.Context, jobID, key string, observation ItemObservation) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		if err := transferItemJob(ctx, tx, jobID); err != nil {
 			return err
@@ -163,7 +159,7 @@ func (s *Store) RecordExecution(ctx context.Context, jobID, key string, observat
 
 // Comparison may discover a name outside execution; it cannot authorise a write.
 func (s *Store) RecordComparison(ctx context.Context, jobID string, identity ItemIdentity, observation ItemObservation) (err error) {
-	defer s.itemWriteFailed(&err)
+	defer s.itemWriteFailed(jobID, &err)
 	if !identity.valid() || !observation.valid("verification", false) {
 		return ErrInvalidItemRecord
 	}

@@ -47,9 +47,21 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 	// exactly how another writer's replacement gets destroyed. Unlike a
 	// content mismatch, this is not overridden by a close failure.
 	identityFailed := false
+	placed := false
 	defer func() {
 		if identityFailed || contentMismatch {
 			result.Effect = transfercopy.EffectUnresolved
+			return
+		}
+		// Once the store has stopped nothing is removed from a stage (ADR
+		// 0105 decision 9), and until the file is placed this temporary is
+		// the native item's stage, whatever ended the item: a read the
+		// cancel cut short, or a whole read whose cancel came at close. Once
+		// placed, the temporary is a second name for the placed file and is
+		// removed as always, because the bytes are at their final name.
+		if !placed && publish.stopped != nil && publish.stopped() != nil {
+			result.Effect = transfercopy.EffectUnresolved
+			result.partialKept = true
 			return
 		}
 		if cleanupErr := removeNativeTemporary(parent, publish.stagedBase, publish.stagedDisplay, verified); cleanupErr != nil {
@@ -147,6 +159,7 @@ func finishNativeDownload(ctx context.Context, body io.ReadCloser, temp nativeDo
 	if err := publish.publishVerified(verified); err != nil {
 		return downloadPlacementFailed("native-get", err)
 	}
+	placed = true
 	result = downloadVerified(wantSize)
 	result.published = pinned
 	result.publishedRel = publish.targetRel

@@ -100,13 +100,7 @@ func (s *Store) FailInterrupted(ctx context.Context) (int64, error) {
 		}
 	})
 	if err != nil {
-		s.healthMu.Lock()
-		if s.unavailable == nil {
-			s.unavailable = ErrInterruptedJobsUnavailable
-		}
-		visible := s.unavailable
-		s.healthMu.Unlock()
-		return 0, visible
+		return 0, s.latch("", ErrInterruptedJobsUnavailable, false)
 	}
 	return count, nil
 }

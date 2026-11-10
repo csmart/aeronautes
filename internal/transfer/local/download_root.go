@@ -287,6 +287,10 @@ type publication struct {
 	// The captured pathnames of both entries, for reports only.
 	stagedDisplay string
 	targetDisplay string
+	// stopped reports why the job's records can no longer be written, or
+	// nil; a nil hook never says so. A read that a cancel ended keeps its
+	// partial file when it does (DownloadRecorder.Stopped).
+	stopped func() error
 }
 
 // publishVerified links the verified file to its target with no-replace

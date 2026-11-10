@@ -256,7 +256,8 @@ func (r *prefixSweep) member(ctx, background context.Context, m sweepMember) {
 }
 
 // notAttempted settles a member a cancellation leaves unissued; a record
-// that cannot be written is logged, because the reopen rule settles it.
+// that cannot be written is logged, and the job is then left open by its
+// caller (storeStoppedBeside), so that the reopen rule settles it.
 func (r *prefixSweep) notAttempted(ctx context.Context, m sweepMember) {
 	if r.lostReason() != "" {
 		return

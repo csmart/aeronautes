@@ -62,7 +62,7 @@ func (r downloadReadFailure) Read(p []byte) (int, error) {
 func TestNativeDownloadClosure(t *testing.T) {
 	readErr, syncErr := errors.New("read refused"), errors.New("sync refused")
 	fileErr, sourceErr := errors.New("file close refused"), errors.New("source close refused")
-	for _, fault := range []string{"control", "read", "length", "over_length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists", "cancelled_before_link"} {
+	for _, fault := range []string{"control", "read", "length", "over_length", "sync", "file_close", "source_close", "all_closes", "read_and_closes", "target_exists", "cancelled_before_link", "stopped_at_close"} {
 		t.Run(fault, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -113,7 +113,9 @@ func TestNativeDownloadClosure(t *testing.T) {
 			body := downloadCloseReader{Reader: reader, close: func() error {
 				sourceCloses++
 				checkBeforeLink()
-				if fault == "cancelled_before_link" {
+				// A whole read whose cancel comes at close, once because a
+				// job was cancelled and once because the store stopped.
+				if fault == "cancelled_before_link" || fault == "stopped_at_close" {
 					cancel()
 					expected = append(expected, context.Canceled)
 				}
@@ -130,7 +132,11 @@ func TestNativeDownloadClosure(t *testing.T) {
 				wantSize--
 			}
 			destination := testDestination(t, dir)
-			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final"), wantSize, ladderFor(t, []byte("complete bytes")))
+			publish := nativePublication(t, destination, ".", filepath.Base(temp.Name()), ".", "final")
+			if fault == "stopped_at_close" {
+				publish.stopped = func() error { return errors.New("the job store has stopped") }
+			}
+			outcome := finishNativeDownload(ctx, body, file, testDirectory(t, destination, "."), publish, wantSize, ladderFor(t, []byte("complete bytes")))
 			closeDownloadPublication(t, outcome)
 			placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 			if placed != (fault == "control") || (err == nil) != (fault == "control") {
@@ -139,7 +145,7 @@ func TestNativeDownloadClosure(t *testing.T) {
 			wantVerification := transfercopy.ResultFailed
 			if fault == "control" {
 				wantVerification = transfercopy.ResultVerified
-			} else if fault == "read" || fault == "target_exists" || fault == "cancelled_before_link" {
+			} else if fault == "read" || fault == "target_exists" || fault == "cancelled_before_link" || fault == "stopped_at_close" {
 				wantVerification = ""
 			}
 			if wantVerification == "" && outcome.verification != nil || wantVerification != "" && (outcome.verification == nil || outcome.verification.Result != wantVerification) {
@@ -171,6 +177,16 @@ func TestNativeDownloadClosure(t *testing.T) {
 				}
 			} else {
 				checkBeforeLink()
+			}
+			if fault == "stopped_at_close" {
+				// The stage of an unplaced item is kept whole and said to be.
+				if data, err := os.ReadFile(temp.Name()); err != nil || string(data) != "complete bytes" || !outcome.partialKept {
+					t.Errorf("the temporary was not kept whole with the store stopped: %q %v kept=%v", data, err, outcome.partialKept)
+				}
+				return
+			}
+			if outcome.partialKept {
+				t.Error("a temporary was reported kept though the store had not stopped")
 			}
 			if _, err := os.Lstat(temp.Name()); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("temporary file retained without cleanup refusal: %v", err)

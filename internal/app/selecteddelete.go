@@ -139,8 +139,15 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		s.runSelectedDelete(runCtx, job.ID, req, bookmarkID, entry.session)
 	}, func(background context.Context) {
 		// Cancelled before it ran: no member was issued, each is recorded as
-		// not attempted, and the job is cancelled.
+		// not attempted, and the job is cancelled. Another job's lost record
+		// can stop the store while these are recorded; the job is then left
+		// open as the running path leaves it, so that the restart settles
+		// the members this could not.
 		s.recordNotAttempted(background, job.ID, req.Members)
+		if lost := s.storeStoppedBeside(); lost != "" {
+			s.leaveSelectedOpen(background, job.ID, req, bookmarkID, lost)
+			return
+		}
 		s.finishSelected(background, job.ID, req, bookmarkID, jobs.StateCancelled, "")
 	})
 	return job.ID, nil
@@ -189,17 +196,11 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 		}
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
 	}
+	if recordingLost == "" {
+		recordingLost = s.storeStoppedBeside()
+	}
 	if recordingLost != "" {
-		// A record that could not be written leaves the job open with its
-		// status unavailable, the ledger's own latch: the member in flight is
-		// unresolved because its DELETE may have been sent, no later member
-		// is touched, nothing is retried, and the reopen rule settles the
-		// records when the store is next available (ADR 0093 decision 4). A
-		// terminal snapshot written now could not say which members were
-		// never requested.
-		s.runner.release(jobID)
-		s.runner.record(background, bookmarkID, "delete.selected.unavailable", req.Container, "job "+jobID+" · "+recordingLost, audit.ResultUnverified)
-		applog.Warnf("job %s: %s", jobID, recordingLost)
+		s.leaveSelectedOpen(background, jobID, req, bookmarkID, recordingLost)
 		return
 	}
 	state, reason := s.selectedEnd(background, jobID, cancelled)
@@ -240,9 +241,37 @@ func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled
 	}
 }
 
+// leaveSelectedOpen ends a selected-set deletion whose records can no longer
+// be written. It is left open with its status unavailable, the ledger's own
+// latch: a member in flight is unresolved because its DELETE may have been
+// sent, no later member is touched, nothing is retried, and the reopen rule
+// settles the records when the store is next available (ADR 0093 decision 4).
+// A terminal snapshot written now could not say which members were never
+// requested.
+func (s *DeleteService) leaveSelectedOpen(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID, reason string) {
+	s.runner.release(jobID)
+	s.runner.record(ctx, bookmarkID, "delete.selected.unavailable", req.Container, "job "+jobID+" · "+reason, audit.ResultUnverified)
+	applog.Warnf("job %s: %s", jobID, reason)
+}
+
 // recordNotAttempted settles the members a cancellation leaves untouched;
 // a record it cannot write is logged, because the job's end is derived from
 // the records and a missing one keeps the member unresolved.
+//
+// storeStoppedBeside is why such a record cannot be written when it was
+// another job's lost record that stopped the store: the runner then cancels
+// this job (ADR 0105 decision 9), and the store refuses every deletion record
+// from then on. A deletion job that ends that way is left open with its
+// status unavailable, as one whose own record was lost is, so that the
+// restart settles its members; a terminal row written now could not say which
+// of them were never requested. It is "" while the store records.
+func (s *DeleteService) storeStoppedBeside() string {
+	if s.jobs.Available() == nil {
+		return ""
+	}
+	return "the job store stopped recording while this job ran, so its remaining members could not be recorded"
+}
+
 func (s *DeleteService) recordNotAttempted(ctx context.Context, jobID string, members []ListingRowDTO) {
 	for _, member := range members {
 		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {

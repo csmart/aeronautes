@@ -131,8 +131,13 @@ func (b *cancellingBody) Read(p []byte) (int, error) {
 
 func (b *cancellingBody) Close() error { return nil }
 
+// A read that a cancel ends leaves a partial temporary. An ordinary cancel
+// removes it, and keeps whatever another actor put at its name. A cancel made
+// because the job store stopped removes nothing from a stage (ADR 0105
+// decision 9), and a native item's temporary is its stage, so that one keeps
+// the partial file and says so.
 func TestDownloadNativeBodyCancellation(t *testing.T) {
-	for _, mode := range []string{"removed", "replaced"} {
+	for _, mode := range []string{"removed", "replaced", "kept"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			writeFile(t, root, "keep", "unrelated")
@@ -161,14 +166,21 @@ func TestDownloadNativeBodyCancellation(t *testing.T) {
 					}
 				}
 			}
-			outcome := nativeDownloadBody(ctx, body, item, destination, temporary, ladderFor(t, nil))
+			var stopped func() error
+			if mode == "kept" {
+				stopped = func() error { return errors.New("the job store has stopped") }
+			}
+			outcome := nativeDownloadBody(ctx, body, item, destination, temporary, ladderFor(t, nil), stopped)
 			want := transfercopy.Observation{Result: transfercopy.ResultFailed, Effect: transfercopy.EffectNotAttempted,
 				Diagnostic: transfercopy.Diagnostic{Stage: transfercopy.StageSourceRead, Code: transfercopy.CodeCancelled}}
-			if mode == "replaced" {
+			if mode != "removed" {
 				want.Effect = transfercopy.EffectUnresolved
 			}
 			if outcome.Observation != want || outcome.verification != nil || !errors.Is(outcome.failure, context.Canceled) {
 				t.Fatalf("interrupted native body record differs: %+v want %+v", outcome, want)
+			}
+			if outcome.partialKept != (mode == "kept") {
+				t.Fatalf("the record says the partial file was kept = %v", outcome.partialKept)
 			}
 			if (len(outcome.issues) != 0) != (mode == "replaced") {
 				t.Fatalf("temporary cleanup issue differs: %+v", outcome.issues)
@@ -186,10 +198,55 @@ func TestDownloadNativeBodyCancellation(t *testing.T) {
 				if err != nil || !info.IsDir() {
 					t.Fatalf("substituted entry was not retained: %+v %v", info, err)
 				}
+			case "kept":
+				data, readErr := os.ReadFile(temporary)
+				if err != nil || readErr != nil || string(data) != "first half of the object body!!!" {
+					t.Fatalf("the partial file was not kept as it was written: %+v %v %q %v", info, err, data, readErr)
+				}
 			}
 			if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "unrelated" {
 				t.Fatal("interrupted native body changed unrelated bytes")
 			}
 		})
+	}
+}
+
+// ADR 0105 decision 9: a cancel made because the job store stopped is the
+// recording failure of ADR 0048 decision 7 for every job at once. The route
+// asks the store where it would clean its stage: nothing is removed, the
+// unplaced item's staged file is still there, and the report says cleanup was
+// not attempted. The loop case above is the same cancel with the store still
+// recording, which removes the stage.
+func TestDownloadCancelledByAStoppedStoreKeepsItsStage(t *testing.T) {
+	source, mock := session(t)
+	for _, name := range []string{"a", "b"} {
+		seed(mock, "media", "scope/"+name, "bytes "+name)
+	}
+	root := t.TempDir()
+	preflight, err := PreflightDownload(t.Context(), source, "media", "scope/", root)
+	if err != nil || preflight.Rejected() || len(preflight.Items) != 2 {
+		t.Fatalf("fixture preflight: %+v %v", preflight, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	recorder := &DownloadRecorder{
+		Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
+		Admit:       func(DownloadAdmission) error { return nil },
+		Execute:     func(DownloadItem, transfercopy.Observation) error { return nil },
+		Verify:      func(DownloadItem, transfercopy.Observation) error { cancel(); return nil },
+		Stopped:     func() error { return errors.New("the job store has stopped") },
+	}
+	report, err := Download(ctx, source, &fsEngine{session: source}, "remote:media", "media", "scope/", root, "fixture", preflight, nil, recorder)
+	if !errors.Is(err, context.Canceled) || report.Done != 1 {
+		t.Fatalf("the cancel changed what was already placed: %+v %v", report, err)
+	}
+	if report.StageCleanup == nil || *report.StageCleanup != (StageCleanupResult{Attempted: false, Retained: true}) {
+		t.Fatalf("the report does not say cleanup was not attempted: %+v", report.StageCleanup)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", "b")); err != nil || string(data) != "bytes b" {
+		t.Fatalf("the unplaced item's staged file was not kept: %q %v", data, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the stopped download placed a further file")
 	}
 }

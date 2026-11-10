@@ -691,7 +691,20 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("queued Copy retained cancellation registration")
 	}
-	if fault != "unavailable" {
+	// The queued Copy's refused completion stops the store, and the runner
+	// then cancels the download beside it (ADR 0105 decision 9): the held
+	// response ends by that cancel, never by this fixture's release.
+	stoppedBeside := fault == "state" || fault == "audit"
+	if stoppedBeside {
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the download beside the stopped store was not cancelled")
+		}
+		if err := barrier.Err(); err == nil || !strings.Contains(err.Error(), "context canceled") || selected.Load() != 1 {
+			t.Fatalf("the held response did not end by the job's cancel: %v count=%d", err, selected.Load())
+		}
+	} else if fault != "unavailable" {
 		releaseFirst()
 	}
 	copyCompletionAwaitPins(t, h)
@@ -704,22 +717,29 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		if len(firstState.Audit) != 0 || firstState.Job.FinishedAt != "" || firstState.Job.Error != "" {
 			t.Errorf("partial running-job transaction: %+v", firstState)
 		}
-	} else if fault != "control" {
-		// Already admitted work may retain its facts, while public totals
-		// remain unavailable after another job's refused completion.
-		wantFirstState = "partial"
+	} else if stoppedBeside {
+		// The cancelled download keeps its admitted facts and what it
+		// observed, places nothing, and says its stage was left as it was;
+		// public totals remain unavailable after the refused completion.
+		wantFirstState = "cancelled"
+		wantFirstCounters = jobs.Counters{ObjectsPlanned: 1, ObjectsFailed: 1, BytesPlanned: 10}
+		const retained = "download stage retained after required item recording failed; cleanup was not attempted"
 		unavailable := h.jobStore.Available()
-		if unavailable == nil || firstState.Job.Error != unavailable.Error() || firstState.Job.FinishedAt == "" ||
-			len(firstState.Audit) != 1 || firstState.Audit[0].Operation != "transfer.local.partial" ||
-			firstState.Audit[0].Result != "verify_mismatch" || firstState.Audit[0].Resource != "job "+first ||
-			firstState.Audit[0].Summary != " · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems" {
-			t.Errorf("running download lost the earlier persistence refusal: %+v latch=%v", firstState, unavailable)
+		if unavailable == nil || !strings.Contains(firstState.Job.Error, retained) || !strings.HasSuffix(firstState.Job.Error, unavailable.Error()) || firstState.Job.FinishedAt == "" ||
+			len(firstState.Audit) != 1 || firstState.Audit[0].Operation != "transfer.local.cancelled" ||
+			firstState.Audit[0].Result != "failed" || firstState.Audit[0].Resource != "job "+first ||
+			firstState.Audit[0].Summary != retained+" · item outcomes: 1 failed names, 0 conflicts, 0 refusals, 1 unresolved, 0 unverified, 1 with problems" {
+			t.Errorf("the download cancelled beside the stopped store lost its account: %+v latch=%v", firstState, unavailable)
 		}
 	}
 	if firstState.Job.State != wantFirstState || firstState.Job.Counters != wantFirstCounters {
 		t.Errorf("queued Copy affected running download: %+v", firstState)
 	}
-	if !firstState.ItemsCaptured || firstState.ItemTotals != (jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}) || len(firstState.Items) != 1 {
+	wantTotals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+	if stoppedBeside {
+		wantTotals.Failed, wantTotals.Unresolved, wantTotals.Problems = 1, 1, 1
+	}
+	if !firstState.ItemsCaptured || firstState.ItemTotals != wantTotals || len(firstState.Items) != 1 {
 		t.Fatalf("running download lost its admitted item facts: %+v", firstState)
 	}
 	item := firstState.Items[0]
@@ -727,7 +747,16 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "hold/first.bin"}) ||
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, "first.bin")}) ||
 		item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, ".aeronautes-stage-"+first, "first.bin")}) ||
-		item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}) ||
+		item.Execution == nil {
+		t.Fatalf("running download lost its exact item identity: %+v", item)
+	}
+	if stoppedBeside {
+		cancelled := jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeCancelled}}
+		if item.Execution.ItemObservation != cancelled || item.Verification != nil {
+			t.Fatalf("the cancelled download did not record the one cancel it observed: %+v", item)
+		}
+	} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}) ||
 		item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 		t.Fatalf("running download lost its exact placement/verification history: %+v", item)
 	}
@@ -744,7 +773,12 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if fault != "control" {
 		copyCompletionRefuseNew(t, h, src, dst, 2)
 	}
-	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), map[string][]byte{"first.bin": []byte("hold bytes")})
+	if stoppedBeside {
+		// Nothing was placed, and the stage is still there for inspection.
+		assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), nil, ".aeronautes-stage-"+first)
+	} else {
+		assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), map[string][]byte{"first.bin": []byte("hold bytes")})
+	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(beforeA, afterA)
 	h.AssertNoCollateral(beforeB, afterB)

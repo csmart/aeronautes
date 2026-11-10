@@ -128,7 +128,7 @@ func (r *jobRunner) checkpoint(ctx context.Context, jobID, bookmarkID string) er
 	// is ended as a lost record ends it, with its stage kept, and never
 	// cleaned up as a cancel is (ADR 0048 decision 7).
 	if err := r.jobs.Available(); err != nil {
-		return fmt.Errorf("resume job %s: %w", jobID, err)
+		return fmt.Errorf("job %s ends at its pause: %w", jobID, err)
 	}
 	if cancelled != nil {
 		return cancelled

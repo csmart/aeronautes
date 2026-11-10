@@ -48,9 +48,7 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 			// Callers reduce this error to a fixed sentence before they report
 			// it, so the cause is logged here, where it is still whole.
 			applog.Errorf("job %s final result was not saved: %v", id, err)
-			s.healthMu.Lock()
-			s.unavailable = errors.New("a job's final result could not be saved; changes may already have occurred. Job status is unavailable and new jobs are blocked for this session. Inspect retained data before retrying")
-			s.healthMu.Unlock()
+			s.latch(id, errors.New("a job's final result could not be saved; changes may already have occurred. Job status is unavailable and new jobs are blocked for this session. Inspect retained data before retrying"), true)
 		}
 	}()
 	if !Terminal(result.State) || trail == nil {
