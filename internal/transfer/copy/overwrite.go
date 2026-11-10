@@ -140,9 +140,17 @@ func (e *Executor) versioningUnchanged(ctx context.Context, name string, effect 
 	refusal, err := e.cfg.Recorder.VersioningUnchanged(ctx, name)
 	if err != nil {
 		// Refused either way; the run stops because the refusal left no
-		// record, as recordRefused stops it for an identity refusal.
+		// record, as recordRefused stops it for an identity refusal. This
+		// comes before the cancel below: a record that failed is lost
+		// whether or not the job was also cancelled.
 		e.stop(fmt.Errorf("replacing %s was refused on its versioning and the refusal could not be recorded: %w", name, err))
 		result := e.overwriteRefused(name, effect, "the destination's versioning refused the replacement and the refusal could not be recorded: "+err.Error())
+		return &result
+	}
+	if cancelled := ctx.Err(); cancelled != nil {
+		// A cancel that lands in the read is the job stopping, not a finding
+		// about the container, so it is not counted as a refused overwrite.
+		result := failed(effect, StageCommit, CodeUnknown, "versioning-read", cancelled)
 		return &result
 	}
 	if refusal != "" {

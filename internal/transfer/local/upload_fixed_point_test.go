@@ -197,6 +197,63 @@ func TestFixedPointComparisonRefusesWhatWasNotAcknowledged(t *testing.T) {
 	}
 }
 
+// A cancel that lands in the versioning read is the job stopping, not a finding
+// about the container: the item is coded cancelled, as a cancel during the
+// object read beside it always was, and the run is not stopped by it.
+func TestFixedPointVersioningReadCancelledIsNotAConflict(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.AddContainer("media", "standard")
+	seed(mock, "media", "docs/object", "the bytes already there")
+	server := httptest.NewServer(mock)
+	t.Cleanup(server.Close)
+	s, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: server.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeFile(t, t.TempDir(), "object", "the bytes this job would send")
+	item := replacingItem(t, s, path)
+	hook := acknowledgedNow(t, s, "media", item)
+	if _, _, err := hook(item); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook,
+		VersioningUnchanged: func(context.Context, UploadItem) (string, error) {
+			cancel()
+			return "the job was cancelled before the container's versioning was read again", nil
+		}}}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := nativeUpload(ctx, s, "media", item, file, true, run.confirmUnchanged())
+	if result.Diagnostic.Code != transfercopy.CodeCancelled || result.Effect != transfercopy.EffectNotAttempted {
+		t.Fatalf("a cancelled read was not coded as a cancellation before any request: %+v %v", result.Observation, result.failure)
+	}
+	if run.stopped != nil {
+		t.Errorf("a cancellation stopped the run as an unrecorded refusal would: %v", run.stopped)
+	}
+
+	// A refusal that could not be recorded is lost whether or not the job
+	// was cancelled at the same moment, so it still stops the run.
+	both, cancelBoth := context.WithCancel(t.Context())
+	defer cancelBoth()
+	lost := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook,
+		VersioningUnchanged: func(context.Context, UploadItem) (string, error) {
+			cancelBoth()
+			return "", errors.New("the audit store is unavailable")
+		}}}
+	again, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeUpload(both, s, "media", item, again, true, lost.confirmUnchanged())
+	if lost.stopped == nil || !strings.Contains(lost.stopped.Error(), "could not be recorded") {
+		t.Errorf("a cancel hid a refusal that could not be recorded: stopped = %v", lost.stopped)
+	}
+}
+
 // A replacement handed NO comparison at all is refused, which is a different
 // guard from a comparison that can find no acknowledgement: this one protects
 // against a caller that never wired the comparison in. The run always wires it,
