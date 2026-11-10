@@ -604,6 +604,72 @@ func TestAcknowledgedOverwriteRefusesAChangedVersioningStatement(t *testing.T) {
 	}
 }
 
+// A cancel that lands in the versioning read is the job stopping, not a finding
+// about the container: no overwrite is counted as refused, the live object is
+// untouched and nothing is recorded as replaced.
+func TestAcknowledgedOverwriteCancelledAtTheVersioningReadIsNotARefusal(t *testing.T) {
+	w := newWorld(t)
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec.versioning = func(context.Context) (string, error) {
+		cancel()
+		return "the job was cancelled before the container's versioning was read again", nil
+	}
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	report, err := e.Run(ctx, []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("run = %v, want the cancellation", err)
+	}
+	if report.OverwritesRefused != 0 || report.Overwrites != 0 || report.Copied != 0 {
+		t.Fatalf("a cancelled read was counted as an outcome: %+v", report)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != 3 || d.ETag != etagOf([]byte("OLD")) {
+		t.Errorf("the cancelled replacement touched the live object: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+	if _, ok := rec.replaced["doc"]; ok {
+		t.Error("a cancelled replacement recorded a predecessor")
+	}
+}
+
+// A refusal that could not be recorded is lost whether or not the job was
+// cancelled at the same moment: the run still stops on the lost record, and
+// says so, rather than ending as an ordinary cancellation.
+func TestAcknowledgedOverwriteKeepsALostRefusalRecordThroughACancel(t *testing.T) {
+	w := newWorld(t)
+	source := []byte("NEW SOURCE CONTENT")
+	seed(w.srcMock, "media", "doc", source, nil)
+	seed(w.dstMock, "backup", "doc", []byte("OLD"), nil)
+
+	rec := newOverwriteRecorder()
+	rec.acknowledge(t, w, "doc")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec.versioning = func(context.Context) (string, error) {
+		cancel()
+		return "", errors.New("the audit store is unavailable")
+	}
+
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, rec.recorder())
+	_, err := e.Run(ctx, []plan.Item{
+		{Name: "doc", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: int64(len(source))},
+	})
+	if err == nil || !strings.Contains(err.Error(), "could not be recorded") {
+		t.Fatalf("a cancel hid a refusal that could not be recorded: %v", err)
+	}
+	if d := headDst(t, w, "doc"); d.ContentLength != 3 || d.ETag != etagOf([]byte("OLD")) {
+		t.Errorf("the refused replacement touched the live object: len=%d etag=%s", d.ContentLength, d.ETag)
+	}
+}
+
 // A refusal on versioning that could not be recorded still refuses the name,
 // and the run stops, as it does when an identity refusal has nowhere to go.
 func TestAcknowledgedOverwriteStopsWhenAVersioningRefusalIsUnrecorded(t *testing.T) {

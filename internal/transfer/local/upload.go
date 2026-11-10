@@ -740,10 +740,18 @@ func (u *uploadRun) confirmUnchanged() unchangedSince {
 		if err != nil {
 			// Refused either way; the run stops because the refusal left no
 			// record, which is the loss the identity refusal below also
-			// refuses to let pass in silence.
+			// refuses to let pass in silence. This comes before the cancel
+			// below: a record that failed is lost whether or not the job was
+			// also cancelled.
 			refused := fmt.Errorf("replacing %s was refused on its versioning and the refusal could not be recorded: %w", item.Name, err)
 			u.stop(refused)
 			return refused
+		}
+		if cancelled := ctx.Err(); cancelled != nil {
+			// A cancel that lands in the read is the job stopping, not a
+			// finding about the container, and is coded as the cancelled
+			// object read below always was.
+			return fmt.Errorf("reading the versioning of %s's container before replacing it: %w", item.Name, cancelled)
 		}
 		if refusal != "" {
 			return fmt.Errorf("replacing %s: %s", item.Name, refusal)

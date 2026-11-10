@@ -631,6 +631,12 @@ func (s *TransferService) versioningUnchanged(live, record context.Context, book
 	if err == nil && now == authorised {
 		return "", nil
 	}
+	if err != nil && live.Err() != nil {
+		// A cancel that lands in the read is the job stopping, not a finding
+		// about the container: nothing is recorded, and the route stops on
+		// the same context.
+		return "the job was cancelled before the container's versioning was read again", nil
+	}
 	compose := func(withArchive bool) string {
 		found := "the container's versioning could not be read again before publishing"
 		if err == nil {
