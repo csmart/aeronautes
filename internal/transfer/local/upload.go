@@ -45,7 +45,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			onProgress(report.Done+u.failed, total, report.Bytes)
 		}
 	}
-	stagePrefix := ".aeronautes/stage/" + stageID + "/batch/"
+	stagePrefix := rclone.StageNamespace + stageID + "/batch/"
 	recovery := func(kind, container, prefix, object string) error {
 		if u.stopped != nil {
 			return u.stopped

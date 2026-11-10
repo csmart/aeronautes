@@ -1108,7 +1108,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	// crash; it does not prove that reclaiming that residue is safe.
 	if err := s.jobs.RecoveryAdd(context.WithoutCancel(ctx), jobs.RecoveryRecord{
 		JobID: job.ID, BookmarkID: req.BookmarkID, Kind: jobs.RecoveryStaging,
-		Container: req.Container, Prefix: ".aeronautes/stage/" + job.ID + "/",
+		Container: req.Container, Prefix: rclone.StageNamespace + job.ID + "/",
 	}); err != nil {
 		owner.cancel()
 		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error(), "")
