@@ -377,6 +377,11 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", err
 	}
+	// A copy stages under its destination prefix; no sweep of ours may run
+	// over that while this job is alive (ADR 0105 decision 3).
+	if err := owner.claim(stageClaims(swiftcontrol.AccountIdentity(dst.StorageURL()), req.DestContainer, req.DestPrefix)...); err != nil {
+		return "", err
+	}
 	// An acknowledged copy raises the one native confirmation before anything
 	// is created, naming both accounts and capturing the baseline the
 	// fixed-point comparison rests on. An unacknowledged copy skips it and
@@ -1165,7 +1170,13 @@ func splitLocator(locator string) (container, prefix string, ok bool) {
 // identifier, an unparseable URL) is NOT proven distinct, so the
 // overlap guard fails closed (review R-04).
 func provenDistinctAccounts(a, b string) bool {
-	idA, idB := swiftcontrol.AccountIdentity(a), swiftcontrol.AccountIdentity(b)
+	return distinctAccounts(swiftcontrol.AccountIdentity(a), swiftcontrol.AccountIdentity(b))
+}
+
+// distinctAccounts is that rule on two account identifiers: different only
+// when both are known and differ. An identifier that could not be read is ""
+// and is compared as possibly any account.
+func distinctAccounts(idA, idB string) bool {
 	return idA != "" && idB != "" && idA != idB
 }
 
