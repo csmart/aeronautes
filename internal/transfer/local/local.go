@@ -326,10 +326,11 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 			}})
 			continue
 		}
-		if source.Name == "" || strings.HasPrefix(source.Name, "/") || strings.Contains(source.Name, "//") {
+		if source.Name == "" || strings.HasPrefix(source.Name, "/") || strings.Contains(source.Name, "//") ||
+			source.Name[strings.LastIndexByte(source.Name, '/')+1:] != filepath.Base(path) {
 			candidates = append(candidates, uploadCandidate{path: path, problem: &Problem{
 				Name: fmt.Sprintf("selection %d", index+1), Kind: "source-name",
-				Detail: "the selection names a destination this upload cannot take: empty, absolute or with an empty component", Reject: true,
+				Detail: "the selection names a destination this upload cannot take: empty, absolute, with an empty component, or not ending in the file's own name", Reject: true,
 			}})
 			continue
 		}

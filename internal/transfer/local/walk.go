@@ -17,6 +17,10 @@ import (
 // local disk, and the object name it takes under the request's prefix. A
 // file pick names its base name; a folder pick names the folder and the
 // file's path below it, slash-separated (ADR 0103 decision 2).
+//
+// The name's last component is the file's own base name. The engine stages a
+// file under its base name, so two sources staging apart (decision 4) rests
+// on it, and the preflight refuses a source that breaks it.
 type UploadSource struct {
 	Path string
 	Name string
