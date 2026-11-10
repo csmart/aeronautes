@@ -165,9 +165,16 @@ func testTempURLKey(t *testing.T, h *Harness, container string) {
 			t.Errorf("audit summaries for %s = %q, want %q among them", resource, summaries, want)
 		}
 	}
+	// Nothing on the key path logs when it succeeds, so an empty capture would
+	// "lack the secret" too: a line written here proves the capture is live.
+	const sentinel = "tempurl key proof: the log capture is live"
+	applog.Infof("%s", sentinel)
 	logged, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(logged), sentinel) {
+		t.Fatal("the application log was not captured, so its silence about the secret proves nothing")
 	}
 	if strings.Contains(string(logged), secret) {
 		t.Error("the application log carries the secret")
