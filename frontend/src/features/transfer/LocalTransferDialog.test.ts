@@ -455,7 +455,7 @@ describe("upload replacement", () => {
   const collision = (reject: boolean) => ({
     name: liveName, kind: "exists",
     detail: reject
-      ? "already live at the destination; v1 upload never overwrites"
+      ? "already live at the destination; an upload replaces nothing unless you ask it to"
       : "already live at the destination; this upload will replace it",
     reject,
   });

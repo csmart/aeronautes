@@ -381,7 +381,7 @@ func preflightUpload(ctx context.Context, dst *swiftcontrol.Session, container, 
 			if !replacing {
 				report.Problems = append(report.Problems, Problem{
 					Name: candidate.name, Kind: "exists",
-					Detail: "already live at the destination; v1 upload never overwrites", Reject: true,
+					Detail: "already live at the destination; an upload replaces nothing unless you ask it to", Reject: true,
 				})
 				continue
 			}
