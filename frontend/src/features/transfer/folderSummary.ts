@@ -1,8 +1,10 @@
 import type { PickedFilesDTO } from "../../lib/api";
 
 /** One sentence for a folder pick (ADR 0103 decision 1): the folder's own name,
- * how many files it will upload, and what the walk left out. The counts come
- * from the backend's walk, never from the names it returned. */
+ * how many files it will upload, and what the walk left out. The file count is
+ * the number of names the pick returned, which is every file it will upload;
+ * the skipped and empty-directory counts are the backend walk's own, because
+ * the names of those are only a sample. */
 export function folderSummary(picked: Pick<PickedFilesDTO, "folder" | "files" | "skipped" | "emptyDirectories">): string {
   const files = picked.files?.length ?? 0;
   const parts = [files === 0

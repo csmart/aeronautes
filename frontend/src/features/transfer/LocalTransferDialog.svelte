@@ -1,7 +1,8 @@
 <!-- Upload / download dialog (§27.5): the collision preflight renders
-  before any write under one cross-platform namespace policy, and the
-  v1 rule is reject-on-collision — Start only exists for a clean
-  report. -->
+  before any write under one cross-platform namespace policy. A report
+  that rejects anything offers no Start; an upload whose only rejections
+  are collisions may be asked again as a replacing plan (ADR 0081), and a
+  download never replaces. -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
