@@ -50,6 +50,7 @@ Emptying, deleting or sweeping an archive container destroys the earlier version
 3. **A bulk deletion says whose archive the container is.**
    The preview of the three bulk modes, the prefix sweep, the empty and the delete-container mode, reads the account's containers for a versions or history location naming the target, one container HEAD each, a bounded number at a time, up to 1,000 containers; an account with more containers than that is not scanned.
    The preview returns the owners it found and, when the scan did not cover the account or a read failed, that the answer is not established and why, in fixed words that carry no identifier of the account.
+   A container that is gone by the time it is read is not a failed read: a container that no longer exists archives nowhere, so it is no owner and leaves the answer established.
    The dialog states, beside the versioning sentence ADR 0092 settled, that this container is the archive of the named containers and that the deletion destroys the earlier versions they keep here, or that whether another container keeps its versions here could not be established; the container names are sanitised and bounded where they are interpolated, as the archive name is in the overwrite question.
    The confirmation stays the typed container name, and nothing is bound at start: the disclosure stands as the versioning sentence does, read at preview time.
    The exact-object, selected-set and manifest dialogs are unchanged, because the rows they delete are visible and their versioning sentence already says what a delete does.
@@ -74,7 +75,7 @@ Managing modern versioning in this release, with the fixture measurement as its 
 
 ## Maintained proof
 
-- Go, model: the archive scan on the wire fakes finds an owner by a versions location and by a history location, admits unrelated containers, stops without a read for an account above the bound and reports it, and reports a failed read as unestablished with the owners it had found.
+- Go, model: the archive scan on the wire fakes finds an owner by a versions location and by a history location, admits unrelated containers, stops without a read for an account above the bound and reports it, reports a failed read as unestablished with the owners it had found, and counts a container gone since the listing as no owner.
 - Go, service: the bulk delete preview carries the owners for a container another container names as its archive and nothing for an unrelated one, on the mock where it holds the header and on the owned Swift; the counts and the cost are unchanged.
 - Go, transfer: an upload and a copy replacement whose destination container reports a different versioning observation at the fixed point are refused with the live object untouched, both observations recorded for the name, the create items of the same run published and the run's other replacements unaffected; a container whose observation is unchanged replaces as today; an archive that moves to a name the question would display the same way is a change; on the mock and on the owned Swift, with the change made between the question and the publishing request.
 - Frontend: the bulk delete dialog states the owners and what the deletion does to their versions, states that the answer is not established when the preview says so, and shows neither for an unrelated container.

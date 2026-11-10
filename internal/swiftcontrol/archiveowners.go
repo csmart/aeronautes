@@ -66,6 +66,11 @@ func (s *Session) ArchiveOwners(ctx context.Context, target string, bound int) A
 			slots <- struct{}{}
 			defer func() { <-slots }()
 			detail, err := s.ContainerDetail(ctx, name)
+			if IsNotFound(err) {
+				// Listed, and gone before it was read: a container that no
+				// longer exists archives into nothing, which is an answer.
+				return
+			}
 			if err != nil {
 				readings[i].err = err
 				return
