@@ -53,7 +53,7 @@ func (s *MutateService) UpdateTempURLKey(ctx context.Context, scope ListingScope
 	result, err := entry.session.UpdateTempURLKey(ctx, edit.Container, edit.BaseSlots, swiftcontrol.TempURLKeyEdit{
 		Slot: edit.Slot, Secret: edit.Secret, Clear: edit.Clear,
 	})
-	outcome, auditRes, summary, transIDs := tempURLKeyFact(result, err, edit)
+	outcome, auditRes, summary, transIDs := tempURLKeyFact(result, err, edit.Slot, edit.Clear)
 	if recErr := s.recordMutationOutcome(ctx, identity, bookmarkID, operation, resource, outcome, auditRes, summary, transIDs); recErr != nil {
 		if tempURLKeyPosted(result, err) {
 			return MutationResultDTO{}, fmt.Errorf("%w: identity %s: %v", errTempURLKeyResidue, identity, recErr)
@@ -87,22 +87,31 @@ func tempURLKeyPosted(result *swiftcontrol.TempURLKeyResult, err error) bool {
 }
 
 // tempURLKeyFact derives the recorded outcome, the audit result and the
-// summary of a slot write. The summary names the slot and whether it was
-// set or cleared; the secret is never part of it (K-SEC-006).
-func tempURLKeyFact(result *swiftcontrol.TempURLKeyResult, err error, edit TempURLKeyEditDTO) (mutationfacts.Outcome, audit.Result, string, []string) {
+// summary of a slot write. Every summary names the slot and whether it was
+// to be set or cleared (ADR 0101 decision 2), an unverified or failed write
+// included, since those are the ones an operator has to follow up. It takes
+// the slot and the flag and not the edit, so the secret cannot reach a
+// record from here (K-SEC-006).
+func tempURLKeyFact(result *swiftcontrol.TempURLKeyResult, err error, slot string, clear bool) (mutationfacts.Outcome, audit.Result, string, []string) {
 	var transIDs []string
 	if result != nil {
 		transIDs = result.TransIDs
 	}
+	// The slot is recorded before the adapter has validated it, so only the
+	// two names Swift reads are quoted.
+	named := "slot (unrecognised)"
+	if canonical := textproto.CanonicalMIMEHeaderKey(slot); canonical == "Temp-Url-Key" || canonical == "Temp-Url-Key-2" {
+		named = "slot " + canonical
+	}
+	done, doing := "set", "setting"
+	if clear {
+		done, doing = "cleared", "clearing"
+	}
 	if errors.Is(err, swiftcontrol.ErrUnverifiedTempURLKeyWrite) || (result != nil && result.Outcome == swiftcontrol.UpdateUnverified) {
-		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "tempurl key write unverified", transIDs
+		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, fmt.Sprintf("%s TempURL key %s could not be verified", doing, named), transIDs
 	}
 	if err == nil && result != nil {
-		verb := "set"
-		if edit.Clear {
-			verb = "cleared"
-		}
-		summary := fmt.Sprintf("%s TempURL key slot %s", verb, textproto.CanonicalMIMEHeaderKey(edit.Slot))
+		summary := fmt.Sprintf("%s TempURL key %s", done, named)
 		switch result.Outcome {
 		case swiftcontrol.UpdateApplied:
 			return mutationfacts.OutcomeApplied, audit.ResultApplied, summary, transIDs
@@ -112,5 +121,5 @@ func tempURLKeyFact(result *swiftcontrol.TempURLKeyResult, err error, edit TempU
 			return mutationfacts.OutcomeVerifyMismatch, audit.ResultVerifyMismatch, summary, transIDs
 		}
 	}
-	return mutationfacts.OutcomeFailed, audit.ResultFailed, "tempurl key update failed", transIDs
+	return mutationfacts.OutcomeFailed, audit.ResultFailed, fmt.Sprintf("%s TempURL key %s failed", doing, named), transIDs
 }
