@@ -58,6 +58,8 @@ func TestQueuedCancelWake(t *testing.T) {
 			bookmark := h.bookmarkID()
 			synctest.Test(t, func(t *testing.T) {
 				runner := h.transfer.runner
+				// One slot, so the job launched below waits behind it.
+				runner.setMaxActiveJobs(1)
 				if !runner.acquireSlot(t.Context()) {
 					t.Fatal("could not occupy the active slot")
 				}

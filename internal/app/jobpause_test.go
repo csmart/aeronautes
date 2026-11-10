@@ -100,6 +100,8 @@ func pauseHarness(t *testing.T) (*harness, *jobRunner, string, func(want runnerC
 	h := newHarness(t)
 	h.connect(t)
 	runner := h.transfer.runner
+	// These cases are about one slot changing hands.
+	runner.setMaxActiveJobs(1)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

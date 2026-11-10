@@ -103,15 +103,15 @@ type TransferService struct {
 	downloadStartBoundary func(ctx context.Context) error
 }
 
-// maxActiveJobsCeiling is the §38 v1 limit, not a default: one transfer
-// job at a time, enforced (ADR 0047). Concurrent jobs multiply the states
-// this application can occupy while it moves and deletes other people's
-// data. Raising it later is this one line.
-const maxActiveJobsCeiling = 1
+// maxActiveJobsCeiling is the §38 limit, not a default: at most four jobs
+// at once, enforced by the runner whatever a caller or a stored setting
+// asks for (ADR 0105). What keeps several running jobs apart is in
+// jobclaims.go.
+const maxActiveJobsCeiling = 4
 
 // defaultMaxActiveJobs is what an unset or out-of-range setting falls back
 // to. It cannot exceed the ceiling.
-const defaultMaxActiveJobs = maxActiveJobsCeiling
+const defaultMaxActiveJobs = 2
 
 // NewTransferService wires the service over the shared runner.
 func NewTransferService(connections *Connections, jobStore *jobs.Store, auditStore *audit.Store) *TransferService {

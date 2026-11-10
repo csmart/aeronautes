@@ -111,6 +111,9 @@ func pausedUploadOver(t *testing.T, failFirst bool, confirmer *recordingOverwrit
 	t.Helper()
 	h = newHarness(t)
 	h.connect(t)
+	// One slot, so a job started while this one is parked shows that the
+	// parked run gave its slot up.
+	h.transfer.runner.setMaxActiveJobs(1)
 	block := newEngineBarrier(t)
 	h.installEngine(block)
 	names = []string{"inbox/photos/.hidden", "inbox/photos/a/image.jpg", "inbox/photos/b/image.jpg"}
@@ -300,6 +303,9 @@ func pausedDownload(t *testing.T) (h *harness, bookmark, id, dir string) {
 	t.Helper()
 	h = newHarness(t)
 	h.connect(t)
+	// One slot, so a cancel while another job holds it shows that the
+	// cancel does not wait for a slot.
+	h.transfer.runner.setMaxActiveJobs(1)
 	h.installEngine(nil)
 	h.mock.AddContainer("media", "standard")
 	// A rune the engine reserves is what routes a plain object natively.
@@ -730,6 +736,8 @@ func TestAReplacementChangedDuringThePauseIsRefusedOnResume(t *testing.T) {
 func TestAPauseAskedWhileQueuedParksBeforeTheFirstUnit(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
+	// One slot, so the second job waits behind the first.
+	h.transfer.runner.setMaxActiveJobs(1)
 	block := newEngineBarrier(t)
 	h.installEngine(block)
 	h.mock.AddContainer("media", "standard")

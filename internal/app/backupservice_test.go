@@ -329,6 +329,7 @@ func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
 	}
 	wantSettings := defaults()
 	wantSettings.RailWidthPx = 199
+	wantSettings.MaxActiveJobs = 3
 
 	exportDir := t.TempDir()
 	exporter := NewBackupService(sourceDB, sourceStore, fixedSettings{dto: wantSettings})
@@ -357,8 +358,9 @@ func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.RailWidthPx != 199 {
-		t.Fatalf("settings not restored: RailWidthPx=%d (was %d), want 199", after.RailWidthPx, before.RailWidthPx)
+	if after.RailWidthPx != 199 || after.MaxActiveJobs != 3 {
+		t.Fatalf("settings not restored: RailWidthPx=%d (was %d), want 199; MaxActiveJobs=%d (was %d), want 3",
+			after.RailWidthPx, before.RailWidthPx, after.MaxActiveJobs, before.MaxActiveJobs)
 	}
 
 	marks, err := targetStore.List(ctx)
