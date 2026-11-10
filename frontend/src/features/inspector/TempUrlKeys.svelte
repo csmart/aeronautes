@@ -108,9 +108,10 @@
       <span class="type-mono name">{slot}</span>
       <span class="state">{isSet(slot) ? "set" : "not set"}</span>
       {#if setting !== slot && clearing !== slot}
-        <button class="inline" onclick={() => open(slot, false)} disabled={busy}>{isSet(slot) ? "Replace…" : "Set…"}</button>
+        <!-- Both slots show the same words, so each button's name carries its slot. -->
+        <button class="inline" aria-label={`${isSet(slot) ? "Replace" : "Set"} ${slot}…`} onclick={() => open(slot, false)} disabled={busy}>{isSet(slot) ? "Replace…" : "Set…"}</button>
         {#if isSet(slot)}
-          <button class="inline danger" onclick={() => open(slot, true)} disabled={busy}>Clear…</button>
+          <button class="inline danger" aria-label={`Clear ${slot}…`} onclick={() => open(slot, true)} disabled={busy}>Clear…</button>
         {/if}
       {/if}
     </div>
@@ -129,9 +130,9 @@
             <!-- Frozen while a save is pending, so the value on screen is the
               value that was sent. -->
             {#if reveal}
-              <input class="type-mono" type="text" bind:value={secret} autocomplete="off" spellcheck="false" aria-label="new key" disabled={busy} />
+              <input class="type-mono" type="text" bind:value={secret} autocomplete="off" spellcheck="false" aria-label={`New key for ${slot}`} disabled={busy} />
             {:else}
-              <input class="type-mono" type="password" bind:value={secret} autocomplete="off" aria-label="new key" disabled={busy} />
+              <input class="type-mono" type="password" bind:value={secret} autocomplete="off" aria-label={`New key for ${slot}`} disabled={busy} />
             {/if}
             <button type="button" class="inline" onclick={() => (reveal = !reveal)} disabled={busy}>{reveal ? "Hide" : "Show"}</button>
             <button type="button" class="inline" onclick={generate} disabled={busy}>Generate</button>
@@ -157,7 +158,7 @@
   {/each}
 
   {#if conflict}
-    <div class="banner conflict">
+    <div class="banner conflict" role="status">
       <p>The key slots changed since you loaded them. Nothing was written.</p>
       <div class="banner-actions">
         <button onclick={reload} disabled={busy}>Reload</button>
@@ -165,10 +166,10 @@
     </div>
   {/if}
   {#if mismatch}
-    <p class="banner mismatch">Written, but verify found: {mismatch}</p>
+    <p class="banner mismatch" role="alert">Written, but verify found: {mismatch}</p>
   {/if}
   {#if error}
-    <p class="banner mismatch">{error}</p>
+    <p class="banner mismatch" role="alert">{error}</p>
   {/if}
 </section>
 
