@@ -204,14 +204,15 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobType, ItemRecordsVersion: 1,
 		Source: req.Container + "/" + req.Prefix, Destination: "(deleted)", SourceBookmarkID: req.BookmarkID, Engine: "native",
+		// §32/§45: the strategy and the postcondition are the job's effective
+		// configuration, never a silent shortcut. They are part of the row
+		// from its creation, so a destructive job cannot exist without them.
+		Settings: fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d}`,
+			sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers),
 	})
 	if err != nil {
 		return "", err
 	}
-	// §32/§45: the strategy and the postcondition are the job's effective
-	// configuration, never a silent shortcut.
-	_ = s.jobs.SetSettings(ctx, job.ID, fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d}`,
-		sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers))
 	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, req.BookmarkID, "delete."+string(req.Mode)+".start",
 		req.Container+"/"+req.Prefix, "job "+job.ID, audit.ResultApplied)
