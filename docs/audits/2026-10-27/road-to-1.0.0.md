@@ -86,7 +86,8 @@ Versioning (P26): the container editor already switches legacy versioning off or
 TempURL keys and CORS management, which the README tracks as v1.x work.
 Directory upload and account metadata (P27).
 Pause and resume (finish line decision 17), feasible since the batching of ADR 0074.
-Raising the default active-job budget, which [ADR 0078](../../adr/0078-overlapping-download-destinations.md) made safe by construction.
+Raising the active-job budget: four at most and two by default, under [ADR 0105](../../adr/0105-concurrent-jobs.md).
+[ADR 0078](../../adr/0078-overlapping-download-destinations.md) had made two downloads safe, and ADR 0105 decides what keeps any two running jobs apart.
 Keystone authentication is here by finish-line decision 31: a bookmark authentication type beside TempAuth v1, the session's auth version and a Keystone-shaped fixture for its proof, kept cheap because the engine never speaks to Keystone (K-SEC-001); the vault fallback belongs here if the operator decides it is in 1.0.0.
 
 ### 0.6.0 — performance
@@ -164,7 +165,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Delete | delete DLO manifests | built behind the marker-manifest-delete trial token under ADR 0094, awaiting the operator's return | 0.2.0 |
 | Delete | clean known-owned DLO segments | gated, prefix-scoped and force-only; ownership advisory; implemented as a job (ADR 0095) | 0.2.x |
 | Delete | deliberate Backstage cleanup | gated, force and typed confirmation | 0.2.x |
-| Performance | global resource budgets | shipped as settings under ADR 0074 | — |
+| Performance | global resource budgets | the active-job budget (ADR 0105) and the bounds of ADR 0074 are settings; the whole-application worker and memory ceilings are not built | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
 | Performance | per-job overrides | built behind copy; the local transfer dialog sends defaults though the bridge accepts overrides | 0.3.0 with copy; 0.6.0 for local transfers |
 | Performance | Auto, Balanced, Aggressive and Custom | built behind copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |

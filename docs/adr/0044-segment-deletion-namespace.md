@@ -1,6 +1,7 @@
 # ADR 0044 — authorise segment deletion over a namespace, not a string prefix
 
 **Status:** Accepted for the dynamic large object segment sweep, which is delivered with this decision. Static large object collateral, active-job staging protection and the final-hop concurrent-writer protocol remain in the sequence, and P15 does not close.
+Active-job staging protection is closed for this application's own jobs by [ADR 0105](0105-concurrent-jobs.md) decision 3; a writer outside the application stays as this record leaves it.
 **Scope:** The destructive scope of `DeleteManifestWithSegments` for a dynamic large object, within P15 and finish-line item L03.
 
 ## Problem

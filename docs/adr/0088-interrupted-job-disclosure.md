@@ -1,6 +1,7 @@
 # ADR 0088 — tell the operator what a restart interrupted, and let them dismiss it
 
 **Status:** Accepted. The recording, the retention exemption and the dismissal write landed first behind migration 0016; this change adds the bounded read, its two bridge actions and the operator-facing notice, in the shape [ADR 0087](0087-copy-overwrite-on-upload-terms.md) and [ADR 0086](0086-mirror-deletes-what-the-source-does-not-have.md) took. It adds no new capability, lifts nothing from [ADR 0052](0052-v1-capability-gate.md)'s deferred table, and changes no refusal.
+Where this record names [ADR 0047](0047-single-active-job.md)'s ceiling, the ceiling is now four under [ADR 0105](0105-concurrent-jobs.md); the bounds it reasons about are otherwise as stated.
 **Scope:** What the application tells the operator at startup about the jobs a previous run did not finish, and what it lets them do about it. It does **not** propose resuming a job, restoring a queue, reclaiming residue, or widening `TransferService.RerunJob`. It does not touch [ADR 0020](0020-recovery-containment.md)'s retention or [ADR 0047](0047-single-active-job.md)'s ceiling.
 
 ## The operator's decision

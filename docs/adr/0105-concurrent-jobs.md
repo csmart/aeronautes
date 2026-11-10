@@ -1,6 +1,6 @@
 # ADR 0105: up to four jobs run at once, and no job of ours deletes or overwrites another's stage
 
-**Status:** Proposed for 0.5.0 (10 November 2026).
+**Status:** Accepted for 0.5.0 (10 November 2026), delivered with this record's series.
 The operator's decision is recorded: asked on 10 November 2026 for the budget the roadmap schedules, with the author's target of a ceiling of four and a default of two, they answered "sure, go with your target, we can revisit later".
 **Scope:** How many transfer and deletion jobs run at once, what protects one running job from another of this application's own, what the stored setting becomes, and what the drawer offers.
 It amends [ADR 0047](0047-single-active-job.md), which enforced one, and decision 5 of [ADR 0104](0104-pause-and-resume.md), which rested on it.
