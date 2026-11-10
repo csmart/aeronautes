@@ -24,15 +24,6 @@
   const current = $derived(metaFromRows(rows));
   const diff = $derived(diffMeta(base, current.meta));
 
-  /** The complete intended metadata set, or a duplicate-key error. */
-  export function value(): ReturnType<typeof metaFromRows> {
-    return metaFromRows(rows);
-  }
-
-  export function isDirty(): boolean {
-    return !isDiffEmpty(diff);
-  }
-
   function addRow() {
     rows = [...rows, { key: "", value: "" }];
   }
