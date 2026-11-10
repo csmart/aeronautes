@@ -161,18 +161,18 @@ func reclaimSummary(outcome local.ReclaimOutcome) string {
 	if len(refused) > 0 {
 		out += fmt.Sprintf("; the store refused %d and kept %s", len(refused), plural(len(refused), "it", "them"))
 		for _, failure := range refused {
-			out += fmt.Sprintf(", %s/%s (%s)", failure.Fragment.Container, failure.Fragment.Name, failure.Detail)
+			out += fmt.Sprintf(", %s (%s)", trailName(failure.Fragment.Container+"/"+failure.Fragment.Name), trailText(failure.Detail))
 		}
 	}
 	if len(unknown) > 0 {
 		out += fmt.Sprintf("; what the store did with %d further name%s is unknown",
 			len(unknown), plural(len(unknown), "", "s"))
 		for _, failure := range unknown {
-			out += fmt.Sprintf(", %s/%s", failure.Fragment.Container, failure.Fragment.Name)
+			out += ", " + trailName(failure.Fragment.Container+"/"+failure.Fragment.Name)
 		}
 	}
 	if outcome.Untrusted != "" {
-		out += "; the store's reply could not be read as a disposition: " + outcome.Untrusted
+		out += "; the store's reply could not be read as a disposition: " + trailText(outcome.Untrusted)
 	}
 	if outcome.Retained != "" {
 		out += "; " + outcome.Retained
@@ -181,6 +181,40 @@ func reclaimSummary(outcome local.ReclaimOutcome) string {
 		out += "; " + outcome.LeftBehind
 	}
 	return out
+}
+
+// trailName writes a name into a record's sentence in a form the audit store
+// keeps and a reader can turn back into the exact name. The store withholds a
+// whole sentence that holds a word such as "password", and this record is the
+// only place that says which segments were refused or left unknown after a
+// deletion (ADR 0081 decision 5), so a segment named for a credential must
+// still be nameable. A literal percent sign is always written as %25, and a
+// name the store would refuse is written with every byte percent-encoded.
+// Both spellings decode by the one ordinary rule, so two different names
+// never share one, and the second is hex digits and percent signs only, which
+// can spell no word the store refuses whatever the name's characters are.
+func trailName(name string) string {
+	escaped := strings.ReplaceAll(name, "%", "%25")
+	if audit.SummaryRefusal(escaped) == "" {
+		return escaped
+	}
+	var encoded strings.Builder
+	for i := 0; i < len(name); i++ {
+		fmt.Fprintf(&encoded, "%%%02X", name[i])
+	}
+	return encoded.String()
+}
+
+// trailText is trailName's counterpart for text that quotes the store: a
+// reason, a reply or a confirmation sentence is not a name anyone needs back
+// exactly, and it may hold what the filter exists to keep out, so one the
+// audit store would refuse is withheld alone and the rest of the record
+// stands.
+func trailText(text string) string {
+	if audit.SummaryRefusal(text) != "" {
+		return "text this trail does not store"
+	}
+	return text
 }
 
 // reclaimResult is the audit result value. A reclamation that removed
@@ -363,7 +397,11 @@ func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO,
 	if !answered.Removal {
 		declined := "the confirmation that was answered did not say these segments would be removed"
 		if answered.Said != "" {
-			declined += "; it said: " + answered.Said
+			// The sentence the operator read names an object and quotes the
+			// store, and it is quoted into the trail here. One the trail
+			// would refuse is withheld alone, so the decision beside it and
+			// the statement that nothing was removed are still recorded.
+			declined += "; it said: " + trailText(answered.Said)
 		}
 		return local.ReclaimPlan{Declined: declined}, nil
 	}
