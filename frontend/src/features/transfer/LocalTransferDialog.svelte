@@ -198,7 +198,9 @@
     const current = prepared;
     if (starting || checking || !current || !isCurrent(current.intent)
       || (current.mode === "download" ? current.report.rejected : current.report.problems?.some((p) => p.reject))) return;
+    // The selection is spent once it starts, so what described it goes too.
     prepared = null;
+    folder = null;
     starting = true;
     error = null;
     try {
