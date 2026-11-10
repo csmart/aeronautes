@@ -86,9 +86,8 @@
       refreshed = await browser.refreshAccount();
       if (!refreshed) error = browser.accountError ?? "Reloading the account failed. Try again.";
     } else {
-      await browser.refreshContainerDetail();
-      refreshed = browser.containerDetailError === null;
-      if (!refreshed) error = browser.containerDetailError;
+      refreshed = await browser.refreshContainerDetail();
+      if (!refreshed) error = browser.containerDetailError ?? "Reloading the container failed. Try again.";
     }
     busy = false;
     if (refreshed) {

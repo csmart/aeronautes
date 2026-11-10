@@ -1731,11 +1731,14 @@ export class BrowserState {
     return result;
   }
 
-  async refreshContainerDetail() {
+  /** Re-read the open container's detail. Returns whether it was refreshed,
+   * as refreshAccount does: false for a read that failed, did not match
+   * this connection, or was superseded before it answered. */
+  async refreshContainerDetail(): Promise<boolean> {
     const name = this.containerName;
     const bookmarkId = this.connectedBookmarkId;
     if (!name || !bookmarkId || this.connecting) {
-      return;
+      return false;
     }
     const scope = this.#scopeRevision;
     const seq = ++this.#containerDetailSeq;
@@ -1757,7 +1760,9 @@ export class BrowserState {
       else if (accepted) this.containerDetailError = "the settings fact belongs to another connection generation and was not shown";
       // A prefix change does not change this container's working-copy identity.
       this.#containerDetailConnection = connection;
+      return this.containerDetailError === null;
     }
+    return false;
   }
 
   /** The open container's settings fact, only when it belongs to this
