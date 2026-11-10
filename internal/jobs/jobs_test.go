@@ -2,9 +2,11 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
@@ -95,6 +97,42 @@ func TestStateMachine(t *testing.T) {
 	if err := s.Transition(ctx, j2.ID, StateCancelled); err != nil {
 		t.Errorf("cancel from running: %v", err)
 	}
+
+	// ADR 0104: a running job may pause and run again. Its start is its
+	// first start, and a paused job can neither verify nor complete, nor go
+	// back to planning, without running again.
+	j3, _ := s.Create(ctx, Job{Type: TypeUpload})
+	for _, to := range []State{StatePlanning, StateRunning, StatePaused} {
+		if err := s.Transition(ctx, j3.ID, to); err != nil {
+			t.Fatalf("to %s: %v", to, err)
+		}
+	}
+	for _, illegal := range []State{StateVerifying, StateComplete, StatePlanning, StateQueued} {
+		if err := s.Transition(ctx, j3.ID, illegal); err == nil || !strings.Contains(err.Error(), "illegal") {
+			t.Errorf("Paused → %s = %v, want illegal", illegal, err)
+		}
+	}
+	// The clock's resolution is a second, so the first start is moved to a
+	// time a second stamp could not equal.
+	first := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	if err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE jobs SET started_at=? WHERE id=?`, first.Format(time.RFC3339), j3.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, j3.ID, StateRunning); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if resumed, _ := s.Get(ctx, j3.ID); resumed.State != StateRunning || !resumed.StartedAt.Equal(first) {
+		t.Errorf("a resumed job lost its first start: %+v", resumed)
+	}
+	if err := s.Transition(ctx, j3.ID, StatePaused); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, j3.ID, StateCancelled); err != nil {
+		t.Errorf("cancel from paused: %v", err)
+	}
 }
 
 func TestCountersAndError(t *testing.T) {
@@ -168,14 +206,20 @@ func TestFailInterrupted(t *testing.T) {
 	_ = s.Transition(ctx, running.ID, StatePlanning)
 	_ = s.Transition(ctx, running.ID, StateRunning)
 	queued, _ := s.Create(ctx, Job{Type: TypeUpload})
+	// A job left paused by a dead process is interrupted like any other
+	// (ADR 0104 decision 4): nothing resumes across a restart.
+	paused, _ := s.Create(ctx, Job{Type: TypeDownload})
+	for _, to := range []State{StatePlanning, StateRunning, StatePaused} {
+		_ = s.Transition(ctx, paused.ID, to)
+	}
 	done, _ := s.Create(ctx, Job{Type: TypeCopy})
 	_ = s.Transition(ctx, done.ID, StateCancelled)
 
 	count, err := s.FailInterrupted(ctx)
-	if err != nil || count != 2 {
+	if err != nil || count != 3 {
 		t.Fatalf("interrupted = %d, %v", count, err)
 	}
-	for _, id := range []string{running.ID, queued.ID} {
+	for _, id := range []string{running.ID, queued.ID, paused.ID} {
 		j, _ := s.Get(ctx, id)
 		if j.State != StateFailed || !strings.Contains(j.Error, "interrupted by shutdown") || j.FinishedAt.IsZero() {
 			t.Fatalf("job %s = %+v", id, j)

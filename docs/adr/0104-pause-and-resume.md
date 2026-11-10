@@ -55,7 +55,7 @@ Finish-line decision 17 recorded a reading, not a decision: a pause that finishe
    That cleanup removes the stage and what the job planned and did not place only where its existing checks allow; a displaced stage, entries the job does not own, refused bytes and removals that fail are retained and reported exactly as they are for a running job, and nothing is cleaned after a required record failed.
    The job keeps its destination reservation, its captured root and its pins until that work has returned, not merely until its row is terminal.
    Quitting the application cancels a paused job as it cancels a running one.
-   A process that dies with a job paused leaves the row to ADR 0088: the restart records `paused` as the state it found, the notice reports what the records prove, and nothing resumes, because the plan, the captured root and the binding lived in the process that is gone.
+   A process that dies with a job paused leaves the row to ADR 0088: the restart records it as it records a job interrupted while running, which is what a parked job is to that record's question of whether any request was made, the notice reports what the records prove, and nothing resumes, because the plan, the captured root and the binding lived in the process that is gone.
 5. **One job still runs at a time.**
    A paused job is not running.
    It is quiescent at a boundary where it holds nothing in flight, exactly as it is between any two of its units, so pausing one job, running another and resuming the first interleaves no more than cancelling the first, running the second and starting a new job for the rest does today.
@@ -98,7 +98,7 @@ Showing a resumed job that waits for the slot as `queued` was considered and not
 - A paused download cancelled while another job, on a destination that does not overlap, holds the slot: an unchanged stage the job owns is removed with the directories it planned; a stage an existing guard refuses is retained and reported as it is for a running job; and the reservation and pins are released only when that finalisation has returned.
 - The queue: a start is refused once the jobs waiting and the jobs paused fill it, a paused job that ends frees its place, and a resume asked while the queue is full is accepted and waits in the place the job already holds; a running job parks although the queue is full, which leaves the jobs waiting and paused one above the depth and no more.
 - A pause asked while a delivered batch is being placed, or during a native-routed item, takes effect at the next unit head and not inside the unit; a copy whose plan ends with an engine batch still pending parks before that batch is dispatched, and a cancel there records its names as not attempted.
-- A row left `paused` by a dead process is recorded as interrupted in that state and refuses a resume; shutting down with a paused job returns.
+- A row left `paused` by a dead process is recorded as interrupted while running and refuses a resume; shutting down with a paused job returns.
 - The same pause and resume of an upload with two folders passes against the mock and the owned Swift fixture.
 - The drawer: the controls each state offers, the wording while a pause or a resume waits, and the paused row.
 

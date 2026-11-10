@@ -46,6 +46,7 @@ const (
 	StateQueued    State = "queued"
 	StatePlanning  State = "planning"
 	StateRunning   State = "running"
+	StatePaused    State = "paused"
 	StateVerifying State = "verifying"
 	StateComplete  State = "complete"
 	StatePartial   State = "partial"
@@ -60,7 +61,11 @@ var legalNext = map[State][]State{
 	// Running may end PARTIAL directly: once any irreversible subset
 	// succeeded, an interruption must not be recorded as a plain
 	// cancel/fail (review F-10).
-	StateRunning:   {StateVerifying, StatePartial, StateCancelled, StateFailed},
+	StateRunning: {StateVerifying, StatePaused, StatePartial, StateCancelled, StateFailed},
+	// A running job may be parked at a unit boundary and carry on later (ADR
+	// 0104). A paused job ends the ways a running one can be stopped, and
+	// neither verifies nor completes without running again.
+	StatePaused:    {StateRunning, StatePartial, StateCancelled, StateFailed},
 	StateVerifying: {StateComplete, StatePartial, StateCancelled, StateFailed},
 }
 
@@ -189,7 +194,7 @@ func (t Type) deletion() bool {
 }
 
 // Transition moves a job to a new state, enforcing §46 legality, and
-// stamps started_at on entering Running and finished_at on any terminal
+// stamps started_at on first entering Running and finished_at on any terminal
 // state.
 func (s *Store) Transition(ctx context.Context, id string, to State) error {
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -212,7 +217,8 @@ func (s *Store) Transition(ctx context.Context, id string, to State) error {
 			return fmt.Errorf("job %s: illegal transition %s → %s", id, current, to)
 		}
 		if to == StateRunning {
-			_, err = tx.ExecContext(ctx, `UPDATE jobs SET state=?, started_at=? WHERE id=?`, string(to), now, id)
+			// The first start is the job's start: resuming from a pause keeps it.
+			_, err = tx.ExecContext(ctx, `UPDATE jobs SET state=?, started_at=COALESCE(started_at, ?) WHERE id=?`, string(to), now, id)
 		} else if Terminal(to) {
 			_, err = tx.ExecContext(ctx, `UPDATE jobs SET state=?, finished_at=? WHERE id=?`, string(to), now, id)
 		} else {
