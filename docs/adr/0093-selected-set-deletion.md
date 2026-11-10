@@ -1,6 +1,6 @@
 # ADR 0093 — delete the selected objects as one job
 
-**Status:** Proposed on 27 October 2026 as the record [ADR 0092](0092-exact-object-deletion.md) decision 9 named, for the operator's question of the same day recorded under decision 30 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md): "do we need like a selector or something to do some batch deletion/modification?".
+**Status:** Accepted and delivered; proposed on 27 October 2026 as the record [ADR 0092](0092-exact-object-deletion.md) decision 9 named, for the operator's question of the same day recorded under decision 30 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md): "do we need like a selector or something to do some batch deletion/modification?".
 Written for review before any implementation, and implemented on 27 October 2026 behind the `object-delete` token: the deletion-capable item ledger, the per-member protocol, the job, the multi-selection with its browser-owned dialog and the public proof on both fixtures are in the range that carries this sentence, with the capability deferred behind that token when this record was written.
 That capability was returned to the release on 29 October 2026 by [ADR 0052](0052-v1-capability-gate.md) decision 11, the operator's word for one object and the selected set together.
 It adds one bridge action behind the capability "Object deletion" that ADR 0092 created, lifts nothing from the [ADR 0052](0052-v1-capability-gate.md) gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).

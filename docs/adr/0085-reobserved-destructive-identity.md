@@ -4,11 +4,14 @@
 these words: re-HEAD just before the delete, and if the hash still matches delete it, otherwise fail;
 it was written for review before any implementation, and the operator accepted it as written once the
 first two paths were delivered against it.
-**Delivered:** native manifest deletion (`internal/swiftcontrol/deletemanifest.go`,
-`internal/app/mutateservice.go`) and the upload overwrite, whose comparison point this record fixes
-(`internal/transfer/local/upload.go`, with the acknowledged baseline in `internal/jobs`). **Owed:**
-prefix deletion, which this record also decides and which is still deferred with bulk delete, so its
-2N + Z cost and the loss of `BulkDelete` are decided but not yet paid.
+**Delivered:** native manifest deletion (`internal/app/objectdelete.go`, over
+`internal/swiftcontrol/deletemanifest.go`), the upload overwrite, whose comparison point this record
+fixes (`internal/transfer/local/upload.go`, with the acknowledged baseline in `internal/jobs`), and
+prefix deletion, which this record also decides: it was delivered by
+[ADR 0095](0095-prefix-deletion-by-the-per-name-protocol.md) as the verified per-name sweep
+(`internal/app/prefixsweep.go`) and returned to the release on 1 November 2026 by
+[ADR 0052](0052-v1-capability-gate.md) decision 14, so its 2N + Z cost is now paid and `BulkDelete`
+is no longer used for it.
 **Scope:** An identity comparison at the last observation each destructive path already makes, for
 Aeronautes-native manifest deletion, prefix deletion, and the upload overwrite
 [ADR 0081](0081-upload-overwrite-acknowledgement.md) already accepts. It admits no capability, admits

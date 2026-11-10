@@ -1,7 +1,7 @@
 # ADR 0096 — a copy skips a destination only when it is a full-fidelity replica
 
-**Status:** Accepted on 31 October 2026, to be implemented behind the gate for the 0.3.0 copy-overwrite step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md), discharging L06/P17 replication fidelity.
-Nothing here returns a capability: copy stays deferred under [ADR 0052](0052-v1-capability-gate.md) until the operator's word, so none of this is reachable in a built app and the smoke journey still asserts copy is deferred.
+**Status:** Accepted on 31 October 2026 and implemented (`skippableEqual` in `internal/transfer/copy/executor.go`) for the 0.3.0 copy-overwrite step of the [road to 1.0.0](../audits/2026-10-27/road-to-1.0.0.md), discharging L06/P17 replication fidelity.
+This record itself returns no capability: copy was returned to the release the same day by [ADR 0052](0052-v1-capability-gate.md) decision 12, so this rule runs in the built application.
 **Scope:** the executor's skip decision for an existing destination — `skippableEqual` and the `VerdictSame`/`VerdictUnknown` dispatch in `internal/transfer/copy/executor.go`.
 The planner's preview counts (`internal/transfer/plan/plan.go`) are out of scope and stay listing-based.
 No new caller state is required: a preview collision already carries its confirmation, baseline and admission, and a `Same` object gains only a possible refusal, which needs neither (decision 5).
