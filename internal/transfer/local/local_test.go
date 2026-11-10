@@ -1137,6 +1137,35 @@ func TestDestinationLivenessChoosesAndBudgets(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a folder's names are listed under the folder, not the request's prefix", func(t *testing.T) {
+		// A folder pick's names all sit under the folder and carry further
+		// slashes. Whatever else the prefix holds is not theirs to pay for,
+		// and a view grouped by delimiter would name no object below the folder.
+		s, mock := session(t)
+		mock.ListingPageCap = 1
+		for i := range 50 {
+			seed(mock, "media", fmt.Sprintf("docs/aaa-%04d", i), "already here")
+		}
+		var folder []string
+		for i := range 10 {
+			folder = append(folder, fmt.Sprintf("docs/photos/%c/image-%04d", 'a'+rune(i%2), i))
+		}
+		seed(mock, "media", folder[7], "already here")
+		before := len(mock.RequestLog())
+		live, err := destinationLiveness(t.Context(), s, "media", "docs/", folder)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, name := range folder {
+			if live[name] != (i == 7) {
+				t.Errorf("%s live = %v", name, live[name])
+			}
+		}
+		heads, listings := count(mock.RequestLog()[before:])
+		if heads != 0 || listings != 2 {
+			t.Errorf("cost %d HEADs and %d listings, want 0 and 2: the one row under the folder, then the empty page", heads, listings)
+		}
+	})
 	t.Run("a head that failed refuses", func(t *testing.T) {
 		s, mock := session(t)
 		mock.ListingPageCap = 1
