@@ -982,10 +982,10 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 }
 
 // A name is not a secret because it contains a word that often guards one. The
-// audit filter refuses a secret-bearing SUMMARY outright, and a refused summary
-// means no event at all — so a summary built out of an object's own name hands a
-// perfectly valid object the power to erase its own destructive record. These are
-// the two summaries this path composes.
+// audit filter withholds the whole sentence of a secret-bearing SUMMARY — so a
+// summary built out of an object's own name hands a perfectly valid object the
+// power to blank the prose of its own destructive record. These are the two
+// summaries this path composes, and both keep their identities.
 func TestDeleteManifestRecordsNamesTheFilterWouldReject(t *testing.T) {
 	ctx := context.Background()
 

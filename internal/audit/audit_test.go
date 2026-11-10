@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,25 +93,42 @@ func TestRetentionCap(t *testing.T) {
 	}
 }
 
-func TestRefusesSecretShapedSummaries(t *testing.T) {
+// A summary that looks credential-bearing is never stored, and the event it
+// belongs to is never lost: its operation, resource and result are facts the
+// trail owes regardless of what a name happened to contain.
+func TestWithholdsSecretShapedSummariesAndKeepsTheEvent(t *testing.T) {
 	s := newStore(t, 0)
 	ctx := context.Background()
-	cases := []string{
-		"set X-Auth-Key to hunter2",
-		"updated password field",
-		"rotated api_key",
+	cases := map[string]string{
+		"set X-Auth-Key to hunter2":            "x-auth-key",
+		"updated password field":               "password",
+		"rotated api_key":                      "api_key",
+		"created 1 directory (passwords/2024)": "password",
 	}
-	for _, summary := range cases {
-		err := s.Append(ctx, Event{
-			Operation: "op", Resource: "r", Summary: summary, Result: ResultApplied,
-		})
-		if err == nil {
-			t.Errorf("summary %q was accepted; must be refused", summary)
+	for summary, word := range cases {
+		if err := s.Append(ctx, Event{Operation: "op", Resource: "r", Summary: summary, Result: ResultApplied}); err != nil {
+			t.Errorf("summary %q lost its event: %v", summary, err)
+		}
+		if got := SummaryRefusal(summary); got != word {
+			t.Errorf("SummaryRefusal(%q) = %q, want %q", summary, got, word)
 		}
 	}
-	events, _ := s.List(ctx, Query{Limit: 10})
-	if len(events) != 0 {
-		t.Errorf("refused events were still recorded: %d", len(events))
+	events, err := s.List(ctx, Query{Limit: 10})
+	if err != nil || len(events) != len(cases) {
+		t.Fatalf("events = %d, %v; want one per case", len(events), err)
+	}
+	for _, event := range events {
+		if event.Operation != "op" || event.Resource != "r" || event.Result != ResultApplied {
+			t.Errorf("the kept event lost its facts: %+v", event)
+		}
+		if !strings.HasPrefix(event.Summary, "summary withheld: ") {
+			t.Errorf("a refused summary was stored: %q", event.Summary)
+		}
+		for _, leaked := range []string{"hunter2", "2024", "rotated", "updated"} {
+			if strings.Contains(event.Summary, leaked) {
+				t.Errorf("the withheld summary kept %q: %q", leaked, event.Summary)
+			}
+		}
 	}
 }
 
