@@ -29,13 +29,15 @@ async function fixture(kind: Kind) {
   const more = () => kind === 'containers' ? state.loadMoreContainers() : state.loadMoreEntries();
   const reload = () => kind === 'containers' ? state.loadContainers() : state.goTo('');
   const names = () => (kind === 'containers' ? state.containers : state.entries).map((row) => row.name);
+  // The count without a pass over the rows, for the tests that hold a hundred thousand of them.
+  const count = () => (kind === 'containers' ? state.containers : state.entries).length;
   const marker = () => kind === 'containers' ? state.containersMarker : state.entriesMarker;
   const pageError = () => kind === 'containers' ? state.containersMoreError : state.entriesMoreError;
   const pageLoading = () => kind === 'containers' ? state.containersMoreLoading : state.entriesMoreLoading;
   const call = () => kind === 'containers' ? api.containers : api.objects;
   const setMarker = (value: string) => { if (kind === 'containers') state.containersMarker = value; else state.entriesMarker = value; };
   const scope = { ...state.account!.scope };
-  return { api, state, scope, bookmark, container, object, more, reload, names, marker, pageError, pageLoading, call, setMarker };
+  return { api, state, scope, bookmark, container, object, more, reload, names, count, marker, pageError, pageLoading, call, setMarker };
 }
 
 describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (kind) => {
@@ -249,9 +251,12 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     f.api.objects = vi.fn(async (_bookmarkId, _container, _prefix, marker) => ({ rows: [f.object], nextMarker: `${marker}+`, effectiveLimit: 1000, scope: f.scope }));
   };
   const atCeiling = (f: Fixture) => kind === 'containers' ? f.state.containersAtCeiling : f.state.entriesAtCeiling;
+  // Building a full column takes over a second alone and several on a loaded
+  // runner, which is too near the default five to leave to it.
+  const fullColumnTimeout = 30_000;
   // Rows up to one short of the default ceiling, so the next page reaches it.
   const fillToDefault = (f: Fixture) => {
-    const count = 100_000 - f.names().length - 1;
+    const count = 100_000 - f.count() - 1;
     if (kind === 'containers') f.state.containers = [...f.state.containers, ...Array.from({ length: count }, (_, i) => ({ ...f.container, name: `bulk-${i}` }))];
     else f.state.entries = [...f.state.entries, ...Array.from({ length: count }, (_, i) => ({ ...f.object, name: `bulk-${i}` }))];
   };
@@ -285,12 +290,12 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     f.api.appSettings = vi.fn(async () => ({ ...settings, browserRetentionCeiling: 5_000_000 }));
     expect(f.state.settings.document).toBeNull(); fillToDefault(f);
     await f.more();
-    expect(f.names()).toHaveLength(100_000); expect(f.marker()).toBe('page2+');
+    expect(f.count()).toBe(100_000); expect(f.marker()).toBe('page2+');
     expect(f.api.appSettings).toHaveBeenCalledOnce(); await settle();
     expect(f.state.retentionCeiling).toBe(5_000_000); expect(atCeiling(f)).toBe(false);
     await f.more();
     expect(f.call()).toHaveBeenCalledTimes(2); expect(f.api.appSettings).toHaveBeenCalledOnce();
-  });
+  }, fullColumnTimeout);
 
   it('stops at the default ceiling when the settings cannot be read', async () => {
     const f = await fixture(kind); install(f);
@@ -300,6 +305,6 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     expect(f.api.appSettings).toHaveBeenCalledOnce(); expect(f.state.settings.document).toBeNull();
     expect(f.state.retentionCeiling).toBe(100_000); expect(atCeiling(f)).toBe(true);
     await f.more();
-    expect(f.call()).toHaveBeenCalledOnce(); expect(f.names()).toHaveLength(100_000);
-  });
+    expect(f.call()).toHaveBeenCalledOnce(); expect(f.count()).toBe(100_000);
+  }, fullColumnTimeout);
 });
