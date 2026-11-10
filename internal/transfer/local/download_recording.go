@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,6 +18,16 @@ type DownloadRecorder struct {
 	Execute     func(DownloadItem, transfercopy.Observation) error
 	Verify      func(DownloadItem, transfercopy.Observation) error
 	Publication func(DownloadItem, transfercopy.Observation) error
+	// Pause is asked at the head of each unit and nowhere else: before an
+	// engine batch is handed to a child and before a native-routed item starts
+	// (ADR 0104 decision 1). It returns at once unless the job has been asked
+	// to pause; then it returns when the job may carry on, or with the
+	// context's error when the job was cancelled while it waited, which the
+	// route treats as a cancel seen at that boundary. Any other error means
+	// the job could not be paused or resumed because its records can no
+	// longer be written, and stops the run as a lost record does. A route
+	// with no hook never pauses.
+	Pause func(ctx context.Context) error
 }
 
 type DownloadAdmission struct {
@@ -138,6 +149,21 @@ func (item DownloadItem) LocalPath(root, prefix string) (string, error) {
 type nativePublished struct {
 	item   DownloadItem
 	copied downloadResult
+}
+
+// pause parks the run at a unit head when the job has been asked to pause
+// (ADR 0104); a run with no hook never pauses.
+func (d *downloadRun) pause(ctx context.Context) error {
+	if d.recorder == nil || d.recorder.Pause == nil {
+		return nil
+	}
+	err := d.recorder.Pause(ctx)
+	if cancelled := ctx.Err(); err == nil || (cancelled != nil && errors.Is(err, cancelled)) {
+		return err
+	}
+	// Not a cancel: the records can no longer be written, so the run stops as
+	// a lost record stops it, and its stage is kept (ADR 0048 decision 7).
+	return d.stop(err)
 }
 
 type downloadRun struct {

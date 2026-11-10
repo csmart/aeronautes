@@ -149,6 +149,14 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		}
 	}()
 	for _, item := range preflight.Items {
+		if !item.Dir && item.Route == "native" {
+			// A native-routed item is a unit of its own; a directory is
+			// made on the way and an engine-routed name is only buffered
+			// here, pausing with its batch below.
+			if err := d.pause(ctx); err != nil {
+				return report, err
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
@@ -262,6 +270,12 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 		return nil
 	}
 	for index, batch := range batches {
+		// The head of a batch is the only place this loop parks: the checks
+		// further down sit inside a unit, where a delivered batch is being
+		// placed.
+		if err := d.pause(ctx); err != nil {
+			return report, errors.Join(err, notAttempted(index, err))
+		}
 		if err := ctx.Err(); err != nil {
 			return report, errors.Join(err, notAttempted(index, err))
 		}

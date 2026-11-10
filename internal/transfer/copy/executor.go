@@ -328,6 +328,13 @@ func (e *Executor) Handle(ctx context.Context, item plan.Item) error {
 	if e.stopped != nil {
 		return e.stopped
 	}
+	// The head of an item is one of the two places a copy parks (ADR 0104):
+	// nothing has been done for this item, and the items before it are
+	// settled or buffered for an engine batch that has not been sent. The
+	// other place is the head of that batch, in flushBatch.
+	if err := e.pause(ctx); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -577,15 +584,21 @@ func (e *Executor) flushBatch(ctx context.Context) error {
 	if len(e.batch) == 0 {
 		return nil
 	}
-	if err := errors.Join(e.stopped, ctx.Err()); err != nil {
-		names := e.batch
-		e.batch = nil
-		e.batchBytes = 0
-		return e.abandonBatch(names, err)
-	}
 	names := e.batch
 	e.batch = nil
 	e.batchBytes = 0
+	// An engine batch is a unit of its own, whether it filled or the plan
+	// ended with it pending, so the run may park here before the child
+	// starts (ADR 0104 decision 1). A batch that is not dispatched, for a
+	// stopped run, a cancel or a pause that ended in either, is abandoned:
+	// its names are admitted and are recorded as not attempted.
+	held := errors.Join(e.stopped, ctx.Err())
+	if held == nil {
+		held = e.pause(ctx)
+	}
+	if held != nil {
+		return e.abandonBatch(names, held)
+	}
 	if e.cfg.Engine == nil {
 		for _, name := range names {
 			if err := e.observe(name, failed(EffectNotAttempted, StageEngine, CodeUnsupported, "engine", errors.New("no engine configured"))); err != nil {

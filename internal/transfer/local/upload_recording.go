@@ -70,6 +70,16 @@ type UploadRecorder struct {
 	// like it a replacing item with no hook is refused rather than published
 	// under versioning nobody re-read.
 	VersioningUnchanged func(ctx context.Context, item UploadItem) (refusal string, err error)
+	// Pause is asked at the head of each unit and nowhere else: before an
+	// engine group is handed to a child and before a native-routed item starts
+	// (ADR 0104 decision 1). It returns at once unless the job has been asked
+	// to pause; then it returns when the job may carry on, or with the
+	// context's error when the job was cancelled while it waited, which the
+	// route treats as a cancel seen at that boundary. Any other error means
+	// the job could not be paused or resumed because its records can no
+	// longer be written, and stops the run as a lost record does. A route
+	// with no hook never pauses.
+	Pause func(ctx context.Context) error
 }
 
 // ReclaimPlan is what may be reclaimed for one replaced item, answered by
@@ -344,6 +354,19 @@ func uploadRecorder(recorders []*UploadRecorder) (*UploadRecorder, error) {
 		return nil, errors.New("recorded upload requires admission, execution and verification callbacks")
 	}
 	return recorders[0], nil
+}
+
+// pause parks the run at a unit head when the job has been asked to pause
+// (ADR 0104); a run with no hook never pauses.
+func (u *uploadRun) pause(ctx context.Context) error {
+	if u.recorder == nil || u.recorder.Pause == nil {
+		return nil
+	}
+	err := u.recorder.Pause(ctx)
+	if cancelled := ctx.Err(); err == nil || (cancelled != nil && errors.Is(err, cancelled)) {
+		return err
+	}
+	return u.stop(err)
 }
 
 type uploadRun struct {

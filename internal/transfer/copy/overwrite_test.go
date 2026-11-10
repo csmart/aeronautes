@@ -802,3 +802,90 @@ func TestAcknowledgedStagedSymlinkOverwriteRefusalCarriesUnresolvedEffect(t *tes
 		t.Errorf("staged symlink refusal lost the staged bytes' uncertainty: effect=%q, want %q", observed.Effect, EffectUnresolved)
 	}
 }
+
+// ADR 0104 decision 1: an engine batch is a unit of its own. An ordinary name
+// is only buffered when the plan hands it over, so a copy that then handles a
+// native name has the batch still pending when the plan ends, and it is asked
+// to pause once more before that batch's child starts. A cancel seen there
+// starts no child and records the buffered name as not attempted; without one
+// the batch is dispatched as before.
+func TestExecutorAsksToPauseBeforeAPendingEngineBatch(t *testing.T) {
+	for _, ending := range []string{"carries on", "cancelled"} {
+		t.Run(ending, func(t *testing.T) {
+			w := newWorld(t)
+			seed(w.srcMock, "media", "a-engine", []byte("alpha"), nil)
+			seed(w.srcMock, "media", "z\nnative", []byte("zulu"), nil)
+			items := []plan.Item{
+				{Name: "a-engine", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
+				{Name: "z\nnative", Verdict: plan.VerdictNew, Route: plan.RouteNative, SourceBytes: 4},
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			rec := newOverwriteRecorder()
+			recorder := rec.recorder()
+			asked := 0
+			recorder.Pause = func(context.Context) error {
+				asked++
+				// Two item heads, then the head of the pending batch.
+				if asked == 3 && ending == "cancelled" {
+					cancel()
+					return ctx.Err()
+				}
+				return nil
+			}
+			e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, recorder)
+			report, err := e.Run(ctx, items)
+			if asked != 3 {
+				t.Fatalf("the run asked to pause %d times, want the two item heads and the batch head", asked)
+			}
+			_, headErr := w.dst.ObjectDetail(context.Background(), "backup", "a-engine")
+			if ending == "carries on" {
+				if err != nil || report.Copied != 2 || headErr != nil {
+					t.Fatalf("report = %+v, %v, engine name read %v; want both names copied", report, err, headErr)
+				}
+				return
+			}
+			if !errors.Is(err, context.Canceled) || report.Copied != 1 || len(report.StagedResidue) != 0 || headErr == nil {
+				t.Fatalf("report = %+v, %v, engine name read %v; want the native name copied and no child started", report, err, headErr)
+			}
+			if got := rec.executed["a-engine"]; got.Result != ResultNotAttempted || got.Effect != EffectNotAttempted {
+				t.Errorf("the buffered name is recorded as %+v, want not attempted", got)
+			}
+		})
+	}
+}
+
+// ADR 0104 decision 1: the executor asks to pause at the head of each item
+// the plan hands it, and at the head of an engine batch, and nowhere else. A
+// cancellation returned from that wait ends the run as a cancel seen there
+// does: the item before it is copied, and nothing is done or recorded for the
+// item it stopped at or any after.
+func TestExecutorAsksToPauseAtItemHeadsOnly(t *testing.T) {
+	w := newWorld(t)
+	// A newline in a name is what routes a plain object natively, so each
+	// item is copied as it is handled.
+	names := []string{"a\none", "b\ntwo", "c\nthree"}
+	var items []plan.Item
+	for _, name := range names {
+		seed(w.srcMock, "media", name, []byte("bytes of "+name), nil)
+		items = append(items, plan.Item{Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, SourceBytes: int64(len("bytes of " + name))})
+	}
+	rec := newOverwriteRecorder()
+	recorder := rec.recorder()
+	asked := 0
+	recorder.Pause = func(context.Context) error {
+		asked++
+		if asked == 2 {
+			return context.Canceled
+		}
+		return nil
+	}
+	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, recorder)
+	report, err := e.Run(context.Background(), items)
+	if !errors.Is(err, context.Canceled) || asked != 2 || report.Copied != 1 {
+		t.Fatalf("report = %+v, %v after %d asks; want the first item copied and the cancel at the second head", report, err, asked)
+	}
+	if len(rec.executed) != 1 {
+		t.Errorf("executions recorded = %v, want none for the items never started", rec.executed)
+	}
+}
