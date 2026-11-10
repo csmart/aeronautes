@@ -13,8 +13,11 @@
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
   const hasPrefix = $derived(browser.prefix !== "");
+  // The values are the generated enum's own, so a mode the bridge renames
+  // fails to compile here instead of being sent as a name it no longer knows.
+  type Mode = Exclude<`${DeleteRequestDTO["mode"]}`, "">;
   // svelte-ignore state_referenced_locally
-  let mode: "prefix" | "empty" | "delete_container" = $state(hasPrefix ? "prefix" : "empty");
+  let mode: Mode = $state(hasPrefix ? "prefix" : "empty");
   let confirmText = $state("");
   let previewing = $state(false);
   let starting = $state(false);

@@ -6,23 +6,9 @@
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { DownloadRequestDTO, PickedFilesDTO, UploadRequestDTO } from "../../lib/api";
+  import type { DownloadPreflightView, DownloadRequestDTO, PickedFilesDTO, UploadPreflight, UploadRequestDTO } from "../../lib/api";
   import { folderSummary } from "./folderSummary";
   import { formatBytes, formatCount } from "../../lib/format";
-
-  // Upload still ships the complete item list; download is a bounded
-  // view with first-class counts (ADR 0056).
-  interface ProblemRow { name: string; kind: string; detail: string; reject: boolean }
-  interface PreflightView {
-    items?: unknown[] | null;
-    problems?: ProblemRow[] | null;
-    problemSamples?: ProblemRow[] | null;
-    totalBytes: number;
-    objects?: number;
-    problemCount?: number;
-    rejected?: boolean;
-    largeObjectsAsDlo?: boolean;
-  }
 
   let {
     browser,
@@ -54,31 +40,37 @@
     mode: "upload" | "download";
     scope: Scope;
   }
+  // Upload still ships the complete item list; download is a bounded view
+  // with first-class counts (ADR 0056). Each arm carries its own generated
+  // report type, so a field the bridge renames fails to compile here.
   type Prepared = {
     intent: Intent;
-    report: PreflightView;
     destination: string;
-  } & ({ mode: "upload"; request: UploadRequestDTO } | { mode: "download"; request: DownloadRequestDTO });
+  } & (
+    | { mode: "upload"; request: UploadRequestDTO; report: UploadPreflight }
+    | { mode: "download"; request: DownloadRequestDTO; report: DownloadPreflightView }
+  );
   let prepared = $state.raw<Prepared | null>(null);
   // The folder pick's own summary (ADR 0103): shown with the report, or alone
   // when the folder holds nothing to upload. A file pick leaves it null.
   let folder = $state.raw<PickedFilesDTO | null>(null);
-  const report = $derived(prepared && isCurrent(prepared.intent) ? prepared.report : null);
-  const destDir = $derived(report ? prepared?.destination ?? "" : "");
+  const current = $derived(prepared && isCurrent(prepared.intent) ? prepared : null);
+  const report = $derived(current?.report ?? null);
+  const destDir = $derived(current?.destination ?? "");
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName);
 
-  const problemRows = $derived(mode === "download" ? report?.problemSamples ?? [] : report?.problems ?? []);
-  const rejected = $derived(mode === "download" ? report?.rejected ?? false : report?.problems?.some((p) => p.reject) ?? false);
+  const problemRows = $derived((current?.mode === "download" ? current.report.problemSamples : current?.report.problems) ?? []);
+  const rejected = $derived(current?.mode === "download" ? current.report.rejected : problemRows.some((p) => p.reject));
   const warnings = $derived(problemRows.filter((p) => !p.reject));
   const rejections = $derived(problemRows.filter((p) => p.reject));
   // §63.8: name the destination large-object placement before Start, the way
   // the copy preview does. The backend sets the flag when the selection holds a
   // file the engine segments into a DLO; a refused upload writes nothing, so the
   // note is moot there.
-  const placesLargeObjectsAsDlo = $derived(mode === "upload" && !rejected && (report?.largeObjectsAsDlo ?? false));
-  const problemCount = $derived(mode === "download" ? report?.problemCount ?? 0 : problemRows.length);
-  const truncated = $derived(mode === "download" && problemCount > problemRows.length);
+  const placesLargeObjectsAsDlo = $derived(current?.mode === "upload" && !rejected && current.report.largeObjectsAsDlo);
+  const problemCount = $derived(current?.mode === "download" ? current.report.problemCount : problemRows.length);
+  const truncated = $derived(current?.mode === "download" && problemCount > problemRows.length);
 
   // A collision is the one rejection the operator can answer: ADR 0081's
   // acknowledged overwrite. Every OTHER rejecting problem is not a question,
@@ -216,7 +208,7 @@
     }
   }
 
-  const itemCount = $derived(mode === "download" ? report?.objects ?? 0 : report?.items?.length ?? 0);
+  const itemCount = $derived(current?.mode === "download" ? current.report.objects : current?.report.items?.length ?? 0);
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
