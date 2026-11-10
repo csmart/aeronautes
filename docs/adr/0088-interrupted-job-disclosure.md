@@ -177,8 +177,8 @@ are retained, which the reason text does; it did not require anybody to be shown
    facts **and** the inconclusive ledger side by side, and describes the unresolved effect as
    unresolved — not as a failure, and not as a verdict over facts the item records already settled.
 
-6. **The notice offers dismissal, not a restart.** It links to the ordinary transfer dialog and does
-   not start anything itself. Three accepted contracts make a one-click restart the wrong affordance:
+6. **The notice offers dismissal, not a restart.** It points to the jobs panel, where each job is
+   listed, and does not start anything itself. Three accepted contracts make a one-click restart the wrong affordance:
    - selection authority is one-shot and scoped ([ADR 0041](0041-scoped-selection-capabilities.md),
      [ADR 0073](0073-selected-resource-acknowledgement.md)), so a queued upload's authority
      deliberately does not survive the restart and the local selection must be made again;

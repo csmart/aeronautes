@@ -2,7 +2,7 @@
 
 **Status:** Accepted (2026-10-26) — the operator's decision of the same day, recorded as decision 26 in the [Linux finish line](../audits/2026-09-05/linux-finish-line.md); the resolver and packaging changes ship in the same range as this record.
 **Scope:** How the Linux rpm, deb and tarball obtain the transfer engine and how the application finds it.
-It changes neither the pin itself (DESIGN §26.3), the enumerated flag surface ([ADR 0007](0007-enumerated-rclone-flag-surface.md)), the gateway ([ADR 0014](0014-child-storage-gateway.md)), nor the macOS and Windows bundles, which already work the way this record describes.
+It changes neither the pin itself (DESIGN §26.3), the enumerated flag surface ([ADR 0007](0007-rclone-flag-surface.md)), the gateway ([ADR 0014](0014-child-storage-gateway.md)), nor the macOS and Windows bundles, which already work the way this record describes.
 
 ## The failure
 
@@ -21,7 +21,7 @@ Nor is the distribution's build the measured binary even when the version matche
 1. **Accept a version range** — the same major and minor with any patch, or anything at least the pin.
    Rejected.
    Every engine fact this project relies on is recorded against one binary: the reserved-rune set derived from the frozen v1.74.3 encoder source and re-derived on any upgrade ([docs/rclone.md](../rclone.md)), the absent `--files-from0`, the generated segment prefix shape (§26.4), the retry timing (§26.2) and the data-outcome options measured on 2026-10-02 ([experiment](../experiments/2026-10-02-engine-claims-measured.md)).
-   [ADR 0007](0007-enumerated-rclone-flag-surface.md) makes a pin upgrade a re-verification event for exactly that reason.
+   [ADR 0007](0007-rclone-flag-surface.md) makes a pin upgrade a re-verification event for exactly that reason.
    A range admits an engine nobody has measured, on the user's machine, in a tool that moves production data; and even a matching version from the distribution is a different build.
 2. **Test a matrix of versions in CI.**
    Useful, and already wanted by §26.3 as the pinned version plus the latest upstream; `make rclone-matrix` runs it as a measurement.

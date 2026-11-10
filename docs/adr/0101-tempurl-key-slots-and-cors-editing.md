@@ -3,7 +3,7 @@
 **Status:** Accepted for 0.5.0 (9 November 2026).
 The roadmap the operator accepted as finish-line decision 31 names the feature, and DESIGN §22 names its priorities.
 **Scope:** How the inspector sets and clears the TempURL key slots of an account and a container, how the Go model and the container editor treat the CORS metadata family, and what the durable facts and the audit trail record about a key change.
-It changes neither the metadata editors' per-key contract (§17.2, [ADR 0090](0090-container-presets.md)), the public-read acknowledgement, the settings badges ([ADR 0071](0071-container-settings-indicators.md)), nor the v1 capability gate ([ADR 0052](0052-v1-capability-gate.md)).
+It lifts [ADR 0090](0090-container-presets.md)'s exclusion of the CORS family from the editable surface (decision 6), and changes neither the metadata editors' per-key delta (§17.2), the public-read acknowledgement, the settings badges ([ADR 0071](0071-container-settings-indicators.md)), nor the v1 capability gate ([ADR 0052](0052-v1-capability-gate.md)).
 
 ## Context
 
