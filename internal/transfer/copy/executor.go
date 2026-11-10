@@ -1233,53 +1233,26 @@ func (e *Executor) copySymlink(ctx context.Context, name, srcName, dstName strin
 	if err != nil && !swiftcontrol.IsNotFound(err) {
 		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-rehead", err)
 	}
+	// The symlink route's own pre-PUT destination read is the fixed point
+	// (ADR 0085): nothing prepares between it and the empty-body PUT below. A
+	// live name the operator did not acknowledge appeared since planning and
+	// conflicts; an acknowledged one goes through the comparison the other two
+	// routes use. Decision 6 retains the replaced object's segments, so there
+	// is nothing to reclaim here.
+	shown, acknowledged, ackErr := e.acknowledged(name)
+	if ackErr != nil {
+		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-ack", ackErr)
+	}
 	overwrite := false
-	if err == nil {
-		// The symlink route's own pre-PUT destination read is the fixed point
-		// (ADR 0085): nothing prepares between it and the empty-body PUT below.
-		// A destination the operator did not acknowledge still conflicts; an
-		// acknowledged one is replaced only when its fresh reading still matches
-		// what they were shown, and refused with both identities otherwise.
-		shown, acknowledged, ackErr := e.acknowledged(name)
-		if ackErr != nil {
-			return failed(priorEffect, StageCommit, CodeUnknown, "symlink-ack", ackErr)
-		}
-		if !acknowledged {
-			return conflict(priorEffect, nil, "destination appeared since planning")
-		}
-		if stop := e.versioningUnchanged(ctx, name, priorEffect); stop != nil {
+	switch {
+	case err == nil && !acknowledged:
+		return conflict(priorEffect, nil, "destination appeared since planning")
+	case acknowledged:
+		replaces, stop := e.replaceAtFixedPoint(ctx, name, shown, dstDetail, err == nil, priorEffect, "symlink")
+		if stop != nil {
 			return *stop
 		}
-		found, identifiable := shownFrom(dstDetail)
-		if !identifiable {
-			return e.overwriteRefused(name, priorEffect, "the destination could not be identified before replacing it: its HEAD stated no entity tag or no length")
-		}
-		if found != shown {
-			e.recordRefused(name, shown, found)
-			return e.overwriteRefused(name, priorEffect, fmt.Sprintf(
-				"the destination no longer holds what was acknowledged: it was a %s of %d bytes with entity tag %s, and it is now a %s of %d bytes with entity tag %s",
-				shown.Class, shown.Length, shown.ETag, found.Class, found.Length, found.ETag))
-		}
-		// Decision 6 retains the replaced object's segments, which sit on the
-		// destination account the operator was not shown, so there is nothing to
-		// reclaim here; record what is there before the PUT replaces it.
-		if recErr := e.replacing(name, observedFrom(dstDetail)); recErr != nil {
-			e.stop(recErr)
-			return failed(priorEffect, StageRecording, CodeUnknown, "symlink-replace-record", recErr)
-		}
-		overwrite = true
-	} else if _, acknowledged, ackErr := e.acknowledged(name); ackErr != nil {
-		return failed(priorEffect, StageCommit, CodeUnknown, "symlink-ack", ackErr)
-	} else if acknowledged {
-		// IsNotFound: the destination the operator acknowledged is gone by the
-		// fixed point. It publishes create-only below, but its observed absence
-		// is recorded first, as ADR 0085 keeps the observed predecessor including
-		// the absence this contract's race admits, rather than leaving a silent
-		// first write. A recording failure stops it.
-		if recErr := e.replacing(name, ObservedPredecessor{Present: false}); recErr != nil {
-			e.stop(recErr)
-			return failed(priorEffect, StageRecording, CodeUnknown, "symlink-absent-record", recErr)
-		}
+		overwrite = replaces
 	}
 
 	// No leading slash: real Swift silently stores a plain object when
