@@ -86,13 +86,13 @@
           class="type-mono"
           bind:this={prefixInput}
           value={browser.prefix}
-          placeholder="server-side prefix…"
+          placeholder="folder path, e.g. logs/2026/"
           onchange={applyPrefix}
         />
       </label>
       <label class="field">
         <span class="field-label">Filter</span>
-        <input bind:value={browser.filter} placeholder="filter loaded rows…" />
+        <input bind:value={browser.filter} placeholder="filter this list…" />
       </label>
       <button
         class="find"
@@ -102,34 +102,12 @@
       >
         Find in container
       </button>
-      <button
-        class="refresh"
-        title="Re-read this listing from the server"
-        aria-label="Refresh listing"
-        aria-busy={browser.entriesRefreshing}
-        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
-        onclick={() => browser.refreshView()}
-      >
-        Refresh
-      </button>
-      <button
-        class="find"
-        title="Count the objects under this prefix: streams the listing page by page and keeps no names"
-        disabled={browser.containerName === null}
-        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
-      >
-        {browser.countRunning ? "Stop counting" : "Count objects"}
-      </button>
-      {#if v1Offers.copy}
-        <button
-          class="find"
-          title="Copy this container/prefix to another account or container"
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => (browser.transferOpen = true)}
-        >
-          Copy to…
-        </button>
-      {/if}
+    </div>
+
+    <!-- Three groups by weight: the transfers, the quieter listing tools,
+      and the deletions apart at the end so they are never next to a
+      transfer the operator meant to press. -->
+    <div class="actions" role="group" aria-label="Actions">
       {#if v1Offers.upload}
         <button
           class="find"
@@ -150,16 +128,36 @@
           Download…
         </button>
       {/if}
-      {#if v1Offers.bulkDelete}
+      {#if v1Offers.copy}
         <button
-          class="find danger"
-          title="Bulk delete: empty this prefix or container, or delete the container — NOT the selected object"
+          class="find"
+          title="Copy this container/prefix to another account or container"
           disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => (browser.deleteOpen = true)}
+          onclick={() => (browser.transferOpen = true)}
         >
-          Delete scope…
+          Copy to…
         </button>
       {/if}
+      <span class="gap"></span>
+      <button
+        class="refresh quiet"
+        title="Re-read this listing from the server"
+        aria-label="Refresh listing"
+        aria-busy={browser.entriesRefreshing}
+        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
+        onclick={() => browser.refreshView()}
+      >
+        Refresh
+      </button>
+      <button
+        class="find quiet"
+        title="Count the objects under this prefix: streams the listing page by page and keeps no names"
+        disabled={browser.containerName === null}
+        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
+      >
+        {browser.countRunning ? "Stop counting" : "Count objects"}
+      </button>
+      <span class="push"></span>
       {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
         <button
           class="find danger"
@@ -167,6 +165,16 @@
           onclick={() => browser.openSelectedDelete()}
         >
           Delete selected…
+        </button>
+      {/if}
+      {#if v1Offers.bulkDelete}
+        <button
+          class="find danger"
+          title="Delete everything under this prefix, or empty or delete the container; not only the selected objects"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (browser.deleteOpen = true)}
+        >
+          {browser.prefix === "" ? "Empty or delete container…" : "Delete prefix…"}
         </button>
       {/if}
     </div>
@@ -413,7 +421,28 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     align-items: end;
-    margin: var(--space-2) 0 var(--space-3);
+    margin: var(--space-2) 0 var(--space-2);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    margin: 0 0 var(--space-3);
+  }
+
+  .actions .gap {
+    width: var(--space-2);
+  }
+
+  .actions .push {
+    flex: 1;
+  }
+
+  .quiet {
+    color: var(--color-text-secondary);
+    border-color: var(--color-border);
   }
 
   .field input {

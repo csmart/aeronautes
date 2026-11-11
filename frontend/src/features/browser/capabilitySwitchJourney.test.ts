@@ -89,7 +89,7 @@ it("keeps a deferred control hidden until Info settles while the kept ones are t
   await connect();
   // Bulk delete was returned on 1 November 2026, so its scope control is a
   // kept one and present now without any switch naming it.
-  expect(labels()).toContain("Delete scope…");
+  expect(labels()).toContain("Empty or delete container…");
   // The switched-on deferred control appears once Info has named it; it lives
   // in the jobs drawer, and the banner keeps saying its safety is not finished.
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
@@ -112,7 +112,7 @@ it("keeps deferred controls closed and reports an Info failure while browsing st
   expect(labels()).toContain("Copy to…");
   // Bulk delete is kept now, so its scope control survives an Info failure
   // like the other returns; benchmark, still behind the switch, does not.
-  expect(labels()).toContain("Delete scope…");
+  expect(labels()).toContain("Empty or delete container…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   await settle();
   expect(labels()).not.toContain("Benchmark…");
@@ -144,7 +144,7 @@ it("renders all enabled capability names and keeps unknown text inert", async ()
   expect(labels()).toContain("Copy to…");
   // Bulk delete, marker and manifest deletion are all kept now, so their
   // controls are present whether or not the switch named them.
-  expect(labels()).toContain("Delete scope…");
+  expect(labels()).toContain("Empty or delete container…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   await settle();
   expect(labels()).toContain("Benchmark…");
@@ -168,7 +168,7 @@ it("retains the inline-SLO destruction disclosure on the manifest-only path", as
   ));
   await render();
   await connect();
-  const filter = document.querySelector<HTMLInputElement>('input[placeholder="filter loaded rows…"]');
+  const filter = document.querySelector<HTMLInputElement>('input[placeholder="filter this list…"]');
   expect(filter).not.toBeNull();
   filter!.value = "external-slo";
   filter!.dispatchEvent(new Event("input", { bubbles: true }));
@@ -210,7 +210,7 @@ it("never reports zero inline entries when nothing could answer", async () => {
     new Error("Bulk delete is not available in this release: it is deferred until its safety is proven, and this build does not offer it"));
   await render();
   await connect();
-  const filter = document.querySelector<HTMLInputElement>('input[placeholder="filter loaded rows…"]');
+  const filter = document.querySelector<HTMLInputElement>('input[placeholder="filter this list…"]');
   filter!.value = "external-slo";
   filter!.dispatchEvent(new Event("input", { bubbles: true }));
   await settle();

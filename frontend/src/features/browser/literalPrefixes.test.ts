@@ -46,7 +46,7 @@ async function fixture(prefix = "") {
   await settle();
   const row = (name: string, kind = "object"): ListingRowDTO => ({ ...template, name, kind });
   const enter = async (value: string) => {
-    const input = target.querySelector<HTMLInputElement>('input[placeholder="server-side prefix…"]')!;
+    const input = target.querySelector<HTMLInputElement>('input[placeholder="folder path, e.g. logs/2026/"]')!;
     input.value = value;
     input.dispatchEvent(new Event("change", { bubbles: true }));
     await settle();

@@ -149,7 +149,7 @@ describe("container mode tabs", () => {
 
   it("preserves the loaded-row filter and the exact selection across a keyboard mode change", async () => {
     await screen();
-    const filter = get<HTMLInputElement>('[placeholder="filter loaded rows…"]');
+    const filter = get<HTMLInputElement>('[placeholder="filter this list…"]');
     filter.value = "external"; filter.dispatchEvent(new Event("input", { bubbles: true })); flushSync(); await settle();
     const list = get('[role="listbox"]'); list.focus(); press(list, "ArrowDown"); await settle();
     const before = listSelection(); expect(before).toMatch(/-row-0$/);
