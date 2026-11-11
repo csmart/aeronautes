@@ -72,8 +72,11 @@
     cursor: pointer;
   }
 
+  /* Five fields do not fit one row at every text size or dialog width;
+     they wrap rather than run past the dialog's edge. */
   .advanced-fields {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-3);
     padding-top: var(--space-2);
   }
