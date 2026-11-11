@@ -143,7 +143,7 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 		{Container: "media", Mode: ModePrefix, Prefix: staged},
 		{Container: "media_segments", Mode: ModeEmpty},
 	} {
-		req.BookmarkID, req.Confirm = bookmark, req.Container
+		req.BookmarkID, req.Confirm = bookmark, deleteConfirmation(req)
 		_, err := del.StartDelete(ctx, req)
 		refusedForStage(t, h, string(req.Mode)+" of "+req.Container+"/"+req.Prefix, id, rows, err)
 	}
@@ -180,7 +180,7 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 		{Container: "media", Mode: ModePrefix, Prefix: "logs/"},
 		{Container: "other", Mode: ModeEmpty},
 	} {
-		req.BookmarkID, req.Confirm = bookmark, req.Container
+		req.BookmarkID, req.Confirm = bookmark, deleteConfirmation(req)
 		started, err := del.StartDelete(ctx, req)
 		if err != nil {
 			t.Fatalf("%s of %s/%s beside the stage was refused: %v", req.Mode, req.Container, req.Prefix, err)
