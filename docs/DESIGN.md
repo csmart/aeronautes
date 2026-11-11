@@ -3940,6 +3940,14 @@ regression test in the same commit):
 9. **Copy/Mirror scope overlap refused** (C-03) — same resolved endpoint + container
    with equal-or-nested prefixes is rejected at validation (both directions tested:
    the deterministic self-delete nesting and the recursive-ingestion nesting).
+   Amended 11 November 2026 (operator, 0.5.0 test run): a Copy into a parent folder
+   of its own source in the same container, such as `testing/files/` to the top of
+   `testing`, is allowed when no planned destination name lands inside the source
+   folder. The run copies only the planned names, so it cannot ingest its own output;
+   a name that maps back inside the source folder (`files/files/a` to `files/a`) could
+   replace a source object the same run still reads, so the plan refuses it and names
+   it. Every pass that plans the copy applies the same check. A destination equal to
+   or inside the source stays refused, and Mirror refuses every nesting.
 10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
     source absence immediately before deletion; any successful delete followed by
     failure/cancel yields Partial with exact accounting.
