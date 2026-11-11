@@ -337,11 +337,23 @@ func (g *storageGateway) logUpstreamFailure(req *http.Request, err error) {
 	if req.Context().Err() != nil {
 		return
 	}
+	applog.Warnf("storage gateway: %s to %s failed: %v", req.Method, g.upstream.Host, transportCause(err))
+}
+
+// transportCause drops a URL error's wrapper, whose text carries the URL.
+func transportCause(err error) error {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
-		err = urlErr.Err
+		return urlErr.Err
 	}
-	applog.Warnf("storage gateway: %s to %s failed: %v", req.Method, g.upstream.Host, err)
+	return err
+}
+
+// repeatableRead reports whether a request may be sent again unchanged: a
+// read with no body.
+func repeatableRead(req *http.Request) bool {
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
+		(req.Body == nil || req.Body == http.NoBody)
 }
 
 func (g *storageGateway) roundTrip(req *http.Request) (*http.Response, error) {
@@ -353,7 +365,17 @@ func (g *storageGateway) roundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	return g.transport.RoundTrip(req)
+	resp, err := g.transport.RoundTrip(req)
+	// A read that fails in transit is sent once more, on another connection,
+	// because the engine would not: rclone's Swift backend does not retry the
+	// 502 the gateway answers with, so one dropped connection or TLS alert
+	// from the store failed a whole copy (0.5.0 test run). A write is never
+	// repeated here; the engine's own retries own that decision.
+	if err != nil && repeatableRead(req) && req.Context().Err() == nil {
+		applog.Warnf("storage gateway: %s to %s failed, trying once more: %v", req.Method, g.upstream.Host, transportCause(err))
+		resp, err = g.transport.RoundTrip(req.Clone(req.Context()))
+	}
+	return resp, err
 }
 
 func (g *storageGateway) sidecarPolicyMatches(req *http.Request) bool {
