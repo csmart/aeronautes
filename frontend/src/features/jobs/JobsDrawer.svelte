@@ -719,9 +719,9 @@
                 {#if pauseNote(job)}
                   <p class="pause-note">{pauseNote(job)}</p>
                 {/if}
-                {#if job.error}
+                {#if job.error && expanded !== job.id}
                   <!-- One line, cut at the row's width; the whole text is in
-                    the row's details (DESIGN §47). -->
+                    the row's details (DESIGN §47), which replace it when open. -->
                   <p class="error callout danger one-line" title={job.error}>{job.error}</p>
                 {/if}
                 {#if job.counters.deletionAccountingIncomplete}
@@ -730,7 +730,7 @@
                 {#if expanded === job.id}
                   {@const view = settingsView(job)}
                   {#if job.error}
-                    <p class="error full-error">{job.error}</p>
+                    <p class="error callout danger full-error">{job.error}</p>
                   {/if}
                   {#if !isActive(job) && job.recoveryRecords > 0}
                     <p class="recovery-row">
