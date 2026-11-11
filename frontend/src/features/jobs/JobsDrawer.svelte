@@ -6,7 +6,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { AppSettingsDTO, JobDTO, InterruptedDisclosureDTO } from "../../lib/api";
+  import type { JobDTO, InterruptedDisclosureDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
   import { v1Offers } from "../../lib/v1.svelte";
   import JobHistory from "./JobHistory.svelte";
@@ -18,19 +18,6 @@
   let open = $state(false);
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
-  // The budgets the service accepts (ADR 0105): one it would refuse is not
-  // offered.
-  const BUDGET_CHOICES = [1, 2, 3, 4];
-  // While a budget save is unanswered, or its outcome is unknown and no read
-  // has followed, the control shows the budget that save asked for;
-  // otherwise what was last read. Other writes hold the settings too, a rail
-  // resize or a restore, and say nothing about the budget.
-  const budgetAsked = $derived.by(() => {
-    const attempt = browser.settings.attempt;
-    const unknown = attempt?.state === "unconfirmed" && browser.settings.status === "unconfirmed";
-    return attempt?.state === "pending" || unknown ? attempt?.value : undefined;
-  });
-  const budgetValue = $derived(String(budgetAsked ?? browser.settings.document?.maxActiveJobs ?? ""));
   type CancellationNotice = {
     jobId: string;
     state: "pending" | "requested" | "unconfirmed";
@@ -264,9 +251,6 @@
       void browser.jobs.loadRecoveryStatus();
     };
     refresh();
-    // Reopening the drawer is not the explicit recovery read after a lost
-    // reply, whichever setting that save was for.
-    if (browser.settings.status !== "unconfirmed") void browser.settings.load();
     const tick = setInterval(refresh, 1500);
     return () => {
       disposed = true;
@@ -286,70 +270,6 @@
       return `~${seconds}s`;
     }
     return `~${Math.round(seconds / 60)}m`;
-  }
-
-  // The numeric settings share one treatment: the service refuses a value
-  // outside the range rather than clamping it, so each control shows the last
-  // observed value until a save is acknowledged, and a refusal beside itself.
-  type BoundedSetting = {
-    field: "downloadObjectCeiling" | "browserRetentionCeiling" | "maxQueuedJobs" | "maxConnsPerHost";
-    /** Names the control's status element. */
-    slug: string;
-    label: string;
-    title: string;
-    min: number;
-    max: number;
-    step: number;
-    /** What the observed value means, in the operator's terms. */
-    says: (value: string) => string;
-  };
-  const BOUNDED_SETTINGS: BoundedSetting[] = [
-    {
-      // ADR 0072.
-      field: "downloadObjectCeiling", slug: "ceiling", label: "Download ceiling",
-      title: "the most objects one download selection may hold; a wider prefix is refused rather than cut short (1,000 to 5,000,000)",
-      min: 1000, max: 5_000_000, step: 1000,
-      says: (value) => `ceiling ${value} objects`,
-    },
-    {
-      // ADR 0074 decision 1.
-      field: "browserRetentionCeiling", slug: "retention", label: "Browser retention",
-      title: "the most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000)",
-      min: 1000, max: 5_000_000, step: 1000,
-      says: (value) => `keeps ${value} rows`,
-    },
-    {
-      // ADR 0074 decision 2.
-      field: "maxQueuedJobs", slug: "queue-depth", label: "Queue depth",
-      title: "the most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000)",
-      min: 1, max: 1000, step: 1,
-      says: (value) => `${value} waiting at most`,
-    },
-    {
-      // ADR 0074 decision 4: the native client's cap applies to sessions
-      // opened after the save.
-      field: "maxConnsPerHost", slug: "connection-cap", label: "Connection cap",
-      title: "the most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound; applies to sessions opened after the save (1 to 256)",
-      min: 1, max: 256, step: 1,
-      says: (value) => `${value} connections per host on the next connect`,
-    },
-  ];
-  let boundedErrors: Partial<Record<BoundedSetting["field"], string | null>> = $state({});
-  // Whether an acknowledged overwrite of a large object removes the segment
-  // objects its manifest named once the replacement verifies (ADR 0081
-  // decision 5). Defaults to removing them, which is what rclone's own
-  // replacement does; the control is for the operator who shares segments
-  // between manifests and cannot accept it.
-  const reclaimChecked = $derived(browser.settings.document?.reclaimReplacedFragments ?? true);
-  let reclaimError: string | null = $state(null);
-  async function saveBound(patch: Partial<AppSettingsDTO>, report: (message: string | null) => void) {
-    if (disposed || !browser.settings.canSave || !browser.settings.document) return;
-    report(null);
-    try {
-      await browser.settings.save({ ...browser.settings.document, ...patch });
-    } catch (err) {
-      report(err instanceof Error ? err.message : String(err));
-    }
   }
 
   type SettingRow = { key: string; value: string; origin: string };
@@ -569,79 +489,6 @@
           }}>Recent changes</button
         >
         {#if tab === "jobs"}
-          {#if browser.settings.document}
-            <label class="filter" title="how many jobs run at once; a further start waits in the queue (1 to 4)">
-              <span>Active-job budget</span>
-              <select
-                value={budgetValue}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-budget-note ${id}-budget-status`}
-                onchange={(e) => {
-                  const value = Number(e.currentTarget.value);
-                  e.currentTarget.value = budgetValue;
-                  // The outcome is stated in the budget status below, which
-                  // outlives this drawer; nothing is reported here.
-                  void saveBound({ maxActiveJobs: value }, () => {});
-                }}
-              >
-                {#each BUDGET_CHOICES as n (n)}
-                  <option value={String(n)}>{n}</option>
-                {/each}
-              </select>
-            </label>
-            <span class="budget-note" id={`${id}-budget-note`}>
-              each job brings its own engine settings, so a profile's transfers and limits apply per job, not in total
-            </span>
-            {#each BOUNDED_SETTINGS as setting (setting.field)}
-              {@const observed = browser.settings.document[setting.field]}
-              <label class="filter" title={setting.title}>
-                <span>{setting.label}</span>
-                <input
-                  class="ceiling num"
-                  type="number"
-                  min={setting.min}
-                  max={setting.max}
-                  step={setting.step}
-                  value={String(observed)}
-                  disabled={!browser.settings.canSave}
-                  aria-describedby={`${id}-${setting.slug}-status`}
-                  onchange={(e) => {
-                    const value = Number(e.currentTarget.value);
-                    e.currentTarget.value = String(observed);
-                    // The service takes whole numbers. Anything else would
-                    // fail the bridge's decoding, which the window cannot
-                    // tell from a lost reply, so it is not sent.
-                    if (!Number.isInteger(value)) {
-                      boundedErrors[setting.field] = `${setting.label} takes a whole number`;
-                      return;
-                    }
-                    void saveBound({ [setting.field]: value }, (message) => (boundedErrors[setting.field] = message));
-                  }}
-                />
-              </label>
-              <span class="ceiling-status" id={`${id}-${setting.slug}-status`} role="status">
-                {boundedErrors[setting.field] || setting.says(observed.toLocaleString("en-US"))}
-              </span>
-            {/each}
-            <label class="filter" title="when an acknowledged overwrite replaces a large object, remove the segment objects its manifest named once the replacement verifies; off keeps them, and a container that keeps versions keeps them either way">
-              <span>Reclaim replaced segments</span>
-              <input
-                class="reclaim-fragments"
-                type="checkbox"
-                checked={reclaimChecked}
-                disabled={!browser.settings.canSave}
-                aria-describedby={`${id}-reclaim-status`}
-                onchange={(e) => {
-                  const value = e.currentTarget.checked;
-                  e.currentTarget.checked = reclaimChecked;
-                  void saveBound({ reclaimReplacedFragments: value }, (message) => (reclaimError = message));
-                }}
-              />
-            </label>
-            <span class="ceiling-status" id={`${id}-reclaim-status`} role="status">
-              {#if reclaimError}{reclaimError}{:else if browser.settings.document}{browser.settings.document.reclaimReplacedFragments ? "a replaced large object's segments are removed once the replacement verifies" : "a replaced large object's segments are kept"}{/if}
-            </span>
-          {/if}
           {#if v1Offers.benchmark}
             <button
               class="bench"
@@ -673,33 +520,6 @@
       </div>
 
       {#if tab === "jobs"}
-        <div class="budget-status" id={`${id}-budget-status`} role="status" aria-busy={browser.settings.operation !== null}>
-          {#if browser.settings.operation === "get"}
-            <span>Loading settings…</span>
-          {:else if browser.settings.status === "unavailable"}
-            <span>Settings are unavailable.</span>
-          {:else if browser.settings.status === "stale" || browser.settings.readError}
-            <span>Settings could not be refreshed; the last observation is stale.</span>
-          {/if}
-          {#if browser.settings.attempt?.state === "pending"}
-            <span>Saving budget {browser.settings.attempt.value}…</span>
-          {:else if browser.settings.attempt?.state === "unconfirmed"}
-            <span>Budget change to {browser.settings.attempt.value} is unconfirmed.</span>
-          {:else if browser.settings.attempt?.state === "refused"}
-            <span>Budget change to {browser.settings.attempt.value} was refused: {browser.settings.attempt.reason}.</span>
-          {:else if browser.settings.attempt?.state === "acknowledged"}
-            <span>Budget change acknowledged.</span>
-          {/if}
-          {#if browser.settings.document}
-            <span>Last observed budget: {browser.settings.document.maxActiveJobs}.</span>
-          {/if}
-          {#if browser.settings.status === "unconfirmed"}
-            <span>Refresh settings before another change.</span>
-          {:else if browser.settings.status === "current" && browser.settings.attempt?.state === "unconfirmed"}
-            <span>Current settings were read; the earlier save was not acknowledged.</span>
-          {/if}
-          <button disabled={browser.settings.operation !== null} onclick={() => void browser.settings.load()}>Refresh settings</button>
-        </div>
         <div class="recovery" role="status" aria-busy={browser.jobs.recoveryLoading}>
           {#if browser.jobs.recoveryError}
             <p>Recovery status is unavailable. Retained counts are unknown.</p>
@@ -1026,25 +846,6 @@
 
   .body {
     padding: 0 var(--space-4) var(--space-2);
-  }
-
-  .ceiling {
-    width: 9em;
-  }
-
-  .ceiling-status,
-  .budget-note {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-  }
-
-  .budget-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    margin: var(--space-2) 0;
-    font-size: var(--text-sm);
   }
 
   .audit-recent, .audit-status, .audit-scope {

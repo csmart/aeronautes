@@ -330,7 +330,7 @@ describe("the selected-set dialog", () => {
     const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
     mounted.add(component);
     flushSync(); await settle();
-    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("at most 1,000 objects; the ceiling is set in the jobs drawer");
+    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("at most 1,000 objects; the ceiling is set in Settings");
   });
 
   it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {

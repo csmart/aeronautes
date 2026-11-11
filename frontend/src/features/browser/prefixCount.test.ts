@@ -7,7 +7,7 @@ import BrowserScreen from "./BrowserScreen.svelte";
 // ADR 0072: counting the objects under the open prefix is an explicit,
 // stoppable, count-only scan whose result belongs to the prefix it was
 // taken for; the download dialog states the selection ceiling before
-// Start; the jobs drawer carries the ceiling as a setting.
+// Start; the Settings dialog carries the ceiling as a setting.
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));

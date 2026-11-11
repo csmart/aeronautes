@@ -1,0 +1,113 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { flushSync, mount, unmount } from "svelte";
+import type { Api, AppSettingsDTO } from "../../lib/api";
+import { BrowserState } from "../browser/browserState.svelte";
+import { newFakeApi, settingsRefusal } from "../browser/fakeApi";
+import BrowserScreen from "../browser/BrowserScreen.svelte";
+import SettingsDialog from "./SettingsDialog.svelte";
+
+const live = vi.hoisted(() => ({} as Api));
+vi.mock("../../lib/api", () => ({ liveApi: live }));
+
+const original: AppSettingsDTO = {
+  maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
+  browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
+  reclaimReplacedFragments: true, railWidthPx: 0,
+};
+let mounted: ReturnType<typeof mount> | null = null;
+
+beforeEach(() => {
+  Object.assign(live, newFakeApi());
+});
+afterEach(async () => {
+  if (mounted) await unmount(mounted);
+  mounted = null;
+  document.body.innerHTML = "";
+});
+
+async function settle() {
+  for (let i = 0; i < 16; i++) {
+    await Promise.resolve();
+    flushSync();
+  }
+}
+
+async function show() {
+  const api = newFakeApi();
+  api.appSettings = vi.fn(async () => ({ ...original }));
+  api.saveAppSettings = vi.fn(async (settings) => ({ ...settings }));
+  const browser = new BrowserState(api);
+  mounted = mount(SettingsDialog, { target: document.body, props: { settings: browser.settings, onClose: () => {} } });
+  await settle();
+  return api;
+}
+
+function control<T extends HTMLElement>(label: string, tag: "select" | "input"): T {
+  const found = [...document.querySelectorAll("label")].find((node) =>
+    node.querySelector("span")?.textContent?.trim() === label)?.querySelector<T>(tag);
+  expect(found, `control ${label}`).toBeDefined();
+  return found!;
+}
+
+function change(element: HTMLInputElement | HTMLSelectElement, value: string) {
+  element.value = value;
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function statusOf(element: HTMLElement): string {
+  const status = (element.getAttribute("aria-describedby") ?? "").split(" ").at(-1) ?? "";
+  return document.getElementById(status)?.textContent?.trim() ?? "";
+}
+
+it("saves the chosen default profile and shows it once acknowledged", async () => {
+  const api = await show();
+  const profile = control<HTMLSelectElement>("Default performance profile", "select");
+  expect(profile.value).toBe("balanced");
+  expect([...profile.options].map((option) => option.value)).toEqual(["auto", "balanced", "aggressive", "custom"]);
+  change(profile, "aggressive");
+  await vi.waitFor(() => expect(profile.value).toBe("aggressive"));
+  expect(api.saveAppSettings).toHaveBeenCalledExactlyOnceWith({ ...original, defaultProfile: "aggressive" });
+});
+
+// The two retention windows are saved like the other numeric settings; the
+// service's range is 0 to 3,650 days, and its refusal is shown in its words.
+it.each([
+  ["Job history kept (days)", "jobRetentionDays", "finished jobs kept 60 days"],
+  ["Audit trail kept (days)", "auditRetentionDays", "events kept 60 days"],
+] as const)("saves %s in range and shows the service's refusal of one outside it", async (label, field, sentence) => {
+  const api = await show();
+  const input = control<HTMLInputElement>(label, "input");
+  change(input, "60");
+  await vi.waitFor(() => expect(statusOf(input)).toBe(sentence));
+  expect(api.saveAppSettings).toHaveBeenCalledExactlyOnceWith({ ...original, [field]: 60 });
+
+  api.saveAppSettings = vi.fn(async () => { throw settingsRefusal("retention days out of range 0..3650"); });
+  change(input, "4000");
+  await vi.waitFor(() => expect(statusOf(input)).toBe("retention days out of range 0..3650"));
+  expect(input.value).toBe("60");
+
+  // An emptied field is not read as 0, which would switch the prune off.
+  change(input, "");
+  flushSync();
+  expect(statusOf(input)).toBe(`${label} takes a whole number`);
+  expect(api.saveAppSettings).toHaveBeenCalledTimes(1);
+});
+
+it("opens from the rail's settings button and closes on Escape", async () => {
+  mounted = mount(BrowserScreen, { target: document.body });
+  await settle();
+  // The fake starts with no bookmark, so the first-run welcome opens first.
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "Not now")?.click();
+  await settle();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+  document.querySelector<HTMLButtonElement>('.rail button[aria-label="Settings"]')!.click();
+  await settle();
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  expect(dialog).not.toBeNull();
+  expect(document.getElementById(dialog!.getAttribute("aria-labelledby")!)?.textContent).toBe("Settings");
+
+  (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await settle();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});

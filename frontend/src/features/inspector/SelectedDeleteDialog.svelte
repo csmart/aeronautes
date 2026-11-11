@@ -97,7 +97,7 @@
           as it is and recorded as changed. A row listed as zero bytes or as a static large object cannot say what it
           holds, so it is read again first and what that read finds is what is deleted, a marker or a manifest included
           and a link refused. The delete cannot see a change that lands after its last look. A selection holds at most
-          {op.ceiling.toLocaleString("en-US")} objects; the ceiling is set in the jobs drawer.
+          {op.ceiling.toLocaleString("en-US")} objects; the ceiling is set in Settings.
         </p>
         <label class="confirm">
           <span>Type the number of objects, {count}, to confirm</span>

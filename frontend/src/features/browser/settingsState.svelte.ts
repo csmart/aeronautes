@@ -102,7 +102,7 @@ export class SettingsState {
 
   /** The bookmark rail's width persists in the settings document but is
    * chrome rather than a budget: it takes the one write path without the
-   * drawer's attempt tracking, which names the active-job budget, and a
+   * attempt tracking, which names the active-job budget, and a
    * failure costs nothing but persistence, since the width already applies
    * to this window and the next drag writes again. A width asked for while
    * another settings operation is running waits for it, so the last width

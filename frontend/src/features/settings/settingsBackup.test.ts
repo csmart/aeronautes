@@ -1,15 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import { BrowserState } from "./browserState.svelte";
-import { newFakeApi } from "./fakeApi";
-import BookmarkRail from "./BookmarkRail.svelte";
+import { BrowserState } from "../browser/browserState.svelte";
+import { newFakeApi } from "../browser/fakeApi";
+import SettingsDialog from "./SettingsDialog.svelte";
 import type { AppSettingsDTO } from "../../lib/api";
 
-let rail: ReturnType<typeof mount> | null = null;
+let dialog: ReturnType<typeof mount> | null = null;
 
 afterEach(async () => {
-  if (rail) await unmount(rail);
-  rail = null;
+  if (dialog) await unmount(dialog);
+  dialog = null;
   document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
@@ -22,12 +22,15 @@ function button(label: string): HTMLButtonElement {
   return found!;
 }
 
-function mountRail(browser: BrowserState) {
-  rail = mount(BookmarkRail, {
+// The dialog reads the settings as it opens, and a restore asked for during
+// that read is refused as busy, so each test starts once the read is done.
+async function show(browser: BrowserState) {
+  dialog = mount(SettingsDialog, {
     target: document.body,
-    props: { browser, onAddBookmark: () => {}, onEditBookmark: () => {} },
+    props: { settings: browser.settings, onClose: () => {} },
   });
   flushSync();
+  await vi.waitFor(() => expect(browser.settings.operation).toBeNull());
 }
 
 it("backs up settings and reports the file, noting passwords are excluded", async () => {
@@ -38,7 +41,7 @@ it("backs up settings and reports the file, noting passwords are excluded", asyn
     fileName: "aeronautes-settings-x.json",
   }));
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Back up settings…").click();
   await vi.waitFor(() => {
@@ -54,7 +57,7 @@ it("reports a cancelled backup without an error", async () => {
   const api = newFakeApi();
   api.exportSettings = vi.fn(async () => null);
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Back up settings…").click();
   await vi.waitFor(() =>
@@ -68,7 +71,7 @@ it("reports a failed backup as an error", async () => {
     throw new Error("disk full");
   });
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Back up settings…").click();
   await vi.waitFor(() =>
@@ -88,7 +91,7 @@ it("restores settings and reports what was added, noting passwords are re-entere
     detail: "",
   }));
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Restore settings…").click();
   await vi.waitFor(() => {
@@ -103,7 +106,7 @@ it("reports a cancelled restore without an error", async () => {
   const api = newFakeApi();
   api.importSettings = vi.fn(async () => null);
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Restore settings…").click();
   await vi.waitFor(() =>
@@ -117,7 +120,7 @@ it("reports a refused restore with the reason it was refused", async () => {
     throw new Error("unsupported backup version 2; this build restores version 1");
   });
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Restore settings…").click();
   await vi.waitFor(() =>
@@ -131,25 +134,30 @@ it("refreshes cached settings after a restore so a later change keeps them", asy
   const base = (await api.appSettings())!;
   const stale: AppSettingsDTO = { ...base, railWidthPx: 300, maxActiveJobs: 16 };
   const restored: AppSettingsDTO = { ...stale, maxActiveJobs: 4 };
-  api.importSettings = vi.fn(async () => ({
-    settingsApplied: true,
-    bookmarksTotal: 0,
-    bookmarksCreated: 0,
-    bookmarksSkipped: 0,
-    bookmarksUnresolved: 0,
-    complete: true,
-    detail: "",
-  }));
-  api.appSettings = vi.fn(async () => restored);
+  // The backend holds the stale document until the restore replaces it, so
+  // the dialog's read on opening caches the stale one.
+  let stored = stale;
+  api.importSettings = vi.fn(async () => {
+    stored = restored;
+    return {
+      settingsApplied: true,
+      bookmarksTotal: 0,
+      bookmarksCreated: 0,
+      bookmarksSkipped: 0,
+      bookmarksUnresolved: 0,
+      complete: true,
+      detail: "",
+    };
+  });
+  api.appSettings = vi.fn(async () => stored);
   const saved: AppSettingsDTO[] = [];
   api.saveAppSettings = vi.fn(async (s) => {
     saved.push(s);
     return s;
   });
   const browser = new BrowserState(api);
-  browser.settings.document = stale;
-  browser.settings.status = "current";
-  mountRail(browser);
+  await show(browser);
+  expect(browser.settings.document?.maxActiveJobs).toBe(16);
 
   button("Restore settings…").click();
   await vi.waitFor(() => expect(browser.settings.restoring).toBe(false));
@@ -177,7 +185,7 @@ it("reports a partial restore with what still needs doing", async () => {
     detail: 'bookmark 2 ("B") could not be restored',
   }));
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Restore settings…").click();
   await vi.waitFor(() => {
@@ -199,7 +207,7 @@ it("reports an unconfirmed bookmark separately from unrestored ones", async () =
     detail: "bookmark 1 could not be confirmed",
   }));
   const browser = new BrowserState(api);
-  mountRail(browser);
+  await show(browser);
 
   button("Restore settings…").click();
   await vi.waitFor(() =>
@@ -217,26 +225,29 @@ it("reconciles cached settings when a restore could not confirm them", async () 
   const base = (await api.appSettings())!;
   const stale: AppSettingsDTO = { ...base, maxActiveJobs: 16 };
   const durable: AppSettingsDTO = { ...base, maxActiveJobs: 4 };
-  api.importSettings = vi.fn(async () => ({
-    settingsApplied: false,
-    bookmarksTotal: 0,
-    bookmarksCreated: 0,
-    bookmarksSkipped: 0,
-    bookmarksUnresolved: 0,
-    complete: false,
-    detail: "the settings could not be confirmed; reload to see what was applied",
-  }));
+  let stored = stale;
   // The backend durably applied the settings despite the uncertain reply.
-  api.appSettings = vi.fn(async () => durable);
+  api.importSettings = vi.fn(async () => {
+    stored = durable;
+    return {
+      settingsApplied: false,
+      bookmarksTotal: 0,
+      bookmarksCreated: 0,
+      bookmarksSkipped: 0,
+      bookmarksUnresolved: 0,
+      complete: false,
+      detail: "the settings could not be confirmed; reload to see what was applied",
+    };
+  });
+  api.appSettings = vi.fn(async () => stored);
   const saved: AppSettingsDTO[] = [];
   api.saveAppSettings = vi.fn(async (s) => {
     saved.push(s);
     return s;
   });
   const browser = new BrowserState(api);
-  browser.settings.document = stale;
-  browser.settings.status = "current";
-  mountRail(browser);
+  await show(browser);
+  expect(browser.settings.document?.maxActiveJobs).toBe(16);
 
   button("Restore settings…").click();
   await vi.waitFor(() => expect(browser.settings.restoring).toBe(false));

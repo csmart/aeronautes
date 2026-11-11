@@ -37,7 +37,7 @@ function showRail(bookmarks: BookmarkDTO[]) {
   state.bookmarks = bookmarks;
   state.bookmarksLoaded = true;
   mounted.add(mount(BookmarkRail, { target: document.body,
-    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn() } }));
+    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn(), onOpenSettings: vi.fn() } }));
   flushSync();
   return state;
 }

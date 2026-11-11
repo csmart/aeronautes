@@ -100,10 +100,14 @@ describe("browser keyboard ownership", () => {
     if (control === "versioning") {
       click(button("Configure container"));
       select = get("select");
+    } else if (control === "budget") {
+      click(get('.rail [aria-label="Settings"]')); await settle();
+      select = [...get('[role="dialog"]').querySelectorAll("label")]
+        .find((label) => label.querySelector("span")?.textContent?.trim() === "Active-job budget")!
+        .querySelector("select")!;
     } else {
       click(get(".drawer .bar"));
-      const selects = [...document.querySelectorAll<HTMLSelectElement>(".drawer select")];
-      select = selects[control === "budget" ? 0 : 1];
+      select = get<HTMLSelectElement>(".drawer select");
     }
     expect(select).toBeDefined(); select.focus();
     for (const key of ["ArrowDown", "ArrowUp"]) {
