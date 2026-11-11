@@ -56,6 +56,10 @@
     if (ids.length > 0) void browser.jobs.dismissInterrupted(ids);
   }
 
+  const connectedName = $derived(
+    browser.bookmarks.find((b) => b.id === browser.connectedBookmarkId)?.displayName ?? browser.account?.name ?? "",
+  );
+
   let cleanupLabel = $derived.by(() => {
     if (browser.credentialStatusLoading) return "key cleanup: checking…";
     if (browser.credentialStatusError || !browser.credentialStatus) return "key cleanup: unknown";
@@ -145,7 +149,8 @@
     void browser.jobs.loadInterrupted();
     try {
       const info = await liveApi.info();
-      shellInfo = `shell ${info.version} · Wails ${info.wails} · secrets: ${info.secretBackend}`;
+      // The Wails build and the secret store are in About, one click away.
+      shellInfo = `Aeronautes ${info.version}`;
       browser.secretBackend = info.secretBackend;
       // A capability the operator switched on out of band is offered here
       // and named in the banner: it is enabled, not proven (ADR 0082).
@@ -301,11 +306,17 @@
       {#if browser.connectError}
         <span class="connect-error">connect failed: {browser.connectError}</span>
       {:else}
-        {browser.account ? `connected · ${browser.account.name}` : "not connected"}
+        {#if browser.account}
+          <!-- The account's own name is often an opaque project id; the
+            bookmark is the name the operator chose. -->
+          <span title={`account ${browser.account.name}`}>connected to {connectedName}</span>
+        {:else}
+          not connected
+        {/if}
       {/if}
     </span>
     <button class="about-link" onclick={() => (credentialStatusOpen = true)}>{cleanupLabel}</button>
-    <button class="about-link" onclick={() => (aboutOpen = true)}>{shellInfo}</button>
+    <button class="about-link" title="About Aeronautes" onclick={() => (aboutOpen = true)}>{shellInfo}</button>
   </footer>
 </div>
 </div>
