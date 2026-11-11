@@ -244,7 +244,7 @@ func TestReclamationLeavesRangedAndNestedEntriesAlone(t *testing.T) {
 		t.Fatalf("the record does not say only the whole part went: %+v", event)
 	}
 	// And it says what it left alone, because leaving a shape is an outcome
-	// of this operation rather than an absence (db:756 finding 4).
+	// of this operation rather than an absence.
 	for _, want := range []string{"1 ranged, 1 nested", "never removes", "left alone"} {
 		if !strings.Contains(event.Summary, want) {
 			t.Errorf("the record does not say %q: %q", want, event.Summary)
@@ -438,7 +438,7 @@ func TestReclamationDeclinesWhenTheSettingCannotBeRead(t *testing.T) {
 // large object, ready to start. The name carries a fullwidth solidus, which
 // the engine cannot be trusted with, so the preflight routes it natively and
 // this package owns the publication; the predecessor is a manifest with two
-// whole segments and one inline entry (db:756's probe fixture).
+// whole segments and one inline entry.
 func nativeReplacementFixture(t *testing.T, reclaim bool) (*harness, UploadRequestDTO, []jobs.ItemFragment, *SettingsService) {
 	t.Helper()
 	h := newHarness(t)
@@ -484,7 +484,7 @@ func awaitNativeReplacement(t *testing.T, h *harness, req UploadRequestDTO, id s
 	return survivors(t, h, req.BookmarkID, "replaceable_segments", partNames(parts))
 }
 
-// db:756 finding 1: the answer is a CEILING. A question that promised the
+// The answer is a CEILING. A question that promised the
 // segments would be kept cannot be turned into a removal by a setting that
 // moves after it was answered — the operator is not there to be asked again.
 func TestReclamationCannotExpandBeyondTheAnsweredQuestion(t *testing.T) {
@@ -521,7 +521,7 @@ func TestReclamationCannotExpandBeyondTheAnsweredQuestion(t *testing.T) {
 	}
 }
 
-// db:756 finding 2: an inventory this build could not read is not an object
+// An inventory this build could not read is not an object
 // with no segments. The question has to say which of the two it is, and an
 // answer given to a question that could say nothing authorises no removal.
 func TestAnUnreadInventoryIsNotNoLargeObject(t *testing.T) {
@@ -555,7 +555,7 @@ func TestAnUnreadInventoryIsNotNoLargeObject(t *testing.T) {
 	}
 }
 
-// db:756 finding 3: one list held both a store's refusal and a name in a
+// One list held both a store's refusal and a name in a
 // reply that could not be read, and the summary called all of them "not
 // removed". A refusal is knowledge; an unreadable reply is not. The sentence
 // and the audit result have to tell them apart, including in one mixed
@@ -629,7 +629,7 @@ func TestReclaimReportingSeparatesRefusalsFromUnknowns(t *testing.T) {
 	}
 }
 
-// db:756 finding 4: an inventory whose every entry is a shape this operation
+// An inventory whose every entry is a shape this operation
 // never removes is not a removal of none. No request is sent, the record says
 // which shapes it left, and the event is an observation rather than a write.
 func TestReclamationDeclinesWhenNothingRecordedIsAWholeObject(t *testing.T) {

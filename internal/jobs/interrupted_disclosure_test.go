@@ -417,7 +417,7 @@ func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
 	}
 }
 
-// ADR 0088 decision 5 / review db:958: a recorded execution outcome is an
+// ADR 0088 decision 5: a recorded execution outcome is an
 // attempt whatever state the sweep overwrote. A job can record a copied and
 // verified member while still queued — a crash before the state change leaves
 // interrupted_state queued — and the notice must read the ledger, not the
@@ -538,7 +538,7 @@ func publicationItem(bm, key string) ItemIntent {
 	}
 }
 
-// ADR 0088 decision 5 / review db:959: the attempt signal must exclude the
+// ADR 0088 decision 5: the attempt signal must exclude the
 // synthetic not_attempted rows the sweep writes for never-issued deletion
 // members, and must include an issued member with no recorded outcome, whose
 // DELETE may have been sent (ADR 0093). A raw count of execution rows gets both
@@ -598,7 +598,7 @@ func TestInterruptedDisclosuresAttemptExcludesSyntheticNotAttempted(t *testing.T
 	})
 }
 
-// ADR 0061/0070 / review db:959: a publication-required download is not
+// ADR 0061/0070: a publication-required download is not
 // "verified" on the strength of its staged read alone; the final publication
 // must be verified too. The copied fact still stands on its own.
 func TestInterruptedDisclosuresVerifiedRequiresFinalPublication(t *testing.T) {

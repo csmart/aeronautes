@@ -111,7 +111,7 @@ func itemPredecessor(observed local.ObservedPredecessor) jobs.ItemPredecessor {
 
 // retainedShapes says which recorded entries reclamation will never touch and
 // why, so leaving them alone is an outcome in the record rather than an
-// absence (ADR 0081 decision 5; db:756 finding 4). Empty when every entry is
+// absence (ADR 0081 decision 5). Empty when every entry is
 // a private whole object.
 func retainedShapes(record jobs.ItemPredecessor) string {
 	var parts []string
@@ -150,8 +150,7 @@ func reclaimSummary(outcome local.ReclaimOutcome) string {
 		len(outcome.Removed), plural(len(outcome.Removed), "", "s"))
 	// A name the store refused is a known non-removal. A name in a reply
 	// that could not be read is neither removed nor known to be kept, and
-	// saying "not removed" about it would claim knowledge nobody has
-	// (db:756 finding 3).
+	// saying "not removed" about it would claim knowledge nobody has.
 	var refused, unknown []local.ReclaimFailure
 	for _, failure := range outcome.Failed {
 		if failure.Resolved {
@@ -256,7 +255,7 @@ func reclaimResult(outcome local.ReclaimOutcome) audit.Result {
 // answered is what the answered confirmation said would happen to a replaced
 // large object's segments. It is a CEILING: the policy below may still
 // decline for a reason that appears later, but nothing may turn a question
-// that promised retention into a removal (db:756 finding 1).
+// that promised retention into a removal.
 func (s *TransferService) uploadItemRecorder(ctx context.Context, jobID string, req UploadRequestDTO,
 	answered answeredFragments) *local.UploadRecorder {
 	return &local.UploadRecorder{
@@ -513,7 +512,7 @@ func (s *TransferService) reclaimPlan(ctx context.Context, req UploadRequestDTO,
 		plan.Declined = "every segment the predecessor's record named is in a running job's staging area"
 	default:
 		// Nothing this operation may remove, which is a decision
-		// taken and not a removal of none (db:756 finding 4).
+		// taken and not a removal of none.
 		plan.Declined = "nothing the predecessor's record named is a private whole object"
 	}
 	return plan, nil

@@ -1,8 +1,8 @@
 // The capability switch through a mounted browser screen (ADR 0082):
 // what a build offers, what it says about it, and what it must keep
-// disclosing. Built by the reviewer for db:736 and retained as
+// disclosing. Built by the reviewer during a review and retained as
 // maintained coverage: the inline-SLO case is the regression for
-// finding 2 — the manifest-only path discloses the inline data it will
+// a review finding — the manifest-only path discloses the inline data it will
 // destroy from the manifest the inspector read, not from the ownership
 // check that bulk deletion owns.
 import { afterEach, expect, it, vi } from "vitest";

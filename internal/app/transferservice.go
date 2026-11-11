@@ -318,7 +318,7 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	// recorded provenance (§45). A second, later lookup could disagree
 	// with the values if a benchmark recommendation appeared or vanished
 	// between the two, labelling a recommended value a profile default or
-	// the reverse (db:968).
+	// the reverse.
 	recommendation := s.recommendationFor(req.SourceBookmarkID)
 	effective, err := ResolveSettings(Profile(req.Profile), req.Settings, recommendation)
 	if err != nil {

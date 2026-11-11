@@ -151,7 +151,7 @@ func TestRecentRequiresBookmark(t *testing.T) {
 // boundary: with 501 rows at a cap of 501, an append after the 500th row
 // is read prunes the oldest (id 1) while the read cursor is still open
 // (WAL lets the writer commit concurrently). A paged read would miss id 1
-// on its second page; the single snapshot must still yield it (db:973).
+// on its second page; the single snapshot must still yield it.
 func TestExportToSnapshotSurvivesConcurrentRetention(t *testing.T) {
 	ctx := context.Background()
 	const total = 501

@@ -20,7 +20,7 @@ func TestObjectDeleteEmptyNameCannotDeleteTheContainerSwift(t *testing.T) {
 // An empty object name is the container's own path, and a deployed Swift routes
 // a DELETE of "container/" to its container controller. The public action must
 // refuse it before any request, whatever identity the caller supplies, and the
-// fresh empty container must still answer afterwards (found at review db:900).
+// fresh empty container must still answer afterwards.
 func testObjectDeleteEmptyName(t *testing.T, h *Harness) {
 	t.Helper()
 	ctx := context.Background()

@@ -108,7 +108,7 @@ func TestDeclinedCopyOverwriteWritesNothing(t *testing.T) {
 
 // The object a replacement destroys is kept WITH THE ITEM, not only in the
 // audit trail, and it carries the last-modified ADR 0081 decision 7 requires,
-// so pruning the audit log cannot lose what was replaced (db:937 finding 4).
+// so pruning the audit log cannot lose what was replaced.
 func TestAcknowledgedCopyOverwritePersistsPredecessorPastAuditPrune(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -260,7 +260,7 @@ func TestAcknowledgedCopyRefusesAVersioningChangeDuringTheDialog(t *testing.T) {
 
 // A destination collision that appears while the operator is answering means the
 // collision set changed, so the start is refused and nothing is replaced — not
-// just the new member (db:937 finding 2, ADR 0087 decision 4).
+// just the new member (ADR 0087 decision 4).
 func TestCopyOverwriteRefusesWhenCollisionSetChanged(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -300,7 +300,7 @@ func TestCopyOverwriteRefusesWhenCollisionSetChanged(t *testing.T) {
 
 // Removing a confirmed member's source after the confirmation also changes the
 // collision set, so the whole start is refused and the other confirmed
-// destination is left as it was (db:938 finding 1, ADR 0087 decision 4).
+// destination is left as it was (ADR 0087 decision 4).
 func TestCopyOverwriteRefusesWhenConfirmedMemberRemoved(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -341,8 +341,7 @@ func TestCopyOverwriteRefusesWhenConfirmedMemberRemoved(t *testing.T) {
 
 // The whole-plan admission completes before any item is dispatched, so a
 // collision added after the confirmation is caught even when the plan crosses
-// the engine batch boundary, and none of the earlier members publish (db:938
-// finding 1).
+// the engine batch boundary, and none of the earlier members publish.
 func TestCopyOverwriteAdmitsWholeSetAcrossBatchBoundary(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -392,8 +391,8 @@ func TestCopyOverwriteAdmitsWholeSetAcrossBatchBoundary(t *testing.T) {
 
 // The job executes the SAME plan it admitted, not a later enumeration: a member
 // whose source disappears after the admission reading is still attempted and
-// recorded, rather than silently dropping out of the job's history (db:939
-// finding 1, ADR 0087 decision 4).
+// recorded, rather than silently dropping out of the job's history
+// (ADR 0087 decision 4).
 func TestCopyOverwriteRetainsAdmittedMemberWhenSourceVanishes(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -445,7 +444,7 @@ func TestCopyOverwriteRetainsAdmittedMemberWhenSourceVanishes(t *testing.T) {
 }
 
 // Cancelling while the admission listing is in flight produces a cancelled job
-// with no writes, not an ordinary planning failure (db:939 finding 2).
+// with no writes, not an ordinary planning failure.
 func TestCopyOverwriteCancelDuringAdmissionStaysCancelled(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -560,10 +559,10 @@ func TestAcknowledgedCopyOverwriteReplacesNativeRoute(t *testing.T) {
 // operator acknowledged. The two routes record their refusals in separate
 // ascending spools, so a staged refusal flushed after a lexically-later native
 // refusal no longer trips the strictly-ascending append that used to fail the
-// whole job (db:944 finding 1). The staged refusal also keeps the engine's
+// whole job. The staged refusal also keeps the engine's
 // unresolved effect end to end: the admitted-item validator accepts it (the job
 // would not complete otherwise), the totals count it, and the DTO the UI reads
-// reports it (db:944 finding 2).
+// reports it.
 func TestCopyOverwriteMixedRouteRefusalsDoNotAbortAdmittedCopies(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)

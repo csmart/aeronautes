@@ -864,7 +864,7 @@ class WorkflowPreservationTests(unittest.TestCase):
             # Malformed dotted versions, which are what hold the SEPARATOR in
             # the pattern to being a literal dot. Without these the escape
             # could be dropped, making it match any character, and both of the
-            # workflow cases would still pass (db:843).
+            # workflow cases would still pass.
             "        uses: actions/upload-artifact@" + full + " # v7x0.2\n",
             "        uses: actions/upload-artifact@" + full + " # v7..2\n",
             "        uses: actions/upload-artifact@" + full + " # v7.0.\n",

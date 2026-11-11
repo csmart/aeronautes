@@ -484,7 +484,7 @@ func TestImportSettingsRefusesHeadlessAndReportsCancellation(t *testing.T) {
 
 // A hand-edited backup whose CA bundle is a certificate followed by its
 // private key is refused before anything is applied, so no key reaches trust
-// storage and no partial restore lands (ADR 0098; review db:991 finding 2).
+// storage and no partial restore lands (ADR 0098).
 func TestImportSettingsRefusesABackupCarryingAPrivateKey(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
@@ -523,8 +523,7 @@ func TestImportSettingsRefusesABackupCarryingAPrivateKey(t *testing.T) {
 // Exporting a custom-CA bookmark and restoring it into the same database adds
 // nothing: the stored bundle (a certificate and its key) and the exported
 // certificate-only form reduce to the same trust set, so duplicate detection
-// skips it rather than creating a second credential-less copy (review db:991
-// finding 5).
+// skips it rather than creating a second credential-less copy.
 func TestImportSettingsDedupsExportIntoSamePopulatedDatabase(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
@@ -557,7 +556,7 @@ func TestImportSettingsDedupsExportIntoSamePopulatedDatabase(t *testing.T) {
 }
 
 // failingSettings models a settings write that fails at its commit boundary,
-// where the new values may already be durable (review db:992 finding 2).
+// where the new values may already be durable.
 type failingSettings struct{}
 
 func (failingSettings) getFrom(context.Context, dbQuerier) (AppSettingsDTO, error) {
@@ -599,8 +598,7 @@ func TestImportSettingsReportsUncertainSettings(t *testing.T) {
 
 // Strict CA validation refuses a bundle with any undecodable or non-certificate
 // material, whether it comes before or after a valid certificate, so a
-// hand-edited backup cannot smuggle it past pem.Decode's skipping (review
-// db:992 finding 1).
+// hand-edited backup cannot smuggle it past pem.Decode's skipping.
 func TestImportSettingsRefusesUndecodableCA(t *testing.T) {
 	ctx := t.Context()
 	certDER, _ := selfSigned(t)

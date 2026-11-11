@@ -8,7 +8,7 @@ import (
 )
 
 // The retention oracle, exercised against the schedules the pipeline can
-// actually produce — including the one db:825 identified from the source and
+// actually produce — including the one a review identified from the source and
 // which no fast local run reaches: the earlier snapshot catches a short prefix,
 // the rest of what the barrier already released then reaches the disk, and only
 // afterwards does the child stop. That is correct behaviour, and an equality on

@@ -78,7 +78,7 @@ d=$(tree reshaped "$v" 3.0.0-beta.27 "$v" "$v" "$v")
 printf 'WAILS3_TOOL := v3.0.0-beta.27\n' > "$d/Makefile"
 expect 1 "a renamed owner is a drift, not agreement" "$d"
 
-# The four db:810 found, each of which the previous version certified as beta.27.
+# The four a review found, each of which the previous version certified as beta.27.
 # They share one cause: that version read a version-shaped substring from an
 # owner-selected line instead of the value the line actually assigns.
 d=$(tree live_main "$v" 3.0.0-beta.27 "$v" "$v" "$v")
@@ -95,7 +95,7 @@ expect 1 "a prerelease suffix is refused rather than trimmed" "$d"
 d=$(tree caret_range "$v" ^3.0.0-beta.27 "$v" "$v" "$v")
 expect 1 "a range operator is refused rather than ignored" "$d"
 
-# The two db:811 found. Both turn on where a comment is removed and what is
+# The two a review found. Both turn on where a comment is removed and what is
 # counted: a greedy match preferred the comment's copy of the value over the live
 # argument, and the ambiguity guard counted lines rather than assignments.
 d=$(tree full_pin_comment "$v" 3.0.0-beta.27 "$v" "$v" "$v")
@@ -108,7 +108,7 @@ printf 'jobs:\n  go:\n    steps:\n      - run: go install github.com/wailsapp/wa
   > "$d/.github/workflows/ci.yml"
 expect 1 "two active assignments on one line are ambiguous" "$d"
 
-# db:812: JSON has no comment syntax, so a # inside a string value is data. An
+# JSON has no comment syntax, so a # inside a string value is data. An
 # earlier version stripped at it and lost the closing quote with it, then accepted
 # what was left.
 d=$(tree json_hash "$v" '3.0.0-beta.27#suffix' "$v" "$v" "$v")
@@ -119,7 +119,7 @@ d=$(tree json_unterminated "$v" 3.0.0-beta.27 "$v" "$v" "$v")
 printf '{\n  "dependencies": {\n    "@wailsio/runtime": "3.0.0-beta.27\n  }\n}\n' > "$d/frontend/package.json"
 expect 1 "an unterminated json string is refused" "$d"
 
-# db:813: a hash attached to a token with no preceding whitespace is not a comment
+# A hash attached to a token with no preceding whitespace is not a comment
 # in YAML and is never one in go.mod. A boolean comment flag truncated all three of
 # these into a valid pin.
 d=$(tree ci_attached "$v" 3.0.0-beta.27 "$v" 'v3.0.0-beta.27#suffix' "$v")

@@ -160,9 +160,9 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 			stage: jobs.StageStaging, code: jobs.CodeUnverified, change: stagedPlainAltered},
 		// The publication-timing case: the comparison passed on what it
 		// saw, and the entity tag the commit declared on the live PUT is
-		// what refuses the bytes that replaced them. codex rebuilt this as
-		// its own probe for db:738 after I replaced it with the case above;
-		// it is restored here as maintained coverage.
+		// what refuses the bytes that replaced them. A review rebuilt this
+		// as its own probe after it had been replaced by the case above; it
+		// is restored here as maintained coverage.
 		{name: "a staged plain object replaced as it is published", large: false,
 			stage: jobs.StageCommit, code: jobs.CodeUnverified, livePuts: 1, onRead: true, change: stagedPlainAltered},
 		{name: "an unaltered staged large upload", large: true},

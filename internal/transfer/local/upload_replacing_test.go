@@ -414,7 +414,7 @@ func TestReplacingAStaticManifestInventoriesItsShapes(t *testing.T) {
 	}
 }
 
-// Finding F4 of db:746: two manifests that name the same objects and produce
+// Two manifests that name the same objects and produce
 // the same totals, differing only in WHICH entry was ranged, which was
 // nested, and where the inline entry sat. A record of totals cannot tell
 // them apart, and after the replacement nothing else can either.
@@ -485,7 +485,7 @@ func TestReplacingAStaticManifestRecordsWhichEntryWasWhich(t *testing.T) {
 	}
 }
 
-// Finding F1 of db:746: a static list is recorded whole or not at all. The
+// A static list is recorded whole or not at all. The
 // cap that a listed prefix needs must never truncate a list that cannot be
 // read again, so a manifest past this build's bound is reported as one it
 // could not inventory rather than as a shorter exact list.
@@ -811,7 +811,7 @@ func TestReplacementRecordsThePredecessorBeforePublishing(t *testing.T) {
 	}
 }
 
-// Finding F2 of db:746: the display manifest reader decodes one array
+// The display manifest reader decodes one array
 // without checking the status, the absence of a Content-Range, a clean end
 // or any byte bound, so a partial or malformed response parses as a
 // manifest. Credited here it would become the durable, exact inventory of

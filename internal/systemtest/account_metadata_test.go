@@ -19,7 +19,7 @@ import (
 // across overlapping suite processes, so the test owns only its own
 // process-unique keys and makes every edit a guarded, additive change: it
 // either applies against a current base or conflicts and retries, and so can
-// never remove a key a concurrent run added (db:1010 findings 2 and 5).
+// never remove a key a concurrent run added.
 func TestAccountMetadataEditMock(t *testing.T)  { testAccountMetadataEdit(t, findMockHarness(t)) }
 func TestAccountMetadataEditSwift(t *testing.T) { testAccountMetadataEdit(t, New(t)) }
 
@@ -148,8 +148,8 @@ func applyAccountAdditions(t *testing.T, h *Harness, ctx context.Context, additi
 
 // restoreAccountKeys removes only this test's own keys with a guarded,
 // retried edit and requires it to apply and verify: a cleanup that is
-// refused, unverified or mismatched must invalidate the scenario's claims
-// (db:1010 finding 4), so it reports a test error rather than returning
+// refused, unverified or mismatched must invalidate the scenario's claims,
+// so it reports a test error rather than returning
 // quietly.
 func restoreAccountKeys(t *testing.T, h *Harness, mine map[string]bool) {
 	bg := context.Background()

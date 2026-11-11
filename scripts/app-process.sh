@@ -11,7 +11,7 @@
 # the group, which covers the app and everything it starts, and the leader pid,
 # which exists from the moment of the fork. Between the fork and setsid's call
 # the launch is still a child in the DRIVER's group, where no group signal
-# reaches it; db:772 found such a child surviving an interrupted driver and then
+# reaches it; a review found such a child surviving an interrupted driver and then
 # making its own session.
 #
 # Sourcing this file defines the functions and nothing else; it starts nothing.
@@ -93,7 +93,7 @@ app_forget() {
 # substitution is a subshell: an echoing version registered the handle inside
 # that subshell, where the list died with it, so the caller's trap knew nothing
 # about the process it was meant to stop. That is the same defect in different
-# clothes as keeping the pid in a local, which is what db:771 found. Call it as
+# clothes as keeping the pid in a local, which is what a review found. Call it as
 # a statement, never as $(app_start ...).
 app_start() {
   # Job control is refused rather than probed: with it on, bash makes the

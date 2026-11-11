@@ -4,8 +4,7 @@
 # These are failures of the HARNESS, which a passing smoke cannot catch, so they
 # are checked directly. Every case waits for the state it is about to test to
 # exist — a group can be there before the trap or the children it is supposed to
-# have — because a case that passes only on a lucky schedule proves nothing
-# (db:772 finding 3).
+# have — because a case that passes only on a lucky schedule proves nothing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=scripts/app-process.sh
@@ -70,7 +69,7 @@ app_stop "$group" 10 || fail "a group with children did not stop"
 app_owned_alive "$group" && fail "children survived their group's stop"
 
 # 4. An interrupted driver: one that registers launches and is then killed by
-# TERM while waiting must leave nothing behind. This is the case db:771
+# TERM while waiting must leave nothing behind. This is the case a review
 # reproduced, and it holds the registration and the EXIT trap together.
 groups=$(bash -c '
   set -euo pipefail
@@ -132,7 +131,7 @@ grep -q "job control" "$LOG/jobcontrol.err" \
 # 8. The pending state every launch passes through, constructed on purpose
 # because the moment between the fork and setsid's call cannot be held open: a
 # live child still in the DRIVER's group, registered under its pid. No group
-# signal reaches it, and db:772 found one surviving a driver that thought it had
+# signal reaches it, and a review found one surviving a driver that thought it had
 # stopped it.
 sleep 300 >/dev/null 2>&1 & pending=$!
 APP_GROUPS+=("$pending")

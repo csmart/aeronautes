@@ -43,7 +43,7 @@ func (d *droppingWriter) WriteHeader(code int) {
 }
 
 // ADR 0085's map keeps a contract: a name is identified, or it is absent. A
-// successful HEAD is not enough for the first, which db:830 found by reading the
+// successful HEAD is not enough for the first, which a review found by reading the
 // adapter rather than this code — it accepts a HEAD with no entity tag and one
 // with no length, and the second arrives as a zero indistinguishable from a
 // genuinely empty object. An incomplete observation must stay absent, and a real

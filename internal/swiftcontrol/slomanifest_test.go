@@ -186,7 +186,7 @@ func (c *consumptionReader) Read(p []byte) (int, error) {
 }
 
 func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
-	// db:471 finding 1: counting the bytes after the decoder has already
+	// Counting the bytes after the decoder has already
 	// buffered them is not a bound. Each of these bodies is far larger
 	// than the budget, and the parser must stop inside it.
 	const budget = 256
@@ -222,7 +222,7 @@ func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
 		}
 	})
 	t.Run("a_body_ending_exactly_at_the_budget_is_admitted", func(t *testing.T) {
-		// db:474: the limit is inclusive, so an exact fit is evidence
+		// The limit is inclusive, so an exact fit is evidence
 		// rather than a conservative refusal.
 		body := `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}]`
 		counted := &consumptionReader{inner: strings.NewReader(body)}
@@ -256,7 +256,7 @@ func (j *joinedEOFReader) Read(p []byte) (int, error) {
 }
 
 func TestSLOManifestDigestsRequiresACleanEnd(t *testing.T) {
-	// db:474: errors.Is would accept an EOF joined with a read failure, so
+	// errors.Is would accept an EOF joined with a read failure, so
 	// a manifest whose body failed on its last read was admitted as
 	// evidence. Only a clean end counts.
 	body := `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}]`
@@ -305,7 +305,7 @@ func newSLOManifestPartialSession(t *testing.T, status int, header, value, body 
 }
 
 func TestSLOManifestDigestsRequiresACompleteResponse(t *testing.T) {
-	// db:471 finding 2: a partial body that happens to parse is not the
+	// A partial body that happens to parse is not the
 	// manifest. Same contract as OpenObjectContent: HTTP 200, no
 	// Content-Range.
 	const body = `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}]`

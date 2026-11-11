@@ -753,7 +753,7 @@ func TestReclaimingTreatsAnAbsentFragmentAsReclaimed(t *testing.T) {
 	}
 }
 
-// db:756 finding 5: a valid manifest may name the same object in more than
+// A valid manifest may name the same object in more than
 // one position, and the record keeps every position. One identity is still
 // one object to delete and one result to report, so the request carries it
 // once and the outcome counts it once.
