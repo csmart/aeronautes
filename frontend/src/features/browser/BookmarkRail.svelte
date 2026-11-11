@@ -245,7 +245,11 @@
     gap: var(--space-2);
   }
 
+  /* A tile never grows past the rail, so a long name is cut with an
+     ellipsis rather than widening the tile and pushing its letter out of
+     view. */
   .bookmark {
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
