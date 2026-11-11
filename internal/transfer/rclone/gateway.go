@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -304,6 +306,7 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// Transport errors may contain request details. Keep them out of
 		// child logs, which feed persisted job diagnostics.
+		g.logUpstreamFailure(req, err)
 		http.Error(w, "child storage upstream request failed", http.StatusBadGateway)
 		return
 	}
@@ -323,6 +326,22 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if _, err := io.CopyBuffer(gatewayWriter{Writer: w, controller: controller}, resp.Body, make([]byte, 32<<10)); err != nil {
 		panic(http.ErrAbortHandler)
 	}
+}
+
+// logUpstreamFailure records in the application log why the gateway answered
+// the engine 502, which is otherwise all a job's diagnostics can say. Only the
+// method, the upstream host and the network error are written: never the URL,
+// whose path names the account and the object, and never a header. A request
+// the engine or the job abandoned is not an upstream failure and is skipped.
+func (g *storageGateway) logUpstreamFailure(req *http.Request, err error) {
+	if req.Context().Err() != nil {
+		return
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	applog.Warnf("storage gateway: %s to %s failed: %v", req.Method, g.upstream.Host, err)
 }
 
 func (g *storageGateway) roundTrip(req *http.Request) (*http.Response, error) {

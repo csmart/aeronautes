@@ -12,8 +12,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/applog"
 )
 
 func TestGatewayTLSAndEncodedResponse(t *testing.T) {
@@ -263,4 +266,58 @@ type zeroStream struct{}
 func (zeroStream) Read(p []byte) (int, error) {
 	clear(p)
 	return len(p), nil
+}
+
+// When the upstream cannot be reached the engine only sees the gateway's 502,
+// so the application log must say why, without the token, the account path
+// or the object name.
+func TestGatewayLogsWhyTheUpstreamFailed(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "application.log")
+	t.Cleanup(func() {
+		if _, _, err := applog.Configure(); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Setenv(applog.EnvLevel, "warn")
+	t.Setenv(applog.EnvFile, logPath)
+	_, closeLog, err := applog.Configure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeLog() })
+
+	upstream := httptest.NewServer(http.NotFoundHandler())
+	host := upstream.Listener.Addr().String()
+	upstream.Close()
+	gateway, local, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_src", StorageURL: "http://" + host + gatewayAccount, Token: "fixture-token"}, nil, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gateway.Close()
+	req, err := http.NewRequest("GET", local.StorageURL+"/owned/secret-object-name", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Auth-Token", local.Token)
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502", resp.StatusCode)
+	}
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logged)
+	if !strings.Contains(text, "storage gateway: GET to "+host+" failed") || !strings.Contains(text, "refused") {
+		t.Errorf("the log does not say why the upstream failed: %q", text)
+	}
+	for _, private := range []string{"fixture-token", local.Token, "secret-object-name", strings.Trim(gatewayAccount, "/")} {
+		if strings.Contains(text, private) {
+			t.Errorf("the log carries %q: %q", private, text)
+		}
+	}
 }
