@@ -169,7 +169,7 @@
 
       {#if browser.containersAtCeiling}
         <p class="retention-notice" role="status">
-          {browser.containers.length.toLocaleString("en-US")} containers loaded, the retention ceiling; further containers are not loaded. The ceiling is set in the jobs drawer.
+          {browser.containers.length.toLocaleString("en-US")} containers loaded, the retention ceiling; further containers are not loaded. The ceiling is set in Settings.
         </p>
       {:else if browser.containersMarker !== ""}
         {#if browser.containersMoreError}

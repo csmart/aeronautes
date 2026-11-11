@@ -15,6 +15,7 @@
   import TransferDialog from "../transfer/TransferDialog.svelte";
   import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
   import AboutDialog from "./AboutDialog.svelte";
+  import SettingsDialog from "../settings/SettingsDialog.svelte";
   import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import ObjectDeleteDialog from "../inspector/ObjectDeleteDialog.svelte";
@@ -41,6 +42,7 @@
   let enabledCapabilities: string[] = $state([]);
   let unrecognisedCapabilities: string[] = $state([]);
   let aboutOpen = $state(false);
+  let settingsOpen = $state(false);
   let credentialStatusOpen = $state(false);
 
   // ADR 0088: the interrupted-job notice. The banner announces it and offers a
@@ -266,6 +268,7 @@
       editorExisting = bookmark;
       editorOpen = true;
     }}
+    onOpenSettings={() => (settingsOpen = true)}
   />
   <!-- The WAI-ARIA window-splitter pattern: a focusable separator that
     reports its position and moves with the arrow keys; Svelte's rule
@@ -352,6 +355,10 @@
 
 {#if aboutOpen}
   <AboutDialog onClose={() => (aboutOpen = false)} />
+{/if}
+
+{#if settingsOpen}
+  <SettingsDialog settings={browser.settings} onClose={() => (settingsOpen = false)} />
 {/if}
 
 {#if credentialStatusOpen}

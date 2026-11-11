@@ -247,7 +247,7 @@
       {/if}
       {#if mode === "download" && browser.settings.document}
         <p class="hint ceiling">
-          Selections above {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in the jobs drawer.
+          Selections above {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in Settings.
           {#if browser.prefixCount?.done && !browser.prefixCount.error}
             This prefix counted {formatCount(browser.prefixCount.scanned)} objects.
           {/if}

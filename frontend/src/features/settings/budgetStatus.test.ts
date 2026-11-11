@@ -3,21 +3,21 @@ import { flushSync, mount, unmount } from "svelte";
 import type { AppSettingsDTO, RestoreResultDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi, settingsRefusal } from "../browser/fakeApi";
-import JobsDrawer from "./JobsDrawer.svelte";
+import SettingsDialog from "./SettingsDialog.svelte";
 
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
   reclaimReplacedFragments: true, railWidthPx: 0,
 };
-let drawer: ReturnType<typeof mount> | null = null;
+let dialog: ReturnType<typeof mount> | null = null;
 const releasePending: (() => void)[] = [];
 
 afterEach(async () => {
   for (const release of releasePending.splice(0)) release();
   await Promise.resolve();
-  if (drawer) await unmount(drawer);
-  drawer = null;
+  if (dialog) await unmount(dialog);
+  dialog = null;
   document.body.innerHTML = "";
 });
 
@@ -53,12 +53,14 @@ function feedback(): string {
   return document.querySelector(".budget-status")?.textContent ?? "";
 }
 
+// Opens the dialog and lets a settings read that is already answered land;
+// one held by a test stays pending.
 async function show(browser: BrowserState) {
-  drawer = mount(JobsDrawer, { target: document.body, props: { browser } });
-  flushSync();
-  document.querySelector<HTMLButtonElement>(".bar")!.click();
-  flushSync();
-  await vi.waitFor(() => expect(browser.jobs.recoveryStatus).not.toBeNull());
+  dialog = mount(SettingsDialog, { target: document.body, props: { settings: browser.settings, onClose: () => {} } });
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+    flushSync();
+  }
 }
 
 function choose(value: string) {
@@ -220,8 +222,8 @@ it("does not replace uncertainty with a failed read or an automatic remount read
   flushSync();
   expect(feedback(), "BUDGET-RECOVERY-GET-FAILURE").toContain("Settings could not be refreshed");
   expect(feedback()).toContain("stale");
-  await unmount(drawer!);
-  drawer = null;
+  await unmount(dialog!);
+  dialog = null;
   await show(browser);
   expect(api.appSettings, "BUDGET-EXPLICIT-READ").toHaveBeenCalledTimes(1);
   expect(feedback()).toContain("Budget change to 4 is unconfirmed");
@@ -252,7 +254,7 @@ it("rejects a second same-turn change and restores the admitted choice", async (
   expect(feedback()).toContain("Budget change acknowledged");
 });
 
-it("keeps one settings owner through tabs, collapse, polling and remount", async () => {
+it("keeps one settings owner through job polling, close and reopen", async () => {
   const { api, browser } = fixture();
   const reply = deferred();
   api.saveAppSettings = vi.fn(() => reply.promise);
@@ -260,15 +262,9 @@ it("keeps one settings owner through tabs, collapse, polling and remount", async
   await vi.waitFor(() => expect(select()?.value).toBe("2"));
   choose("4");
   flushSync();
-  button("Recent changes").click();
-  flushSync();
-  button("Jobs").click();
-  document.querySelector<HTMLButtonElement>(".bar")!.click();
-  flushSync();
-  document.querySelector<HTMLButtonElement>(".bar")!.click();
   await browser.jobs.load();
-  await unmount(drawer!);
-  drawer = null;
+  await unmount(dialog!);
+  dialog = null;
   await show(browser);
   expect.soft(api.appSettings, "BUDGET-REMOUNT-GET-OWNER").toHaveBeenCalledTimes(1);
   expect(select()?.disabled, "BUDGET-REMOUNT-SET-OWNER").toBe(true);
@@ -306,8 +302,7 @@ function reclaimBox(): HTMLInputElement | null {
 }
 
 function reclaimFeedback(): string {
-  return [...document.querySelectorAll(".ceiling-status")]
-    .map((node) => node.textContent ?? "").join(" ");
+  return statusOf(reclaimBox()!);
 }
 
 it("offers the replaced-segment option and says which way it is set", async () => {
@@ -347,8 +342,10 @@ function numberInput(label: string): HTMLInputElement | null {
     node.querySelector("span")?.textContent?.trim() === label)?.querySelector("input") ?? null;
 }
 
+// A control is described by its note, then its status.
 function statusOf(input: HTMLInputElement): string {
-  return document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent?.trim() ?? "";
+  const status = (input.getAttribute("aria-describedby") ?? "").split(" ").at(-1) ?? "";
+  return document.getElementById(status)?.textContent?.trim() ?? "";
 }
 
 // The four numeric settings are one control written once. Each saves its own
@@ -387,7 +384,7 @@ it.each([
 });
 
 // A lost reply to another setting's save leaves every control waiting for an
-// explicit read, as one for the budget does, and a reopened drawer does not
+// explicit read, as one for the budget does, and a reopened dialog does not
 // make that read on its own.
 it("treats a lost reply to another setting like a lost budget reply", async () => {
   const { api, browser } = fixture();
@@ -402,8 +399,8 @@ it("treats a lost reply to another setting like a lost budget reply", async () =
   expect(feedback()).toContain("Refresh settings before another change");
   expect(select()?.disabled).toBe(true);
   expect(select()?.value, "BUDGET-UNTOUCHED").toBe("2");
-  await unmount(drawer!);
-  drawer = null;
+  await unmount(dialog!);
+  dialog = null;
   await show(browser);
   expect(api.appSettings, "OTHER-SETTING-EXPLICIT-READ").toHaveBeenCalledTimes(1);
   expect(browser.settings.status).toBe("unconfirmed");

@@ -13,10 +13,12 @@
     browser,
     onAddBookmark,
     onEditBookmark,
+    onOpenSettings,
   }: {
     browser: BrowserState;
     onAddBookmark: () => void;
     onEditBookmark: (bookmark: BookmarkDTO) => void;
+    onOpenSettings: () => void;
   } = $props();
 
   let theme: Theme = $state(getTheme());
@@ -129,24 +131,19 @@
   </div>
 
   <div class="rail-foot">
-    <div class="rail-actions">
-      <button
-        class="rail-backup"
-        title="Back up settings and bookmarks to a file (passwords are not included)"
-        onclick={() => browser.settings.backUp()}
-        disabled={browser.settings.backingUp}
-      >
-        {browser.settings.backingUp ? "Backing up…" : "Back up settings…"}
-      </button>
-      <button
-        class="rail-backup"
-        title="Restore settings and bookmarks from a backup file (passwords are re-entered on use)"
-        onclick={() => browser.settings.restore()}
-        disabled={browser.settings.restoring}
-      >
-        {browser.settings.restoring ? "Restoring…" : "Restore settings…"}
-      </button>
-    </div>
+    <button class="foot-btn" title="Settings" onclick={onOpenSettings} aria-label="Settings">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <circle cx="8" cy="8" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <circle cx="8" cy="8" r="1.75" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path
+          d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.42 1.42M11.18 11.18l1.42 1.42M3.4 12.6l1.42-1.42M11.18 4.82l1.42-1.42"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <button class="foot-btn" title="Theme: {theme}" onclick={cycleTheme} aria-label="Cycle theme ({theme})">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
         <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -154,18 +151,6 @@
       </svg>
     </button>
   </div>
-  {#if browser.settings.backupMessage}
-    <p class="backup-msg" role="status">{browser.settings.backupMessage}</p>
-  {/if}
-  {#if browser.settings.backupError}
-    <p class="backup-msg error" role="alert">{browser.settings.backupError}</p>
-  {/if}
-  {#if browser.settings.restoreMessage}
-    <p class="backup-msg" role="status">{browser.settings.restoreMessage}</p>
-  {/if}
-  {#if browser.settings.restoreError}
-    <p class="backup-msg error" role="alert">{browser.settings.restoreError}</p>
-  {/if}
 </nav>
 
 <style>
@@ -345,47 +330,6 @@
     justify-content: space-between;
     gap: var(--space-2);
     padding-top: var(--space-2);
-  }
-
-  .rail-actions {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    align-items: flex-start;
-  }
-
-  .rail-backup {
-    width: 100%;
-    text-align: left;
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    transition: color var(--motion-fast) var(--ease-out);
-  }
-
-  .rail-backup:hover:not(:disabled) {
-    color: var(--color-accent-strong);
-  }
-
-  .rail-backup:disabled {
-    cursor: default;
-    opacity: 0.7;
-  }
-
-  .backup-msg {
-    margin: var(--space-1) 0 0;
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-    overflow-wrap: anywhere;
-  }
-
-  .backup-msg.error {
-    font-weight: 600;
   }
 
   .foot-btn {

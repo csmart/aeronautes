@@ -286,7 +286,7 @@
       </span>
       {#if browser.entriesAtCeiling}
         <span class="retention-notice" role="status">
-          {browser.entries.length.toLocaleString("en-US")} rows loaded, the retention ceiling; narrow the prefix, use Find, or count the prefix. The ceiling is set in the jobs drawer.
+          {browser.entries.length.toLocaleString("en-US")} rows loaded, the retention ceiling; narrow the prefix, use Find, or count the prefix. The ceiling is set in Settings.
         </span>
       {:else if browser.entriesMarker !== ""}
         <div class="paging">
