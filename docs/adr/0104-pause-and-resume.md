@@ -64,7 +64,7 @@ Finish-line decision 17 recorded a reading, not a decision: a pause that finishe
    Every item still to be committed is checked at its own commit as before: an acknowledged replacement against a fresh read of its predecessor and of the container's versioning state, a new object by its conditional create, and a downloaded file by a placement that never replaces.
 6. **What the operator sees and what is recorded.**
    The jobs drawer offers Pause on a queued, planning or running upload, download or copy.
-   While the request waits for its boundary the row says the job pauses when the current batch finishes; a paused row offers Resume and Cancel beside what was done and, where the plan knows it, what remains; a resumed job waiting for the slot says so.
+   While the request waits for its boundary the row says when it will take effect: before anything is transferred for a queued or planning job, and when the current batch finishes for a running one, unless that batch is its last; a job that is finishing says nothing of a pause and offers no Resume, because it reaches no further unit; a paused row offers Resume and Cancel beside what was done and, where the plan knows it, what remains; a resumed job waiting for the slot says so.
    The audit trail records each pause that takes effect and each resume that restarts work as applied operations on the job; a request that never took effect is not an event.
    The job's terminal record is unchanged in shape.
    The bookmark a paused job uses can be neither edited nor removed until the job ends, as with a queued or running job, and the refusal names a paused job among its reasons.

@@ -212,32 +212,49 @@
     return PAUSABLE_TYPES.includes(job.type) && PAUSABLE_STATES.includes(job.state) && job.pause === "";
   }
 
-  // A pause can be withdrawn before it takes effect as well as after.
+  // A pause can be withdrawn before it takes effect as well as after. A job
+  // that is finishing will reach no further unit, so a pause asked earlier
+  // has nothing left to wait for and is not offered back as a Resume.
   function canResume(job: JobDTO): boolean {
-    return job.pause === "pausing" || (job.state === "paused" && job.pause === "");
+    return (job.pause === "pausing" && PAUSABLE_STATES.includes(job.state)) || (job.state === "paused" && job.pause === "");
   }
 
+  // A pause takes effect at the head of the job's next unit (ADR 0104
+  // decision 1): a queued or planning job parks before it transfers anything,
+  // and a running one at its next batch, or never if it is on its last.
   function pauseNote(job: JobDTO): string {
-    if (job.pause === "pausing") return "Pauses when the current batch finishes.";
+    if (job.pause === "pausing" && (job.state === "queued" || job.state === "planning")) {
+      return "Pauses before it transfers anything.";
+    }
+    if (job.pause === "pausing" && job.state === "running") {
+      return "Pauses when the current batch finishes, unless it is the last.";
+    }
     if (job.pause === "resuming") return "Resumes when a job slot is free.";
     if (job.state === "paused") return "Paused. Nothing more is transferred until it is resumed.";
     return "";
   }
 
   // One request per job at a time: a second Resume sent before the list
-  // refreshes would be refused as having nothing to withdraw.
-  let pauseBusy: string | null = $state(null);
+  // refreshes would be refused as having nothing to withdraw. Another job's
+  // request does not wait for this one. The guard is here and not the
+  // button's disabled state, because disabling the focused button makes
+  // WebKitGTK drop the keyboard focus.
+  let pauseBusy: Record<string, boolean> = $state({});
 
   async function pauseOrResume(job: JobDTO, action: "pause" | "resume") {
+    if (pauseBusy[job.id]) return;
     actionError = null;
-    pauseBusy = job.id;
+    pauseBusy[job.id] = true;
     try {
       if (action === "pause") await browser.pauseJob(job.id);
       else await browser.resumeJob(job.id);
     } catch (e) {
-      actionError = e instanceof Error ? e.message : String(e);
+      // The refusal names the job by its id, which the row does not show;
+      // the row's own words say which job it was.
+      const message = e instanceof Error ? e.message : String(e);
+      actionError = `${operationLabel(job.type)} ${job.source} → ${job.destination}: ${message}`;
     } finally {
-      pauseBusy = null;
+      delete pauseBusy[job.id];
     }
   }
 
@@ -782,10 +799,16 @@
                 </span>
                 <span class="row-actions">
                   {#if isActive(job)}
-                    {#if canPause(job)}
-                      <button class="pause" disabled={pauseBusy === job.id} onclick={() => pauseOrResume(job, "pause")}>Pause</button>
-                    {:else if canResume(job)}
-                      <button class="resume" disabled={pauseBusy === job.id} onclick={() => pauseOrResume(job, "resume")}>Resume</button>
+                    <!-- One button whose action changes, so keyboard focus stays
+                      on it when a pause turns into a resume. -->
+                    {#if canPause(job) || canResume(job)}
+                      {@const action = canPause(job) ? "Pause" : "Resume"}
+                      <button
+                        class="pause-resume"
+                        aria-label="{action} job {job.id}"
+                        aria-disabled={pauseBusy[job.id] ? "true" : undefined}
+                        onclick={() => pauseOrResume(job, action === "Pause" ? "pause" : "resume")}>{action}</button
+                      >
                     {/if}
                     <button class="cancel" disabled={!canCancel(job.id)} onclick={() => cancel(job.id)}>
                       {cancelLabel(job.id)}
@@ -1194,8 +1217,7 @@
   }
 
   .rerun,
-  .pause,
-  .resume {
+  .pause-resume {
     font: inherit;
     font-size: var(--text-xs);
     padding: 0 var(--space-2);
@@ -1204,6 +1226,11 @@
     background: none;
     color: var(--color-accent);
     cursor: pointer;
+  }
+
+  .pause-resume[aria-disabled="true"] {
+    color: var(--color-text-faint);
+    cursor: progress;
   }
 
   .details {
