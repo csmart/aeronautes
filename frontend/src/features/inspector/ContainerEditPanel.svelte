@@ -197,8 +197,9 @@
       {/if}
     </div>
 
+    <hr class="rule" />
     <h4 class="sub">Cross-origin requests (CORS)</h4>
-    <div class="cors grid">
+    <div class="cors">
       <label class="field">
         <span>Allowed origins <span class="hint type-mono">{corsKeys.allowOrigin}</span></span>
         <input
@@ -212,7 +213,7 @@
         <span>Preflight cache, seconds <span class="hint type-mono">{corsKeys.maxAge}</span></span>
         <input class="type-mono" value={corsValue(rows, "maxAge")} placeholder="600" oninput={(e) => corsInput("maxAge", e.currentTarget.value)} />
       </label>
-      <label class="field wide">
+      <label class="field">
         <span>Exposed response headers <span class="hint type-mono">{corsKeys.exposeHeaders}</span></span>
         <input
           class="type-mono"
@@ -227,10 +228,14 @@
     <h4 class="sub">User metadata</h4>
     <MetadataEditor base={target.detail.meta ?? {}} bind:rows onRawEdit={rawEdit} />
 
+    <hr class="rule" />
+    <h4 class="sub">Access lists</h4>
     <AclEditor label="Read ACL" bind:value={readAcl} />
     <AclEditor label="Write ACL" bind:value={writeAcl} />
 
-    <div class="grid">
+    <hr class="rule" />
+    <h4 class="sub">Versioning and quota</h4>
+    <div class="stack">
       <label class="field">
         <span>Versioning</span>
         <select bind:value={versioningMode}>
@@ -293,14 +298,14 @@
     <p class="banner mismatch">Details changed. Close and reopen the editor before saving.</p>
   {/if}
 
+  {#if grantsPublic}
+    <label class="public-ack">
+      <input type="checkbox" bind:checked={publicAck} disabled={saving || !currentBaseline} />
+      <span>I understand this makes <span class="type-mono">{target.detail.name}</span> publicly readable.</span>
+    </label>
+  {/if}
   <div class="actions">
     <button onclick={close} disabled={saving}>Cancel</button>
-    {#if grantsPublic}
-      <label class="public-ack">
-        <input type="checkbox" bind:checked={publicAck} disabled={saving || !currentBaseline} />
-        I understand this makes <span class="type-mono">{target.detail.name}</span> publicly readable.
-      </label>
-    {/if}
     <button class="primary" onclick={() => save(false)} disabled={saving || !currentBaseline}>
       {saving ? "Saving…" : "Save"}
     </button>
@@ -336,11 +341,13 @@
     color: var(--color-accent-strong);
   }
 
+  /* The pane is narrow, so each section is a heading over one field per
+    row, and a rule separates the sections (operator, 0.5.0 test run). */
   .sub {
     margin: 0;
     font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-weight: var(--weight-medium);
+    color: var(--color-text-secondary);
+    font-weight: var(--weight-semibold);
   }
 
   .presets {
@@ -358,9 +365,10 @@
   }
 
   .hint {
-    margin-left: var(--space-1);
+    display: block;
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+    overflow-wrap: anywhere;
   }
 
   .rule {
@@ -370,14 +378,19 @@
     border-top: 1px solid var(--color-border);
   }
 
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+  .cors,
+  .stack {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-2);
   }
 
-  .wide {
-    grid-column: 1 / -1;
+  .public-ack {
+    display: flex;
+    gap: var(--space-2);
+    align-items: baseline;
+    font-size: var(--text-sm);
+    color: var(--color-text);
   }
 
   .field {
