@@ -3,6 +3,7 @@
 // directly — the seam is what lets navigation logic be tested against a
 // fixture-backed fake, and where nullable wire shapes are normalised.
 
+import { Clipboard } from "@wailsio/runtime";
 import {
   AppService,
   AuditService,
@@ -168,6 +169,9 @@ export interface ObjectPage {
 
 export interface Api {
   info(): Promise<Info>;
+  /** Puts text on the system clipboard through the shell, which works where
+   * the webview's own clipboard API is refused outside a secure origin. */
+  copyText(text: string): Promise<void>;
   about(): Promise<About>;
   listBookmarks(): Promise<BookmarkDTO[]>;
   credentialStatus(): Promise<CredentialStatusDTO>;
@@ -291,6 +295,7 @@ export interface Api {
 /** The live bridge. */
 export const liveApi: Api = {
   info: () => AppService.Info(),
+  copyText: (text) => Clipboard.SetText(text),
   about: async () => {
     const about = await AppService.About();
     if (!about) throw new Error("empty about");

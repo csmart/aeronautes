@@ -604,6 +604,10 @@ export class BrowserState {
     return await this.#api.verifyBookmark(bookmark, secret);
   }
 
+  async copyText(text: string): Promise<void> {
+    await this.#api.copyText(text);
+  }
+
   async deleteBookmark(id: string): Promise<void> {
     this.#beginBookmarkChange(id);
     this.#retireBookmarkList();

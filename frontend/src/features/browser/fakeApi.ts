@@ -326,6 +326,7 @@ export function newFakeApi(): Api {
   }
 
   return {
+    copyText: async () => {},
     info: async () => ({
       name: "Aeronautes",
       version: "test",

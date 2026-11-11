@@ -351,6 +351,44 @@
   // The bookmarks a job touched, by name: one for an upload, a download or a
   // deletion, both for a copy between two. A side with no bookmark, such as a
   // local folder, is left out rather than drawn as an ellipsis.
+  function recoveryRecordsLabel(count: number): string {
+    return `${count} recovery ${count === 1 ? "record" : "records"}`;
+  }
+
+  // What "Copy details" puts on the clipboard: everything the row and its
+  // details show, as text an operator can paste into a support request.
+  function jobDetailsText(job: JobDTO): string {
+    const c = job.counters;
+    const view = settingsView(job);
+    const settings = view.kind === "rows"
+      ? view.rows.map((row) => `${row.key}=${row.value}`).join(", ")
+      : view.kind === "defaults" ? "defaults" : "not recorded";
+    const lines = [
+      `${operationLabel(job.type)}, ${job.state} (job ${job.id})`,
+      `${job.source} → ${job.destination}`,
+      `accounts: ${accountsOf(job) || "none recorded"}`,
+      `started: ${job.startedAt || "not started"}; finished: ${job.finishedAt || "not finished"}`,
+      `objects: ${c.objectsCopied} of ${c.objectsPlanned}, verified ${c.objectsVerified}, failed ${c.objectsFailed}, deleted ${c.objectsDeleted}`,
+      `bytes: ${c.bytesCopied} of ${c.bytesPlanned}; overwrites ${c.overwrites}, refused ${c.overwritesRefused}`,
+      `engine: ${job.engine}`,
+      `settings: ${settings}`,
+    ];
+    if (c.deletionAccountingIncomplete) lines.push("deletion accounting is incomplete");
+    if (job.recoveryRecords > 0) lines.push(`recovery records kept: ${job.recoveryRecords}`);
+    if (job.error) lines.push(`error: ${job.error}`);
+    return lines.join("\n");
+  }
+
+  let copied: { jobId: string; ok: boolean } | null = $state(null);
+  async function copyDetails(job: JobDTO) {
+    try {
+      await browser.copyText(jobDetailsText(job));
+      copied = { jobId: job.id, ok: true };
+    } catch {
+      copied = { jobId: job.id, ok: false };
+    }
+  }
+
   function accountsOf(job: JobDTO): string {
     const ids = [...new Set([job.sourceBookmarkId, job.destBookmarkId].filter((id) => id !== ""))];
     return ids.map(bookmarkName).join(" → ");
@@ -546,16 +584,20 @@
             <p>Recovery status is unavailable. Retained counts are unknown.</p>
           {:else if browser.jobs.recoveryStatus}
             <p>
-              {browser.jobs.recoveryStatus.records} recovery {browser.jobs.recoveryStatus.records === 1 ? "record" : "records"} retained across
-              {browser.jobs.recoveryStatus.jobs} finished {browser.jobs.recoveryStatus.jobs === 1 ? "job" : "jobs"} in all accounts.
+              {browser.jobs.recoveryStatus.records} recovery {browser.jobs.recoveryStatus.records === 1 ? "record" : "records"} kept for
+              {browser.jobs.recoveryStatus.jobs} finished {browser.jobs.recoveryStatus.jobs === 1 ? "job" : "jobs"} in all accounts; what
+              they track on the store is unchecked.
             </p>
           {:else}
             <p>Checking recovery status…</p>
           {/if}
-          <p>
-            Remote residue is unverified. These counts describe records, not
-            objects or failed transfers. Automatic recovery cleanup is unavailable.
-          </p>
+          <details>
+            <summary>Details</summary>
+            <p>
+              These count records, not objects, bytes, proven orphans or failed transfers.
+              Automatic recovery cleanup is unavailable.
+            </p>
+          </details>
         </div>
         {#if v1Offers.benchmark && benchOpen}
           <form
@@ -627,6 +669,9 @@
                       · <em class="bad">{job.counters.overwritesRefused} {job.counters.overwritesRefused === 1 ? "overwrite" : "overwrites"} refused</em>
                     {/if}
                   {/if}
+                  {#if !isActive(job) && job.recoveryRecords > 0}
+                    <span class="recovery-tag">{recoveryRecordsLabel(job.recoveryRecords)}</span>
+                  {/if}
                 </span>
                 <span class="when">
                   {#if browser.jobs.rates[job.id] > 0 && isActive(job)}
@@ -675,18 +720,23 @@
                   <p class="pause-note">{pauseNote(job)}</p>
                 {/if}
                 {#if job.error}
-                  <p class="error callout danger">{job.error}</p>
+                  <!-- One line, cut at the row's width; the whole text is in
+                    the row's details (DESIGN §47). -->
+                  <p class="error callout danger one-line" title={job.error}>{job.error}</p>
                 {/if}
                 {#if job.counters.deletionAccountingIncomplete}
                   <p class="error callout danger">Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>
                 {/if}
-                {#if !isActive(job) && job.recoveryRecords > 0}
-                  <p class="recovery-row">
-                    {job.recoveryRecords} recovery {job.recoveryRecords === 1 ? "record" : "records"} retained; remote residue is unverified.
-                  </p>
-                {/if}
                 {#if expanded === job.id}
                   {@const view = settingsView(job)}
+                  {#if job.error}
+                    <p class="error full-error">{job.error}</p>
+                  {/if}
+                  {#if !isActive(job) && job.recoveryRecords > 0}
+                    <p class="recovery-row">
+                      {recoveryRecordsLabel(job.recoveryRecords)} kept; what they track on the store is unchecked.
+                    </p>
+                  {/if}
                   <div class="config num">
                     <span class="config-row"><span class="k">engine</span><span class="type-mono">{job.engine}</span></span>
                     {#if !job.counters.deletionAccountingIncomplete}
@@ -700,6 +750,12 @@
                       <span class="config-row"><span class="k">settings</span><span>defaults</span></span>
                     {:else}
                       <span class="config-row"><span class="k">settings</span><span>not recorded</span></span>
+                    {/if}
+                  </div>
+                  <div class="copy-details">
+                    <button onclick={() => copyDetails(job)}>Copy details</button>
+                    {#if copied?.jobId === job.id}
+                      <span role="status">{copied.ok ? "Copied." : "Could not reach the clipboard."}</span>
                     {/if}
                   </div>
                   {#key job.id}<JobItems {browser} {job} />{/key}
@@ -978,6 +1034,34 @@
     margin: 0;
   }
 
+  .recovery details {
+    margin-top: 2px;
+  }
+
+  .recovery summary {
+    cursor: pointer;
+    color: var(--color-text-faint);
+  }
+
+  /* Its own line under the counts, so it never reads as one more of them. */
+  .recovery-tag {
+    display: block;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+  }
+
+  .copy-details {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-2) var(--space-1);
+  }
+
+  .copy-details span {
+    color: var(--color-text-secondary);
+  }
+
   .recovery-row,
   .pause-note {
     grid-column: 1 / -1;
@@ -994,6 +1078,11 @@
     padding: 2px var(--space-2);
     font-size: var(--text-xs);
     border-radius: var(--radius-control);
+  }
+
+  /* Alternating tints let the eye follow one job across the wide row. */
+  .job:nth-child(even) {
+    background: var(--color-bg);
   }
 
   .job:hover,
@@ -1216,6 +1305,18 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--color-danger);
+  }
+
+  .error.one-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .full-error {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
   }
 
   .event {
