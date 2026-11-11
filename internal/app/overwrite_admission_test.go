@@ -955,7 +955,7 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 	}
 }
 
-// Finding F5 of db:746: the predecessor's record is written BEFORE the
+// The predecessor's record is written BEFORE the
 // publication, so it cannot say what the publication did. An earlier wording
 // announced that the inline data had gone with the manifest, and a job that
 // then never published left that standing over an untouched object.

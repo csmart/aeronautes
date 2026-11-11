@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The regressions for db:837's P1, taken through the REAL producers rather
+// The regressions for a review's P1, taken through the REAL producers rather
 // than through a hand-built statement.
 //
 // TestOverwriteQuestionRefusesToLetAStoredNameGarbleIt fed hostile text in as
@@ -171,7 +171,7 @@ func TestALongArchiveNameCannotCrowdOutTheQuestion(t *testing.T) {
 
 // The other half of the Unknown reason's bound, and the catching case for
 // note's own contract: it keeps the FIRST reason and counts the rest. It
-// appended every one until db:837, which is not what its comment said and
+// used to append every one, which is not what its comment said and
 // not what a bounded sentence is — a selection where many names cannot be
 // read would have carried one reason per name onto a native dialog.
 func TestManyUnreadableNamesCannotGrowTheQuestion(t *testing.T) {
@@ -231,7 +231,7 @@ func TestOneLongNameCannotGrowTheQuestionEither(t *testing.T) {
 	}
 }
 
-// db:838's advisory, as two cases. The reason kept and the count of the rest
+// A review's advisory, as two cases. The reason kept and the count of the rest
 // are now held apart, because the kept reason QUOTES A STORED NAME and the
 // count was being found by splitting on its own suffix. A name is arbitrary
 // text: it can contain that suffix, and it can be long enough to fill the

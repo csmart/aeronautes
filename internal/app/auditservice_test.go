@@ -103,7 +103,7 @@ func TestExportAuditReadsTheWholeTrail(t *testing.T) {
 
 // A failed export must never publish a complete-looking archive: it
 // writes to a .part and publishes by link only on success, so a failure
-// leaves no .jsonl (db:971, db:972).
+// leaves no .jsonl.
 func TestExportAuditRemovesFailedOutput(t *testing.T) {
 	store, ctx := newExportStore(t)
 	seedAudit(t, store, ctx, "transfer.copy.start", 3)
@@ -129,7 +129,7 @@ func TestExportAuditRemovesFailedOutput(t *testing.T) {
 
 // Publication refuses a destination occupied after the .part was
 // allocated (a late-arriving file at the final name), stepping to a fresh
-// suffix instead of replacing it (db:973). os.Link is atomic, so there is
+// suffix instead of replacing it. os.Link is atomic, so there is
 // no check-and-use gap to race.
 func TestLinkPublishRefusesAnOccupiedDestination(t *testing.T) {
 	dir := t.TempDir()

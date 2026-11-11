@@ -698,7 +698,7 @@ type answeredFragments struct {
 // would authorise is refused for the same reason.
 // It also returns what answering yes would authorise for the predecessor's
 // segments, taken from the same statement the operator reads, so execution
-// can be held to the promise the question made (db:756 finding 1).
+// can be held to the promise the question made.
 func overwriteQuestion(label, account, container, prefix, versioning string, names []string,
 	fragments fragmentPlan) (OverwriteConfirmation, bool, error) {
 	switch {
@@ -747,12 +747,12 @@ func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequest
 	reading := local.FragmentPlan(ctx, session, req.Container, names)
 	// The reason names an object and quotes what the store said about it, so
 	// like the archive name it is stored data reaching a confirmation
-	// sentence (db:837). It is BOUNDED where the reading keeps it, because
+	// sentence. It is BOUNDED where the reading keeps it, because
 	// only there is the reason distinguishable from the count that follows
 	// it, and SANITISED where the question is drawn, because that is the
 	// function whose output a page must not be able to shape. A second bound
 	// here would have no case that could catch its removal, so there is not
-	// one: each of those two has its own (db:838).
+	// one: each of those two has its own.
 	plan.Whole, plan.Kept, plan.Unnamed, plan.Unknown = reading.Whole, reading.Kept, reading.Unnamed, reading.Unknown
 	plan.Shown = reading.Shown
 	return plan
@@ -801,7 +801,7 @@ type fragmentPlan struct {
 // statement is the sentence the question carries and, from the same switch,
 // whether answering yes authorises removing those segments at all. One
 // switch, because a sentence that promises retention beside an authorisation
-// to remove is the defect this pair exists to prevent (db:756 finding 1).
+// to remove is the defect this pair exists to prevent.
 func (p fragmentPlan) statement() (string, bool) {
 	shapes := ""
 	if p.Kept > 0 {
@@ -876,7 +876,7 @@ func versioningStatement(observed swiftcontrol.ContainerVersioning) (string, err
 		// stored data on a sentence an operator reads to authorise a
 		// destruction: it is sanitised and bounded HERE, where it is
 		// interpolated, so the fixed words after it cannot be cut away by a
-		// long one and cannot be displaced by a crafted one (db:837).
+		// long one and cannot be displaced by a crafted one.
 		archive := titleText(observed.Archive, 80)
 		if archive == "" {
 			archive = "an archive it did not name"

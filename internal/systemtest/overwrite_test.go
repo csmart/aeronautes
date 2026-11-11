@@ -464,7 +464,7 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	// owned store, and a static manifest is the one whose entries are exact:
 	// its inventory is the manifest's own list rather than a prefix listing,
 	// so what is reclaimed is what the record named and nothing is inferred
-	// from a prefix. db:756 finding 7 asked for this route by name.
+	// from a prefix. A review asked for this route by name.
 	for _, mode := range []struct {
 		name     string
 		reclaims bool

@@ -178,7 +178,7 @@ export class SettingsState {
     // over it. Hold the settings operation for the whole restore so such a
     // write waits, then refresh the cached settings before releasing it so
     // the waiting write applies against the restored document, not the old
-    // one (ADR 0098; review db:991 finding 1).
+    // one (ADR 0098).
     if (this.operation !== null) {
       this.restoreError = "Settings are busy; try the restore again in a moment.";
       return;
@@ -216,7 +216,7 @@ export class SettingsState {
 
   // #restoreMessage turns a restore result into one honest line: what landed,
   // what remains when it did not finish, and that passwords are re-entered on
-  // use (ADR 0098; review db:991 finding 3).
+  // use (ADR 0098).
   #restoreMessage(result: RestoreResultDTO): string {
     // Settings replace first; if they could not be confirmed the restore
     // stopped there, so report that and nothing else.

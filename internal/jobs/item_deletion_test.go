@@ -458,7 +458,7 @@ func TestInterruptedDeletionKeepsItsMembersHonest(t *testing.T) {
 	}
 }
 
-// db:910: completion understands a deletion. Members never attempted carry no
+// Completion understands a deletion. Members never attempted carry no
 // problem facet, so they must keep the job from completing on their own, and
 // the deleted count a caller supplies is replaced by the items'.
 func TestDeletionCompletionIsDerivedFromItsMembers(t *testing.T) {
@@ -504,7 +504,7 @@ func TestDeletionCompletionIsDerivedFromItsMembers(t *testing.T) {
 	})
 }
 
-// db:910: the outcome and the observation are one immutable pair, so an
+// The outcome and the observation are one immutable pair, so an
 // outcome recorded with nothing observed cannot gain a successor later.
 func TestRecordedOutcomeCannotGainASuccessor(t *testing.T) {
 	store, bookmark := newStore(t)
@@ -522,7 +522,7 @@ func TestRecordedOutcomeCannotGainASuccessor(t *testing.T) {
 	}
 }
 
-// db:910 and db:911: what a selected-set deletion deletes is a Swift object,
+// What a selected-set deletion deletes is a Swift object,
 // and every member is admitted at once; a member the ledger would not count
 // as admitted cannot join, because the job could end complete with it
 // untouched.

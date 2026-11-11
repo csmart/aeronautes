@@ -226,7 +226,7 @@ func TestAlignedSegmentationIsStillReadBeforePublication(t *testing.T) {
 }
 
 func TestStaleStagedListingCannotStandInForContent(t *testing.T) {
-	// The reviewer's case on db:467. A same-size segment replacement can
+	// A reviewer's case. A same-size segment replacement can
 	// leave the container row at its previous length and entity tag, and
 	// the aggregate a dynamic large object reports is derived from those
 	// same rows, so both agree with the source while the stored bytes do

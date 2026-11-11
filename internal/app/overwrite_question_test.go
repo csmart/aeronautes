@@ -122,7 +122,7 @@ func TestOverwriteQuestionRefusesToLetAStoredNameGarbleIt(t *testing.T) {
 	}
 }
 
-// The gap db:837 found, as a case on the renderer's OWN contract. The
+// The gap a review found, as a case on the renderer's OWN contract. The
 // hostile-text case above fed its text in as the container, prefix and names,
 // which were the parts this function sanitised, and it could not fail: it
 // composes the statement itself, so the two SENTENCES arrived benign. They

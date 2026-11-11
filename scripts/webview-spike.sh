@@ -100,7 +100,7 @@ sleep 5
 # the group instead would accept any surviving member — a quiet helper left
 # behind by an application that has already died — and this assertion would then
 # pass for a dead shell, with no listening socket to contradict it. That
-# regression was found in review (db:780) and is held by a case below the script.
+# regression was found in review and is held by a case below the script.
 app_leader_running "$APP_GROUP" || {
 	echo "FAIL: shell exited within 5s of launch; last app output:"
 	tail -5 "$APP_LOG"

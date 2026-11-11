@@ -63,7 +63,7 @@ func TestAcknowledgedBaselineIsWrittenOnceAndReadBack(t *testing.T) {
 	// And the row cannot be edited underneath the store. The API refuses a
 	// differing re-record, but that guard is only reached through the API, and a
 	// comparison at the fixed point would otherwise match against something the
-	// operator may never have been shown. db:828 reproduced exactly this.
+	// operator may never have been shown. A review reproduced exactly this.
 	err = s.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(t.Context(), `UPDATE job_item_acknowledged_baselines SET etag='0000'`)
 		return err

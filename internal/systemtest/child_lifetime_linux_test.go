@@ -325,7 +325,7 @@ func lifetimeTail(path string, limit int) string {
 // the body open, and between the earlier snapshot and the moment the child
 // actually stops, bytes already released can still reach the disk. A plain
 // equality on the whole snapshot therefore fails on a schedule that is
-// perfectly correct, which is a flake rather than a finding — db:825 named this
+// perfectly correct, which is a flake rather than a finding — a review named this
 // interleaving from the source, and the focused cases beside this function
 // exercise it.
 //

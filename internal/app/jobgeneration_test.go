@@ -372,7 +372,7 @@ func TestJobRunnerKeepsPinsThroughFinalBodyCleanup(t *testing.T) {
 
 // A benchmark recommendation can appear or vanish between reads, so the
 // §45 provenance must be classified from the same snapshot that fixed
-// the execution values, not a later re-read (db:968). Here the
+// the execution values, not a later re-read. Here the
 // recommendation resolves the Auto values, then vanishes once the engine
 // is built; the record must still call 24 transfers a recommendation.
 func TestCopyRecordsProvenanceFromResolutionSnapshot(t *testing.T) {

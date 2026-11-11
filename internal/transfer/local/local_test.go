@@ -871,7 +871,7 @@ func TestPreflightUploadStopsScanningWhenCancelled(t *testing.T) {
 	}
 }
 
-// The same budget through the PUBLIC routes, both of them, because db:766's
+// The same budget through the PUBLIC routes, both of them, because a review's
 // regression was reachable there: a hundred selected names against a prefix of
 // two hundred rows the server returns in one response must cost that response
 // and the empty page after it, not a HEAD per name. The replacing route is
@@ -937,7 +937,7 @@ func TestPreflightUploadBudgetsOneResponse(t *testing.T) {
 	}
 }
 
-// The resolution's own decision, in REQUESTS. db:766 showed the cost that
+// The resolution's own decision, in REQUESTS. A review showed the cost that
 // matters is responses, not rows: the client fetches and validates a whole
 // response before it yields the first row, so a pass that stops part way
 // through one throws away answers already paid for and then pays a HEAD for
@@ -967,7 +967,7 @@ func TestDestinationLivenessChoosesAndBudgets(t *testing.T) {
 		}
 	}
 	t.Run("one response that answers everything costs one more", func(t *testing.T) {
-		// db:766's own case: a hundred selected names, none of them there, and
+		// That review's own case: a hundred selected names, none of them there, and
 		// a prefix of two hundred rows the server returns in ONE response. The
 		// rows are already paid for, so they are all read, and the only further
 		// request is the empty page that ends the listing.
@@ -1013,7 +1013,7 @@ func TestDestinationLivenessChoosesAndBudgets(t *testing.T) {
 		}
 	})
 	t.Run("a page exactly at the limit does not change the cost", func(t *testing.T) {
-		// db:769: the shape of a page decided this, and a prefix of exactly one
+		// The shape of a page decided this, and a prefix of exactly one
 		// full page swung the cost from two requests to a hundred and one. Ten
 		// thousand rows and one fewer must cost the same, because neither says
 		// anything about what follows.

@@ -21,7 +21,7 @@ import (
 // view. The browse view is the delimiter one, and it deliberately hides a real
 // object whose name is exactly the slash-terminated prefix being listed
 // (swiftcontrol/objects.go: "The folder's own object belongs to PrefixDetail"),
-// so an oracle built from it misses every slash-named object — db:765 proved
+// so an oracle built from it misses every slash-named object — a review proved
 // exactly that by changing one and watching this snapshot report nothing. The
 // deep listing is the stream jobs consume: every real object, no prefix rows,
 // and its own paging, so no continuation marker is left unfollowed.
@@ -115,7 +115,7 @@ func TestUploadReachesItsRouteAndStaysInItsNamespace(t *testing.T) {
 	seedObject(h.mock, "other", "keep", "untouched", nil)
 	// A real object whose name ENDS in a slash. The delimiter view hides this
 	// one behind the prefix row it looks like, so an oracle built from that
-	// view misses it entirely (db:765 finding 1); the deep listing sees it.
+	// view misses it entirely; the deep listing sees it.
 	seedObject(h.mock, "admitted", "elsewhere/nested/", "slash named", nil)
 
 	dir := t.TempDir()

@@ -404,7 +404,7 @@ func md5hex(s string) string {
 // The staged read admits only a complete response. A store that answers
 // the staged GET with a partial body whose bytes happen to match the
 // file would otherwise be read as the whole staged object: the reviewer's
-// regression for db:736 finding 1, retained. The staged object is eight
+// regression for a review finding, retained. The staged object is eight
 // bytes and the file is four, so a prefix that matches is exactly the
 // case a length check made after publication cannot prevent.
 func TestStagedCommitRefusesAPartialStagedRead(t *testing.T) {
@@ -457,7 +457,7 @@ func TestStagedCommitRefusesAPartialStagedRead(t *testing.T) {
 // The comparison consumes the stream to its end, so a staged body whose
 // bytes match but which never terminates is refused rather than accepted
 // at the last byte. This is the EOF half of the lifecycle the reviewer
-// asked this route to drive (db:736 finding 1); the Close half is joined
+// asked this route to drive; the Close half is joined
 // by the same call, and the reviewer's own fixture for it addressed the
 // earlier OpenObject seam, whose reader re-HEADs at Close. The complete
 // content reader does not, so the reachable late failures on this path

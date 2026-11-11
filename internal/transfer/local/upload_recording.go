@@ -100,7 +100,7 @@ type ReclaimPlan struct {
 	LeftBehind string
 	// Retained is what the plan deliberately excluded and why, empty when it
 	// excluded nothing. Leaving a shape alone is an outcome of this
-	// operation and belongs in its record (db:756 finding 4).
+	// operation and belongs in its record.
 	Retained string
 }
 
@@ -131,7 +131,7 @@ type ReclaimOutcome struct {
 // said about it. Resolved separates the two cases a single list used to blur:
 // a store that REFUSED this name, which is a known non-removal, and a reply
 // that could not be read, where the effect on this name is unknown and must
-// not be reported as either (db:756 finding 3).
+// not be reported as either.
 type ReclaimFailure struct {
 	Fragment Fragment
 	Detail   string
@@ -524,14 +524,14 @@ type FragmentReading struct {
 	// every reason joined, which its own producer's comment already said it
 	// did not: a selection where many names could not be read grew one
 	// sentence without bound, and that sentence is read on a confirmation
-	// surface (db:837).
+	// surface.
 	Unknown string
 	// first is the reason note kept, and noted is how many it was given.
 	// They are held separately so Unknown never has to be taken back apart:
 	// a reason quotes a stored object NAME, which can contain any text at
 	// all including this helper's own count suffix, and splitting on that
 	// suffix would let a name shorten the diagnostic it appears in. Keeping
-	// the pieces is the fix; parsing them back out was the defect (db:838).
+	// the pieces is the fix; parsing them back out was the defect.
 	first string
 	noted int
 	// Shown is what each name held, by name, for the names this reading could
@@ -551,7 +551,7 @@ type FragmentReading struct {
 // none.
 //
 // A successful read is not the same as a complete identity, which is what
-// db:830 found here. This adapter accepts a HEAD carrying no entity tag and one
+// a review found here. This adapter accepts a HEAD carrying no entity tag and one
 // carrying no length, and the client then reports a zero length that cannot be
 // told apart from a genuinely empty object. Recording either would break the
 // contract this map is supposed to keep — a name is identified or it is absent —
@@ -587,7 +587,7 @@ func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container stri
 	var reading FragmentReading
 	// One identity is one object to remove however many positions name it,
 	// so the count the question states is of distinct identities across every
-	// name this start would replace (db:756 finding 5).
+	// name this start would replace.
 	counted := map[[2]string]bool{}
 	for _, name := range names {
 		detail, err := dst.ObjectDetail(ctx, container, name)
@@ -637,7 +637,7 @@ func FragmentPlan(ctx context.Context, dst *swiftcontrol.Session, container stri
 // note keeps the first reason and counts the rest, so one sentence can say
 // how many names it could not read without growing without bound.
 //
-// It appended every reason until db:837, which is not what this comment has
+// It used to append every reason, which is not what this comment has
 // always said and not what a bounded sentence is: the text reaches an
 // operator's confirmation on a native surface, and one selection with a
 // thousand unreadable names would have carried a thousand reasons onto it.
@@ -647,7 +647,7 @@ func (r *FragmentReading) note(reason string) {
 		// Bounded here, not only where the sentence is displayed: the count
 		// below comes AFTER the reason, so a reason long enough to fill the
 		// display budget would push the count out of the one sentence that
-		// says how many names this reading could not read (db:838).
+		// says how many names this reading could not read.
 		r.first = cutRunes(reason, firstReasonRunes)
 		r.Unknown = r.first
 		return
@@ -741,8 +741,7 @@ func reclaimFragments(ctx context.Context, dst *swiftcontrol.Session, fragments 
 	var order []string
 	// A valid manifest may name the same object in more than one position,
 	// and a record keeps every position. One identity is still one object to
-	// remove and one result to report, so the deletion set is by identity
-	// (db:756 finding 5).
+	// remove and one result to report, so the deletion set is by identity.
 	seenIdentity := map[[2]string]bool{}
 	for _, fragment := range fragments {
 		identity := [2]string{fragment.Container, fragment.Name}

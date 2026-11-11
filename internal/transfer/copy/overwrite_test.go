@@ -389,7 +389,7 @@ func TestAcknowledgedOverwriteRetainsReplacedSegments(t *testing.T) {
 
 // An acknowledged destination that has vanished by the fixed point is a free
 // name again and is created, but its observed absence is recorded first, so the
-// trail is not a silent create (db:937 finding 3).
+// trail is not a silent create.
 func TestAcknowledgedOverwriteRecordsVanishedAbsence(t *testing.T) {
 	w := newWorld(t)
 	source := []byte("NEW SOURCE CONTENT")
@@ -426,7 +426,7 @@ func TestAcknowledgedOverwriteRecordsVanishedAbsence(t *testing.T) {
 
 // Each publication shape prepares before the fixed-point comparison, so a racer
 // that lands DURING that preparation is still caught by the comparison and the
-// overwrite refuses rather than clobbering it (db:937 finding 1). Without the
+// overwrite refuses rather than clobbering it. Without the
 // ordering the comparison runs first, the preparation then opens a window, and
 // the racer is overwritten unrefused.
 func TestStagedOverwritePreparesBeforeTheFixedPoint(t *testing.T) {
@@ -728,7 +728,7 @@ func TestAcknowledgedOverwriteRefusesWithoutVersioningHook(t *testing.T) {
 
 // A source symlink whose acknowledged destination has vanished by the fixed
 // point is created as a symlink, with its observed absence recorded first, the
-// same as the plain and native routes (db:937 finding 3).
+// same as the plain and native routes.
 func TestAcknowledgedSymlinkOverwriteRecordsVanishedAbsence(t *testing.T) {
 	w := newWorld(t)
 	name := "linkobj"
@@ -770,7 +770,7 @@ func TestAcknowledgedSymlinkOverwriteRecordsVanishedAbsence(t *testing.T) {
 // the item's recorded uncertainty must say the destination MIGHT hold staged
 // residue. The native route, which stages nothing, keeps not-attempted
 // (its existing tests cover that). The admitted-item validator must also accept
-// refused+unresolved, which it did not before (db:944 finding 2).
+// refused+unresolved, which it did not before.
 func TestAcknowledgedStagedSymlinkOverwriteRefusalCarriesUnresolvedEffect(t *testing.T) {
 	w := newWorld(t)
 	name := "linkobj" // rclone-safe, so the copy routes staged

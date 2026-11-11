@@ -138,7 +138,7 @@ func TestNewRejectsUnsupportedAuthVersion(t *testing.T) {
 
 // TestNewRejectsV3WithoutRegion keeps v3 from selecting an endpoint
 // ambiguously: a multi-region catalogue with no configured region could
-// bind the token to the wrong namespace (review db:1015).
+// bind the token to the wrong namespace.
 func TestNewRejectsV3WithoutRegion(t *testing.T) {
 	cfg := v3Config("https://keystone.example")
 	cfg.Region = ""
@@ -147,7 +147,7 @@ func TestNewRejectsV3WithoutRegion(t *testing.T) {
 	}
 }
 
-// TestKeystoneV3PinsRegionAcrossReorder is the regression for db:1015: a
+// TestKeystoneV3PinsRegionAcrossReorder is the regression for a review finding: a
 // re-authentication against a reordered multi-region catalogue must keep
 // the configured region's endpoint, never silently switch to another
 // region's namespace.

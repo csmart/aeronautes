@@ -304,7 +304,7 @@ func TestObjectDeleteRefusesAnEmptyNameBeforeAnythingHappens(t *testing.T) {
 // A literal read that fails after a landed DELETE is unverified, and its
 // summary names the failure by kind, never by the request text, which carries
 // the URL and with it the object name. A name the summary filter would refuse
-// must not make the outcome unrecordable (review db:900).
+// must not make the outcome unrecordable.
 func TestObjectDeleteKeepsTheAuditSafeWhenTheLiteralReadFails(t *testing.T) {
 	for _, name := range []string{"private-name.txt", "password.txt"} {
 		t.Run(name, func(t *testing.T) {
