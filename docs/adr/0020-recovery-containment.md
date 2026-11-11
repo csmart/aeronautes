@@ -71,7 +71,7 @@ Keep recovery-held jobs exempt from history pruning.
 This conservative first implementation may retain records for successfully completed jobs even when their temporary objects were already removed during normal execution.
 The UI must therefore say that recovery records are retained and remote residue is unverified; counts are records or jobs, not object counts, bytes, proven orphans or failed transfers.
 One visible line must carry the count, named as records and jobs, and say that the records are kept and that whatever they track on the store is unchecked; the rest of this wording, that the counts are not objects, bytes, proven orphans or failed transfers and that automatic cleanup is unavailable, may sit behind a Details control on that line.
-A job's own count may be a short tag in its row, with the sentence in the row's details.
+A job's own count may be a short tag in its row that names the count as recovery records, such as "1 recovery record", never a bare number beside the deleted or failed counts, with the sentence in the row's details.
 Retained recovery work does not rewrite the transfer's existing terminal result.
 Expose a bounded read-only summary with the number of terminal jobs holding recovery records and the number of those records, independent of the recent-job list limit.
 Also expose a per-job retained-record count in the job view.
