@@ -253,3 +253,24 @@ func keys(m map[string]Item) []string {
 	}
 	return out
 }
+
+// An object named exactly the source prefix is the folder's marker. Copied to
+// the top of a container its destination name would be empty, the container
+// itself, so it is neither planned nor counted; copied into a folder it is
+// that folder's marker, as before (DESIGN §65.9 item 9).
+func TestFolderMarkerIsNotPlannedAtTheTop(t *testing.T) {
+	source := func() iter.Seq2[swiftcontrol.ListingEntry, error] {
+		return stream(obj("files/", 0, "d41d8cd98f00b204e9800998ecf8427e"), obj("files/a", 1, "aaaa"))
+	}
+	items, summary := collect(t, source(), stream(), "files/", "")
+	if len(items) != 1 || summary.New != 1 || summary.TransferObjects != 1 {
+		t.Fatalf("to the top: items %v, summary %+v; want only a", keys(items), summary)
+	}
+	if _, ok := items["new:a"]; !ok {
+		t.Fatalf("to the top: a missing from %v", keys(items))
+	}
+	items, _ = collect(t, source(), stream(), "files/", "backup/")
+	if len(items) != 2 {
+		t.Fatalf("into a folder: items %v, want the marker and a", keys(items))
+	}
+}

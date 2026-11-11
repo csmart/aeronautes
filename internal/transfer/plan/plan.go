@@ -188,6 +188,16 @@ func Copy(ctx context.Context, source, dest iter.Seq2[swiftcontrol.ListingEntry,
 		if err := ctx.Err(); err != nil {
 			return summary, err
 		}
+		// An object named exactly the source prefix is the folder's marker.
+		// Copied to the top of a container its destination name is empty,
+		// which addresses the container itself, so it stays with the
+		// originals and is neither planned nor counted (DESIGN §65.9 item 9).
+		if src.ok && dstPrefix+src.rel == "" {
+			if err := src.advance(); err != nil {
+				return summary, err
+			}
+			continue
+		}
 		var item Item
 		var advanceSource, advanceDest bool
 		switch {
