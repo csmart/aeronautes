@@ -257,8 +257,13 @@ function rowButtons(): string[] {
 it.each([
   { name: "a running upload", job: { }, buttons: ["Pause", "Cancel"], note: null },
   { name: "a queued download", job: { type: "download", state: "queued" }, buttons: ["Pause", "Cancel"], note: null },
-  { name: "a pause waiting for its boundary", job: { pause: "pausing" }, buttons: ["Resume", "Cancel"],
-    note: "Pauses when the current batch finishes." },
+  { name: "a pause waiting for its next batch", job: { pause: "pausing" }, buttons: ["Resume", "Cancel"],
+    note: "Pauses when the current batch finishes, unless it is the last." },
+  { name: "a pause asked while queued", job: { state: "queued", pause: "pausing" }, buttons: ["Resume", "Cancel"],
+    note: "Pauses before it transfers anything." },
+  // A finishing job reaches no further unit, so the pause has nothing to
+  // wait for and is not offered back.
+  { name: "a pause asked before the job began verifying", job: { state: "verifying", pause: "pausing" }, buttons: ["Cancel"], note: null },
   { name: "a paused copy", job: { type: "copy", state: "paused" }, buttons: ["Resume", "Cancel"],
     note: "Paused. Nothing more is transferred until it is resumed." },
   { name: "a resume waiting for a slot", job: { state: "paused", pause: "resuming" }, buttons: ["Cancel"],
@@ -285,14 +290,53 @@ it("pauses and resumes a job through the bridge and reports a refusal", async ()
   show(new BrowserState(api));
   await vi.waitFor(() => expect(rowButtons()).toEqual(["Pause", "Cancel"]));
 
-  document.querySelector<HTMLButtonElement>(".row-actions .pause")!.click();
+  const control = document.querySelector<HTMLButtonElement>(".row-actions .pause-resume")!;
+  expect(control.getAttribute("aria-label")).toBe("Pause job transfer");
+  control.focus();
+  control.click();
   await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("paused"));
   expect(api.pauseJob).toHaveBeenCalledExactlyOnceWith("transfer");
+  // The same button now resumes, and keeps the keyboard focus.
+  expect(document.querySelector(".row-actions .pause-resume")).toBe(control);
+  expect(control.getAttribute("aria-label")).toBe("Resume job transfer");
+  expect(document.activeElement).toBe(control);
 
-  document.querySelector<HTMLButtonElement>(".row-actions .resume")!.click();
+  control.click();
   await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent)
-    .toBe("job transfer is not paused in this process and cannot be resumed"));
+    .toBe("Upload local → dest/: job transfer is not paused in this process and cannot be resumed"));
   expect(api.resumeJob).toHaveBeenCalledExactlyOnceWith("transfer");
   // The refusal changed nothing, so the row still offers the resume.
   expect(rowButtons()).toEqual(["Resume", "Cancel"]);
+});
+
+// One request per job at a time, and only per job: each job's control waits
+// for its own request, a second press while it waits sends nothing, and
+// another job's answer does not release it. The control stays focusable
+// while it waits, marked busy rather than disabled, because disabling the
+// focused button drops the keyboard focus in WebKitGTK.
+it("keeps each job's pause request apart", async () => {
+  const api = newFakeApi();
+  api.jobs = async () => [transferJob({ id: "first" }), transferJob({ id: "second", type: "download" })];
+  const answers = new Map<string, () => void>();
+  api.pauseJob = vi.fn((id: string) => new Promise<void>((done) => { answers.set(id, done); }));
+  show(new BrowserState(api));
+  const control = (id: string) => document.querySelector<HTMLButtonElement>(`.row-actions .pause-resume[aria-label="Pause job ${id}"]`);
+  const busy = (id: string) => control(id)?.getAttribute("aria-disabled") === "true";
+  await vi.waitFor(() => expect(control("second")).not.toBeNull());
+  control("first")!.focus();
+  control("first")!.click();
+  await vi.waitFor(() => expect(busy("first")).toBe(true));
+  expect(control("first")!.disabled, "STAYS-FOCUSABLE").toBe(false);
+  expect(document.activeElement).toBe(control("first"));
+  control("first")!.click();
+  expect(api.pauseJob, "NO-SECOND-REQUEST").toHaveBeenCalledTimes(1);
+  expect(busy("second")).toBe(false);
+  control("second")!.click();
+  await vi.waitFor(() => expect(busy("second")).toBe(true));
+  answers.get("second")!();
+  await vi.waitFor(() => expect(busy("second")).toBe(false));
+  expect(busy("first"), "FIRST-STILL-WAITING").toBe(true);
+  answers.get("first")!();
+  await vi.waitFor(() => expect(busy("first")).toBe(false));
+  expect(api.pauseJob).toHaveBeenCalledTimes(2);
 });

@@ -892,10 +892,16 @@ export function newFakeApi(): Api {
       job.finishedAt = "2026-08-29T10:05:00Z";
     },
     // The fake has no unit in hand to finish, so a pause takes effect at once.
+    // The backend's refusals, in its words: only a transfer pauses, and only
+    // before it is finishing.
     pauseJob: async (jobId) => {
       const job = jobs.find((j) => j.id === jobId);
-      if (!job || !["queued", "planning", "running"].includes(job.state)) {
-        throw new Error(`job ${jobId} cannot be paused`);
+      if (!job) throw new Error(`job ${jobId} is not running in this process`);
+      if (!["upload", "download", "copy"].includes(job.type)) {
+        throw new Error(`job ${jobId} cannot be paused: only an upload, a download or a copy pauses`);
+      }
+      if (!["queued", "planning", "running"].includes(job.state)) {
+        throw new Error(`job ${jobId} is ${job.state} and cannot be paused`);
       }
       job.state = "paused";
     },
