@@ -242,7 +242,7 @@ func TestNoTransferStagesInsideALiveSweep(t *testing.T) {
 			once.Do(func() { close(held); <-release })
 		}
 	}
-	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "scope/", Confirm: "media"})
+	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "scope/", Confirm: "media/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}

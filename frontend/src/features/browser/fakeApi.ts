@@ -1028,8 +1028,9 @@ export function newFakeApi(): Api {
       archiveUnestablished: "",
     }),
     startDelete: async (req) => {
-      if (req.confirm !== req.container) {
-        throw new Error("confirmation does not match the container name");
+      const want = req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
+      if (req.confirm !== want) {
+        throw new Error(`confirmation ${JSON.stringify(req.confirm)} does not match ${JSON.stringify(want)}`);
       }
       const id = `job-${jobs.length + 1}`;
       jobs.push({

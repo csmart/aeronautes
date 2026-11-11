@@ -26,7 +26,7 @@ func bulkDeletePartial(t *testing.T, h *Harness) {
 	h.Seed(h.Primary, c, "scope/plain.txt", []byte("doomed"), textType)
 	h.Seed(h.Primary, c, "scope/link", nil, map[string]string{"X-Symlink-Target": c + "/scope/keep-target"})
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: h.Primary.BookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c,
+		BookmarkID: h.Primary.BookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
@@ -110,7 +110,7 @@ func bulkDeleteConflict(t *testing.T, h *Harness, bookmarkID string, arm func(re
 		}
 	})
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c,
+		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
@@ -163,7 +163,7 @@ func bulkDeleteCancel(t *testing.T, h *Harness, bookmarkID string, arm func(canc
 		}
 	})
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c,
+		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())

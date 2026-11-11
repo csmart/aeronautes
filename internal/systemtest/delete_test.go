@@ -39,7 +39,7 @@ func TestPrefixDeleteSparesEverythingElse(t *testing.T) {
 
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
 		BookmarkID: h.Primary.BookmarkID, Container: c, Prefix: "scope/",
-		Mode: app.ModePrefix, Confirm: c,
+		Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())

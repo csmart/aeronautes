@@ -40,9 +40,17 @@
   const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName && (mode !== "prefix" || hasPrefix));
+  const armWord = $derived(prepared ? armingText(prepared.intent.request) : "");
   const canStart = $derived(!!prepared && !!preview && !previewing && !starting
     && facts !== undefined
-    && confirmText === prepared.intent.request.container);
+    && confirmText === armWord);
+
+  // What the operator types to arm the deletion, the same text the Go side
+  // requires (ADR 0095 decision 7): a prefix is armed by its scope, so the
+  // typing shows which prefix was read, and a container by its name.
+  function armingText(req: DeleteRequestDTO): string {
+    return req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
+  }
 
   function request(): DeleteRequestDTO {
     return {
@@ -115,7 +123,7 @@
     const current = prepared;
     if (starting || previewing || !current || !isCurrent(current.intent)
       || facts === undefined
-      || confirmText !== current.intent.request.container) return;
+      || confirmText !== armingText(current.intent.request)) return;
     const req = { ...current.intent.request, confirm: confirmText };
     prepared = null;
     confirmText = "";
@@ -179,8 +187,8 @@
       <!-- The start button stays disabled until both steps are done, and
         nothing else on the page says why. -->
       <p class="next-step">
-        Preview first: it counts what will go, then asks you to type the container name to arm the
-        deletion.
+        Preview first: it counts what will go, then asks you to type
+        {mode === "prefix" ? "the container and prefix" : "the container name"} to arm the deletion.
       </p>
     {/if}
 
@@ -219,10 +227,10 @@
         {/if}
         <label class="confirm">
           <span>
-            Type the container name <span class="type-mono">{browser.containerName}</span> to
-            arm:
+            Type {mode === "prefix" ? "the container and prefix" : "the container name"}
+            <span class="type-mono">{armWord}</span> to arm:
           </span>
-          <input class="type-mono" bind:value={confirmText} placeholder={browser.containerName} />
+          <input class="type-mono" bind:value={confirmText} placeholder={armWord} />
         </label>
       </div>
     {/if}
