@@ -379,6 +379,7 @@ import { isLink } from "../browser/browserState.svelte";
     {/if}
   {:else if browser.container}
     {@const cd = browser.containerDetail}
+    {@const containerClass = cd?.class ?? browser.container.class}
     <header class="head">
       <h2 class="title type-display">{browser.container.name}</h2>
       <p class="subtitle">
@@ -419,27 +420,29 @@ import { isLink } from "../browser/browserState.svelte";
     {#if cd}
       <TempUrlKeys {browser} container={cd.name} slots={cd.tempUrlKeySlots ?? []} />
     {/if}
+    <!-- An ordinary container has nothing to classify; the card appears only
+      when the container is, or may be, a segment store. -->
+    {#if containerClass === "confirmed" || containerClass === "declared" || containerClass === "suspected"}
     <section class="card">
       <h3 class="card-title">Segment classification</h3>
-      {#if (cd?.class ?? browser.container.class) === "confirmed"}
+      {#if containerClass === "confirmed"}
         <p class="teach">
           Confirmed segment store: manifests observed during inspection
           reference objects here. Deleting from it breaks the logical objects
           they assemble — and confirmed proves <em>referenced</em>, never
           <em>unshared</em>.
         </p>
-      {:else if (cd?.class ?? browser.container.class) === "declared"}
+      {:else if containerClass === "declared"}
         <p class="teach">Pinned as a segment store by an operator.</p>
-      {:else if (cd?.class ?? browser.container.class) === "suspected"}
+      {:else if containerClass === "suspected"}
         <p class="teach">
           Named like a segment store, but nothing confirms it. Treated as
           possible backstage — shown, never hidden, and never destructively
           classified from the name alone.
         </p>
-      {:else}
-        <p class="teach">Ordinary logical container.</p>
       {/if}
     </section>
+    {/if}
     {#if cd && sortedEntries(cd.meta).length > 0}
       <section class="card">
         <h3 class="card-title">User metadata</h3>
