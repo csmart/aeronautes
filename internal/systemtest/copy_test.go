@@ -86,3 +86,45 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	h.AssertNoCollateral(dstBefore, dstAfter, allowed...)
 	rec.CreditHappy()
 }
+
+// TestCopyUpToTheContainerTop is the 0.5.0 test run's case: a copy from a
+// marker-backed folder up to the top of its own container, through the
+// engine, lands each object at the top with the source's bytes, leaves the
+// source folder and its marker as they were, and adds nothing else, the
+// container included (DESIGN §65.9 item 9, as amended).
+func TestCopyUpToTheContainerTop(t *testing.T) {
+	h := New(t)
+	ctx := context.Background()
+	c := h.Container(h.Primary, "copyup")
+	// The folder's marker, as a folder made in the application has, stays
+	// in files/: its destination name at the top would be empty, the
+	// container itself.
+	h.Seed(h.Primary, c, "files/", nil, map[string]string{"Content-Type": "application/directory"})
+	h.Seed(h.Primary, c, "files/one.txt", []byte("first object"), nil)
+	h.Seed(h.Primary, c, "files/two.txt", []byte("second"), nil)
+	before := h.SnapshotNamespace(h.Primary)
+
+	rec := h.StartCopy(ctx, app.CopyRequestDTO{
+		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: c, SourcePrefix: "files/",
+		DestBookmarkID: h.Primary.BookmarkID, DestContainer: c,
+	})
+	if rec.Err() != nil {
+		t.Fatal(rec.Err())
+	}
+	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
+		t.Fatalf("copy job = %s: %s", job.State, job.Error)
+	}
+
+	after := h.SnapshotNamespace(h.Primary)
+	src, dst := before.Containers[c].Objects, after.Containers[c].Objects
+	for _, name := range []string{"one.txt", "two.txt"} {
+		if dst[name].Digest != src["files/"+name].Digest || dst[name].Size != src["files/"+name].Size {
+			t.Fatalf("%s: digest %s (%d), want the source's %s (%d)", name, dst[name].Digest, dst[name].Size, src["files/"+name].Digest, src["files/"+name].Size)
+		}
+		if dst["files/"+name].Digest != src["files/"+name].Digest {
+			t.Fatalf("source files/%s changed during the copy", name)
+		}
+	}
+	h.AssertNoCollateral(before, after, c+"/one.txt", c+"/two.txt")
+	rec.CreditHappy()
+}

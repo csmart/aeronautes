@@ -39,11 +39,11 @@ func TestDestructiveRefusalsHaveNoEffect(t *testing.T) {
 		t.Fatal("empty-container delete accepted a wrong confirmation")
 	}
 
-	// 2. Copy with overlapping same-account nested scopes is refused at
-	// start (before any write).
+	// 2. Copy into a folder inside its own source, same account, is
+	// refused at start (before any write).
 	cp := h.StartCopy(ctx, app.CopyRequestDTO{
-		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: c, SourcePrefix: "x/y/",
-		DestBookmarkID: h.Primary.BookmarkID, DestContainer: c, DestPrefix: "x/",
+		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: c, SourcePrefix: "x/",
+		DestBookmarkID: h.Primary.BookmarkID, DestContainer: c, DestPrefix: "x/y/",
 	})
 	if cp.Err() == nil || !strings.Contains(cp.Err().Error(), "overlap") {
 		t.Fatalf("overlapping copy = %v, want overlap refusal", cp.Err())
