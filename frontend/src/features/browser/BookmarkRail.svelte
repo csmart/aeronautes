@@ -245,10 +245,12 @@
     gap: var(--space-2);
   }
 
-  /* A tile never grows past the rail, so a long name is cut with an
-     ellipsis rather than widening the tile and pushing its letter out of
-     view. */
+  /* Every tile takes the rail's full width, so the letters and names sit on
+     one centre line and a selected tile's background lines up with the
+     others whatever the name's length; a long name is cut with an ellipsis
+     rather than widening the tile. */
   .bookmark {
+    width: 100%;
     max-width: 100%;
     display: flex;
     flex-direction: column;
@@ -304,6 +306,7 @@
 
   .label {
     font-size: var(--text-xs);
+    text-align: center;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
