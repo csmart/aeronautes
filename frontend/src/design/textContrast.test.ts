@@ -81,6 +81,7 @@ const pairs: Pair[] = [
   ["inspector configure action", "Inspector.svelte", ".edit-btn", ".edit-btn"],
   ["create primary label", "CreateContainerDialog.svelte", ".primary", ".primary"],
   ["transfer primary label", "TransferDialog.svelte", "footer .primary", "footer .primary"],
+  ["delete preview label", "DeleteDialog.svelte", "footer .primary", "footer .primary"],
   ["local transfer primary label", "LocalTransferDialog.svelte", "footer .primary", "footer .primary"],
   ["manifest force label", "ManifestDeleteDialog.svelte", ".danger", ".danger"],
   ["object delete label", "ObjectDeleteDialog.svelte", ".danger", ".danger"],
