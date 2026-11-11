@@ -67,7 +67,7 @@ for (const mode of ["Copy", "Mirror"] as const) {
     it(`${mode} keeps ${scope.name} literal through the prepared request`, async () => {
       const f = show(mode);
       input("container", scope.container);
-      input("prefix/ (optional)", scope.prefix);
+      input("folder path/ (optional)", scope.prefix);
       button("Preview").click();
       await vi.waitFor(() => expect(f.plan).toHaveBeenCalledOnce());
       const request = f.plan.mock.calls[0][0];
@@ -94,11 +94,11 @@ for (const mode of ["Copy", "Mirror"] as const) {
       const f = show(mode);
       const message = `prefix ${JSON.stringify(prefix)} must be empty or end with '/'`;
       f.plan.mockRejectedValue(new Error(message));
-      input("prefix/ (optional)", prefix);
+      input("folder path/ (optional)", prefix);
       button("Preview").click();
       await vi.waitFor(() => expect(document.querySelector(".error")?.textContent).toBe(message));
       expect(f.plan.mock.calls[0][0].destPrefix).toBe(prefix);
-      expect(document.querySelector<HTMLInputElement>('input[placeholder="prefix/ (optional)"]')!.value).toBe(prefix);
+      expect(document.querySelector<HTMLInputElement>('input[placeholder="folder path/ (optional)"]')!.value).toBe(prefix);
       expect(document.querySelector(".preview")).toBeNull();
       expect(button(mode === "Copy" ? "Start copy" : "Mirror unavailable").disabled).toBe(true);
       expect(f.start).not.toHaveBeenCalled();
@@ -118,7 +118,7 @@ it("shows exact source and destination scope, distinguishing spaces from root", 
   expect(source?.textContent).toContain('" source prefix /"');
   expect(destination?.textContent).toContain('"  destination  "');
   expect(destination?.textContent).toContain('"" (container root)');
-  input("prefix/ (optional)", "   ");
+  input("folder path/ (optional)", "   ");
   expect(destination?.textContent).toContain('"   "');
   expect(destination?.textContent).not.toContain("container root");
 });
@@ -126,7 +126,7 @@ it("shows exact source and destination scope, distinguishing spaces from root", 
 it("keeps scope markup as literal text", () => {
   show();
   input("container", '<img src=x onerror="bad()">');
-  input("prefix/ (optional)", "<script>bad()</script>/");
+  input("folder path/ (optional)", "<script>bad()</script>/");
   const destination = document.querySelector('[aria-label="Destination scope"]');
   expect(destination).not.toBeNull();
   expect(destination?.textContent).toContain(JSON.stringify('<img src=x onerror="bad()">'));
@@ -136,10 +136,10 @@ it("keeps scope markup as literal text", () => {
 
 it("disarms a prepared request when only prefix whitespace changes", async () => {
   const f = show();
-  input("prefix/ (optional)", "scope/");
+  input("folder path/ (optional)", "scope/");
   button("Preview").click();
   await vi.waitFor(() => expect(button("Start copy").disabled).toBe(false));
-  input("prefix/ (optional)", " scope/");
+  input("folder path/ (optional)", " scope/");
   expect(button("Start copy").disabled).toBe(true);
   button("Start copy").dispatchEvent(new MouseEvent("click", { bubbles: true }));
   expect(f.start).not.toHaveBeenCalled();
@@ -157,10 +157,10 @@ it("does not publish an old prefix error into the replacement scope", async () =
   const f = show();
   let reject!: (reason: Error) => void;
   f.plan.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
-  input("prefix/ (optional)", "   ");
+  input("folder path/ (optional)", "   ");
   button("Preview").click();
   await vi.waitFor(() => expect(f.plan).toHaveBeenCalledOnce());
-  input("prefix/ (optional)", "valid/");
+  input("folder path/ (optional)", "valid/");
   button("Preview").click();
   await vi.waitFor(() => expect(button("Start copy").disabled).toBe(false));
   reject(new Error("old space prefix refused"));

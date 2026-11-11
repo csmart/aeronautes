@@ -345,7 +345,7 @@ describe.each(["copy", "delete"] as const)("%s preview binding", (kind) => {
 const copyInputs = [
   { name: "destination bookmark", selector: ".fields select", value: "destination", original: "source" },
   { name: "destination container", selector: 'input[placeholder="container"]', value: "elsewhere", original: "backup" },
-  { name: "destination prefix", selector: 'input[placeholder="prefix/ (optional)"]', value: "elsewhere/", original: "" },
+  { name: "destination prefix", selector: 'input[placeholder="folder path/ (optional)"]', value: "elsewhere/", original: "" },
   { name: "profile", selector: ".advanced select", value: "custom", original: "auto" },
   { name: "chunk size", selector: 'input[placeholder="5Gi (default)"]', value: "2Mi", original: "" },
   { name: "transfers", selector: 'input[placeholder="4 (default)"]', value: "2", original: "" },
