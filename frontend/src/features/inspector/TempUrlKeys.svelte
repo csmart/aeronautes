@@ -99,10 +99,13 @@
 
 <section class="card" aria-label="TempURL keys">
   <h3 class="card-title">TempURL keys</h3>
-  <p class="teach">
-    Two slots sign temporary URLs. To rotate, set the other slot, move your signers to it, then clear this one.
-    Values are never shown: whoever sets a key is its only holder.
-  </p>
+  <p class="teach">Either key signs temporary URLs. Values are never shown.</p>
+  <details class="how">
+    <summary>How to rotate a key</summary>
+    <p class="teach">
+      Set the other slot, move your signers to it, then clear this one. Whoever sets a key is its only holder.
+    </p>
+  </details>
   {#each slotNames as slot (slot)}
     <div class="slot">
       <span class="type-mono name">{slot}</span>
@@ -317,5 +320,10 @@
   button:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  .how summary {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
   }
 </style>
