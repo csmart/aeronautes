@@ -165,16 +165,24 @@ func TestUploadAsksToPauseAtUnitHeadsOnly(t *testing.T) {
 		}
 		asked := 0
 		executed := map[string]copy.Result{}
+		// A cancel is a cancelled context: the route reads any other error
+		// from the hook as records it can no longer write.
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
 		recorder := &UploadRecorder{
 			Admit:   func(UploadAdmission) error { return nil },
 			Execute: func(item UploadItem, o copy.Observation) error { executed[item.Name] = o.Result; return nil },
 			Verify:  func(UploadItem, copy.Observation) error { return nil },
 			Pause: func(context.Context) error {
 				asked++
-				return pause(asked)
+				if err := pause(asked); err != nil {
+					cancel()
+					return err
+				}
+				return nil
 			},
 		}
-		report, runErr := Upload(t.Context(), s, &fsEngine{s}, "aeronautes_dst:media", "media", "live/", "pause-"+strings.Trim(under, "/"), preflight, nil, nil, recorder)
+		report, runErr := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "live/", "pause-"+strings.Trim(under, "/"), preflight, nil, nil, recorder)
 		return report, runErr, asked, executed
 	}
 
