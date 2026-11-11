@@ -3948,6 +3948,13 @@ regression test in the same commit):
    replace a source object the same run still reads, so the plan refuses it and names
    it. Every pass that plans the copy applies the same check. A destination equal to
    or inside the source stays refused, and Mirror refuses every nesting.
+   Two writes are not planned names and are bounded separately. The job's scratch
+   objects go under the destination prefix plus `.aeronautes/stage/`, so a copy whose
+   source scope holds that scratch area is refused. And an object named exactly the
+   source prefix, the folder's marker, has an empty relative name: copied to the top
+   of a container its destination name would be empty, which addresses the container
+   itself, so in any copy the plan leaves such an object with the originals and never
+   writes it.
 10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
     source absence immediately before deletion; any successful delete followed by
     failure/cancel yields Partial with exact accounting.
