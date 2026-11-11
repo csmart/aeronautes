@@ -241,13 +241,13 @@ it("counts only the independent Recent slice while Search is filtered and paged"
   recent.resolve([audit(300), audit(299)]);
   await refresh;
   flushSync();
-  expect(bar().textContent).toContain("2 last loaded recent changes");
+  expect(bar().textContent).toContain("2 recent changes");
   expect(resources()).toEqual(page().map((event) => event.resource));
   button("Load more…").click();
   await vi.waitFor(() => expect(browser.audit.moreLoading).toBe(false));
   flushSync();
   expect(resources()).toHaveLength(51);
-  expect(bar().textContent).toContain("2 last loaded recent changes");
+  expect(bar().textContent).toContain("2 recent changes");
   expect(bar().textContent).not.toContain("51 recent");
 });
 
@@ -278,7 +278,7 @@ it("reports Recent unavailable in the collapsed summary and retries only the rea
   button("Retry recent changes").click();
   await vi.waitFor(() => expect(browser.audit.recentLoading).toBe(false));
   flushSync();
-  expect(bar().textContent).toContain("0 last loaded recent changes");
+  expect(bar().textContent).toContain("0 recent changes");
   expect(browser.audit.recentError).toBe(false);
   expect(api.auditRecent).toHaveBeenCalledTimes(2);
   expect(api.auditRecent).toHaveBeenLastCalledWith(50, "source");
