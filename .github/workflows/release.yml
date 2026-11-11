@@ -204,3 +204,30 @@ jobs:
         with:
           name: windows-${{ matrix.arch }}-unsigned
           path: dist/*
+
+  # A tag drafts the GitHub release with the Linux packages, the supported
+  # platform (finish line decision 1); the macOS and Windows builds stay
+  # workflow artifacts. The draft is checked and published by hand, and the
+  # release notes come from docs/releases/<tag>.md, so a tag without notes
+  # publishes nothing.
+  publish:
+    if: github.ref_type == 'tag'
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: linux-*-unsigned
+          path: dist
+          merge-multiple: true
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l dist
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Aeronautes $TAG" --notes-file "docs/releases/$TAG.md" dist/*
