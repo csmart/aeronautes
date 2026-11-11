@@ -672,8 +672,8 @@ export interface DeleteRequestDTO {
     "mode": DeleteMode;
 
     /**
-     * Confirm must equal the container name (typed confirmation, §28.2);
-     * checked at Start, not Preview.
+     * Confirm must equal deleteConfirmation's text (typed confirmation,
+     * §28.2); checked at Start, not Preview.
      */
     "confirm": string;
 }
