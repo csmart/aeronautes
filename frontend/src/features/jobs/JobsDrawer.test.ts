@@ -384,6 +384,8 @@ it("shows the whole error in the details and copies the job's details", async ()
   document.querySelector<HTMLButtonElement>(`[aria-label="Item details for job ${job.id}"]`)!.click();
   flushSync();
   expect(document.querySelector(".full-error")?.textContent).toBe(job.error);
+  // Open details replace the one-line error rather than repeat it.
+  expect(document.querySelector("p.error.one-line")).toBeNull();
   [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy details")!.click();
   await vi.waitFor(() => expect(document.querySelector(".copy-details [role=status]")?.textContent).toBe("Copied."));
   const text = copy.mock.calls[0][0];
