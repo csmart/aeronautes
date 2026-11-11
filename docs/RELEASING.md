@@ -73,8 +73,11 @@ candidate and recorded its results.
 2. `scripts/smoke.sh` passes headless — CI runs it on every push/PR too.
 3. The operator runs the 0.1.0 test plan against the candidate build and
    records the results; a failed step blocks the tag.
-4. Tag `vX.Y.Z` and push; CI produces the six unsigned artifacts.
-5. The §57.4 smoke against real SwiftStack infrastructure is a manual
+4. Write the release notes as `docs/releases/vX.Y.Z.md` on that commit, then tag `vX.Y.Z` and push the tag.
+   CI builds the six unsigned artifacts, and its `publish` job drafts a GitHub release titled with the tag, carrying the Linux rpm, deb and tarball for both architectures with their provenance files, and the notes.
+   macOS and Windows builds stay workflow artifacts: they are development builds without acceptance (finish line decision 1).
+5. Check the draft: every file is present, and each file's SHA256 matches its provenance record; then publish it.
+6. The §57.4 smoke against real SwiftStack infrastructure is a manual
    owner step before announcing anything; for 0.1.0 it is step 6 of the
    test plan.
 
