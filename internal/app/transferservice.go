@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"net/url"
 	"strings"
 	"sync"
@@ -187,19 +188,50 @@ func describeOverlap(container, source, dest string, sameAccount bool) string {
 		}
 		return fmt.Sprintf("prefix %q of container %q", prefix, container)
 	}
-	var how string
-	switch {
-	case source == dest:
-		how = "both are " + scope(source)
-	case strings.HasPrefix(dest, source):
+	how := "both are " + scope(source)
+	if dest != source {
 		how = fmt.Sprintf("the destination, %s, is inside the source, %s", scope(dest), scope(source))
-	default:
-		how = fmt.Sprintf("the source, %s, is inside the destination, %s", scope(source), scope(dest))
 	}
 	if sameAccount {
 		return how + ", in the same account"
 	}
 	return how + ", and the two bookmarks cannot be shown to be different accounts"
+}
+
+// sharesNamespace reports whether a copy's source and destination may be one
+// container of one account, where the nesting of their prefixes matters.
+// Identity is the ACCOUNT, compared fail-closed: aliases, VIPs and DNS names
+// for one account defeat a host-string compare (review R-04), so only
+// different authoritative account identifiers prove two accounts distinct.
+func sharesNamespace(req CopyRequestDTO, src, dst *swiftcontrol.Session) bool {
+	return req.SourceContainer == req.DestContainer && !provenDistinctAccounts(src.StorageURL(), dst.StorageURL())
+}
+
+// sourceObjects lists a copy's source scope for planning. In a copy into a
+// parent folder of its own source (DESIGN §65.9 item 9) the listing ends with
+// a refusal at the first source name whose destination name lands back inside
+// the source folder, such as files/files/a copied up to files/a: writing it
+// could replace a source object the same run still reads. Every planning pass
+// lists through here, so the passes cannot disagree.
+func sourceObjects(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) iter.Seq2[swiftcontrol.ListingEntry, error] {
+	rows := src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix})
+	if !sharesNamespace(req, src, dst) {
+		return rows
+	}
+	return func(yield func(swiftcontrol.ListingEntry, error) bool) {
+		for row, err := range rows {
+			if object, ok := row.(swiftcontrol.ObjectEntry); ok && err == nil {
+				target := req.DestPrefix + strings.TrimPrefix(object.Name, req.SourcePrefix)
+				if strings.HasPrefix(target, req.SourcePrefix) {
+					yield(nil, fmt.Errorf("the copy would write %q back inside the source folder %q, where it could replace a source object the copy still reads; copy to a folder outside the source, or to another container", target, req.SourcePrefix))
+					return
+				}
+			}
+			if !yield(row, err) {
+				return
+			}
+		}
+	}
 }
 
 // resolve opens both sessions and fail-fast checks the destination
@@ -216,21 +248,25 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("destination: %w", err)
 	}
-	// Overlapping scopes in ONE namespace are refused outright (C-03):
-	// nested prefixes make a mirror delete its own source or ingest its
-	// own output. Identity is the ACCOUNT, compared FAIL-CLOSED: when
-	// the two containers+nested-prefixes overlap and account distinctness
-	// is not PROVEN (aliases, VIPs, and DNS names for one account defeat
-	// a host-string compare — review R-04), refuse. Two accounts prove
-	// distinct only by different authoritative account identifiers in
-	// the resolved storage URL.
-	if req.SourceContainer == req.DestContainer &&
-		(strings.HasPrefix(req.SourcePrefix, req.DestPrefix) || strings.HasPrefix(req.DestPrefix, req.SourcePrefix)) &&
-		!provenDistinctAccounts(src.StorageURL(), dst.StorageURL()) {
+	// A destination equal to or inside the source in ONE namespace is
+	// refused outright (C-03, DESIGN §65.9 item 9): every name the copy
+	// writes would land in the scope it reads. A copy into a parent folder
+	// of its source is allowed, and sourceObjects refuses any one name that
+	// would land back inside the source. Mirror refuses every nesting on
+	// its own, as it refuses every start (ADR 0020).
+	if sharesNamespace(req, src, dst) && strings.HasPrefix(req.DestPrefix, req.SourcePrefix) {
 		sameAccount := swiftcontrol.AccountIdentity(src.StorageURL()) == swiftcontrol.AccountIdentity(dst.StorageURL())
 		return nil, nil, false, fmt.Errorf(
-			"the source and destination overlap: %s, so a copy could copy its own output; choose another container, or a destination prefix that neither contains the source nor sits inside it",
+			"the source and destination overlap: %s, so the copy could copy its own output; choose another container, or a destination folder outside the source folder",
 			describeOverlap(req.SourceContainer, req.SourcePrefix, req.DestPrefix, sameAccount))
+	}
+	// The job's scratch objects go under the destination prefix and are not
+	// planned names, so a source scope holding that area could have a source
+	// object replaced by one (DESIGN §65.9 item 9).
+	if scratch := req.DestPrefix + rclone.StageNamespace; sharesNamespace(req, src, dst) && strings.HasPrefix(scratch, req.SourcePrefix) {
+		return nil, nil, false, fmt.Errorf(
+			"the source folder %q holds this copy's working area %q; copy a folder outside it, or to another container",
+			req.SourcePrefix, scratch)
 	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
 	if err != nil {
@@ -262,7 +298,7 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 	largeConservative := false
 	var overwriteBytes int64
 	summary, err := plan.Copy(ctx,
-		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+		sourceObjects(ctx, req, src, dst),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Reason == plan.ReasonLargeObject || item.Reason == plan.ReasonPossibleManifest {
@@ -467,7 +503,7 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 	// candidates to ask about.
 	var candidates []string
 	if _, err := plan.Copy(ctx,
-		src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+		sourceObjects(ctx, req, src, dst),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
@@ -791,7 +827,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}()
 		seen := map[string]struct{}{}
 		_, planErr = plan.Copy(ctx,
-			src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+			sourceObjects(ctx, req, src, dst),
 			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 			req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 				// A destination-only name is ignored by the executor, so spooling
@@ -821,7 +857,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}
 	} else {
 		_, planErr = plan.Copy(ctx,
-			src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+			sourceObjects(ctx, req, src, dst),
 			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 			req.SourcePrefix, req.DestPrefix, planned)
 	}

@@ -1028,9 +1028,11 @@ func TestCrashSweepCommitBoundary(t *testing.T) {
 func TestOverlappingScopesRefused(t *testing.T) {
 	// The review-wave C-03 pair: src a/z/ → dst a/ (deterministic
 	// source self-deletion under Mirror) and src a/ → dst a/z/
-	// (recursive output ingestion) both refuse at resolve time, for
-	// Copy preview, Copy start, and Mirror alike — even when the two
-	// bookmark IDs differ but resolve to the same account.
+	// (recursive output ingestion). A destination equal to or inside the
+	// source refuses at resolve time for Copy preview and start, even when
+	// the two bookmark IDs differ but resolve to the same account. A Copy
+	// into the source's parent is allowed (DESIGN §65.9 item 9, amended);
+	// Mirror refuses every nesting.
 	h := newHarness(t)
 	ctx := context.Background()
 	h.connect(t)
@@ -1039,7 +1041,6 @@ func TestOverlappingScopesRefused(t *testing.T) {
 	seedObject(h.mock, "media", "a/z/file", "payload", nil)
 
 	cases := []struct{ srcPrefix, dstPrefix string }{
-		{"a/z/", "a/"},
 		{"a/", "a/z/"},
 		{"a/", "a/"},
 		{"", "a/"},
@@ -1069,10 +1070,33 @@ func TestOverlappingScopesRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := h.transfer.PlanCopy(ctx, CopyRequestDTO{
-		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "a/z/",
-		DestBookmarkID: twin.ID, DestContainer: "media", DestPrefix: "a/",
+		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "a/",
+		DestBookmarkID: twin.ID, DestContainer: "media", DestPrefix: "a/z/",
 	}); err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Errorf("dual-bookmark same-account overlap = %v, want refusal", err)
+	}
+
+	// A source folder that holds the copy's working area is refused: the
+	// job's scratch objects are not planned names.
+	for _, source := range []string{".aeronautes/", ".aeronautes/stage/"} {
+		if _, err := h.transfer.PlanCopy(ctx, CopyRequestDTO{
+			SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: source,
+			DestBookmarkID: bookmark, DestContainer: "media",
+		}); err == nil || !strings.Contains(err.Error(), "working area") {
+			t.Errorf("PlanCopy %q to the top = %v, want a working-area refusal", source, err)
+		}
+	}
+
+	// A copy up into the source's parent plans, and Mirror still refuses it.
+	up := CopyRequestDTO{
+		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "a/z/",
+		DestBookmarkID: bookmark, DestContainer: "media", DestPrefix: "a/",
+	}
+	if _, err := h.transfer.PlanCopy(ctx, up); err != nil {
+		t.Errorf("copy up a/z/ → a/ refused: %v", err)
+	}
+	if _, err := h.transfer.StartMirror(ctx, MirrorRequestDTO{CopyRequestDTO: up, Confirm: "media"}); err == nil {
+		t.Error("StartMirror a/z/ → a/ accepted")
 	}
 
 	// Disjoint prefixes in one container stay allowed.
@@ -1219,11 +1243,67 @@ func TestDescribeOverlap(t *testing.T) {
 	}{
 		{"", "", true, `both are the whole of container "testing", in the same account`},
 		{"a/", "a/b/", true, `the destination, prefix "a/b/" of container "testing", is inside the source, prefix "a/" of container "testing", in the same account`},
-		{"a/b/", "", false, `the source, prefix "a/b/" of container "testing", is inside the destination, the whole of container "testing", and the two bookmarks cannot be shown to be different accounts`},
+		{"", "a/", false, `the destination, prefix "a/" of container "testing", is inside the source, the whole of container "testing", and the two bookmarks cannot be shown to be different accounts`},
 	}
 	for _, c := range cases {
 		if got := describeOverlap("testing", c.source, c.dest, c.same); got != c.want {
 			t.Errorf("describeOverlap(%q, %q, %v) = %q, want %q", c.source, c.dest, c.same, got, c.want)
 		}
+	}
+}
+
+// A copy from a folder up to the top of its own container lands the objects
+// at the top and leaves the sources; one source name that would land back
+// inside the source folder refuses the copy before anything is written
+// (DESIGN §65.9 item 9, 0.5.0 test run).
+func TestCopyUpIntoTheSourceParent(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.connect(t)
+	h.installEngine(nil)
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+	h.mock.AddContainer("media", "standard")
+	// The folder's marker, as a folder made in the application has: it must
+	// stay in files/ and never be written to the empty name at the top.
+	seedObject(h.mock, "media", "files/", "", nil)
+	seedObject(h.mock, "media", "files/one.txt", "first object", nil)
+	seedObject(h.mock, "media", "files/two.txt", "second", nil)
+	req := CopyRequestDTO{
+		SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "files/",
+		DestBookmarkID: bookmark, DestContainer: "media", DestPrefix: "",
+	}
+	preview, err := h.transfer.PlanCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Summary.New != 2 {
+		t.Fatalf("preview = %+v, want 2 new", preview.Summary)
+	}
+	jobID, err := h.transfer.StartCopy(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" || job.Counters.ObjectsCopied != 2 {
+		t.Fatalf("job = %+v", job)
+	}
+	session := h.transfer.connections.sessions[bookmark].session
+	for name, payload := range map[string]string{"one.txt": "first object", "two.txt": "second", "files/one.txt": "first object", "files/two.txt": "second"} {
+		d, err := session.ObjectDetail(ctx, "media", name)
+		if err != nil || d.ContentLength != int64(len(payload)) {
+			t.Errorf("%s after the copy: %+v, %v", name, d, err)
+		}
+	}
+
+	seedObject(h.mock, "media", "files/files/inner.txt", "nested", nil)
+	if _, err := h.transfer.PlanCopy(ctx, req); err == nil || !strings.Contains(err.Error(), `would write "files/inner.txt" back inside the source folder "files/"`) {
+		t.Errorf("PlanCopy with a name landing back in the source = %v", err)
+	}
+	if jobID, err := h.transfer.StartCopy(ctx, req); err == nil {
+		if job := awaitTerminal(t, h, jobID); job.State != "failed" || !strings.Contains(job.Error, "back inside the source folder") {
+			t.Errorf("StartCopy with a name landing back in the source: job = %+v", job)
+		}
+	}
+	if _, err := session.ObjectDetail(ctx, "media", "files/inner.txt"); err == nil {
+		t.Error("files/inner.txt was written inside the source folder")
 	}
 }
