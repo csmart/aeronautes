@@ -67,7 +67,7 @@ it.each(deleteTypes.flatMap((type) => [
   { type, state: "running" }, { type, state: "partial" },
 ]))("uses settled-member wording without copied bytes for $type $state", async ({ type, state }) => {
   const { row } = await show(job(type, state));
-  expect(text(row, ".counts")).toBe("3/10 members settled");
+  expect(text(row, ".counts")).toBe("3/10 processed");
   expect(text(row, ".counts")).not.toContain("24 B");
   expect(text(row, ".badge")).toBe(state);
   if (state === "running") {
@@ -82,7 +82,7 @@ it.each(deleteTypes.flatMap((type) => [
 
 it("counts a selected-set deletion's settled members apart from its deletions", async () => {
   const { row } = await show(job("delete_selected", "running", { objectsDeleted: 2 }));
-  expect(text(row, ".counts")).toBe("3/10 members settled · 2 deleted");
+  expect(text(row, ".counts")).toBe("3/10 processed · 2 deleted");
   expect(text(row, ".counts")).not.toContain("reported deleted");
   expect(row.querySelector(".progress")?.getAttribute("style")).toContain("30%");
 });
@@ -106,14 +106,14 @@ it.each([
 it.each(deleteTypes)("keeps %s reported progress distinct from a retained deletion suffix", async (type) => {
   const { row } = await show(job(type, "running", { objectsDeleted: 7 }));
   expect(row.querySelector(".progress")?.getAttribute("style")).toContain("30%");
-  expect(text(row, ".counts")).toBe("3/10 members settled · 7 deleted");
+  expect(text(row, ".counts")).toBe("3/10 processed · 7 deleted");
   expect(text(row, ".counts")).not.toMatch(/(?:7|10)\/10/);
 });
 
 it.each([
-  { planned: 0, copied: 3, expected: "3 members settled", progress: null },
-  { planned: -1, copied: 0, expected: "0 members settled", progress: null },
-  { planned: 10, copied: 0, expected: "0/10 members settled", progress: "0%" },
+  { planned: 0, copied: 3, expected: "3 processed", progress: null },
+  { planned: -1, copied: 0, expected: "0 processed", progress: null },
+  { planned: 10, copied: 0, expected: "0/10 processed", progress: "0%" },
 ])("preserves zero counts and optional planned totals ($planned planned, $copied reported)", async ({ planned, copied, expected, progress }) => {
   const { row } = await show(job("delete_prefix", "running", { objectsPlanned: planned, objectsCopied: copied }));
   expect(text(row, ".counts")).toBe(expected);
@@ -261,4 +261,22 @@ it.each(["running", "complete"])("keeps unknown rate and later rate/ETA qualific
     expect(row.querySelector(".rerun")).not.toBeNull();
     expect(row.querySelector(".progress")).toBeNull();
   }
+});
+
+// The accounts column names the bookmarks a job touched and nothing for a
+// side that has none, such as a local folder; the operator found "… → name"
+// clunky in the 0.5.0 test run.
+it.each([
+  { source: "", dest: "b", expected: "Beta" },
+  { source: "a", dest: "", expected: "Alpha" },
+  { source: "a", dest: "b", expected: "Alpha → Beta" },
+  { source: "a", dest: "a", expected: "Alpha" },
+])("names the accounts $source → $dest as $expected", async ({ source, dest, expected }) => {
+  const { browser, row } = await show({ ...job("upload", "complete"), sourceBookmarkId: source, destBookmarkId: dest });
+  const named = (id: string, displayName: string) => ({ id, displayName, authUrl: "https://swift.invalid/auth/v1.0", username: "u",
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system",
+    caPem: "", hasCa: false, hasCredential: true });
+  browser.bookmarks = [named("a", "Alpha"), named("b", "Beta")];
+  flushSync();
+  expect(text(row, ".accounts")).toBe(expected);
 });

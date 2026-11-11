@@ -335,6 +335,14 @@
   const bookmarkName = (id: string) =>
     browser.bookmarks.find((b) => b.id === id)?.displayName ?? "…";
 
+  // The bookmarks a job touched, by name: one for an upload, a download or a
+  // deletion, both for a copy between two. A side with no bookmark, such as a
+  // local folder, is left out rather than drawn as an ellipsis.
+  function accountsOf(job: JobDTO): string {
+    const ids = [...new Set([job.sourceBookmarkId, job.destBookmarkId].filter((id) => id !== ""))];
+    return ids.map(bookmarkName).join(" → ");
+  }
+
   const auditBookmarks = $derived.by(() => {
     const ids = new Set(browser.bookmarks.map((b) => b.id));
     for (const event of browser.audit.events) {
@@ -584,9 +592,7 @@
                 <span class="route type-mono" title="{job.source} → {job.destination}">
                   {job.source} → {job.destination}
                 </span>
-                <span class="accounts">
-                  {bookmarkName(job.sourceBookmarkId)} → {bookmarkName(job.destBookmarkId)}
-                </span>
+                <span class="accounts">{accountsOf(job)}</span>
                 <span class="counts">
                   {#if job.counters.deletionAccountingIncomplete}
                     Last confirmed progress: {job.counters.objectsCopied} processed · {job.counters.objectsFailed} reported failures
@@ -594,7 +600,7 @@
                     {job.counters.objectsCopied}{#if job.counters.objectsPlanned > 0}/{job.counters
                         .objectsPlanned}{/if}
                     {#if isDeletionFamily(job.type)}
-                      members settled
+                      processed
                     {:else}
                       obj · {formatBytes(job.counters.bytesCopied)}
                     {/if}
@@ -968,7 +974,8 @@
 
   .job {
     display: grid;
-    grid-template-columns: 6.5rem minmax(10rem, 1.4fr) minmax(7rem, 1fr) minmax(10rem, 1.2fr) auto auto;
+    /* Fixed outer columns keep every row's columns aligned; each row is its own grid. */
+    grid-template-columns: 12rem minmax(10rem, 1.4fr) minmax(7rem, 1fr) minmax(10rem, 1.2fr) 10rem 10rem;
     gap: var(--space-2);
     align-items: baseline;
     padding: 2px var(--space-2);
@@ -981,9 +988,11 @@
     background: var(--color-bg-card);
   }
 
+  /* The state sits beside the operation, so a row reads on one line. */
   .operation-state {
-    display: grid;
-    gap: var(--space-1);
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
     min-width: 0;
     align-self: start;
   }

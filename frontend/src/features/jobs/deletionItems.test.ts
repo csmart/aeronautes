@@ -98,5 +98,5 @@ it("shows each member's outcome and what its verifying read observed", async () 
   expect(total("Unverified deletions")).toBe("1");
   expect(total("Unverified copies")).toBeUndefined();
   expect(document.querySelector(".job .operation")?.textContent).toBe("Delete selected");
-  expect(document.querySelector(".job .counts")?.textContent?.replace(/\s+/g, " ").trim()).toBe("7/8 members settled · 2 deleted");
+  expect(document.querySelector(".job .counts")?.textContent?.replace(/\s+/g, " ").trim()).toBe("7/8 processed · 2 deleted");
 });
