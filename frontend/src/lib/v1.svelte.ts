@@ -39,6 +39,10 @@ export const v1Offers = $state({
   manifestDelete: true,
   objectDelete: true,
   benchmark: false,
+  // Mirror refuses every start (ADR 0020); its comparison preview alone read
+  // as broken, so by the operator's decision of 11 November 2026 the copy
+  // dialog offers no Mirror tab until Mirror can run.
+  mirrorPreview: false,
   rerun: true,
   download: true,
 });
