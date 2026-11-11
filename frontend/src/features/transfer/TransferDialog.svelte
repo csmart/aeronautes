@@ -277,7 +277,7 @@
       </div>
     </div>
 
-    <JobSettingsFields bind:settings={jobSettings} onchange={invalidate} />
+    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} onchange={invalidate} />
 
     {#if error}
       <p class="error" role="alert">{error}</p>

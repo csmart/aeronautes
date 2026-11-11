@@ -2,13 +2,34 @@
   profile and the typed overrides. A download segments nothing, so it
   leaves the chunk size out. -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { JobSettingsInput } from "./jobSettings";
 
   let {
     settings = $bindable(),
+    defaultProfile,
     chunk = true,
     onchange,
-  }: { settings: JobSettingsInput; chunk?: boolean; onchange: () => void } = $props();
+  }: { settings: JobSettingsInput; defaultProfile: string | undefined; chunk?: boolean; onchange: () => void } = $props();
+
+  // A dialog can open before the application settings have been read, so
+  // the saved default may arrive after the profile was seeded with Auto.
+  // It replaces the seed until the operator picks a profile themselves.
+  let profileChosen = false;
+  $effect(() => {
+    const saved = defaultProfile;
+    untrack(() => {
+      if (saved && !profileChosen && settings.profile !== saved) {
+        settings.profile = saved;
+        onchange();
+      }
+    });
+  });
+
+  function chooseProfile() {
+    profileChosen = true;
+    onchange();
+  }
 </script>
 
 <details class="advanced">
@@ -16,7 +37,7 @@
   <div class="advanced-fields num">
     <label>
       <span>Profile</span>
-      <select bind:value={settings.profile} onchange={onchange}>
+      <select bind:value={settings.profile} onchange={chooseProfile}>
         <option value="auto">Auto</option>
         <option value="balanced">Balanced</option>
         <option value="aggressive">Aggressive</option>

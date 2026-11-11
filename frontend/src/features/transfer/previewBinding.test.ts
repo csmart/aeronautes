@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { BookmarkDTO, ContainerSettingsDTO, CopyPlanDTO, DeletePreviewDTO } from "../../lib/api";
+import type { Api, AppSettingsDTO, BookmarkDTO, ContainerSettingsDTO, CopyPlanDTO, DeletePreviewDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import TransferDialog from "./TransferDialog.svelte";
@@ -53,7 +53,7 @@ function clickEvenIfDisabled(element: HTMLButtonElement) {
 }
 
 type Kind = "copy" | "delete";
-function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | null>) {
+function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | null>, adjust?: (api: Api, browser: BrowserState) => void) {
   const api = newFakeApi();
   const copies: ReturnType<typeof deferred<CopyPlanDTO>>[] = [];
   const deletes: ReturnType<typeof deferred<DeletePreviewDTO>>[] = [];
@@ -78,6 +78,7 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   });
   browser.bookmarks = [bookmark("source"), bookmark("destination")];
   if (factsLoader) browser.containerFacts = factsLoader;
+  adjust?.(api, browser);
   const root = document.createElement("div");
   document.body.append(root);
   const onClose = vi.fn();
@@ -417,6 +418,23 @@ it("Copy submits the complete previewed settings and both scopes", async () => {
   expect(f.api.planCopy).toHaveBeenCalledExactlyOnceWith(expected);
   expect(f.api.startCopy).toHaveBeenCalledExactlyOnceWith(expected);
   f.startReply.resolve("accepted-job"); await settle();
+});
+
+// The application's first settings read may still be running when the dialog
+// opens; the saved default profile must still reach the copy.
+it("Copy adopts the saved default profile when the settings arrive after it opened", async () => {
+  const settings = deferred<AppSettingsDTO>();
+  const saved = await newFakeApi().appSettings();
+  const f = show("copy", undefined, (api, browser) => {
+    api.appSettings = () => settings.promise;
+    void browser.settings.load();
+  });
+  const profile = f.root.querySelector<HTMLSelectElement>(".advanced select")!;
+  expect(profile.value).toBe("auto");
+  settings.resolve({ ...saved, defaultProfile: "aggressive" }); await settle();
+  expect(profile.value).toBe("aggressive");
+  f.preview(); await f.resolve();
+  expect(f.api.planCopy).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ profile: "aggressive" }));
 });
 
 it("the delete preview states the per-name request cost and the later-baseline rows", async () => {
