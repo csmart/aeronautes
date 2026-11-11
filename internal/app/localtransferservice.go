@@ -1122,7 +1122,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		Type:               jobs.TypeUpload,
 		ItemRecordsVersion: 1,
 		Settings:           effectiveJSONWithProfile(Profile(req.Profile), settings, origins),
-		Source:             fmt.Sprintf("%d local files", len(preflight.Items)),
+		Source:             fmt.Sprintf("%d local %s", len(preflight.Items), plural(len(preflight.Items), "file", "files")),
 		Destination:        req.Container + "/" + req.Prefix,
 		DestBookmarkID:     req.BookmarkID,
 		Engine:             "rclone+native",

@@ -948,7 +948,7 @@ export function newFakeApi(): Api {
         id,
         type: "upload",
         state: "running",
-        source: `${paths.length} local files`,
+        source: `${paths.length} local ${paths.length === 1 ? "file" : "files"}`,
         destination: `${req.container}/${req.prefix}`,
         sourceBookmarkId: "",
         destBookmarkId: req.bookmarkId,
