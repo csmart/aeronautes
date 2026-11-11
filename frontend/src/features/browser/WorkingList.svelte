@@ -157,7 +157,7 @@
       >
         {browser.countRunning ? "Stop counting" : "Count objects"}
       </button>
-      <span class="push"></span>
+      <span class="deletions">
       {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
         <button
           class="find danger"
@@ -177,6 +177,7 @@
           {browser.prefix === "" ? "Empty or delete container…" : "Delete prefix…"}
         </button>
       {/if}
+      </span>
     </div>
 
     {#if browser.prefixCount}
@@ -436,11 +437,14 @@
     width: var(--space-2);
   }
 
-  .actions .push {
-    flex: 1;
+  /* Pushed right, and kept right when the row wraps. */
+  .actions .deletions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
   }
 
-  .quiet {
+  .actions .quiet {
     color: var(--color-text-secondary);
     border-color: var(--color-border);
   }
