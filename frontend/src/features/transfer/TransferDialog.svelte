@@ -268,7 +268,7 @@
         <input
           class="type-mono"
           aria-label="Destination prefix"
-          placeholder="prefix/ (optional)"
+          placeholder="folder path/ (optional)"
           value={destPrefix}
           oninput={(e) => {
             destPrefix = e.currentTarget.value;
@@ -286,6 +286,15 @@
 
     {#if error}
       <p class="error callout danger" role="alert">{error}</p>
+    {/if}
+
+    {#if !preview && !startedJobId && mode === "copy"}
+      <!-- Start stays disabled until a preview exists, and nothing else on
+        the page says why. -->
+      <p class="next-step">
+        Preview first: it plans what will be copied and names anything it would replace, then Start copy is
+        ready.
+      </p>
     {/if}
 
     {#if preview}
@@ -597,5 +606,10 @@
     background: var(--color-accent);
     color: var(--color-bg);
     border-color: var(--color-accent);
+  }
+  .next-step {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
   }
 </style>
