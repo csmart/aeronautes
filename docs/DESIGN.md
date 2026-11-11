@@ -1565,7 +1565,7 @@ C                               C
 
 User-facing term: **Mirror**.
 
-**Current availability:** comparison preview only.
+**Current availability:** none in the release. The backend keeps the comparison preview, but by the operator's decision of 11 November 2026 the copy dialog offers no Mirror tab until Mirror can run.
 Every Mirror start is refused before authentication, job creation, transfer or deletion because the external-writer guarantee is unsupported (ADR 0020).
 The semantics below specify the eventual feature; P14 must establish and test the required concurrency boundary before execution is re-enabled.
 
@@ -2558,7 +2558,7 @@ Conceptual decision table:
 | Small marker PUT | Aeronautes Swift client |
 | Upload/download | rclone |
 | Swift→Swift Copy | rclone stages eligible new names; native conditional creation commits them. Changed existing destinations are refused before staging (§28.6, ADR 0020) |
-| Ordinary Mirror | Start is refused; comparison preview remains available. Re-enablement requires P14, and the eventual native delete boundary remains §28.6a (ADR 0020) |
+| Ordinary Mirror | Start is refused; the comparison preview is kept in the backend but not offered in the release's dialog. Re-enablement requires P14, and the eventual native delete boundary remains §28.6a (ADR 0020) |
 | Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
 | SLO delete | manifest-only default; +segments by explicit force with sharing risk disclosed (§34, ADR 0020) |
 | Recursive prefix delete | Aeronautes-native bulk/parallel delete; manifest-only (§28.6a) |
