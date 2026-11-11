@@ -500,3 +500,15 @@ it("Delete says to preview first until a preview exists", async () => {
   expect(f.root.querySelector(".next-step")).toBeNull();
   expect(f.root.querySelector(".confirm input")).not.toBeNull();
 });
+
+// The operator missed that Preview comes first: the highlight marks the next
+// step, Preview until a preview is shown, then the start.
+it.each(["copy", "delete"] as const)("%s highlights Preview, then the start", async (kind) => {
+  const f = show(kind);
+  const startClass = kind === "copy" ? "primary" : "danger";
+  expect(f.previewButton().classList.contains("primary")).toBe(true);
+  expect(f.startButton().classList.contains(startClass)).toBe(false);
+  f.preview(); await f.resolve();
+  expect(f.previewButton().classList.contains("primary")).toBe(false);
+  expect(f.startButton().classList.contains(startClass)).toBe(true);
+});

@@ -232,11 +232,13 @@
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
         <button onclick={close}>Close</button>
       {:else}
-        <button onclick={runPreview} disabled={!canPreview}>
+        <!-- The highlight marks the next step: Preview until a preview is
+          shown, then the deletion, which stays plain before it. -->
+        <button class:primary={!preview} onclick={runPreview} disabled={!canPreview}>
           {previewing ? "Counting…" : "Preview"}
         </button>
         <button
-          class="danger"
+          class:danger={!!preview}
           onclick={start}
           disabled={!canStart}
         >
@@ -388,6 +390,12 @@
   footer button:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+
+  footer .primary {
+    background: var(--color-accent);
+    color: var(--color-bg);
+    border-color: var(--color-accent);
   }
 
   footer .danger {

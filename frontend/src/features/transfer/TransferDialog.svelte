@@ -363,7 +363,9 @@
         <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
         <button class="primary" onclick={close}>Close</button>
       {:else}
-        <button onclick={(event) => runPreview(event.currentTarget)} disabled={!canPreview}>
+        <!-- The highlight marks the next step: Preview until a preview is
+          shown, then the start, which stays plain and disabled before it. -->
+        <button class:primary={!preview} onclick={(event) => runPreview(event.currentTarget)} disabled={!canPreview}>
           {previewing ? "Planning…" : "Preview"}
         </button>
         {#if mode === "copy"}
@@ -372,7 +374,7 @@
               Replace existing objects…
             </button>
           {/if}
-          <button class="primary" onclick={start} disabled={!preview || previewing || starting || closed}>
+          <button class:primary={!!preview} onclick={start} disabled={!preview || previewing || starting || closed}>
             {starting ? "Starting…" : "Start copy"}
           </button>
         {:else}
