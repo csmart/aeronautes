@@ -873,15 +873,18 @@ func TestExecutorAsksToPauseAtItemHeadsOnly(t *testing.T) {
 	rec := newOverwriteRecorder()
 	recorder := rec.recorder()
 	asked := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	recorder.Pause = func(context.Context) error {
 		asked++
 		if asked == 2 {
+			cancel()
 			return context.Canceled
 		}
 		return nil
 	}
 	e := recordingExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1}, recorder)
-	report, err := e.Run(context.Background(), items)
+	report, err := e.Run(ctx, items)
 	if !errors.Is(err, context.Canceled) || asked != 2 || report.Copied != 1 {
 		t.Fatalf("report = %+v, %v after %d asks; want the first item copied and the cancel at the second head", report, err, asked)
 	}

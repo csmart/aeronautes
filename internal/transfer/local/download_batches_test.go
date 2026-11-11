@@ -265,16 +265,23 @@ func TestDownloadAsksToPauseAtBatchHeadsOnly(t *testing.T) {
 	f, source := newBatchFixture(t, n+1)
 	engine := &batchCountingEngine{Engine: &fsEngine{session: source}}
 	asked := 0
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	f.recorder.Pause = func(context.Context) error {
 		asked++
 		if asked == 2 {
+			cancel()
 			return context.Canceled
 		}
 		return nil
 	}
-	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
+	report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
 	if !errors.Is(err, context.Canceled) || asked != 2 || len(engine.calls) != 1 || report.Done != int64(n) {
 		t.Fatalf("report = %+v, %v; asked %d times with %d children, want one batch placed and the cancel at the next head", report, err, asked, len(engine.calls))
+	}
+	// A cancel cleans the stage, where a lost record would have kept it.
+	if report.StageCleanup == nil || !report.StageCleanup.Attempted || report.StageCleanup.Retained {
+		t.Fatalf("stage cleanup = %+v, want the cancel's cleanup", report.StageCleanup)
 	}
 	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
 	f.expectExecute(t, n, n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
