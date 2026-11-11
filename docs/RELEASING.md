@@ -77,3 +77,5 @@ candidate and recorded its results.
 5. The §57.4 smoke against real SwiftStack infrastructure is a manual
    owner step before announcing anything; for 0.1.0 it is step 6 of the
    test plan.
+
+Every job of the release workflow builds with the current Go patch release, as CI tests with; `go.mod`'s `go` line is the language floor, not the build toolchain.
