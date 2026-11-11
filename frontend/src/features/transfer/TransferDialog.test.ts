@@ -1,8 +1,14 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import TransferDialog from "./TransferDialog.svelte";
+import { v1Offers } from "../../lib/v1.svelte";
+
+// These cases exercise the Mirror comparison the release does not offer
+// (v1Offers.mirrorPreview), so they turn it on for themselves.
+beforeEach(() => { v1Offers.mirrorPreview = true; });
+afterEach(() => { v1Offers.mirrorPreview = false; });
 
 let dialog: ReturnType<typeof mount> | null = null;
 
@@ -191,4 +197,17 @@ it("makes the fixture API refuse Mirror without manufacturing a job", async () =
     settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
   })).rejects.toThrow("Mirror is unavailable");
   expect(await api.jobs("", false, 50)).toEqual(before);
+});
+
+// Mirror refuses every start, so by the operator's decision of 11 November
+// 2026 the release's copy dialog offers no Mirror tab; its title says Copy.
+it("offers no Mirror tab while the release does not offer Mirror", () => {
+  v1Offers.mirrorPreview = false;
+  const browser = new BrowserState(newFakeApi());
+  const root = document.createElement("div");
+  document.body.append(root);
+  dialog = mount(TransferDialog, { target: root, props: { browser, onClose: () => {} } });
+  flushSync();
+  expect(root.querySelector('[role="tablist"]')).toBeNull();
+  expect(root.querySelector("h2")?.textContent).toBe("Copy");
 });

@@ -6,6 +6,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import { v1Offers } from "../../lib/v1.svelte";
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
 
@@ -198,6 +199,7 @@
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Transfer" tabindex="-1" use:trapFocus={close}>
     <header>
+      {#if v1Offers.mirrorPreview}
       <div class="modes" role="tablist">
         <button
           role="tab"
@@ -212,6 +214,9 @@
           onclick={() => changeMode("mirror")}>Mirror</button
         >
       </div>
+      {:else}
+        <h2 class="title">Copy</h2>
+      {/if}
       <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
 
@@ -410,6 +415,11 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  .title {
+    margin: 0;
+    font-size: var(--text-base);
   }
 
   .modes {

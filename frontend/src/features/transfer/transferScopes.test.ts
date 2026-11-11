@@ -1,8 +1,14 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import TransferDialog from "./TransferDialog.svelte";
+import { v1Offers } from "../../lib/v1.svelte";
+
+// These cases exercise the Mirror comparison the release does not offer
+// (v1Offers.mirrorPreview), so they turn it on for themselves.
+beforeEach(() => { v1Offers.mirrorPreview = true; });
+afterEach(() => { v1Offers.mirrorPreview = false; });
 
 let dialog: ReturnType<typeof mount> | null = null;
 
