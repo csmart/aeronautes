@@ -115,12 +115,18 @@ it("shows global and per-job retained records without changing a completed resul
   api.recoveryStatus = async () => ({ jobs: 7, records: 21 });
   show(new BrowserState(api));
   await vi.waitFor(() => expect(document.querySelector(".recovery")?.textContent)
-    .toMatch(/21 recovery records retained across\s+7 finished jobs in all accounts/));
+    .toMatch(/21 recovery records kept for\s+7 finished jobs in all accounts/));
+  expect(document.querySelector(".recovery")?.textContent).toMatch(/what\s+they track on the store is unchecked/);
+  // The row names its count as records, never a bare number beside the
+  // deleted or failed counts (ADR 0020), and its details give the sentence.
+  expect(document.querySelector(".counts .recovery-tag")?.textContent).toBe("3 recovery records");
+  document.querySelector<HTMLButtonElement>(`[aria-label="Item details for job ${job.id}"]`)!.click();
+  flushSync();
   expect(document.querySelector(".recovery-row")?.textContent)
-    .toContain("3 recovery records retained; remote residue is unverified");
+    .toContain("3 recovery records kept; what they track on the store is unchecked");
   expect(document.querySelector(".badge")?.textContent).toBe("complete");
   expect(document.body.textContent).toContain("Automatic recovery cleanup is unavailable");
-  expect(document.body.textContent).toMatch(/records, not\s+objects or failed transfers/);
+  expect(document.body.textContent).toMatch(/These count records, not objects, bytes, proven orphans or failed transfers/);
   expect([...document.querySelectorAll("button")].some((b) => /clear|reclaim|clean up/i.test(b.textContent ?? ""))).toBe(false);
 });
 
@@ -141,8 +147,7 @@ it("shows upload cleanup issues without inventing a failed transfer", async () =
   expect(document.querySelector("p.error")?.textContent).toBe(job.error);
   expect(document.querySelector(".counts")?.textContent).toMatch(/1\s*\/1/);
   expect(document.querySelector(".counts")?.textContent).not.toContain("failed");
-  expect(document.querySelector(".recovery-row")?.textContent)
-    .toContain("4 recovery records retained; remote residue is unverified");
+  expect(document.querySelector(".counts .recovery-tag")?.textContent).toBe("4 recovery records");
 });
 
 it("shows an unavailable read as unknown and refreshes through the drawer poll", async () => {
@@ -156,7 +161,7 @@ it("shows an unavailable read as unknown and refreshes through the drawer poll",
   expect(document.body.textContent).not.toContain("private SQLite detail");
   await vi.advanceTimersByTimeAsync(1500);
   await vi.waitFor(() => expect(document.querySelector(".recovery")?.textContent)
-    .toMatch(/4 recovery records retained across\s+2 finished jobs in all accounts/));
+    .toMatch(/4 recovery records kept for\s+2 finished jobs in all accounts/));
   expect(document.body.textContent).not.toContain("Retained counts are unknown");
 });
 
@@ -168,15 +173,15 @@ it("keeps the global notice when no recent jobs carry retained records", async (
   browser.jobs.bookmarkFilter = "another-account";
   show(browser);
   await vi.waitFor(() => expect(document.querySelector(".recovery")?.textContent)
-    .toMatch(/2 recovery records retained across\s+1 finished job in all accounts/));
+    .toMatch(/2 recovery records kept for\s+1 finished job in all accounts/));
   expect(document.body.textContent).toContain("No jobs in this view");
 });
 
 it("does not describe a successful zero-record read as verified remote cleanup", async () => {
   show(new BrowserState(newFakeApi()));
   await vi.waitFor(() => expect(document.querySelector(".recovery")?.textContent)
-    .toMatch(/0 recovery records retained across\s+0 finished jobs in all accounts/));
-  expect(document.body.textContent).toContain("Remote residue is unverified");
+    .toMatch(/0 recovery records kept for\s+0 finished jobs in all accounts/));
+  expect(document.querySelector(".recovery")?.textContent).toMatch(/what\s+they track on the store is unchecked/);
   expect(document.body.textContent).toContain("Automatic recovery cleanup is unavailable");
 });
 
@@ -360,4 +365,30 @@ it("opens on a revealed job and clears a filter that hides it", async () => {
   await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("running"));
   expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe("Jobs");
   expect(document.querySelector(`[aria-label="Item details for job started-job"]`)?.getAttribute("aria-expanded")).toBe("true");
+});
+
+// A failed job's error is one line in the row; its details hold the whole
+// text and "Copy details" puts everything the row shows on the clipboard.
+it("shows the whole error in the details and copies the job's details", async () => {
+  const api = newFakeApi();
+  const job = transferJob({
+    id: "failed-copy", type: "copy", state: "partial", source: "testing/", destination: "testing/",
+    settings: JSON.stringify({ transfers: 8 }),
+    error: "execution failed (example: files/test.file0: engine exit 1: HTTP Error: 502: 502 Bad Gateway)",
+  });
+  api.jobs = async () => [job];
+  const copy = vi.spyOn(api, "copyText");
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("partial"));
+  expect(document.querySelector("p.error.one-line")?.getAttribute("title")).toBe(job.error);
+  document.querySelector<HTMLButtonElement>(`[aria-label="Item details for job ${job.id}"]`)!.click();
+  flushSync();
+  expect(document.querySelector(".full-error")?.textContent).toBe(job.error);
+  [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy details")!.click();
+  await vi.waitFor(() => expect(document.querySelector(".copy-details [role=status]")?.textContent).toBe("Copied."));
+  const text = copy.mock.calls[0][0];
+  expect(text).toContain("(job failed-copy)");
+  expect(text).toContain("testing/ → testing/");
+  expect(text).toContain(`error: ${job.error}`);
+  expect(text).toMatch(/settings: .*transfers=8/);
 });
