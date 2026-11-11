@@ -208,7 +208,7 @@ func assertDesktopRefusesStarts(t *testing.T, find *app.FindService, deletion *a
 		t.Fatalf("actual Find remained open: id=%q err=%v", id, err)
 	}
 	if id, err := deletion.StartDelete(t.Context(), app.DeleteRequestDTO{
-		BookmarkID: "fixture", Container: "fixture", Prefix: "scope/", Mode: app.ModePrefix, Confirm: "fixture",
+		BookmarkID: "fixture", Container: "fixture", Prefix: "scope/", Mode: app.ModePrefix, Confirm: "fixture/scope/",
 	}); id != "" || err == nil || !strings.Contains(err.Error(), "shutdown") {
 		t.Fatalf("actual job admission remained open: id=%q err=%v", id, err)
 	}
