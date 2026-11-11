@@ -120,7 +120,7 @@ describe("browser keyboard ownership", () => {
   it.each(["input", "textarea", "editable descendant"])("leaves native editing keys with %s", async (kind) => {
     const f = await screen();
     let target: HTMLElement;
-    if (kind === "input") target = get('[placeholder="filter loaded rows…"]');
+    if (kind === "input") target = get('[placeholder="filter this list…"]');
     else if (kind === "textarea") { target = document.createElement("textarea"); f.root.append(target); }
     else {
       const editor = document.createElement("div"); editor.setAttribute("contenteditable", "true");
@@ -155,8 +155,8 @@ describe("browser keyboard ownership", () => {
     press(list, "ArrowDown"); await settle();
     expect(selected()).toMatch(/-row-1$/);
     press(list, "/");
-    expect(document.activeElement).toBe(get('[placeholder="server-side prefix…"]'));
-    const prefix = get<HTMLInputElement>('[placeholder="server-side prefix…"]');
+    expect(document.activeElement).toBe(get('[placeholder="folder path, e.g. logs/2026/"]'));
+    const prefix = get<HTMLInputElement>('[placeholder="folder path, e.g. logs/2026/"]');
     prefix.value = "path/"; prefix.dispatchEvent(new Event("change", { bubbles: true })); await settle();
     press(button("Find in container"), "Backspace"); await settle();
     expect(prefix.value).toBe("");
@@ -164,7 +164,7 @@ describe("browser keyboard ownership", () => {
 
   it("lets Alt+Up reach parent navigation from the working list", async () => {
     await screen();
-    const prefix = get<HTMLInputElement>('[placeholder="server-side prefix…"]');
+    const prefix = get<HTMLInputElement>('[placeholder="folder path, e.g. logs/2026/"]');
     prefix.value = "normal/"; prefix.dispatchEvent(new Event("change", { bubbles: true })); await settle();
     const list = get('[role="listbox"]'); list.focus();
     press(list, "ArrowUp", { altKey: true }); await settle();
@@ -223,7 +223,7 @@ describe("production modal ownership", () => {
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(document.activeElement).toBe(f.opener);
     expect(document.querySelector("[inert]")).toBeNull();
-    press(f.opener, "/"); expect(document.activeElement).toBe(get('[placeholder="server-side prefix…"]'));
+    press(f.opener, "/"); expect(document.activeElement).toBe(get('[placeholder="folder path, e.g. logs/2026/"]'));
     press(list, "ArrowDown"); await settle(); expect(selected()).not.toBe(before);
   });
 
@@ -362,7 +362,7 @@ describe("production modal ownership", () => {
     press(window, "Escape"); await settle();
     reply.resolve(await api.containerDetail("fixtures", "bm-1")); await settle();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(get<HTMLInputElement>('[placeholder="server-side prefix…"]').value).toBe("");
+    expect(get<HTMLInputElement>('[placeholder="folder path, e.g. logs/2026/"]').value).toBe("");
     expect(get(".crumb.root").textContent?.trim()).toBe("fixtures");
   });
 

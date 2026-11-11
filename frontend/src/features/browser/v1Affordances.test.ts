@@ -56,7 +56,7 @@ it("keeps download, upload, copy and bulk delete and withholds benchmark", async
   expect(shown).toContain("Copy to…");
   // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14): its scope
   // control ships like the other returns rather than waiting for the switch.
-  expect(shown).toContain("Delete scope…");
+  expect(shown).toContain("Empty or delete container…");
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   flushSync();
   expect(labels()).not.toContain("Benchmark…");
@@ -120,7 +120,7 @@ it("offers a switched-on capability and says it is unproven", async () => {
   expect(banner?.textContent).not.toContain("Copy");
   // Bulk delete is kept now too, so its scope control ships and is not called
   // unproven; the banner names only benchmark, which the operator turned on.
-  expect(shown).toContain("Delete scope…");
+  expect(shown).toContain("Empty or delete container…");
   expect(banner?.textContent).not.toContain("Bulk delete");
   // The benchmark control is the one this switch turns on; it lives in the
   // jobs drawer.

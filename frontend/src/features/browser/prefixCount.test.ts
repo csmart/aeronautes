@@ -80,7 +80,7 @@ describe("prefix count", () => {
       prefix.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); flushSync(); await settle();
     }
     // Navigating away drops the count from view; it never labels another prefix.
-    const input = get<HTMLInputElement>('input[placeholder="server-side prefix…"]');
+    const input = get<HTMLInputElement>('input[placeholder="folder path, e.g. logs/2026/"]');
     input.value = "photos/"; input.dispatchEvent(new Event("change", { bubbles: true })); flushSync(); await settle();
     expect(document.querySelector(".count-status")).toBeNull();
   }, 20_000);
