@@ -105,7 +105,7 @@
         </p>
       {/if}
       {#if op.error}
-        <p class="error" role="alert">{op.error}</p>
+        <p class="error callout danger" role="alert">{op.error}</p>
       {/if}
     </div>
     <div class="actions">

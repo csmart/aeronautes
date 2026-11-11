@@ -662,10 +662,10 @@
                   <p class="pause-note">{pauseNote(job)}</p>
                 {/if}
                 {#if job.error}
-                  <p class="error">{job.error}</p>
+                  <p class="error callout danger">{job.error}</p>
                 {/if}
                 {#if job.counters.deletionAccountingIncomplete}
-                  <p class="error">Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>
+                  <p class="error callout danger">Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>
                 {/if}
                 {#if !isActive(job) && job.recoveryRecords > 0}
                   <p class="recovery-row">

@@ -27,7 +27,7 @@
       {#if browser.credentialStatusLoading}
         <p>Checking recorded cleanup work…</p>
       {:else if browser.credentialStatusError || !browser.credentialStatus}
-        <p class="error">Cleanup status is unavailable. Refresh to try again.</p>
+        <p class="error callout danger">Cleanup status is unavailable. Refresh to try again.</p>
       {:else}
         {@const status = browser.credentialStatus}
         <dl class="num">

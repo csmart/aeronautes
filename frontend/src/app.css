@@ -40,3 +40,23 @@ textarea::placeholder {
 ::selection {
   background: var(--color-selection-bg);
 }
+
+/* Errors and warnings must stand out from instructions and hints, which
+   share their size: a tinted box with an edge in the colour of its kind. */
+.callout {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid currentColor;
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+}
+
+.callout.danger {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.callout.warning {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}

@@ -213,10 +213,10 @@
         {/if}
       {/if}
       {#if op.error}
-        <p class="error" role="alert">{op.error}</p>
+        <p class="error callout danger" role="alert">{op.error}</p>
       {/if}
       {#if segmentsError}
-        <p class="error" role="alert">{segmentsError}</p>
+        <p class="error callout danger" role="alert">{segmentsError}</p>
       {/if}
     </div>
     <div class="actions">
