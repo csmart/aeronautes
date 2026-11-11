@@ -172,3 +172,14 @@ it("does not publish an old prefix error into the replacement scope", async () =
   await vi.waitFor(() => expect(f.start).toHaveBeenCalledOnce());
   expect(f.start.mock.calls[0][0].destPrefix).toBe("valid/");
 });
+
+// "/" is a folder named "/", not the container's top: the dialog says so
+// and still allows it, because Swift allows such names (0.5.0 test run).
+it("warns that a destination folder path starting with a slash is not the top", () => {
+  show();
+  expect(document.querySelector(".slash-warning")).toBeNull();
+  input("folder path/ (optional)", "/");
+  expect(document.querySelector(".slash-warning")?.textContent).toContain("Leave it empty to copy to the top of the container");
+  input("folder path/ (optional)", "");
+  expect(document.querySelector(".slash-warning")).toBeNull();
+});

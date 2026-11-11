@@ -279,6 +279,15 @@
           <span>Container: {JSON.stringify(destContainer)}</span>
           <span>Prefix: {JSON.stringify(destPrefix)}{destPrefix === "" ? " (container root)" : ""}</span>
         </div>
+        {#if destPrefix.startsWith("/")}
+          <!-- Swift keeps the slash as part of each name, so "/" is a folder
+            named "/" rather than the container's top; operators expect the
+            latter (0.5.0 test run). Allowed, because such names are legal. -->
+          <p class="callout warning slash-warning">
+            A folder path starting with "/" makes names that start with a slash, under a folder named "/".
+            Leave it empty to copy to the top of the container.
+          </p>
+        {/if}
       </div>
     </div>
 
