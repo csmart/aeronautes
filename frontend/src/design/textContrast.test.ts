@@ -112,6 +112,8 @@ const pairs: Pair[] = [
 // Every current inset or semantic soft-fill rule has an explicit text owner.
 // A new surface must be inspected rather than silently escaping the inventory.
 const softSurfaces: [file: string, selector: string, foreground?: string][] = [
+  ["app.css", ".callout.danger"],
+  ["app.css", ".callout.warning"],
   ["BookmarkEditor.svelte", ".error"],
   ["BookmarkEditor.svelte", ".verified"],
   ["BookmarkEditor.svelte", ".warning"],

@@ -233,7 +233,7 @@
     </header>
 
     {#if error}
-      <p class="error" role="alert">{error}</p>
+      <p class="error callout danger" role="alert">{error}</p>
     {/if}
 
     {#if !report}
@@ -397,12 +397,6 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--color-text-secondary);
-  }
-
-  .error {
-    margin: 0;
-    font-size: var(--text-sm);
-    color: var(--color-danger);
   }
 
   .report {

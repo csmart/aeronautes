@@ -167,7 +167,7 @@ import { isLink } from "../browser/browserState.svelte";
 
     {#if browser.detailError}
       <section class="card">
-        <p class="error">HEAD failed: {browser.detailError}</p>
+        <p class="error callout danger">HEAD failed: {browser.detailError}</p>
       </section>
     {/if}
 
@@ -319,7 +319,7 @@ import { isLink } from "../browser/browserState.svelte";
     </header>
     <section class="card">
       {#if browser.detailError}
-        <p class="error">classification failed: {browser.detailError}</p>
+        <p class="error callout danger">classification failed: {browser.detailError}</p>
       {:else if pd?.markerBacked}
         <p class="teach">
           An explicit zero-byte <span class="type-mono">application/directory</span>
@@ -373,7 +373,7 @@ import { isLink } from "../browser/browserState.svelte";
           <p class="teach">No marker action: a real object occupies this name.</p>
         {/if}
         {#if markerError}
-          <p class="error">{markerError}</p>
+          <p class="error callout danger">{markerError}</p>
         {/if}
       </section>
     {/if}

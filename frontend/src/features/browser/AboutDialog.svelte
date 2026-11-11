@@ -25,7 +25,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     {#if error}
-      <p class="error">{error}</p>
+      <p class="error callout danger">{error}</p>
     {:else if about}
       <p class="line num">
         Version <span class="type-mono">{about.version}</span> · Wails

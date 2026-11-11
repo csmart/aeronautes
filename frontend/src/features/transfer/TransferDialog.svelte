@@ -280,7 +280,7 @@
     <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} onchange={invalidate} />
 
     {#if error}
-      <p class="error" role="alert">{error}</p>
+      <p class="error callout danger" role="alert">{error}</p>
     {/if}
 
     {#if preview}

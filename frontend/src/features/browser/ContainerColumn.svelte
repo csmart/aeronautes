@@ -152,7 +152,7 @@
     {:else if browser.containersLoading}
       <p class="disconnected" role="status">Listing…</p>
     {:else if browser.containersError}
-      <p class="error">{browser.containersError}</p>
+      <p class="error callout danger">{browser.containersError}</p>
     {:else}
       {#each browser.containerGroups.main as container (container.name)}
         {@render containerRow(container)}
@@ -173,7 +173,7 @@
         </p>
       {:else if browser.containersMarker !== ""}
         {#if browser.containersMoreError}
-          <p class="error" role="alert">Could not load more containers: {browser.containersMoreError}</p>
+          <p class="error callout danger" role="alert">Could not load more containers: {browser.containersMoreError}</p>
         {/if}
         <button
           class="load-more"
