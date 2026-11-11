@@ -12,7 +12,10 @@
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
-  const hasPrefix = $derived(browser.prefix !== "");
+  // The selected folder when one is selected alone, otherwise the folder
+  // being browsed (ADR 0095 decision 7).
+  const targetPrefix = $derived(browser.selectedPrefix || browser.prefix);
+  const hasPrefix = $derived(targetPrefix !== "");
   // The values are the generated enum's own, so a mode the bridge renames
   // fails to compile here instead of being sent as a name it no longer knows.
   type Mode = Exclude<`${DeleteRequestDTO["mode"]}`, "">;
@@ -56,7 +59,7 @@
     return {
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
-      prefix: mode === "prefix" ? browser.prefix : "",
+      prefix: mode === "prefix" ? targetPrefix : "",
       mode: mode as DeleteRequestDTO["mode"],
       confirm: "",
     };
@@ -166,7 +169,7 @@
         <label class="mode">
           <input type="radio" name="delete-scope" value="prefix" bind:group={mode} onchange={invalidate} />
           <span>
-            Delete prefix <span class="type-mono">{browser.containerName}/{browser.prefix}</span>
+            Delete prefix <span class="type-mono">{browser.containerName}/{targetPrefix}</span>
           </span>
         </label>
       {/if}
