@@ -399,7 +399,7 @@ describe("mutation identity binding (review-wave C-04)", () => {
 describe("refreshing the open listing", () => {
   const settings = { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "", bufferSize: "" };
   const upload = (bookmarkId: string, container: string) => ({
-    bookmarkId, container, prefix: "", selectionToken: "fake-selection", settings, acknowledgeOverwrite: false,
+    bookmarkId, container, prefix: "", selectionToken: "fake-selection", profile: "", settings, acknowledgeOverwrite: false,
   });
 
   it("re-reads the current prefix in place and keeps the filter and the selection", async () => {

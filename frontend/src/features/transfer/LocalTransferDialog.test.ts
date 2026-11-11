@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { DownloadPreflightView, PickedDirDTO, PickedFilesDTO, UploadPreflight } from "../../lib/api";
+import type { Api, AppSettingsDTO, DownloadPreflightView, PickedDirDTO, PickedFilesDTO, UploadPreflight } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import LocalTransferDialog from "./LocalTransferDialog.svelte";
@@ -25,7 +25,7 @@ afterEach(async () => {
 
 type Mode = "upload" | "download";
 type Stage = "picker" | "preflight" | "ready";
-function show(mode: Mode) {
+function show(mode: Mode, adjust?: (api: Api, browser: BrowserState) => void) {
   const api = newFakeApi();
   const files: ReturnType<typeof deferred<PickedFilesDTO | null>>[] = [];
   const dirs: ReturnType<typeof deferred<PickedDirDTO | null>>[] = [];
@@ -46,6 +46,7 @@ function show(mode: Mode) {
   browser.containerName = "media";
   browser.prefix = "selected/";
   browser.localTransfer = mode;
+  adjust?.(api, browser);
   const root = document.createElement("div"); document.body.append(root);
   const onClose = vi.fn();
   const component = mount(LocalTransferDialog, { target: root, props: {
@@ -159,7 +160,7 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
-    const expected = { bookmarkId: "source", container: "media", prefix: "selected/",
+    const expected = { bookmarkId: "source", container: "media", prefix: "selected/", profile: "auto",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
       // The dialog never acknowledges an overwrite, and the exact-forwarding
       // assertion is where that stays visible (ADR 0081 decision 1).
@@ -407,7 +408,7 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
   api.startUpload = vi.fn().mockResolvedValue("job"); api.startDownload = vi.fn().mockResolvedValue("job");
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "another"; browser.containerName = "another"; browser.prefix = "another/";
-  const scope = { bookmarkId: "captured", container: "media", prefix: "  exact/%\n",
+  const scope = { bookmarkId: "captured", container: "media", prefix: "  exact/%\n", profile: "aggressive",
     settings: { chunkSize: "2Mi", transfers: 3, checkers: 4, tpsLimit: 5, bwLimit: "6M" , bufferSize: ""},
   };
   if (mode === "upload") {
@@ -421,6 +422,72 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
     expect(api.preflightDownload).toHaveBeenCalledExactlyOnceWith(req);
     expect(api.startDownload).toHaveBeenCalledExactlyOnceWith(req);
   }
+});
+
+function setField(f: Fixture, selector: string, value: string) {
+  const element = f.root.querySelector<HTMLInputElement | HTMLSelectElement>(selector)!;
+  element.value = value;
+  element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+  flushSync();
+}
+
+// §38.3: the per-job settings an operator chooses are what the job is asked
+// to run with. A download segments nothing, so it offers and sends no chunk.
+describe.each(["upload", "download"] as const)("%s per-job settings", (mode) => {
+  it("sends the chosen profile and overrides with the check and the start", async () => {
+    const f = show(mode);
+    expect(f.root.querySelector('input[placeholder="5Gi (default)"]') !== null).toBe(mode === "upload");
+    setField(f, ".advanced select", "aggressive");
+    setField(f, 'input[placeholder="4 (default)"]', "6");
+    setField(f, 'input[placeholder="unlimited"]', "10M");
+    if (mode === "upload") setField(f, 'input[placeholder="5Gi (default)"]', "64Mi");
+    await f.reach("ready");
+    f.startButton()!.click(); flushSync();
+    const sent = expect.objectContaining({
+      profile: "aggressive",
+      settings: { chunkSize: mode === "upload" ? "64Mi" : "", transfers: 6, checkers: 0, tpsLimit: 0, bwLimit: "10M", bufferSize: "" },
+    });
+    expect(mode === "upload" ? f.api.preflightUpload : f.api.preflightDownload).toHaveBeenCalledExactlyOnceWith(sent);
+    expect(mode === "upload" ? f.api.startUpload : f.api.startDownload).toHaveBeenCalledExactlyOnceWith(sent);
+  });
+
+  it("asks for a new check when a setting changes after the report", async () => {
+    const f = show(mode); await f.reach("ready");
+    setField(f, 'input[placeholder="4 (default)"]', "6");
+    expectDisarmed(f);
+  });
+
+  // The application's first settings read may still be running when the
+  // dialog opens; its saved default must still reach the job.
+  async function showWithHeldSettings() {
+    const settings = deferred<AppSettingsDTO>();
+    const saved = await newFakeApi().appSettings();
+    const f = show(mode, (api, browser) => {
+      api.appSettings = () => settings.promise;
+      void browser.settings.load();
+    });
+    const arrive = async () => { settings.resolve({ ...saved, defaultProfile: "aggressive" }); await settle(); };
+    return { f, arrive };
+  }
+
+  it("adopts the saved default profile when the settings arrive after it opened", async () => {
+    const { f, arrive } = await showWithHeldSettings();
+    expect(f.root.querySelector<HTMLSelectElement>(".advanced select")!.value).toBe("auto");
+    await arrive();
+    expect(f.root.querySelector<HTMLSelectElement>(".advanced select")!.value).toBe("aggressive");
+    await f.reach("ready");
+    f.startButton()!.click(); flushSync();
+    const sent = expect.objectContaining({ profile: "aggressive" });
+    expect(mode === "upload" ? f.api.preflightUpload : f.api.preflightDownload).toHaveBeenCalledExactlyOnceWith(sent);
+    expect(mode === "upload" ? f.api.startUpload : f.api.startDownload).toHaveBeenCalledExactlyOnceWith(sent);
+  });
+
+  it("keeps a profile the operator chose before the settings arrived", async () => {
+    const { f, arrive } = await showWithHeldSettings();
+    setField(f, ".advanced select", "balanced");
+    await arrive();
+    expect(f.root.querySelector<HTMLSelectElement>(".advanced select")!.value).toBe("balanced");
+  });
 });
 
 // ADR 0041: the pick is bound to the scope the dialog captured before

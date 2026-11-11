@@ -10,6 +10,8 @@
   import type { DownloadPreflightView, DownloadRequestDTO, PickedFilesDTO, UploadPreflight, UploadRequestDTO } from "../../lib/api";
   import { folderSummary } from "./folderSummary";
   import { formatBytes, formatCount } from "../../lib/format";
+  import JobSettingsFields from "./JobSettingsFields.svelte";
+  import { newJobSettings, requestSettings } from "./jobSettings";
 
   let {
     browser,
@@ -22,6 +24,11 @@
     if (mode === "download" && !browser.settings.document) void browser.settings.load();
   });
 
+  // The profile is seeded from the application default (§40). The settings
+  // are part of the scope: the upload report's large-object note depends on
+  // the chunk size, so changing any of them asks for a new check.
+  // svelte-ignore state_referenced_locally
+  let jobSettings = $state(newJobSettings(browser.settings.document?.defaultProfile ?? "auto"));
   let checking = $state(false);
   let starting = $state(false);
   let error: string | null = $state(null);
@@ -91,7 +98,9 @@
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
       prefix: browser.prefix,
-      settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "", bufferSize: "" },
+      profile: jobSettings.profile,
+      // A download segments nothing, so it never sends a chunk size.
+      settings: requestSettings(mode === "upload" ? jobSettings : { ...jobSettings, chunkSize: "" }),
     };
   }
 
@@ -304,6 +313,8 @@
         {/if}
       </div>
     {/if}
+
+    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} chunk={mode === "upload"} onchange={invalidate} />
 
     <footer>
       {#if startedJobId}
