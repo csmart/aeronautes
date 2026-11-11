@@ -649,7 +649,7 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	dstBookmark, dstMock := secondCluster(t, h)
 	block := newEngineBarrier(t)
 	h.installEngine(block)
-	h.transfer.setMaxActiveJobsHook(1)
+	h.transfer.runner.setMaxActiveJobs(1)
 
 	h.mock.AddContainer("media", "standard")
 	seedObject(h.mock, "media", "one.txt", "payload", nil)

@@ -352,11 +352,11 @@ func TestJobRunnerKeepsPinsThroughFinalBodyCleanup(t *testing.T) {
 	done := make(chan struct{})
 	runner := h.transfer.runner
 	runner.register(job.ID, cancel)
-	runner.launch(ctx, job.ID, id, func() { unpin(); close(done) }, func(context.Context) {
+	runner.launchWithQueuedOutcome(ctx, job.ID, id, func() { unpin(); close(done) }, func(context.Context) {
 		runner.release(job.ID)
 		terminal <- h.transfer.jobs.Transition(context.Background(), job.ID, jobs.StateCancelled)
 		<-cleanup
-	})
+	}, nil)
 	t.Cleanup(func() { releaseCleanup(); awaitConnection(t, done) })
 	if err := awaitConnection(t, terminal); err != nil {
 		t.Fatal(err)
