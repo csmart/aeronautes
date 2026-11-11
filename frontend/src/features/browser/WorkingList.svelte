@@ -174,7 +174,7 @@
           disabled={browser.containerName === null || browser.backstageFrom !== null}
           onclick={() => (browser.deleteOpen = true)}
         >
-          {browser.prefix === "" ? "Empty or delete container…" : "Delete prefix…"}
+          {browser.prefix === "" && browser.selectedPrefix === "" ? "Empty or delete container…" : "Delete prefix…"}
         </button>
       {/if}
       </span>

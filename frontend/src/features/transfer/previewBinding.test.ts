@@ -537,3 +537,24 @@ it("Delete keeps its started job through a scope change and closes when its cont
   f.browser.containerName = null; flushSync();
   expect(f.onClose).toHaveBeenCalled();
 });
+
+// A folder selected at the container's top is what the dialog offers to
+// delete, by default, and the confirmation names it (ADR 0095 decision 7).
+it("Delete offers the folder selected at the container's top", async () => {
+  const f = show("delete", undefined, (_api, browser) => {
+    browser.prefix = "";
+    browser.entries = [{ kind: "prefix", name: "files/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false }];
+    browser.select(0);
+  });
+  expect(f.root.querySelector<HTMLInputElement>('input[value="prefix"]')?.checked).toBe(true);
+  expect(f.root.textContent).toMatch(/Delete prefix\s*media\/files\//);
+  expect(f.root.querySelector('input[value="empty"]')).not.toBeNull();
+  f.preview();
+  expect(vi.mocked(f.api.previewDelete).mock.calls[0][0]).toMatchObject({ mode: "prefix", prefix: "files/" });
+  await f.resolve();
+  const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
+  input(confirm, "media");
+  expect(f.startButton().disabled).toBe(true);
+  input(confirm, "media/files/");
+  expect(f.startButton().disabled).toBe(false);
+});

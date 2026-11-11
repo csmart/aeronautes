@@ -869,6 +869,13 @@ export class BrowserState {
     return this.visibleEntries[this.selectedIndex] ?? null;
   }
 
+  /** The selected row's prefix when exactly one row is selected and it is a
+   * prefix, otherwise "": the folder a deletion offers (ADR 0095 decision 7). */
+  get selectedPrefix(): string {
+    const entry = this.chosenRows.length < 2 ? this.selectedEntry : null;
+    return entry?.kind === "prefix" ? entry.name : "";
+  }
+
   /** The rows a multi-selection holds, in listing order; empty unless at
    * least two rows are chosen (ADR 0093 decision 1). */
   get chosenRows(): ListingRowDTO[] {
