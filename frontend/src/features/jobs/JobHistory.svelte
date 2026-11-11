@@ -87,6 +87,9 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .history-page { max-height: 32rem; overflow: auto; }
   .history-job { padding: var(--space-2); border-bottom: 1px solid var(--color-border); }
+  /* A clearly different shade on every other entry tells neighbours apart,
+    which the hairline alone did not (operator, 0.5.0 test run). */
+  .history-job:nth-child(even) { background: var(--color-bg-inset); }
   code { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: isolate; }
   [role="alert"] { color: var(--color-danger); }
 </style>

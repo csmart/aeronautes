@@ -152,6 +152,9 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["JobsDrawer.svelte", ".badge.failed"],
   ["BrowserScreen.svelte", ".interrupted-banner"],
   ["JobsDrawer.svelte", ".interrupted", ".interrupted-head"],
+  // The alternating row shade: its weakest text is the secondary recovery tag.
+  ["JobsDrawer.svelte", ".job:nth-child(even), .event:nth-child(even)", ".recovery-tag"],
+  ["JobHistory.svelte", ".history-job:nth-child(even)", '[role="alert"]'],
 ];
 
 describe("normal-text contrast arithmetic", () => {

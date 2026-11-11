@@ -1080,9 +1080,11 @@
     border-radius: var(--radius-control);
   }
 
-  /* Alternating tints let the eye follow one job across the wide row. */
-  .job:nth-child(even) {
-    background: var(--color-bg);
+  /* A clearly different shade on every other row lets the eye follow one
+    job across the wide row and tells neighbours apart. */
+  .job:nth-child(even),
+  .event:nth-child(even) {
+    background: var(--color-bg-inset);
   }
 
   .job:hover,
