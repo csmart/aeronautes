@@ -234,6 +234,13 @@ export class BrowserState {
   }
   connecting = $state(false);
   #connectingBookmarkId: string | null = null;
+
+  /** The name of the bookmark a connection is being made to, for the screen
+   * to say so while it is made; "" when none is. */
+  get connectingName(): string {
+    if (!this.connecting || this.#connectingBookmarkId === null) return "";
+    return this.bookmarks.find((b) => b.id === this.#connectingBookmarkId)?.displayName ?? "the bookmark";
+  }
   #bookmarkChanges = new Map<string, number>();
   connectError: string | null = $state(null);
   account: AccountDTO | null = $state(null);

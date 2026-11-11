@@ -198,7 +198,9 @@
   <div class="list">
     {#if !browser.containerName}
       <div class="empty">
-        {#if !browser.account}
+        {#if browser.connecting}
+          <p class="empty-title" role="status">Connecting to {browser.connectingName}…</p>
+        {:else if !browser.account}
           <p class="empty-title">Not connected</p>
           <p class="empty-teach">Choose a bookmark on the rail, or add one, to browse.</p>
         {:else}
