@@ -3,7 +3,7 @@
   account and endpoint on hover. The rail's width is the screen's to set
   (§4.3); the labels grow into whatever width it gets. -->
 <script lang="ts">
-  import { getTheme, setTheme, type Theme } from "../../design/tokens";
+  import { resolvedTheme, setTheme } from "../../design/tokens";
   import type { BrowserState } from "./browserState.svelte";
 
   import type { BookmarkDTO } from "../../lib/api";
@@ -21,7 +21,6 @@
     onOpenSettings: () => void;
   } = $props();
 
-  let theme: Theme = $state(getTheme());
 
   let filter = $state("");
   // A filter box earns its place once the list is long enough to need
@@ -35,11 +34,12 @@
   const shown = $derived(sortBookmarks(browser.bookmarks.filter(
     (bookmark) => bookmark.id === browser.connectedBookmarkId || matchesBookmark(bookmark, filter))));
 
-  const cycle: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
-
-  function cycleTheme() {
-    theme = cycle[theme];
-    setTheme(theme);
+  // Each press shows the other theme. Cycling system, light and dark made
+  // one press in three change nothing, because following the system looks
+  // like one of the other two (0.5.0 test run). A window still starts by
+  // following the system.
+  function toggleTheme() {
+    setTheme(resolvedTheme() === "dark" ? "light" : "dark");
   }
 
   function refreshBookmarks() {
@@ -137,7 +137,7 @@
         />
       </svg>
     </button>
-    <button class="foot-btn" title="Theme: {theme}" onclick={cycleTheme} aria-label="Cycle theme ({theme})">
+    <button class="foot-btn" title="Switch between light and dark" onclick={toggleTheme} aria-label="Switch between light and dark">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
         <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
         <path d="M8 1.75 A 6.25 6.25 0 0 1 8 14.25 Z" fill="currentColor" />

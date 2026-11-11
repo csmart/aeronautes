@@ -222,3 +222,24 @@ describe("bookmark rail width", () => {
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
 });
+
+// Every press of the theme button shows the other theme: from following a
+// light system it goes dark, then light, then dark (0.5.0 test run: one
+// press in three changed nothing).
+it("switches between light and dark on every press", () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+  try {
+    showRail([]);
+    const press = () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Switch between light and dark"]')!.click();
+      flushSync();
+      return document.documentElement.getAttribute("data-theme");
+    };
+    expect(press()).toBe("dark");
+    expect(press()).toBe("light");
+    expect(press()).toBe("dark");
+  } finally {
+    document.documentElement.removeAttribute("data-theme");
+    vi.unstubAllGlobals();
+  }
+});
