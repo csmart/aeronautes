@@ -154,16 +154,6 @@ func (s *TransferService) setEngineFactory(f func(source transfercopy.RemoteSour
 // before an engine spawn forces re-authentication.
 const tokenRefreshMargin = 2 * time.Minute
 
-// setMaxActiveJobsHook resizes the §38 budget (the settings surface will
-// drive this; tests too). Applies to jobs started afterwards.
-func (s *TransferService) setMaxActiveJobsHook(n int) {
-	s.runner.setMaxActiveJobs(n)
-}
-
-func (s *TransferService) launch(ctx context.Context, jobID, bookmarkID string, releasePins func(), body func(ctx context.Context)) {
-	s.runner.launch(ctx, jobID, bookmarkID, releasePins, body)
-}
-
 func validateCopyRequest(req CopyRequestDTO) error {
 	if req.SourceBookmarkID == "" || req.DestBookmarkID == "" {
 		return errors.New("both bookmarks are required")
@@ -1010,7 +1000,9 @@ type JobService struct {
 	runner *jobRunner
 }
 
-// NewJobService builds the service over stored jobs alone.
+// NewJobService builds the service over stored jobs alone, for a reader of
+// stored jobs that holds no runner, such as the system test harness; it
+// reports no pending pause or resume.
 func NewJobService(jobStore *jobs.Store) *JobService {
 	return &JobService{jobs: jobStore}
 }

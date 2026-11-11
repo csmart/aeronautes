@@ -317,13 +317,6 @@ func (r *jobRunner) cancel(jobID string) (context.CancelFunc, bool) {
 	return cancel, ok
 }
 
-// launch runs a job body under the slot budget: the job stays Queued
-// until a slot frees; cancellation while queued is honoured without
-// ever starting.
-func (r *jobRunner) launch(ctx context.Context, jobID, bookmarkID string, releasePins func(), body func(ctx context.Context)) {
-	r.launchWithQueuedOutcome(ctx, jobID, bookmarkID, releasePins, body, nil)
-}
-
 // A caller's terminal contract also covers cancellation that prevents
 // its execution body from ever starting.
 func (r *jobRunner) launchWithQueuedOutcome(ctx context.Context, jobID, bookmarkID string, releasePins func(), body, queuedCancel func(context.Context)) {

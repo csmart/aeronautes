@@ -108,7 +108,7 @@ func TestQueuedJobHonoursPersistenceLatch(t *testing.T) {
 			defer cancel()
 			r.register(job.ID, cancel)
 			released, called := make(chan struct{}), make(chan struct{}, 1)
-			r.launch(ctx, job.ID, "", func() { close(released) }, func(context.Context) { called <- struct{}{} })
+			r.launchWithQueuedOutcome(ctx, job.ID, "", func() { close(released) }, func(context.Context) { called <- struct{}{} }, nil)
 			if err := h.transfer.jobs.Finish(t.Context(), broken.ID, jobs.Completion{State: jobs.StateFailed, Audit: audit.Event{}}, r.audit); err == nil {
 				t.Fatal("fixture must latch a failed completion")
 			}
