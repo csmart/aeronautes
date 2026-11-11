@@ -95,6 +95,7 @@ Keystone authentication is here by finish-line decision 31: a bookmark authentic
 Measured workload bounds and fairness (P24 and P25), the benchmark's return, bookmark overrides, per-job settings on the local transfer dialog, and the adaptive back-off of K-PERF-003.
 The Auto, Balanced, Aggressive and Custom profiles and their per-job overrides already exist behind the copy affordance and return with copy in 0.3.0; Auto's stored recommendation needs the benchmark.
 Recommendation: re-scope the benchmark and the adaptive back-off to 1.x unless the operator needs them, since §63 lists the benchmark, DESIGN §41 and K-PERF-003 require the back-off, and only the operator can take them out.
+Per-job settings on the local transfer dialog, delivered: an upload or download takes the profile and the copy dialog's overrides, a download leaving out the chunk size it never uses, and records each value with its origin as a copy does.
 
 ### 0.7.0 — platforms and distribution
 
@@ -152,7 +153,7 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Transfer | upload directories and multiple files | shipped (ADR 0103) | 0.5.0 |
 | Transfer | copy across bookmarks | shipped; returned on 31 October 2026 (ADR 0052 decision 12) | 0.3.0 |
 | Transfer | mirror | refused under ADR 0020 | decision at 1.0.0 |
-| Transfer | progress, throughput and worker allocation | shipped: progress, throughput, and each job's recorded settings, with their origins where recorded (a copy) (UI-09) | 0.4.0 |
+| Transfer | progress, throughput and worker allocation | shipped: progress, throughput, and each job's recorded settings, with their origins where recorded (a copy, and an upload or download from 0.6.0) (UI-09) | 0.4.0 |
 | Transfer | cancel | shipped | — |
 | Transfer | understand destination large-object placement | shipped: the local transfer dialog names the destination DLO placement for an upload that segments, as the copy preview does behind the gate; chunk sizing and collision preflight shipped | — |
 | Delete | delete ordinary objects | shipped; returned to the release on 29 October 2026 (ADR 0092, ADR 0052 decision 11) | 0.2.0 |
@@ -167,10 +168,10 @@ Shipped means offered by a build; gated means built and refused under ADR 0052; 
 | Delete | deliberate Backstage cleanup | shipped with bulk delete, force and typed confirmation (ADR 0052 decision 14) | 0.2.x |
 | Performance | global resource budgets | the active-job budget (ADR 0105) and the bounds of ADR 0074 are settings; the whole-application worker and memory ceilings are not built | — |
 | Performance | bookmark overrides | not built | 0.6.0 |
-| Performance | per-job overrides | shipped with copy; the local transfer dialog sends defaults though the bridge accepts overrides | 0.3.0 with copy; 0.6.0 for local transfers |
+| Performance | per-job overrides | shipped with copy, and on the local transfer dialog with the profile and the same overrides | 0.3.0 with copy; 0.6.0 for local transfers |
 | Performance | Auto, Balanced, Aggressive and Custom | shipped with copy; Auto's recommendation needs the benchmark | 0.3.0 with copy |
 | Performance | benchmark a bookmark | gated | 0.6.0 or re-scoped |
-| Performance | report throughput and effective configuration | shipped: throughput and recorded settings, with their origins where recorded (a copy) (UI-09) | 0.4.0 |
+| Performance | report throughput and effective configuration | shipped: throughput and recorded settings, with their origins where recorded (a copy, and an upload or download from 0.6.0) (UI-09) | 0.4.0 |
 | Performance | choose among native and engine strategies | shipped | — |
 | Safety | the eight prohibitions | enforced by refusals and maintained tests | — |
 

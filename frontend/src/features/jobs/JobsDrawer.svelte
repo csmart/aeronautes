@@ -357,7 +357,7 @@
   // The §45 record stores where each knob's value came from (origins);
   // the note turns that into plain words so a profile or calculated value
   // is not mistaken for one the operator set on this job (UI-09). A record
-  // without origins — an older job, or an upload/download — shows no note.
+  // without origins, as an older job's is, shows no note.
   function settingOriginNote(origin: string | undefined): string {
     switch (origin) {
       case "override":

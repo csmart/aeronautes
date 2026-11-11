@@ -90,15 +90,6 @@ func (s TransferSettingsDTO) options() rclone.Options {
 	}
 }
 
-// effectiveJSON is the §45 record: what this job actually ran with.
-func (s TransferSettingsDTO) effectiveJSON() string {
-	encoded, err := json.Marshal(s)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
-}
-
 // effectiveRecord is the §45 record stored on a job: the resolved §40
 // profile, the typed settings the child ran with, and where each knob's
 // value came from (origins). The origins let the operator tell a value

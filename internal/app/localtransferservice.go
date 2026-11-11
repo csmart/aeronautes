@@ -29,6 +29,8 @@ type UploadRequestDTO struct {
 	Prefix     string `json:"prefix"`
 	// SelectionToken names a picker-issued file selection.
 	SelectionToken string `json:"selectionToken"`
+	// Profile is the §40 performance mode ("" = balanced), as on a copy.
+	Profile string `json:"profile"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
 	// AcknowledgeOverwrite says the operator asked for an upload that may
@@ -49,6 +51,8 @@ type DownloadRequestDTO struct {
 	Prefix     string `json:"prefix"`
 	// DestDirToken names a picker-issued destination directory.
 	DestDirToken string `json:"destDirToken"`
+	// Profile is the §40 performance mode ("" = balanced), as on a copy.
+	Profile string `json:"profile"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
 }
@@ -450,7 +454,11 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 	if err != nil {
 		return nil, err
 	}
-	effective, err := req.Settings.forDestination(ctx, session)
+	resolved, _, err := s.localSettings(req.Profile, req.Settings, req.BookmarkID)
+	if err != nil {
+		return nil, err
+	}
+	effective, err := resolved.forDestination(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -984,6 +992,19 @@ func WireSettings(t *TransferService, settings *SettingsService) {
 	t.settings = settings
 }
 
+// localSettings resolves an upload's or download's profile and per-job
+// overrides as a copy's are (§40, §38.3), with the recommendation of the
+// one bookmark the job touches. One recommendation read serves both the
+// values and their recorded origins, so the two cannot disagree.
+func (s *TransferService) localSettings(profile string, overrides TransferSettingsDTO, bookmarkID string) (TransferSettingsDTO, map[string]string, error) {
+	recommendation := s.recommendationFor(bookmarkID)
+	settings, err := ResolveSettings(Profile(profile), overrides, recommendation)
+	if err != nil {
+		return TransferSettingsDTO{}, nil, err
+	}
+	return settings, settingOrigins(Profile(profile), overrides, recommendation), nil
+}
+
 // localEngine builds the single-remote engine for the bookmark's end;
 // remotes resolve per spawn with token refresh (§26.2).
 func (s *TransferService) localEngine(ctx context.Context, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
@@ -1085,11 +1106,14 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		}
 		answered = promise
 	}
-	settings, err := req.Settings.forDestination(ctx, session)
+	resolved, origins, err := s.localSettings(req.Profile, req.Settings, req.BookmarkID)
 	if err != nil {
 		return "", err
 	}
-	settings = settings.withDefaults()
+	settings, err := resolved.forDestination(ctx, session)
+	if err != nil {
+		return "", err
+	}
 	engine, err := s.localEngine(ctx, session, "aeronautes_dst", settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
@@ -1097,7 +1121,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeUpload,
 		ItemRecordsVersion: 1,
-		Settings:           settings.effectiveJSON(),
+		Settings:           effectiveJSONWithProfile(Profile(req.Profile), settings, origins),
 		Source:             fmt.Sprintf("%d local files", len(preflight.Items)),
 		Destination:        req.Container + "/" + req.Prefix,
 		DestBookmarkID:     req.BookmarkID,
@@ -1171,8 +1195,14 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		}
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
-	if err := req.Settings.Validate(); err != nil {
+	settings, origins, err := s.localSettings(req.Profile, req.Settings, req.BookmarkID)
+	if err != nil {
 		return "", err
+	}
+	// A download segments nothing, so no chunk size is calculated for it
+	// and the record must not say one was.
+	if settings.ChunkSize == "" {
+		delete(origins, "chunkSize")
 	}
 	if boundary := s.downloadStartBoundary; boundary != nil {
 		if err := boundary(ctx); err != nil {
@@ -1209,7 +1239,6 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		s.destinations.release(reservation)
 		_ = destination.Close()
 	})
-	settings := req.Settings.withDefaults()
 	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
@@ -1220,7 +1249,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeDownload,
 		ItemRecordsVersion: 1,
-		Settings:           settings.effectiveJSON(),
+		Settings:           effectiveJSONWithProfile(Profile(req.Profile), settings, origins),
 		Source:             req.Container + "/" + req.Prefix,
 		Destination:        "local directory (picker-selected)",
 		SourceBookmarkID:   req.BookmarkID,

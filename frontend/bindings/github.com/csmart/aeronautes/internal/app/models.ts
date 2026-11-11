@@ -701,6 +701,11 @@ export interface DownloadRequestDTO {
     "destDirToken": string;
 
     /**
+     * Profile is the §40 performance mode ("" = balanced), as on a copy.
+     */
+    "profile": string;
+
+    /**
      * Settings are the per-job §44.1 overrides.
      */
     "settings": TransferSettingsDTO;
@@ -1603,6 +1608,11 @@ export interface UploadRequestDTO {
      * SelectionToken names a picker-issued file selection.
      */
     "selectionToken": string;
+
+    /**
+     * Profile is the §40 performance mode ("" = balanced), as on a copy.
+     */
+    "profile": string;
 
     /**
      * Settings are the per-job §44.1 overrides.
