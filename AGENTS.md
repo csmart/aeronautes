@@ -94,7 +94,7 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   New work follows the frozen [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and the risk-based evidence and review rules in DESIGN §65.12.
   Name the behaviour oracle and keep changes atomic; review a new or changed locked contract before dependent code.
   Safety changes retain catching system regressions and independent reproduction; ordinary UI and prose use the lighter tiers without weakening required CI.
-  The preceding dated capability list is historical: Copy replaces an existing destination only on ADR 0087's acknowledged terms, and Mirror supports comparison preview only and refuses every start.
+  The preceding dated capability list is historical: Copy replaces an existing destination only on ADR 0087's acknowledged terms, and Mirror refuses every start, its comparison preview kept in the backend but not offered in the release's dialog.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in
