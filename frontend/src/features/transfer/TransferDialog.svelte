@@ -284,8 +284,8 @@
             named "/" rather than the container's top; operators expect the
             latter (0.5.0 test run). Allowed, because such names are legal. -->
           <p class="callout warning slash-warning">
-            A folder path starting with "/" makes names that start with a slash, under a folder named "/".
-            Leave it empty to copy to the top of the container.
+            A folder path starting with "/" makes names that start with a slash, under a folder named "/" that some
+            stores do not show at the top of the container. Leave it empty to copy to the top of the container.
           </p>
         {/if}
       </div>
