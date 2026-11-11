@@ -6,6 +6,8 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import JobSettingsFields from "./JobSettingsFields.svelte";
+  import { newJobSettings, requestSettings } from "./jobSettings";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -14,16 +16,11 @@
   // The dialog remounts per open, so the initial value is the intent.
   // svelte-ignore state_referenced_locally
   let destBookmarkId = $state(browser.connectedBookmarkId ?? "");
-  // §40 performance profile, seeded from the application default.
+  // The profile is seeded from the application default (§40).
   // svelte-ignore state_referenced_locally
-  let profile = $state(browser.settings.document?.defaultProfile ?? "auto");
+  let jobSettings = $state(newJobSettings(browser.settings.document?.defaultProfile ?? "auto"));
   let destContainer = $state("");
   let destPrefix = $state("");
-  // Per-job §44.1 overrides; empty/zero = defaults.
-  let chunkSize = $state("");
-  let transfers = $state("");
-  let bwLimit = $state("");
-  let bufferSize = $state("");
   let previewing = $state(false);
   let starting = $state(false);
   let error: string | null = $state(null);
@@ -66,15 +63,8 @@
       destBookmarkId,
       destContainer,
       destPrefix,
-      profile,
-      settings: {
-        chunkSize: chunkSize.trim(),
-        transfers: Number.parseInt(transfers, 10) || 0,
-        checkers: 0,
-        tpsLimit: 0,
-        bwLimit: bwLimit.trim(),
-        bufferSize: bufferSize.trim(),
-      },
+      profile: jobSettings.profile,
+      settings: requestSettings(jobSettings),
     };
   }
 
@@ -287,36 +277,7 @@
       </div>
     </div>
 
-    <details class="advanced">
-      <summary>Per-job settings</summary>
-      <div class="advanced-fields num">
-        <label>
-          <span>Profile</span>
-          <select bind:value={profile} onchange={invalidate}>
-            <option value="auto">Auto</option>
-            <option value="balanced">Balanced</option>
-            <option value="aggressive">Aggressive</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label>
-          <span>Chunk size</span>
-          <input class="type-mono" placeholder="5Gi (default)" bind:value={chunkSize} oninput={invalidate} />
-        </label>
-        <label>
-          <span>Transfers</span>
-          <input class="type-mono" placeholder="4 (default)" bind:value={transfers} oninput={invalidate} />
-        </label>
-        <label>
-          <span>Bandwidth</span>
-          <input class="type-mono" placeholder="unlimited" bind:value={bwLimit} oninput={invalidate} />
-        </label>
-        <label>
-          <span>Buffer size</span>
-          <input class="type-mono" placeholder="16Mi (default)" bind:value={bufferSize} oninput={invalidate} />
-        </label>
-      </div>
-    </details>
+    <JobSettingsFields bind:settings={jobSettings} onchange={invalidate} />
 
     {#if error}
       <p class="error" role="alert">{error}</p>
@@ -527,47 +488,6 @@
     margin: 0;
     font-size: var(--text-sm);
     color: var(--color-danger);
-  }
-
-  .advanced summary {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    cursor: pointer;
-  }
-
-  .advanced-fields {
-    display: flex;
-    gap: var(--space-3);
-    padding-top: var(--space-2);
-  }
-
-  .advanced-fields label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-  }
-
-  .advanced-fields select {
-    font: inherit;
-    font-size: var(--text-sm);
-    background: var(--color-bg-card);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    padding: 2px var(--space-2);
-  }
-
-  .advanced-fields input {
-    width: 8rem;
-    font: inherit;
-    font-size: var(--text-sm);
-    background: var(--color-bg-card);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    padding: 2px var(--space-2);
   }
 
   .preview {
