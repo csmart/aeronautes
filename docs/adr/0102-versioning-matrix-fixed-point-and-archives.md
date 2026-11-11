@@ -62,7 +62,7 @@ Emptying, deleting or sweeping an archive container destroys the earlier version
 
 A refusal in decision 3, with the owner named and the operator sent to the owning container's editor first, was considered and not taken.
 Pruning an archive is ordinary maintenance, and a refusal would push an operator who wants to prune into switching the owner's versioning off first, which loses every overwrite made in the interval; a refusal would also have to decide what to do for an account the scan cannot cover, and either answer there is wrong for someone.
-A disclosure the operator reads before typing the container name is the pattern the deletion dialogs already use for the versioning consequence, and it names the one fact the operator cannot see from inside the archive.
+A disclosure the operator reads before typing the confirmation is the pattern the deletion dialogs already use for the versioning consequence, and it names the one fact the operator cannot see from inside the archive.
 The bound is a stop against the pathological, far above any account the product has been pointed at, and a scan that cannot cover the account says so rather than guessing.
 
 Binding the archive relationship at start, as ADR 0081 decision 4 binds the collision set, was considered and not taken.

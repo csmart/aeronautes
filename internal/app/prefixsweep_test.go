@@ -140,7 +140,7 @@ func TestPrefixSweepDeletesEveryMemberExactly(t *testing.T) {
 	}
 	// The preview listed the scope too; count only the job's own requests.
 	startedAt := len(h.mock.RequestLog())
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestPrefixSweepRefusesALinkWithItsKind(t *testing.T) {
 	seedObject(h.mock, "sweep", "keep.txt", "the target", nil)
 	seedObject(h.mock, "sweep", "scope/a.txt", "alpha", nil)
 	h.mock.PutObject("sweep", "scope/link", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "sweep/keep.txt"})
-	jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestPrefixSweepRefusesAMemberChangedSinceListed(t *testing.T) {
 					h.mock.PutObject("sweep", "scope/racy.txt", replacement.object)
 				}
 			}
-			jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+			jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -341,7 +341,7 @@ func TestPrefixSweepLaterPassRequestsOnlyNewNames(t *testing.T) {
 			seedObject(h.mock, "sweep", "scope/late.txt", "late", nil)
 		}
 	}
-	jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestPrefixSweepCancelDuringSweep(t *testing.T) {
 			}
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestPrefixSweepCancelBeforeAnyDelete(t *testing.T) {
 			}
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestPrefixSweepUnverifiedWhenReplyLost(t *testing.T) {
 	seedObject(h.mock, "sweep", "scope/a.txt", "alpha", nil)
 	seedObject(h.mock, "sweep", "scope/b.txt", "bravo", nil)
 	h.mock.DropNextObjectDELETE()
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +544,7 @@ func TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 	seedObject(h.mock, "sweep", "scope/only.txt", "alone", nil)
 	refuseSQL(t, h, `CREATE TRIGGER refuse_sweep_outcomes BEFORE INSERT ON job_item_observations
 		BEGIN SELECT RAISE(ABORT,'fixture required outcome refusal'); END`)
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,7 +571,7 @@ func TestPrefixSweepLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 	if err := h.transfer.jobs.Available(); err == nil {
 		t.Fatal("the ledger did not latch unavailable after a lost record")
 	}
-	if _, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"}); err == nil {
+	if _, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"}); err == nil {
 		t.Fatal("a new deletion started while the ledger was unavailable")
 	}
 	if deletes := deletesUnder(h, "sweep"); len(deletes) != 1 {
@@ -610,7 +610,7 @@ func TestPrefixSweepScaleBoundedAndDurable(t *testing.T) {
 		seedObject(h.mock, "sweep", "scope/obj-"+padded(i), "x", nil)
 	}
 	before := h.db.WritesCommitted()
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -909,7 +909,7 @@ func TestPrefixSweepHoldsPerMemberAdjacencyUnderWorkerInterleaving(t *testing.T)
 			}
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1005,7 +1005,7 @@ func TestPrefixSweepIssuesBeforeTheComparisonHead(t *testing.T) {
 		}
 		mu.Unlock()
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "sweep/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}

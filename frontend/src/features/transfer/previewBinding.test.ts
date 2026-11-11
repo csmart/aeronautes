@@ -101,7 +101,8 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   const preview = () => { previewButton().click(); flushSync(); };
   const arm = () => {
     const confirm = root.querySelector<HTMLInputElement>(".confirm input");
-    if (confirm) input(confirm, browser.containerName ?? "");
+    const prefixMode = root.querySelector<HTMLInputElement>('input[value="prefix"]')?.checked;
+    if (confirm) input(confirm, prefixMode ? `${browser.containerName}/${browser.prefix}` : browser.containerName ?? "");
   };
   const resolve = async (index = 0, label = "current") => {
     if (kind === "copy") copies[index].resolve({ ...copyPlan, dataPath: label });
@@ -196,7 +197,7 @@ describe.each(["copy", "delete"] as const)("%s preview binding", (kind) => {
       expect(f.api.startCopy).toHaveBeenCalledExactlyOnceWith(vi.mocked(f.api.planCopy).mock.calls[0][0]);
     } else {
       expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith({
-        ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media",
+        ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media/selected/",
       });
     }
     f.startReply.reject(new Error("start outcome unavailable"));
@@ -403,7 +404,8 @@ it.each(["empty", "delete_container"])("Delete ignores a pending preview after c
   expect(f.root.querySelector(".preview")).toBeNull();
 });
 
-it.each(["", "other", " media "])("Delete refuses a synthetic Start with confirmation %j", async (confirmation) => {
+// "media" alone is the container name, which does not arm a prefix.
+it.each(["", "other", " media ", "media", "selected/"])("Delete refuses a synthetic Start with confirmation %j", async (confirmation) => {
   const f = show("delete"); f.preview(); await f.resolve();
   input(f.root.querySelector<HTMLInputElement>(".confirm input")!, confirmation);
   clickEvenIfDisabled(f.startButton());

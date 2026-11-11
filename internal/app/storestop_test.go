@@ -329,7 +329,7 @@ func TestAStoppedStoreLeavesADeletionJobOpen(t *testing.T) {
 			h.mock.PutObject("media", "ours.bin", swifttest.Object{Manifest: "media_segments/owned/pfx/"})
 			swept, operation := "/media", "delete.prefix.unavailable"
 			start := func() (string, error) {
-				return service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "logs/", Confirm: "media"})
+				return service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "logs/", Confirm: "media/logs/"})
 			}
 			if kind == "segments" {
 				swept, operation = "/media_segments", "segments.delete.unavailable"

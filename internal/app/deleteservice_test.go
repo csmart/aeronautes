@@ -80,6 +80,14 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "confirmation") {
 		t.Errorf("bad confirmation accepted: %v", err)
 	}
+	// A prefix is armed by its scope, so the container name alone, which
+	// would not show which prefix was read, refuses (ADR 0095 decision 7).
+	_, err = service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+	})
+	if err == nil || !strings.Contains(err.Error(), `does not match "media/scope/"`) {
+		t.Errorf("the container name armed a prefix deletion: %v", err)
+	}
 	// Prefix mode without a prefix refuses.
 	if _, err := service.StartDelete(ctx, DeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Confirm: "media",
@@ -107,7 +115,7 @@ func TestDeletePrefixJob(t *testing.T) {
 	h.mock.PutObject("media", "sibling", swifttest.Object{Manifest: "media_segments/shared/"})
 
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +276,7 @@ func TestAuditSearch(t *testing.T) {
 
 	// Generate a mixed trail: a delete job plus a refused segments call.
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -327,7 +335,7 @@ func TestDeletePartialAfterIrreversibleSubset(t *testing.T) {
 	defer func() { h.mock.FailDeletesAfter = 0 }()
 
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "doomed/", Mode: ModePrefix, Confirm: "media",
+		BookmarkID: bookmark, Container: "media", Prefix: "doomed/", Mode: ModePrefix, Confirm: "media/doomed/",
 	})
 	if err != nil {
 		t.Fatal(err)

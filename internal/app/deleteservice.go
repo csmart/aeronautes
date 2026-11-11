@@ -52,8 +52,8 @@ type DeleteRequestDTO struct {
 	Container  string     `json:"container"`
 	Prefix     string     `json:"prefix"`
 	Mode       DeleteMode `json:"mode"`
-	// Confirm must equal the container name (typed confirmation, §28.2);
-	// checked at Start, not Preview.
+	// Confirm must equal deleteConfirmation's text (typed confirmation,
+	// §28.2); checked at Start, not Preview.
 	Confirm string `json:"confirm"`
 }
 
@@ -104,6 +104,17 @@ func (s *DeleteService) validate(req DeleteRequestDTO) error {
 		return fmt.Errorf("unknown delete mode %q", req.Mode)
 	}
 	return nil
+}
+
+// deleteConfirmation is what the operator types to arm a deletion (ADR 0095
+// decision 7). For a prefix it is the scope as the dialog shows it, because
+// typing only the container name would not show which prefix the operator
+// read; for the container modes the container is the whole scope.
+func deleteConfirmation(req DeleteRequestDTO) string {
+	if req.Mode == ModePrefix {
+		return req.Container + "/" + req.Prefix
+	}
+	return req.Container
 }
 
 // PreviewDelete counts the scope (a full listing pass — §28.3's honest
@@ -170,8 +181,8 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if err := s.validate(req); err != nil {
 		return "", err
 	}
-	if req.Confirm != req.Container {
-		return "", fmt.Errorf("confirmation %q does not match the container name — type it exactly", req.Confirm)
+	if want := deleteConfirmation(req); req.Confirm != want {
+		return "", fmt.Errorf("confirmation %q does not match %q; type it exactly", req.Confirm, want)
 	}
 	// The shutdown guard runs before any store or database access, so a start
 	// during shutdown is refused cleanly ("job shutdown has begun") instead of
