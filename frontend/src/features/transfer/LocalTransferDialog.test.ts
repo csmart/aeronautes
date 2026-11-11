@@ -268,6 +268,10 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     f.started.resolve("accepted-job"); await settle();
     expect(f.root.textContent).toContain("Job accepted-job started");
     expect(f.root.querySelector(".report")).toBeNull();
+    const reveal = vi.spyOn(f.browser.jobs, "reveal");
+    [...f.root.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Show in jobs")!.click();
+    expect(f.onClose).toHaveBeenCalled();
+    expect(reveal).toHaveBeenCalledWith("accepted-job");
   });
 
   it("keeps a failed preflight disarmed and allows a fresh attempt", async () => {

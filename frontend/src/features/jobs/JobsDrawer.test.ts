@@ -340,3 +340,24 @@ it("keeps each job's pause request apart", async () => {
   await vi.waitFor(() => expect(busy("first")).toBe(false));
   expect(api.pauseJob).toHaveBeenCalledTimes(2);
 });
+
+// A dialog's "Show in jobs" opens the drawer on the started job, expanded,
+// and drops an account filter that would have hidden it.
+it("opens on a revealed job and clears a filter that hides it", async () => {
+  const api = newFakeApi();
+  const job = transferJob({ id: "started-job", destBookmarkId: "b" });
+  api.jobs = async (filter: string) => (filter === "" || filter === "b" ? [job] : []);
+  const browser = new BrowserState(api);
+  drawer = mount(JobsDrawer, { target: document.body, props: { browser } });
+  flushSync();
+  browser.jobs.bookmarkFilter = "other";
+  await browser.jobs.load();
+  expect(browser.jobs.list).toHaveLength(0);
+
+  await browser.jobs.reveal("started-job");
+  flushSync();
+  expect(browser.jobs.bookmarkFilter).toBe("");
+  await vi.waitFor(() => expect(document.querySelector(".badge")?.textContent).toBe("running"));
+  expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe("Jobs");
+  expect(document.querySelector(`[aria-label="Item details for job started-job"]`)?.getAttribute("aria-expanded")).toBe("true");
+});

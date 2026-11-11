@@ -4,7 +4,7 @@
   second tab. Polls on a fixed 1.5s interval while the app runs
   (adaptive cadence is §65.10 scope). -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { JobDTO, InterruptedDisclosureDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
@@ -18,6 +18,19 @@
   let open = $state(false);
   let tab: "jobs" | "history" | "changes" = $state("jobs");
   let expanded: string | null = $state(null);
+
+  // A dialog's "Show in jobs" opens the drawer on that job, expanded.
+  $effect(() => {
+    const jobId = browser.jobs.revealJob;
+    if (jobId === null) return;
+    untrack(() => {
+      browser.jobs.revealJob = null;
+      open = true;
+      tab = "jobs";
+      expanded = jobId;
+      void tick().then(() => document.getElementById(`${id}-job-${jobId}`)?.scrollIntoView?.({ block: "nearest" }));
+    });
+  });
   type CancellationNotice = {
     jobId: string;
     state: "pending" | "requested" | "unconfirmed";
@@ -584,7 +597,7 @@
         {:else}
           <div class="rows">
             {#each browser.jobs.list as job (job.id)}
-              <div class="job">
+              <div class="job" id="{id}-job-{job.id}">
                 <span class="operation-state">
                   <span class="operation">{operationLabel(job.type)}</span>
                   <span class="badge {job.state}">{job.state}</span>
