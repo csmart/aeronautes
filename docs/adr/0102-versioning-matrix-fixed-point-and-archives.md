@@ -52,7 +52,7 @@ Emptying, deleting or sweeping an archive container destroys the earlier version
    The preview returns the owners it found and, when the scan did not cover the account or a read failed, that the answer is not established and why, in fixed words that carry no identifier of the account.
    A container that is gone by the time it is read is not a failed read: a container that no longer exists archives nowhere, so it is no owner and leaves the answer established.
    The dialog states, beside the versioning sentence ADR 0092 settled, that this container is the archive of the named containers and that the deletion destroys the earlier versions they keep here, or that whether another container keeps its versions here could not be established; the container names are sanitised and bounded where they are interpolated, as the archive name is in the overwrite question.
-   The confirmation stays the typed container name, and nothing is bound at start: the disclosure stands as the versioning sentence does, read at preview time.
+   The typed confirmation is not changed by this decision, and nothing is bound at start: the disclosure stands as the versioning sentence does, read at preview time.
    The exact-object, selected-set and manifest dialogs are unchanged, because the rows they delete are visible and their versioning sentence already says what a delete does.
 4. **Modern versioning management stays out of 0.5.0.**
    Neither real cloud offers it, the fixture does, and setting or clearing `X-Versions-Enabled` from the editor would need the product to own the disable and re-enable transitions the fixture measurement records for one build only.
