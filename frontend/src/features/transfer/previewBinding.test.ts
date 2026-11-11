@@ -489,3 +489,14 @@ it("Delete waits for the versioning facts to settle before enabling or accepting
   flushSync();
   expect(f.api.startDelete).toHaveBeenCalledOnce();
 });
+
+// The start button stays disabled until a preview exists and the name is
+// typed in it; before the preview, the dialog says so.
+it("Delete says to preview first until a preview exists", async () => {
+  const f = show("delete");
+  expect(f.root.querySelector(".next-step")?.textContent).toContain("Preview first");
+  expect(f.root.querySelector(".confirm input")).toBeNull();
+  f.preview(); await f.resolve();
+  expect(f.root.querySelector(".next-step")).toBeNull();
+  expect(f.root.querySelector(".confirm input")).not.toBeNull();
+});

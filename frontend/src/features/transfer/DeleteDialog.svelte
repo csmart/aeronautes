@@ -175,6 +175,15 @@
       <p class="error" role="alert">{error}</p>
     {/if}
 
+    {#if !preview && !startedJobId}
+      <!-- The start button stays disabled until both steps are done, and
+        nothing else on the page says why. -->
+      <p class="next-step">
+        Preview first: it counts what will go, then asks you to type the container name to arm the
+        deletion.
+      </p>
+    {/if}
+
     {#if preview}
       {@const archiveSentence = archiveOwnersSentence(preview)}
       <div class="preview num">
@@ -309,6 +318,12 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+
+  .next-step {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
   }
 
   .summary {
