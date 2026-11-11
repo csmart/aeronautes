@@ -1209,3 +1209,21 @@ func TestOverlapFailsClosedOnAccountAliases(t *testing.T) {
 		t.Error("ambiguous endpoints treated as distinct (should fail closed)")
 	}
 }
+
+// The overlap refusal says in plain words where the two scopes meet.
+func TestDescribeOverlap(t *testing.T) {
+	cases := []struct {
+		source, dest string
+		same         bool
+		want         string
+	}{
+		{"", "", true, `both are the whole of container "testing", in the same account`},
+		{"a/", "a/b/", true, `the destination, prefix "a/b/" of container "testing", is inside the source, prefix "a/" of container "testing", in the same account`},
+		{"a/b/", "", false, `the source, prefix "a/b/" of container "testing", is inside the destination, the whole of container "testing", and the two bookmarks cannot be shown to be different accounts`},
+	}
+	for _, c := range cases {
+		if got := describeOverlap("testing", c.source, c.dest, c.same); got != c.want {
+			t.Errorf("describeOverlap(%q, %q, %v) = %q, want %q", c.source, c.dest, c.same, got, c.want)
+		}
+	}
+}

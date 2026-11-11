@@ -177,6 +177,31 @@ func validateCopyRequest(req CopyRequestDTO) error {
 	return req.Settings.Validate()
 }
 
+// describeOverlap says in plain words why two copy scopes in one container
+// overlap; the operator found the identifiers and quoted empty prefixes of
+// the earlier wording unreadable.
+func describeOverlap(container, source, dest string, sameAccount bool) string {
+	scope := func(prefix string) string {
+		if prefix == "" {
+			return fmt.Sprintf("the whole of container %q", container)
+		}
+		return fmt.Sprintf("prefix %q of container %q", prefix, container)
+	}
+	var how string
+	switch {
+	case source == dest:
+		how = "both are " + scope(source)
+	case strings.HasPrefix(dest, source):
+		how = fmt.Sprintf("the destination, %s, is inside the source, %s", scope(dest), scope(source))
+	default:
+		how = fmt.Sprintf("the source, %s, is inside the destination, %s", scope(source), scope(dest))
+	}
+	if sameAccount {
+		return how + ", in the same account"
+	}
+	return how + ", and the two bookmarks cannot be shown to be different accounts"
+}
+
 // resolve opens both sessions and fail-fast checks the destination
 // container (copying into a void 404s on the first write — say it now).
 func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src, dst *swiftcontrol.Session, versioned bool, err error) {
@@ -202,9 +227,10 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if req.SourceContainer == req.DestContainer &&
 		(strings.HasPrefix(req.SourcePrefix, req.DestPrefix) || strings.HasPrefix(req.DestPrefix, req.SourcePrefix)) &&
 		!provenDistinctAccounts(src.StorageURL(), dst.StorageURL()) {
+		sameAccount := swiftcontrol.AccountIdentity(src.StorageURL()) == swiftcontrol.AccountIdentity(dst.StorageURL())
 		return nil, nil, false, fmt.Errorf(
-			"source and destination overlap: container %q with nested prefixes (%q / %q), and the two endpoints are not PROVABLY different accounts (%s vs %s) — a run could consume its own output; use disjoint prefixes, another container, or endpoints with distinct account identifiers",
-			req.SourceContainer, req.SourcePrefix, req.DestPrefix, swiftcontrol.AccountIdentity(src.StorageURL()), swiftcontrol.AccountIdentity(dst.StorageURL()))
+			"the source and destination overlap: %s, so a copy could copy its own output; choose another container, or a destination prefix that neither contains the source nor sits inside it",
+			describeOverlap(req.SourceContainer, req.SourcePrefix, req.DestPrefix, sameAccount))
 	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
 	if err != nil {
