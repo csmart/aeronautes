@@ -237,7 +237,14 @@
 
     <footer>
       {#if startedJobId}
-        <span class="started">Job {startedJobId} started — follow it in the drawer.</span>
+        <span class="started">Job {startedJobId} started.</span>
+        <button
+          onclick={() => {
+            const jobId = startedJobId;
+            close();
+            if (jobId) void browser.jobs.reveal(jobId);
+          }}>Show in jobs</button
+        >
         <button onclick={close}>Close</button>
       {:else}
         <!-- The highlight marks the next step: Preview until a preview is

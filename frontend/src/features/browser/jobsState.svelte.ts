@@ -91,6 +91,18 @@ export class JobsState {
   #seq = 0;
   #loadedFilter: string | null = null;
 
+  /** The job a dialog's "Show in jobs" asked the drawer to open on. */
+  revealJob: string | null = $state(null);
+
+  async reveal(jobId: string): Promise<void> {
+    // A filter on another account would hide the very job asked for.
+    if (this.bookmarkFilter !== "" && !this.list.some((job) => job.id === jobId)) {
+      this.bookmarkFilter = "";
+    }
+    await this.load();
+    this.revealJob = jobId;
+  }
+
   async load() {
     const seq = ++this.#seq;
     const filter = this.bookmarkFilter;
