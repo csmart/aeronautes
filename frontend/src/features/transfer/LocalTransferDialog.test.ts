@@ -659,13 +659,14 @@ describe("folder upload", () => {
     await settle();
     expect(f.api.preflightUpload).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ selectionToken: "folder-0" }));
     await f.resolvePreflight();
-    expect(f.root.textContent).toContain("Folder photos: 2 files to upload; 2 entries skipped");
-    expect(f.root.textContent).toContain("1 empty directory produces nothing");
+    // The folder lands as a folder of its own name under the prefix.
+    expect(f.root.textContent).toContain('Folder "photos": 2 files to upload into media/selected/photos/; 2 entries skipped');
+    expect(f.root.textContent).toContain("1 empty directory is not uploaded");
     expect(f.startButton()?.disabled).toBe(false);
     // Starting spends the selection, so nothing goes on describing it.
     f.startButton()!.click();
     flushSync();
-    expect(f.root.textContent).not.toContain("Folder photos");
+    expect(f.root.textContent).not.toContain('Folder "photos"');
   });
 
   // ADR 0103 decision 6: what the walk left out comes back in the report as
@@ -704,7 +705,9 @@ describe("folder upload", () => {
     f.folders[0].resolve({ token: "", files: [], folder: "hollow", skipped: 1, skippedSample: ["link"], emptyDirectories: 1 });
     await settle();
     expect(f.api.preflightUpload).not.toHaveBeenCalled();
-    expect(f.root.textContent).toContain("Folder hollow holds no file to upload");
+    // Nothing to upload is a warning, not a hint the operator can miss.
+    const notice = f.root.querySelector(".folder.callout.warning");
+    expect(notice?.textContent).toContain('Nothing to upload: folder "hollow" holds no files');
     expect(f.startButton()).toBeUndefined();
   });
 

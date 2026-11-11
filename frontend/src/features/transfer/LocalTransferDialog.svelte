@@ -8,7 +8,7 @@
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { DownloadPreflightView, DownloadRequestDTO, PickedFilesDTO, UploadPreflight, UploadRequestDTO } from "../../lib/api";
-  import { folderSummary } from "./folderSummary";
+  import { folderSummary, folderWarns } from "./folderSummary";
   import { formatBytes, formatCount } from "../../lib/format";
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
@@ -239,11 +239,11 @@
     {#if !report}
       <p class="hint">
         {mode === "upload"
-          ? "Choose files or a folder; every collision is reported before anything is written."
+          ? "Choose files to upload into this prefix, or a folder to upload as a folder of its own name inside it; every collision is reported before anything is written."
           : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
       {#if folder}
-        <p class="hint folder">{folderSummary(folder)}</p>
+        <p class="folder" class:hint={!folderWarns(folder)} class:callout={folderWarns(folder)} class:warning={folderWarns(folder)} role="status">{folderSummary(folder, `${browser.containerName}/${browser.prefix}`)}</p>
       {/if}
       {#if mode === "download" && browser.settings.document}
         <p class="hint ceiling">
@@ -274,7 +274,7 @@
           </p>
         {/if}
         {#if folder}
-          <p class="note folder">{folderSummary(folder)}</p>
+          <p class="folder" class:note={!folderWarns(folder)} class:callout={folderWarns(folder)} class:warning={folderWarns(folder)}>{folderSummary(folder, `${browser.containerName}/${browser.prefix}`)}</p>
         {/if}
         {#if placesLargeObjectsAsDlo}
           <p class="note">
