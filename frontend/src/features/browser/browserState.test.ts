@@ -779,3 +779,19 @@ describe("account reload safety (§65.2)", () => {
     expect(s.accountError).toMatch(/503/);
   });
 });
+
+// Switching bookmarks clears the old account before the new one answers;
+// the screen names the bookmark being connected meanwhile instead of
+// reading "Not connected".
+it("names the bookmark being connected while the connection is made", async () => {
+  const api = newFakeApi();
+  const s = new BrowserState(api);
+  const saved = await s.saveBookmark({ id: "", displayName: "vexxhost", authUrl: "http://mock/auth/v1.0", username: "test:tester",
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system",
+    caPem: "", hasCa: false, hasCredential: false }, "testing");
+  expect(s.connectingName).toBe("");
+  const connecting = s.connect(saved.id);
+  expect(s.connectingName).toBe("vexxhost");
+  await connecting;
+  expect(s.connectingName).toBe("");
+});

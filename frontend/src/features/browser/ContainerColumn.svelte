@@ -147,7 +147,11 @@
   </header>
 
   <div class="rows" role="tabpanel" id={panelId} aria-labelledby={tabId(browser.mode)}>
-    {#if !browser.account}
+    {#if browser.connecting}
+      <!-- Switching bookmarks clears the old account before the new one
+        answers; without this the column read "Not connected" meanwhile. -->
+      <p class="disconnected" role="status">Connecting to {browser.connectingName}…</p>
+    {:else if !browser.account}
       <p class="disconnected">Not connected.</p>
     {:else if browser.containersLoading}
       <p class="disconnected" role="status">Listing…</p>
