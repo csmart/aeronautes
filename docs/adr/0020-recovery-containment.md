@@ -4,6 +4,7 @@
 **Scope:** The P01 ownership, concurrency and durability decisions needed by P04 recovery containment and P05 transfer refusal.
 Implementation and release evidence remain separate gates.
 Amended since: [ADR 0081](0081-upload-overwrite-acknowledgement.md) lifted the transfer-overwrite refusal for the upload route and added one named exception to the refusal of reclamation, and [ADR 0087](0087-copy-overwrite-on-upload-terms.md) extended that lift to the copy route.
+On 11 November 2026, during the 0.5.0 test run, the operator found the jobs drawer overwhelming, and the retained-records disclosure below now allows one visible line with the rest of its wording one click away.
 Every other refusal here stands.
 
 ## Problem and oracle
@@ -69,6 +70,8 @@ Keep recovery-held jobs exempt from history pruning.
 
 This conservative first implementation may retain records for successfully completed jobs even when their temporary objects were already removed during normal execution.
 The UI must therefore say that recovery records are retained and remote residue is unverified; counts are records or jobs, not object counts, bytes, proven orphans or failed transfers.
+One visible line must carry the count, named as records and jobs, and say that the records are kept and that whatever they track on the store is unchecked; the rest of this wording, that the counts are not objects, bytes, proven orphans or failed transfers and that automatic cleanup is unavailable, may sit behind a Details control on that line.
+A job's own count may be a short tag in its row, with the sentence in the row's details.
 Retained recovery work does not rewrite the transfer's existing terminal result.
 Expose a bounded read-only summary with the number of terminal jobs holding recovery records and the number of those records, independent of the recent-job list limit.
 Also expose a per-job retained-record count in the job view.

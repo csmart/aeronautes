@@ -2535,6 +2535,13 @@ For active jobs show:
 
 Do not show a spinner and hide the interesting data.
 
+**Keep the drawer calm (operator, 11 November 2026).**
+The 0.5.0 test run found the drawer wordy and overwhelming.
+Each job is one row of facts, and the rows alternate in tint so the eye can follow one across.
+A job's error shows as one line in its row, cut at the row's width; the whole text, the counters and the settings are in the row's details, which open with one click and can be copied.
+Disclosures follow the summary-and-details pattern: one plain visible sentence, with the full wording one click away.
+The retained-records disclosure keeps the visible line [ADR 0020](adr/0020-recovery-containment.md) requires.
+
 **Jobs are bookmark-scoped and the drawer filters on it (owner input, 2026-08-29).** A job records
 the bookmark(s) it acts for — source and destination separately for cross-account work — and the
 drawer offers an account/bookmark filter so an operator working to/from/with several clusters can
