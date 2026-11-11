@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -319,5 +320,73 @@ func TestGatewayLogsWhyTheUpstreamFailed(t *testing.T) {
 		if strings.Contains(text, private) {
 			t.Errorf("the log carries %q: %q", private, text)
 		}
+	}
+}
+
+// droppingListener closes the next accepted connection when drop is set,
+// as a store does when it drops a connection or sends a TLS alert.
+type droppingListener struct {
+	net.Listener
+	drop     atomic.Bool
+	accepted atomic.Int32
+}
+
+func (l *droppingListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		l.accepted.Add(1)
+		if l.drop.CompareAndSwap(true, false) {
+			conn.Close()
+			continue
+		}
+		return conn, nil
+	}
+}
+
+// A read that fails in transit reaches the engine as the store's answer,
+// because the gateway sends it once more; the engine would not retry the
+// gateway's 502 (0.5.0 test run). A write meeting the same failure is not
+// sent again.
+func TestGatewayRepeatsAReadThatFailedInTransit(t *testing.T) {
+	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	listener := &droppingListener{Listener: upstream.Listener}
+	upstream.Listener = listener
+	upstream.Start()
+	defer upstream.Close()
+	gateway, local, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "fixture-token"}, nil, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gateway.Close()
+
+	listener.drop.Store(true)
+	req, err := http.NewRequest(http.MethodHead, local.StorageURL+"/owned/object", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Auth-Token", local.Token)
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent || listener.accepted.Load() != 2 {
+		t.Fatalf("read: status %d after %d connections, want 204 after 2", resp.StatusCode, listener.accepted.Load())
+	}
+
+	gateway.transport.CloseIdleConnections()
+	listener.accepted.Store(0)
+	listener.drop.Store(true)
+	put, err := http.NewRequestWithContext(t.Context(), http.MethodPut, upstream.URL+gatewayAccount+"/owned/object", strings.NewReader("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gateway.roundTrip(put); err == nil || listener.accepted.Load() != 1 {
+		t.Fatalf("write: error %v after %d connections, want a failure after 1", err, listener.accepted.Load())
 	}
 }
