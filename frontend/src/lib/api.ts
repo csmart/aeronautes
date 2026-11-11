@@ -119,6 +119,7 @@ export type {
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SelectedDeleteRequestDTO,
+  TransferSettingsDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 import type {
