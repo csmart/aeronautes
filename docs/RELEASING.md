@@ -63,22 +63,16 @@ The [fixture evidence and platform limits](experiments/2026-09-09-release-identi
 
 ## Release steps
 
-The first release is 0.1.0 (the operator's decision of 24 September 2026,
-finish line decision 19). It is cut only after every outstanding finish-line
-item is delivered and the operator has run the
-[0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md) against the release
-candidate and recorded its results.
+The first release is 0.5.0, by the operator's decision of 11 November 2026, which replaces the earlier plan to cut 0.1.0 first (finish line decision 19).
+It is cut only after the operator has run the [0.5.0 test plan](audits/2026-11-11/0.5.0-test-plan.md) against the release candidate and recorded its results; the [0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md) was never run and is carried into it.
 
 1. `make test` and `make test-integration` (SAIO running) are green.
 2. `scripts/smoke.sh` passes headless — CI runs it on every push/PR too.
-3. The operator runs the 0.1.0 test plan against the candidate build and
-   records the results; a failed step blocks the tag.
+3. A release-workflow dispatch on the commit to be tagged builds the candidate packages; the operator runs the test plan against them and records the results; a failed step blocks the tag.
 4. Write the release notes as `docs/releases/vX.Y.Z.md` on that commit, then tag `vX.Y.Z` and push the tag.
    CI builds the six unsigned artifacts, and its `publish` job drafts a GitHub release titled with the tag, carrying the Linux rpm, deb and tarball for both architectures with their provenance files, and the notes.
    macOS and Windows builds stay workflow artifacts: they are development builds without acceptance (finish line decision 1).
 5. Check the draft: every file is present, and each file's SHA256 matches its provenance record; then publish it.
-6. The §57.4 smoke against real SwiftStack infrastructure is a manual
-   owner step before announcing anything; for 0.1.0 it is step 6 of the
-   test plan.
+6. The §57.4 smoke against real SwiftStack infrastructure is a manual owner step before announcing anything; for 0.5.0 it is step 6 of the test plan.
 
 Every job of the release workflow builds with the current Go patch release, as CI tests with; `go.mod`'s `go` line is the language floor, not the build toolchain.
