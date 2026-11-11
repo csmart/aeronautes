@@ -79,7 +79,20 @@
 
   $effect(() => {
     void browser.scopeRevision;
-    untrack(invalidate);
+    // Once this dialog has started a job there is no preview left to
+    // protect, and a later scope change, such as the browser leaving the
+    // container that job deleted, must not turn it back into a new deletion.
+    untrack(() => {
+      if (startedJobId === null) invalidate();
+    });
+  });
+
+  // The dialog acts on the container open when it appeared. When that
+  // container is no longer open, for example because this dialog's own job
+  // deleted it, there is nothing left for the dialog to act on.
+  const openedOn = untrack(() => browser.containerName);
+  $effect(() => {
+    if (browser.containerName !== openedOn) untrack(close);
   });
 
   // The container's versioning facts drive the consent sentence that says what
