@@ -369,7 +369,7 @@
         · Loading recent changes
         {#if browser.audit.recentLoaded}({browser.audit.recentEvents.length} last loaded){/if}
       {:else if browser.audit.recentLoaded}
-        · {browser.audit.recentEvents.length} last loaded recent changes
+        · {browser.audit.recentEvents.length} recent {browser.audit.recentEvents.length === 1 ? "change" : "changes"}
       {:else}
         · Recent changes not loaded
       {/if}
