@@ -1,5 +1,5 @@
-<!-- The bookmark rail: every saved account, grouped by the cloud it points
-  at and sorted for the eye, with a filter once the list is long and the
+<!-- The bookmark rail: every saved account as a letter tile with its name
+  beneath, sorted by name, with a filter once the list is long and the
   account and endpoint on hover. The rail's width is the screen's to set
   (§4.3); the labels grow into whatever width it gets. -->
 <script lang="ts">
@@ -7,7 +7,7 @@
   import type { BrowserState } from "./browserState.svelte";
 
   import type { BookmarkDTO } from "../../lib/api";
-  import { groupBookmarks, hoverText, matchesBookmark } from "../../lib/bookmarkRail";
+  import { hoverText, matchesBookmark, sortBookmarks } from "../../lib/bookmarkRail";
 
   let {
     browser,
@@ -32,10 +32,8 @@
   const showFilter = $derived(browser.bookmarks.length >= filterFrom || filter !== "");
   // The connected bookmark is never filtered out: the account in use stays
   // in view, and with it the persistent TLS warning (K-SEC-005).
-  const groups = $derived(groupBookmarks(browser.bookmarks.filter(
+  const shown = $derived(sortBookmarks(browser.bookmarks.filter(
     (bookmark) => bookmark.id === browser.connectedBookmarkId || matchesBookmark(bookmark, filter))));
-  // One cloud needs no heading over its accounts.
-  const grouped = $derived(groups.length > 1);
 
   const cycle: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
 
@@ -86,42 +84,37 @@
         aria-label="Filter bookmarks"
         title="Filter by name, account or endpoint"
       />
-      {#if groups.length === 0}
+      {#if shown.length === 0}
         <p class="no-match" role="status">No bookmark matches.</p>
       {/if}
     {/if}
-    {#each groups as group (group.endpoint)}
-      {#if grouped}
-        <h3 class="group" title={group.endpoint}>{group.endpoint}</h3>
-      {/if}
-      {#each group.bookmarks as bookmark (bookmark.id)}
-        <div class="bookmark-row">
-          <button
-            class="bookmark"
-            class:active={browser.connectedBookmarkId === bookmark.id}
-            class:insecure={bookmark.tlsMode === "insecure"}
-            title={hoverText(bookmark)}
-            aria-label={bookmark.displayName}
-            aria-pressed={browser.connectedBookmarkId === bookmark.id}
-            disabled={browser.connecting}
-            onclick={() => browser.connect(bookmark.id).catch(() => {})}
-          >
-            <span class="badge">{initials(bookmark.displayName)}</span>
-            <span class="label">{bookmark.displayName}</span>
-            {#if bookmark.tlsMode === "insecure"}
-              <!-- K-SEC-005: the warning is persistent chrome, not an
-                editor-only detail. -->
-              <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
-            {/if}
-          </button>
-          <button
-            class="edit"
-            title="Edit {bookmark.displayName}"
-            aria-label="Edit {bookmark.displayName}"
-            onclick={() => onEditBookmark(bookmark)}
-          >✎</button>
-        </div>
-      {/each}
+    {#each shown as bookmark (bookmark.id)}
+      <div class="bookmark-row">
+        <button
+          class="bookmark"
+          class:active={browser.connectedBookmarkId === bookmark.id}
+          class:insecure={bookmark.tlsMode === "insecure"}
+          title={hoverText(bookmark)}
+          aria-label={bookmark.displayName}
+          aria-pressed={browser.connectedBookmarkId === bookmark.id}
+          disabled={browser.connecting}
+          onclick={() => browser.connect(bookmark.id).catch(() => {})}
+        >
+          <span class="badge">{initials(bookmark.displayName)}</span>
+          <span class="label">{bookmark.displayName}</span>
+          {#if bookmark.tlsMode === "insecure"}
+            <!-- K-SEC-005: the warning is persistent chrome, not an
+              editor-only detail. -->
+            <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
+          {/if}
+        </button>
+        <button
+          class="edit"
+          title="Edit {bookmark.displayName}"
+          aria-label="Edit {bookmark.displayName}"
+          onclick={() => onEditBookmark(bookmark)}
+        >✎</button>
+      </div>
     {/each}
 
     <button class="bookmark add" title="Add bookmark" onclick={onAddBookmark}>
@@ -201,17 +194,6 @@
     font-size: var(--text-xs);
     color: var(--color-text-secondary);
     text-align: center;
-  }
-
-  .group {
-    margin: var(--space-1) 0 0;
-    font-size: var(--text-xs);
-    font-weight: var(--weight-medium);
-    color: var(--color-text-faint);
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .bookmark-row {

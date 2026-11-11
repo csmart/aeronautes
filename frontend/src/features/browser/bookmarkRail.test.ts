@@ -53,28 +53,21 @@ function railNames(): string[] {
   return [...document.querySelectorAll(".bookmark-row .label")].map((node) => node.textContent ?? "");
 }
 
-function headings(): string[] {
-  return [...document.querySelectorAll(".rail .group")].map((node) => node.textContent ?? "");
-}
 
 describe("bookmark rail arrangement", () => {
-  it("groups by endpoint, sorts both levels and describes each account on hover", () => {
+  // The operator found the host headings noise in the 0.5.0 test run: the
+  // rail is one list of letter tiles, named beneath, with the host on hover.
+  it("lists every bookmark by name with no host headings and describes each on hover", () => {
     showRail([
       bookmark("1", "zeta", "swift.b.example"),
       bookmark("2", "Alpha", "swift.b.example", "tenant:alpha"),
       bookmark("3", "Mid", "swift.a.example"),
     ]);
-    expect(headings()).toEqual(["swift.a.example", "swift.b.example"]);
-    expect(railNames()).toEqual(["Mid", "Alpha", "zeta"]);
+    expect(document.querySelectorAll(".rail h3")).toHaveLength(0);
+    expect(railNames()).toEqual(["Alpha", "Mid", "zeta"]);
     const alpha = document.querySelector<HTMLButtonElement>('[aria-label="Alpha"]')!;
     expect(alpha.title).toBe("Alpha\ntenant:alpha at swift.b.example");
     expect(document.querySelector(".filter")).toBeNull();
-  });
-
-  it("shows no heading when every bookmark points at one cloud", () => {
-    showRail([bookmark("1", "b", "one.example"), bookmark("2", "a", "one.example")]);
-    expect(headings()).toEqual([]);
-    expect(railNames()).toEqual(["a", "b"]);
   });
 
   it("offers a filter once eight bookmarks are saved and narrows by name, account or endpoint", async () => {
@@ -89,7 +82,6 @@ describe("bookmark rail arrangement", () => {
     filter.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     expect(railNames()).toEqual(["Site 4", "Site 5", "Site 6", "Site 7"]);
-    expect(headings()).toEqual([]);
 
     filter.value = "tenant2";
     filter.dispatchEvent(new Event("input", { bubbles: true }));
