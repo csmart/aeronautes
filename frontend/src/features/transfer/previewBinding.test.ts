@@ -520,3 +520,20 @@ it.each(["copy", "delete"] as const)("%s highlights Preview, then the start", as
   expect(f.previewButton().classList.contains("primary")).toBe(false);
   expect(f.startButton().classList.contains(startClass)).toBe(true);
 });
+
+// A delete-container job that completes takes the browser back to the
+// account; the dialog that started it closes instead of offering a new
+// deletion of a container that is gone (0.5.0 test run).
+it("Delete keeps its started job through a scope change and closes when its container is left", async () => {
+  const f = show("delete");
+  f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
+  f.preview(); await f.resolve(); f.arm();
+  f.startButton().click(); flushSync();
+  f.startReply.resolve("deleting-job"); await settle();
+  expect(f.root.textContent).toContain("Job deleting-job started");
+  f.browser.prefix = "elsewhere/"; flushSync();
+  expect(f.root.textContent).toContain("Job deleting-job started");
+  expect(f.onClose).not.toHaveBeenCalled();
+  f.browser.containerName = null; flushSync();
+  expect(f.onClose).toHaveBeenCalled();
+});
