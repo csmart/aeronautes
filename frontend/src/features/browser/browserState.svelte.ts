@@ -89,6 +89,14 @@ interface PageRequest {
   marker: string;
 }
 
+/** What a watched job changed: the account and container it wrote to, and
+ * whether it deletes that container. */
+interface WatchedChange {
+  readonly bookmarkId: string;
+  readonly container: string;
+  readonly deletesContainer?: boolean;
+}
+
 interface FindRequest {
   readonly scope: number;
   readonly seq: number;
@@ -908,18 +916,24 @@ export class BrowserState {
       return;
     }
     if (this.prefix === "") {
-      this.containerName = null;
-      this.containerDetail = null;
-      this.containerDetailError = null;
-      this.entries = [];
-      this.filter = "";
-      this.select(-1);
-      // Inspection may have taught the evidence engine (§24): returning
-      // to the account view re-reads classifications.
-      await this.loadContainers();
+      await this.#leaveContainer();
       return;
     }
     await this.#loadEntries(parentPrefix(this.prefix));
+  }
+
+  /** Return from the open container to the account view. */
+  async #leaveContainer() {
+    this.containerName = null;
+    this.prefix = "";
+    this.containerDetail = null;
+    this.containerDetailError = null;
+    this.entries = [];
+    this.filter = "";
+    this.select(-1);
+    // Inspection may have taught the evidence engine (§24): returning
+    // to the account view re-reads classifications.
+    await this.loadContainers();
   }
 
   async #loadEntries(prefix: string) {
@@ -1223,7 +1237,7 @@ export class BrowserState {
 
   /** Jobs this client started whose end should refresh the view they
    * wrote to, by id, with the account and container they changed. */
-  #watchedJobs = new Map<string, { bookmarkId: string; container: string }>();
+  #watchedJobs = new Map<string, WatchedChange>();
 
   /** Follow one job this client started until it ends, then re-read what
    * it changed if that is still on screen: the open container's view, or
@@ -1231,7 +1245,7 @@ export class BrowserState {
    * account. The drawer's list poll cannot serve here because the operator
    * filters it and it is capped at fifty rows, so a job can end outside
    * it; the item page polls the job itself for the same reason (ADR 0030). */
-  #watchJob(id: string, changed: { bookmarkId: string; container: string }) {
+  #watchJob(id: string, changed: WatchedChange) {
     if (this.#watchedJobs.has(id)) return;
     this.#watchedJobs.set(id, changed);
     let misses = 0;
@@ -1251,7 +1265,15 @@ export class BrowserState {
       } else if (terminalJobStates.includes(job.state)) {
         this.#watchedJobs.delete(id);
         if (changed.bookmarkId === this.connectedBookmarkId) {
-          await (changed.container === this.containerName ? this.refreshView() : this.loadContainers());
+          if (changed.container !== this.containerName) {
+            await this.loadContainers();
+          } else if (changed.deletesContainer && job.state === "complete") {
+            // The container is gone: re-listing it would only fail. A job
+            // that ended otherwise may have left it, so that case re-reads.
+            await this.#leaveContainer();
+          } else {
+            await this.refreshView();
+          }
         }
         return;
       } else {
@@ -1548,7 +1570,7 @@ export class BrowserState {
 
   async startDelete(req: DeleteRequestDTO): Promise<string> {
     const id = await this.#api.startDelete(req);
-    this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container });
+    this.#watchJob(id, { bookmarkId: req.bookmarkId, container: req.container, deletesContainer: req.mode === "delete_container" });
     await this.jobs.load();
     return id;
   }

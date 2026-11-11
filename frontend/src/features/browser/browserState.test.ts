@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
-import type { AccountDTO, AppSettingsDTO, BookmarkDTO } from "../../lib/api";
+import type { AccountDTO, AppSettingsDTO, BookmarkDTO, DeleteRequestDTO, JobDTO } from "../../lib/api";
 
 function bookmark(): BookmarkDTO {
   return {
@@ -528,6 +528,36 @@ describe("refreshing the open listing", () => {
       await vi.advanceTimersByTimeAsync(1500);
       expect(containers).toHaveBeenCalledTimes(1);
       expect(objects).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A completed deletion of the open container leaves nothing to re-list, so
+  // the view returns to the account; emptying it, or a deletion that ended
+  // otherwise and may have left it, re-reads it in place.
+  it.each([
+    { mode: "delete_container", state: "complete", leaves: true },
+    { mode: "delete_container", state: "partial", leaves: false },
+    { mode: "empty", state: "complete", leaves: false },
+  ] as const)("after a $mode job that ended $state, leaves the container: $leaves", async ({ mode, state, leaves }) => {
+    vi.useFakeTimers();
+    try {
+      const api = newFakeApi();
+      const s = await connected(api);
+      await s.openContainer("fixtures");
+      const objects = vi.spyOn(api, "objects");
+      const containers = vi.spyOn(api, "containers");
+      await s.startDelete({ bookmarkId: s.connectedBookmarkId!, container: "fixtures", prefix: "", mode: mode as DeleteRequestDTO["mode"], confirm: "fixtures" });
+      const read = api.job.bind(api);
+      vi.spyOn(api, "job").mockImplementation(async (id, bookmark) => {
+        const job = await read(id, bookmark);
+        return job && { ...job, state: state as JobDTO["state"] };
+      });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(s.containerName).toBe(leaves ? null : "fixtures");
+      expect(objects).toHaveBeenCalledTimes(leaves ? 0 : 1);
+      expect(containers).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
