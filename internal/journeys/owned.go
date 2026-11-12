@@ -116,14 +116,11 @@ func (o *Owned) created(container string) bool {
 // Teardown removes what this run created and nothing else: the objects in
 // and then each claimed sidecar and each created container, and the account
 // key. It goes on past a failure, so one stuck object does not leave the
-// rest behind, and returns every failure. A sidecar no step created is
-// absent and is skipped.
+// rest behind, and returns every failure. A sidecar no step created, or a
+// container a journey already deleted, is absent and is skipped.
 func (o *Owned) Teardown(ctx context.Context) []error {
 	var failures []error
 	for _, sidecar := range o.sidecars {
-		if _, err := o.session.ContainerDetail(ctx, sidecar); swiftcontrol.IsNotFound(err) {
-			continue
-		}
 		failures = append(failures, o.empty(ctx, sidecar)...)
 	}
 	for _, container := range o.containers {
@@ -138,6 +135,9 @@ func (o *Owned) Teardown(ctx context.Context) []error {
 }
 
 func (o *Owned) empty(ctx context.Context, container string) []error {
+	if _, err := o.session.ContainerDetail(ctx, container); swiftcontrol.IsNotFound(err) {
+		return nil
+	}
 	var failures []error
 	for row, err := range o.session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
 		if err != nil {
