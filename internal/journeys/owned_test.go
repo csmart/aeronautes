@@ -166,3 +166,23 @@ func accountHolds(t *testing.T, session *swiftcontrol.Session, suffix string) bo
 	}
 	return false
 }
+
+// A container a journey deleted itself is skipped by teardown, not reported.
+func TestTeardownSkipsAContainerAlreadyGone(t *testing.T) {
+	_, session := mockSession(t)
+	ctx := context.Background()
+	owned, err := NewOwned(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := owned.CreateContainer(ctx, "gone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.DeleteContainer(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if failures := owned.Teardown(ctx); len(failures) != 0 {
+		t.Fatalf("teardown reported a container the journey already deleted: %v", failures)
+	}
+}
