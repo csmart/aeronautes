@@ -96,6 +96,38 @@ it("copies the chosen objects and says which", async () => {
   expect(vi.mocked(api.planCopy).mock.calls[0][0]).toMatchObject({ sourcePrefix: "files/", members: ["files/a", "files/b"], destContainer: "backup" });
 });
 
+// A preview that found fewer of the selected objects than were chosen says
+// how many are gone, and the copy can still start: it copies the rest and
+// ends partial (ADR 0108 decision 3).
+it("says in the preview how many selected objects are gone", async () => {
+  const { api, browser } = browserAt("files/");
+  browser.select(1);
+  browser.toggleRow(2);
+  const plan = api.planCopy;
+  api.planCopy = vi.fn(async (req) => ({ ...(await plan(req)), missingMembers: 1 }));
+  const root = document.createElement("div");
+  document.body.append(root);
+  mounted.add(mount(TransferDialog, { target: root, props: { browser, onClose: vi.fn() } }));
+  flushSync();
+  const container = root.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
+  container.value = "backup";
+  container.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+  const button = (label: string) => [...root.querySelectorAll<HTMLButtonElement>("footer button")].find((b) => b.textContent?.trim() === label)!;
+  button("Preview").click();
+  for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
+  const notes = () => root.querySelector(".preview .notes")?.textContent?.replace(/\s+/g, " ");
+  expect(notes()).toContain("1 of the selected objects was no longer at the source; the others are copied");
+  expect(button("Start copy").disabled).toBe(false);
+
+  // With every selected object gone, nothing is copied, and the note says so.
+  api.planCopy = vi.fn(async (req) => ({ ...(await plan(req)), missingMembers: 2 }));
+  button("Preview").click();
+  for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
+  expect(notes()).toContain("2 of the selected objects were no longer at the source; nothing is copied");
+  expect(button("Start copy").disabled).toBe(false);
+});
+
 // A download follows the selection the same way; an upload, with the same
 // rows chosen, still goes into the folder being browsed and names no members.
 it.each(["download", "upload"] as const)("sends the chosen objects only for a download (%s)", async (mode) => {
