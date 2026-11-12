@@ -232,12 +232,12 @@ func (h *Harness) assertNoResidue() {
 		}
 		var names []string
 		var err error
-		for attempt := 0; attempt < 5; attempt++ {
+		for attempt := 0; attempt < 10; attempt++ {
 			names, err = a.Oracle.ListContainers(h.ns)
 			if err != nil || len(names) == 0 {
 				break
 			}
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 		if err != nil {
 			h.T.Errorf("residue sweep: listing %q-prefixed containers on %s failed: %v", h.ns, a.user, err)
@@ -814,38 +814,51 @@ func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
 // every DELETE status. It does not fail the test directly — the
 // end-of-test residue sweep (assertNoResidue) is the single assertion that
 // nothing survived.
+// purge empties and deletes a container. Under load the object listing and
+// the container's own count lag the deletes, so a container the store still
+// calls non-empty is listed and emptied again, a bounded number of times,
+// rather than left for the residue sweep to report (F42).
 func (h *Harness) purge(a *Account, container string) {
-	if names, err := a.Oracle.ListObjects(container); err == nil {
-		for _, name := range names {
-			h.rawDeleteChecked(a, "/"+container+"/"+oracle.Escape(name))
+	for round := 0; round < 5; round++ {
+		if names, err := a.Oracle.ListObjects(container); err == nil {
+			for _, name := range names {
+				h.rawDeleteChecked(a, "/"+container+"/"+oracle.Escape(name))
+			}
 		}
+		if h.rawDeleteChecked(a, "/"+container) != http.StatusConflict {
+			return
+		}
+		time.Sleep(300 * time.Millisecond)
 	}
-	h.rawDeleteChecked(a, "/"+container)
 }
 
 // rawDeleteChecked issues a DELETE and treats 2xx and 404 as success. A
 // 409 (container not yet empty under eventual consistency) is retried a
 // bounded number of times; other outcomes are left for the residue sweep
-// to surface rather than silently swallowed.
-func (h *Harness) rawDeleteChecked(a *Account, path string) {
+// to surface rather than silently swallowed. It returns the last status, or
+// 0 when the request itself failed.
+func (h *Harness) rawDeleteChecked(a *Account, path string) int {
+	status := 0
 	for attempt := 0; attempt < 5; attempt++ {
 		req, _ := http.NewRequest(http.MethodDelete, a.storageURL+path, nil)
 		req.Header.Set("X-Auth-Token", a.token)
 		resp, err := a.rawClient.Do(req)
 		if err != nil {
-			return
+			return 0
 		}
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusNotFound {
-			return
+		status = resp.StatusCode
+		if status/100 == 2 || status == http.StatusNotFound {
+			return status
 		}
-		if resp.StatusCode == http.StatusConflict {
+		if status == http.StatusConflict {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		return
+		return status
 	}
+	return status
 }
 
 // Snapshot witnesses the named containers on an account.
