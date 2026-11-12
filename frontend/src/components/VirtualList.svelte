@@ -29,6 +29,9 @@
     /** Keyboard moves are always plain. */
     onSelect?: (index: number, mode: SelectMode) => void;
     onActivate?: (item: T, index: number) => void;
+    /** A row's context menu was asked for, by a right-click or by the
+     * ContextMenu key or Shift+F10 on the focused row, to open at (x, y). */
+    onContextMenu?: (item: T, index: number, x: number, y: number) => void;
   }
 
   let {
@@ -42,6 +45,7 @@
     rowSelected,
     onSelect,
     onActivate,
+    onContextMenu,
   }: Props = $props();
 
   // A caller that owns membership says which rows are selected; the focused
@@ -58,6 +62,9 @@
   }
 
   function handlePointerdown(event: PointerEvent, index: number) {
+    // A right-click on a row already selected keeps a multi-selection, so
+    // its menu acts on everything selected, as in a file manager.
+    if (event.button === 2 && isSelected(items[index], index)) return;
     const mode = modeOf(event);
     if (mode === "range") {
       // A Shift click would otherwise select the rows' text; the focus the
@@ -148,6 +155,10 @@
     } else if (event.key === "Enter" && selected >= 0 && selected < items.length) {
       event.preventDefault();
       onActivate?.(items[selected], selected);
+    } else if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && selected >= 0 && selected < items.length) {
+      event.preventDefault();
+      const box = document.getElementById(`${uid}-row-${selected}`)?.getBoundingClientRect();
+      onContextMenu?.(items[selected], selected, box ? box.left + 24 : 0, box ? box.bottom : 0);
     }
   }
 </script>
@@ -176,6 +187,11 @@
         style:height="{rowHeight}px"
         onpointerdown={(event) => handlePointerdown(event, index)}
         ondblclick={() => onActivate?.(item, index)}
+        oncontextmenu={(event) => {
+          if (!onContextMenu) return;
+          event.preventDefault();
+          onContextMenu(item, index, event.clientX, event.clientY);
+        }}
       >
         {@render row(item, index, isSelected(item, index))}
       </div>
