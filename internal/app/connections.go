@@ -32,8 +32,13 @@ type Connections struct {
 	activeID     string
 	capabilities *swiftcontrol.Capabilities
 	sessions     map[string]cachedSession
-	caDir        string
-	caMu         sync.Mutex
+	// discovered holds the /info read for each cached session, so a
+	// reconnect to a session still cached reuses it (ADR 0110 decision 1).
+	// It is keyed by the session rather than kept in cachedSession, which
+	// is compared by value to tell whether a cached entry is still current.
+	discovered map[*swiftcontrol.Session]*swiftcontrol.Capabilities
+	caDir      string
+	caMu       sync.Mutex
 	// settings holds the container settings facts observed under each
 	// bookmark's current connection generation (ADR 0071).
 	settings settingsFacts
@@ -49,7 +54,7 @@ type cachedSession struct {
 
 // NewConnections builds the registry over the bookmark store.
 func NewConnections(store *bookmarks.Store) *Connections {
-	return &Connections{store: store, sessions: map[string]cachedSession{}}
+	return &Connections{store: store, sessions: map[string]cachedSession{}, discovered: map[*swiftcontrol.Session]*swiftcontrol.Capabilities{}}
 }
 
 // open authenticates one bookmark into a fresh session.
@@ -85,27 +90,85 @@ func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSessio
 	return cachedSession{session: session, generation: generation}, nil
 }
 
-// Connect authenticates the bookmark and makes it the active session.
+// Connect makes the bookmark the active session. A session already cached
+// under the bookmark's current generation is reused, with the /info read
+// when it was first connected, so switching back signs in again only after
+// the bookmark changed (ADR 0110 decision 1). A new session is cached only
+// once its capabilities are read and its generation is checked, so a
+// connect that fails part way leaves nothing behind.
 func (c *Connections) Connect(ctx context.Context, bookmarkID string) error {
-	entry, err := c.open(ctx, bookmarkID)
-	if err != nil {
-		return err
+	_, err := c.connect(ctx, bookmarkID)
+	return err
+}
+
+// connect is Connect returning how to undo it: undo puts back the session
+// that was active before, if this connect's is still the active one and the
+// earlier one is still cached, so a caller whose first read on the new
+// session fails can leave the active session as it found it (ADR 0110
+// decision 1).
+func (c *Connections) connect(ctx context.Context, bookmarkID string) (undo func(), err error) {
+	c.mu.Lock()
+	entry, cached := c.sessions[bookmarkID]
+	capabilities := c.discovered[entry.session]
+	c.mu.Unlock()
+	if cached {
+		err := c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+			if c.sessions[bookmarkID] != entry {
+				return bookmarks.ErrChanged
+			}
+			return nil
+		})
+		switch {
+		case errors.Is(err, bookmarks.ErrChanged):
+			// Changed since it was cached: connect afresh, as the first
+			// connect would.
+			c.forgetObsolete(bookmarkID, entry, err)
+			cached, capabilities = false, nil
+		case err != nil:
+			return nil, err
+		}
 	}
-	// Capability discovery at connect (§10): what this cluster supports
-	// gates what the UI offers. An unreadable /info yields the Unknown
-	// mode, never an error — Unknown is not Unsupported.
-	capabilities, err := entry.session.FetchCapabilities(ctx)
-	if err != nil {
-		return err
+	if !cached {
+		opened, err := c.open(ctx, bookmarkID)
+		if err != nil {
+			return nil, err
+		}
+		entry = opened
+	}
+	if capabilities == nil {
+		// Capability discovery at connect (§10): what this cluster supports
+		// gates what the UI offers. An unreadable /info yields the Unknown
+		// mode, never an error — Unknown is not Unsupported.
+		if capabilities, err = entry.session.FetchCapabilities(ctx); err != nil {
+			return nil, err
+		}
 	}
 
-	return c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+	err = c.guardCache(ctx, bookmarkID, entry.generation, func() error {
+		previous, previousID, previousCapabilities := c.active, c.activeID, c.capabilities
 		c.active = entry
 		c.activeID = bookmarkID
 		c.capabilities = capabilities
 		c.sessions[bookmarkID] = entry
+		c.discovered[entry.session] = capabilities
+		undo = func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if c.active != entry || c.activeID != bookmarkID {
+				return
+			}
+			if previousID != "" && c.sessions[previousID] == previous {
+				c.active, c.activeID, c.capabilities = previous, previousID, previousCapabilities
+				return
+			}
+			c.active, c.activeID, c.capabilities = cachedSession{}, "", nil
+		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return undo, nil
 }
 
 // SessionFor returns a live session for the bookmark, authenticating on
@@ -196,6 +259,7 @@ func (c *Connections) forgetObsolete(id string, entry cachedSession, cause error
 	// A failed lookup must not evict a newer connection installed while
 	// this caller was waiting to validate its older snapshot.
 	if c.sessions[id] == entry {
+		delete(c.discovered, entry.session)
 		delete(c.sessions, id)
 	}
 	if c.activeID == id && c.active == entry {
@@ -250,6 +314,7 @@ func (c *Connections) activeSnapshot() (cachedSession, string, *swiftcontrol.Cap
 func (c *Connections) Invalidate(bookmarkID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	delete(c.discovered, c.sessions[bookmarkID].session)
 	delete(c.sessions, bookmarkID)
 	if c.activeID == bookmarkID {
 		// The active browse pointer is the SAME staleness: drop it too,

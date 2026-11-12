@@ -203,6 +203,10 @@ type Server struct {
 	containers  map[string]*Container
 	accountMeta map[string]string
 	requests    int
+	// authRequests and infoRequests count what the storage counters leave
+	// out, so a test can prove a session was reused rather than reopened.
+	authRequests int
+	infoRequests int
 }
 
 // New builds an empty cluster accepting the given TempAuth credentials.
@@ -303,6 +307,51 @@ func (s *Server) Requests() int {
 	return s.requests
 }
 
+// AuthRequests reports how many authentication requests, TempAuth or
+// Keystone v3, the server has answered.
+func (s *Server) AuthRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authRequests
+}
+
+// InfoRequests reports how many /info requests the server has answered.
+func (s *Server) InfoRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.infoRequests
+}
+
+// ExpireToken retires the token the server has issued: the next storage
+// request carrying it is answered 401, and authenticating again returns
+// the new one, as a cluster does when a token's lifetime ends.
+func (s *Server) ExpireToken() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token += "-renewed"
+}
+
+// RevokeKey stops the server accepting the key it was built with, as an
+// operator does by rotating it on the cluster; tokens already issued stay
+// valid until ExpireToken.
+func (s *Server) RevokeKey() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.key += "-revoked"
+}
+
+func (s *Server) currentKey() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.key
+}
+
+func (s *Server) currentToken() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token
+}
+
 // RequestLog returns every storage request as "METHOD path?query" —
 // the wire-truth oracle for tests asserting what was (never) sent.
 func (s *Server) RequestLog() []string {
@@ -315,6 +364,11 @@ const accountPath = "/v1/AUTH_test"
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ep := r.URL.EscapedPath()
+	if ep == "/auth/v1.0" || ep == "/v3/auth/tokens" {
+		s.mu.Lock()
+		s.authRequests++
+		s.mu.Unlock()
+	}
 	if ep == "/auth/v1.0" {
 		s.handleAuth(w, r)
 		return
@@ -324,6 +378,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ep == "/info" {
+		s.mu.Lock()
+		s.infoRequests++
+		s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		info := s.InfoJSON
 		if info == "" {
@@ -332,7 +389,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(info))
 		return
 	}
-	if r.Header.Get("X-Auth-Token") != s.token {
+	if r.Header.Get("X-Auth-Token") != s.currentToken() {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -384,7 +441,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Auth-User") != s.user || r.Header.Get("X-Auth-Key") != s.key {
+	if r.Header.Get("X-Auth-User") != s.user || r.Header.Get("X-Auth-Key") != s.currentKey() {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -393,7 +450,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	w.Header().Set("X-Storage-Url", scheme+"://"+r.Host+accountPath)
-	w.Header().Set("X-Auth-Token", s.token)
+	w.Header().Set("X-Auth-Token", s.currentToken())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -430,7 +487,7 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := body.Auth.Identity.Password.User
-	if user.Name != s.user || user.Password != s.key {
+	if user.Name != s.user || user.Password != s.currentKey() {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -472,7 +529,7 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("X-Subject-Token", s.token)
+	w.Header().Set("X-Subject-Token", s.currentToken())
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(payload)
