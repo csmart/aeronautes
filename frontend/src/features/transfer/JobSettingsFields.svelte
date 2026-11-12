@@ -1,6 +1,7 @@
 <!-- The per-job settings every transfer dialog offers (§38.3): the §40
   profile and the typed overrides. A download segments nothing, so it
-  leaves the chunk size out. -->
+  leaves the chunk size out; only an upload chooses what a segmented file
+  is published as (ADR 0111). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { JobSettingsInput } from "./jobSettings";
@@ -9,8 +10,15 @@
     settings = $bindable(),
     defaultProfile,
     chunk = true,
+    largeObjects = false,
     onchange,
-  }: { settings: JobSettingsInput; defaultProfile: string | undefined; chunk?: boolean; onchange: () => void } = $props();
+  }: {
+    settings: JobSettingsInput;
+    defaultProfile: string | undefined;
+    chunk?: boolean;
+    largeObjects?: boolean;
+    onchange: () => void;
+  } = $props();
 
   // A dialog can open before the application settings have been read, so
   // the saved default may arrive after the profile was seeded with Auto.
@@ -48,6 +56,16 @@
       <label>
         <span>Chunk size</span>
         <input class="type-mono" placeholder="5Gi (default)" bind:value={settings.chunkSize} oninput={onchange} />
+      </label>
+    {/if}
+    {#if largeObjects}
+      <label>
+        <span>Large objects</span>
+        <select bind:value={settings.largeObjects} onchange={onchange}>
+          <option value="">Bookmark's choice</option>
+          <option value="slo">Static</option>
+          <option value="dlo">Dynamic</option>
+        </select>
       </label>
     {/if}
     <label>

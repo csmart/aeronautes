@@ -303,9 +303,21 @@
         return "calculated";
       case "default":
         return "default";
+      case "bookmark":
+        return "from bookmark";
+      case "capability":
+        return "this cluster does not offer static large objects";
       default:
         return "";
     }
+  }
+
+  // A recorded large-object kind reads as the words the dialogs use.
+  function settingValue(key: string, value: unknown): string {
+    if (key === "largeObjects") {
+      return value === "slo" ? "static" : value === "dlo" ? "dynamic" : String(value);
+    }
+    return String(value);
   }
 
   type SettingsView =
@@ -333,7 +345,7 @@
       const origins = (fields.origins ?? {}) as Record<string, string>;
       const rows: SettingRow[] = Object.entries(fields)
         .filter(([k, v]) => k !== "origins" && v !== "" && v !== 0)
-        .map(([k, v]) => ({ key: k, value: String(v), origin: settingOriginNote(origins[k]) }));
+        .map(([k, v]) => ({ key: k, value: settingValue(k, v), origin: settingOriginNote(origins[k]) }));
       // The child's per-transfer buffers are the memory to reason about
       // (ADR 0074 decision 3): transfers × buffer size, when both are known.
       if (typeof fields.transfers === "number" && fields.transfers > 0 && typeof fields.bufferSize === "string" && fields.bufferSize !== "") {

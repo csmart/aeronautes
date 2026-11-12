@@ -936,7 +936,8 @@ export function newFakeApi(): Api {
         })),
         problems: [],
         totalBytes: 1024 * names.length,
-        largeObjectsAsDlo: false,
+        largeObjects: "",
+        largeObjectsOrigin: "",
       };
     },
     startUpload: async (req) => {

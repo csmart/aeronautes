@@ -147,7 +147,8 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	settings := app.TransferSettingsDTO{}
 	if class == "dlo" {
 		body = []byte(strings.Repeat("abcdefg", 160000))
-		settings.ChunkSize = "1Mi"
+		// These cases test the dynamic publication (ADR 0111 decision 6).
+		settings.ChunkSize, settings.LargeObjects = "1Mi", "dlo"
 		h.rawPut(h.Primary, "/"+container+"_segments", nil, nil)
 		t.Cleanup(func() { h.purge(h.Primary, container+"_segments") })
 		h.Seed(h.Primary, container+"_segments", "outside/keep", []byte("shared store sentinel"), nil)

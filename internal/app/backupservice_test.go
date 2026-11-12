@@ -148,6 +148,7 @@ func TestExportSettingsWritesCompleteBackupWithoutSecrets(t *testing.T) {
 		TLSMode:            swiftcontrol.TLSModeCustomCA,
 		SegmentPlacement:   bookmarks.PlacementSidecar,
 		ChunkSizeBytes:     1 << 30,
+		LargeObjects:       "dlo",
 	}
 	if _, err := store.SaveWithCA(ctx, b, []byte(secret), caBundle(t)); err != nil {
 		t.Fatal(err)
@@ -194,7 +195,8 @@ func TestExportSettingsWritesCompleteBackupWithoutSecrets(t *testing.T) {
 	got := doc.Bookmarks[0]
 	if got.DisplayName != b.DisplayName || got.AuthURL != b.AuthURL || got.Username != b.Username ||
 		got.StorageURLOverride != b.StorageURLOverride || got.TLSMode != string(b.TLSMode) ||
-		got.SegmentPlacement != string(b.SegmentPlacement) || got.ChunkSizeBytes != b.ChunkSizeBytes {
+		got.SegmentPlacement != string(b.SegmentPlacement) || got.ChunkSizeBytes != b.ChunkSizeBytes ||
+		got.LargeObjects != b.LargeObjects {
 		t.Fatalf("bookmark configuration not fully captured: %+v", got)
 	}
 	if !strings.Contains(got.CACertPEM, "BEGIN CERTIFICATE") {
@@ -362,6 +364,7 @@ func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
 		TLSMode:            swiftcontrol.TLSModeCustomCA,
 		SegmentPlacement:   bookmarks.PlacementSidecar,
 		ChunkSizeBytes:     1 << 30,
+		LargeObjects:       "dlo",
 	}
 	if _, err := sourceStore.SaveWithCA(ctx, src, []byte("super-secret-key"), caBundle(t)); err != nil {
 		t.Fatal(err)
@@ -412,7 +415,8 @@ func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
 	}
 	if got.DisplayName != src.DisplayName || got.AuthURL != src.AuthURL || got.Username != src.Username ||
 		got.StorageURLOverride != src.StorageURLOverride || got.TLSMode != src.TLSMode ||
-		got.SegmentPlacement != src.SegmentPlacement || got.ChunkSizeBytes != src.ChunkSizeBytes {
+		got.SegmentPlacement != src.SegmentPlacement || got.ChunkSizeBytes != src.ChunkSizeBytes ||
+		got.LargeObjects != src.LargeObjects {
 		t.Fatalf("restored configuration does not match the source: %+v", got)
 	}
 	caPEM, err := targetStore.CAPem(ctx, got.TLSCAID)
@@ -696,7 +700,8 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	// Pin the written version with a literal, independent of the writer
 	// constant: a v3 export must use a format newer than the legacy version 1,
 	// so an older version-1-only reader refuses it rather than dropping the
-	// identity. Reverting the writer to 1 fails here.
+	// identity. Version 3 also carries the large-object kind (ADR 0111), so an
+	// older reader refuses that rather than restoring a bookmark as static.
 	raw, err := os.ReadFile(filepath.Join(exportDir, exported.FileName))
 	if err != nil {
 		t.Fatal(err)
@@ -705,8 +710,8 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.SchemaVersion != 2 {
-		t.Fatalf("v3 export schema version = %d, want the literal 2 (newer than legacy version 1)", doc.SchemaVersion)
+	if doc.SchemaVersion != 3 {
+		t.Fatalf("v3 export schema version = %d, want the literal 3", doc.SchemaVersion)
 	}
 
 	targetStore, targetDB := newBackupStore(t)
@@ -759,5 +764,8 @@ func TestBackupRestoresLegacyVersionOne(t *testing.T) {
 	}
 	if marks[0].AuthVersion != 1 {
 		t.Fatalf("legacy bookmark restored as version %d, want 1", marks[0].AuthVersion)
+	}
+	if marks[0].LargeObjects != "" {
+		t.Fatalf("legacy bookmark restored with large objects %q, want none, which reads as static", marks[0].LargeObjects)
 	}
 }

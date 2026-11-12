@@ -411,6 +411,36 @@ func (c *Connections) TLSRemote(tls swiftcontrol.TLSConfig) (insecure bool, caFi
 	}
 }
 
+// capabilitiesOf is a cached session's capability snapshot: the /info read
+// when it was connected, or, for a session a job opened without connecting
+// it, one read now and kept with the session, so a preview and the start
+// that follows it decide from the same answer (ADR 0111 decision 1). A
+// session that is no longer cached gets the read without keeping it.
+func (c *Connections) capabilitiesOf(ctx context.Context, session *swiftcontrol.Session) (*swiftcontrol.Capabilities, error) {
+	c.mu.Lock()
+	capabilities := c.discovered[session]
+	c.mu.Unlock()
+	if capabilities != nil {
+		return capabilities, nil
+	}
+	read, err := session.FetchCapabilities(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if kept := c.discovered[session]; kept != nil {
+		return kept, nil
+	}
+	for _, entry := range c.sessions {
+		if entry.session == session {
+			c.discovered[session] = read
+			break
+		}
+	}
+	return read, nil
+}
+
 // Capabilities returns the active connection's capability snapshot, nil
 // when not connected.
 func (c *Connections) Capabilities() *swiftcontrol.Capabilities {

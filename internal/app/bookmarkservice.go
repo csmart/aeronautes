@@ -69,6 +69,7 @@ func (s *BookmarkService) Save(ctx context.Context, dto BookmarkDTO, secret stri
 		b = existing
 	}
 	b.DisplayName = dto.DisplayName
+	b.LargeObjects = dto.LargeObjects
 	connectionFields(&b, dto)
 	if b.TLSMode != swiftcontrol.TLSModeCustomCA {
 		b.TLSCAID = ""
@@ -296,5 +297,6 @@ func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
 		TLSMode:            string(b.TLSMode),
 		HasCA:              b.TLSCAID != "",
 		HasCredential:      b.HasCredential,
+		LargeObjects:       b.LargeObjects,
 	}
 }

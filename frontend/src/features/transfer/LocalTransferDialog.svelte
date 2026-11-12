@@ -82,11 +82,12 @@
   const rejected = $derived(current?.mode === "download" ? current.report.rejected : problemRows.some((p) => p.reject));
   const warnings = $derived(problemRows.filter((p) => !p.reject));
   const rejections = $derived(problemRows.filter((p) => p.reject));
-  // §63.8: name the destination large-object placement before Start, the way
-  // the copy preview does. The backend sets the flag when the selection holds a
-  // file the engine segments into a DLO; a refused upload writes nothing, so the
-  // note is moot there.
-  const placesLargeObjectsAsDlo = $derived(current?.mode === "upload" && !rejected && current.report.largeObjectsAsDlo);
+  // §63.8: name what a segmented file is published as before Start, the way
+  // the copy preview names its placement (ADR 0111). The backend names the
+  // kind only when the selection holds a file the engine segments; a refused
+  // upload writes nothing, so the note is moot there.
+  const largeObjects = $derived(current?.mode === "upload" && !rejected ? current.report.largeObjects : "");
+  const largeObjectsByCapability = $derived(current?.mode === "upload" && current.report.largeObjectsOrigin === "capability");
   const problemCount = $derived(current?.mode === "download" ? current.report.problemCount : problemRows.length);
   const truncated = $derived(current?.mode === "download" && problemCount > problemRows.length);
 
@@ -292,10 +293,16 @@
         {#if folder}
           <p class="folder" class:note={!folderWarns(folder)} class:callout={folderWarns(folder)} class:warning={folderWarns(folder)}>{folderSummary(folder, `${browser.containerName}/${browser.prefix}`)}</p>
         {/if}
-        {#if placesLargeObjectsAsDlo}
+        {#if largeObjects === "slo"}
           <p class="note">
-            Some files in this selection upload as destination DLOs — split into
-            segments whose reads depend on container-listing consistency.
+            Files larger than the chunk size upload in segments as static large objects.
+          </p>
+        {:else if largeObjects === "dlo"}
+          <p class="note">
+            Files larger than the chunk size upload in segments as dynamic large
+            objects, whose reads depend on container-listing consistency{largeObjectsByCapability
+              ? ": this cluster does not offer static large objects"
+              : ""}.
           </p>
         {/if}
         {#if collisionsOnly}
@@ -330,7 +337,7 @@
       </div>
     {/if}
 
-    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} chunk={mode === "upload"} onchange={invalidate} />
+    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} chunk={mode === "upload"} largeObjects={mode === "upload"} onchange={invalidate} />
 
     <footer>
       {#if startedJobId}

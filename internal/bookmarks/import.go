@@ -151,6 +151,7 @@ type identity struct {
 	userDomain, projectName, projectDomain, region     string
 	tlsMode, performanceProfile, segmentPlacement      string
 	chunkSizeBytes                                     int64
+	largeObjects                                       string
 	caCertificates                                     string
 }
 
@@ -171,6 +172,7 @@ func identityOf(b Bookmark, caPEM []byte) identity {
 		performanceProfile: b.PerformanceProfile,
 		segmentPlacement:   string(b.SegmentPlacement),
 		chunkSizeBytes:     b.ChunkSizeBytes,
+		largeObjects:       b.LargeObjects,
 		caCertificates:     string(CertificatesOnly(caPEM)),
 	}
 }

@@ -195,6 +195,20 @@ it("shows where each effective setting came from (§45 provenance)", async () =>
   expect(config).toContain("bufferSize16Midefault");
 });
 
+for (const [largeObjects, origin, value, note] of [
+  ["dlo", "bookmark", "dynamic", "from bookmark"],
+  ["dlo", "capability", "dynamic", "this cluster does not offer static large objects"],
+  ["slo", "default", "static", "default"],
+]) {
+  it(`names an upload's ${value} large objects from ${origin} (ADR 0111)`, async () => {
+    const settings = JSON.stringify({ profile: "balanced", largeObjects, origins: { largeObjects: origin } });
+    const { row } = await show({ ...job("upload"), settings });
+    row.querySelector<HTMLButtonElement>(".details")!.click();
+    flushSync();
+    expect(text(row, ".config")).toContain(`largeObjects${value}${note}`);
+  });
+}
+
 it("shows no provenance note for a settings record without origins", async () => {
   const { row } = await show({ ...job("copy"), settings: '{"transfers":2,"checkers":4}' });
   row.querySelector<HTMLButtonElement>(".details")!.click();

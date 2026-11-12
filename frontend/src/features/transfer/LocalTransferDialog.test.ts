@@ -61,11 +61,11 @@ function show(mode: Mode, adjust?: (api: Api, browser: BrowserState) => void) {
     else dirs[index].resolve({ token: "dir-" + index, dir: "chosen directory " + index });
     await settle();
   };
-  const resolvePreflight = async (index = 0, reject = false, warning = false, largeObjects = false) => {
+  const resolvePreflight = async (index = 0, reject = false, warning = false, largeObjects = "", largeObjectsOrigin = "") => {
     const problems = reject || warning ? [{ name: "a.txt", kind: "collision", detail: "reported issue", reject }] : [];
     if (mode === "upload") uploads[index].resolve({
       items: [{ path: "", name: "selected/a.txt", size: 5, route: "rclone" }], problems, totalBytes: 5,
-      largeObjectsAsDlo: largeObjects,
+      largeObjects, largeObjectsOrigin,
     });
     else downloads[index].resolve({
       itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
@@ -385,18 +385,26 @@ it("discloses a truncated warning sample without rebuilding the count from it", 
   expect(f.startButton()?.disabled).toBe(false);
 });
 
-it("names the destination large-object placement for an upload that segments", async () => {
-  const f = show("upload");
-  await f.reach("preflight");
-  await f.resolvePreflight(0, false, false, true);
-  expect(f.root.querySelector(".note")?.textContent).toContain("destination DLOs");
+it("names the large-object kind for an upload that segments", async () => {
+  for (const [kind, origin, says, never] of [
+    ["slo", "default", "as static large objects", "dynamic"],
+    ["dlo", "override", "as dynamic large objects", "does not offer"],
+    ["dlo", "capability", "this cluster does not offer static large objects", "as static"],
+  ]) {
+    const f = show("upload");
+    await f.reach("preflight");
+    await f.resolvePreflight(0, false, false, kind, origin);
+    const note = (f.root.querySelector(".note")?.textContent ?? "").replace(/\s+/g, " ");
+    expect(note).toContain(says);
+    expect(note).not.toContain(never);
+  }
 });
 
 it("omits the large-object note when no selected file would segment", async () => {
   const f = show("upload");
   await f.reach("ready");
   expect(f.root.querySelector(".note")).toBeNull();
-  expect(f.root.textContent).not.toContain("destination DLOs");
+  expect(f.root.textContent).not.toContain("large objects");
 });
 
 it("never shows the large-object note for a download", async () => {
@@ -407,7 +415,7 @@ it("never shows the large-object note for a download", async () => {
 
 it.each(["upload", "download"] as const)("forwards the complete captured %s request without rebuilding its scope", async (mode) => {
   const api = newFakeApi();
-  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjectsAsDlo: false });
+  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjects: "", largeObjectsOrigin: "" });
   api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 0, problemCount: 0, rejected: false });
   api.startUpload = vi.fn().mockResolvedValue("job"); api.startDownload = vi.fn().mockResolvedValue("job");
   const browser = new BrowserState(api);
@@ -543,7 +551,7 @@ describe("upload replacement", () => {
   async function resolveReplacing(f: Fixture) {
     f.uploads[1].resolve({
       items: [{ path: "", name: liveName, size: 5, route: "rclone", replaces: true }],
-      problems: [collision(false)], totalBytes: 5, largeObjectsAsDlo: false,
+      problems: [collision(false)], totalBytes: 5, largeObjects: "", largeObjectsOrigin: "",
     });
     await settle();
   }
@@ -552,7 +560,7 @@ describe("upload replacement", () => {
     f.choose();
     await f.resolvePicker();
     f.uploads[0].resolve({
-      items: [], problems: [collision(true), ...extra], totalBytes: 0, largeObjectsAsDlo: false,
+      items: [], problems: [collision(true), ...extra], totalBytes: 0, largeObjects: "", largeObjectsOrigin: "",
     });
     await settle();
     return f;
@@ -683,7 +691,7 @@ describe("folder upload", () => {
     await settle();
     const skipped = "a link or other special entry, which a folder upload never follows; not uploaded";
     f.uploads[0].resolve({
-      items: [{ path: "", name: "selected/photos/a.txt", size: 5, route: "rclone" }], totalBytes: 5, largeObjectsAsDlo: false,
+      items: [{ path: "", name: "selected/photos/a.txt", size: 5, route: "rclone" }], totalBytes: 5, largeObjects: "", largeObjectsOrigin: "",
       problems: [
         { name: "photos/x", kind: "skipped", detail: skipped, reject: false },
         { name: "photos/sub/y", kind: "skipped", detail: skipped, reject: false },

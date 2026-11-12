@@ -82,11 +82,20 @@ export interface UploadPreflight {
     "totalBytes": number;
 
     /**
-     * LargeObjectsAsDLO discloses that the selection contains a file the
-     * engine will upload as a segmented destination DLO (§63.8), so the
-     * local dialog can name the placement the copy preview already names.
-     * The app-layer bridge fills it from the effective --swift-chunk-size;
-     * this package, which never resolves that size, leaves it false.
+     * LargeObjects is what a file larger than the effective chunk size is
+     * published as (ADR 0111): "slo" or "dlo", and empty when no file is
+     * segmented, so the dialog can name it. The app-layer bridge fills it,
+     * and ChunkBytes, from the job's and the bookmark's setting and the
+     * destination's capabilities; a caller that leaves it empty publishes
+     * what the engine staged as it was staged.
      */
-    "largeObjectsAsDlo": boolean;
+    "largeObjects": string;
+
+    /**
+     * LargeObjectsOrigin is where that choice came from, as the job
+     * records it: "default", "override" for the job's, "bookmark", or
+     * "capability" when the destination's readable /info has no static
+     * large object entry and a static choice is published as dynamic.
+     */
+    "largeObjectsOrigin": string;
 }
