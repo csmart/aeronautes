@@ -95,7 +95,8 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
    **Insecure** exists for labs and is flagged loudly.
 4. Browse: containers on the left (with backstage classification), objects in the middle
    (server-side prefix + Find in container), authoritative HEAD detail on the right.
-5. Download: open a container and use **Download…**, with collision preflight before any write.
+5. Download: open a container and use **Download**, with collision preflight before any write.
+   Download and Copy act on what is selected, the chosen objects, one object or one folder, or else on the folder or container you are browsing, and their labels say which.
    Follow the job in the jobs drawer — progress, throughput, cancel and audit trail.
    Its **Job history** tab pages through older retained jobs; expand a job to inspect every saved item, its exact quoted locations and separate execution and verification observations.
    Missing records, uncaptured history and unavailable reads are shown explicitly; an active job's records are incomplete, and the displayed issue counts can overlap.
