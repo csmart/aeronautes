@@ -102,11 +102,10 @@ func (e *Executor) sourceLadder(ctx context.Context, src *swiftcontrol.ObjectDet
 // drive the ceiling with a fixture it can actually build; a source with a
 // quarter of a million segments is not one of those.
 func (e *Executor) dynamicSourceLadder(ctx context.Context, src *swiftcontrol.ObjectDetail, maxRuns int) (contentLadder, error) {
-	slash := strings.Index(src.Manifest, "/")
-	if slash <= 0 {
+	container, prefix, ok := swiftcontrol.DynamicSegments(src.Manifest)
+	if !ok {
 		return nil, fmt.Errorf("dynamic large object source carries malformed manifest %q", src.Manifest)
 	}
-	container, prefix := src.Manifest[:slash], src.Manifest[slash+1:]
 	var ladder contentLadder
 	aggregate := md5.New()
 	for entry, err := range e.cfg.Source.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {

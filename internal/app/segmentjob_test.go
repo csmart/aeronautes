@@ -136,6 +136,43 @@ func TestSegmentJobDeletesDynamicManifestAndNamespace(t *testing.T) {
 	}
 }
 
+// A dynamic manifest's header is percent-encoded and Swift decodes it, so
+// the namespace swept is the decoded one (F37). An object whose name holds
+// the encoded spelling literally is not one of the manifest's segments and
+// survives; read raw, the sweep would have deleted it and kept the segments.
+func TestSegmentJobSweepsTheDecodedNamespace(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("media_segments", "standard")
+	for i := range 3 {
+		seedObject(h.mock, "media_segments", fmt.Sprintf("owned dir/pfx/00000%d", i), "seg", nil)
+	}
+	seedObject(h.mock, "media_segments", "owned%20dir/pfx/000009", "not a segment", nil)
+	h.mock.PutObject("media", "ours file.bin", swifttest.Object{Manifest: "media_segments/owned%20dir/pfx/"})
+	reviewed := reviewOf(t, service, bookmark, "media", "ours file.bin")
+	if reviewed.Namespace != "media_segments/owned dir/pfx/" {
+		t.Fatalf("reviewed namespace = %q, want the decoded one", reviewed.Namespace)
+	}
+	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Name: "ours file.bin", Confirm: "ours file.bin", Force: true, Reviewed: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+		t.Fatalf("job = %+v", job)
+	}
+	for i := range 3 {
+		if segmentReadable(t, h, bookmark, "media_segments", fmt.Sprintf("owned dir/pfx/00000%d", i)) {
+			t.Fatalf("segment %d survived", i)
+		}
+	}
+	if !segmentReadable(t, h, bookmark, "media_segments", "owned%20dir/pfx/000009") {
+		t.Fatal("an object named with the encoded spelling was deleted")
+	}
+}
+
 // ADR 0095 decision 8: the deletion is always force-gated; without the force
 // nothing starts and the manifest survives.
 func TestSegmentJobRefusesWithoutForce(t *testing.T) {

@@ -3,7 +3,6 @@ package swiftcontrol
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // DLOSegmentPreview is a bounded first page of a DLO's segments (§23.1):
@@ -27,8 +26,8 @@ type DLOSegmentPreview struct {
 // every object under the prefix in name order, delimiter grouping does
 // not apply (§23.1).
 func (s *Session) DLOSegmentPreview(ctx context.Context, manifest string, limit int) (*DLOSegmentPreview, error) {
-	container, prefix, ok := strings.Cut(manifest, "/")
-	if !ok || container == "" {
+	container, prefix, ok := DynamicSegments(manifest)
+	if !ok {
 		return nil, fmt.Errorf("manifest %q has no container/prefix split", manifest)
 	}
 	if limit <= 0 || limit > 500 {

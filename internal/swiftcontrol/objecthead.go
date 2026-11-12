@@ -35,9 +35,11 @@ type ObjectDetail struct {
 	ContentType   string
 	ETag          string
 	LastModified  time.Time
-	// Manifest is the DLO X-Object-Manifest value ("container/prefix"),
-	// empty for anything else. SLO manifests are fetched separately when
-	// the segment table is opened (?multipart-manifest=get, Phase 4).
+	// Manifest is the DLO X-Object-Manifest value ("container/prefix") as
+	// the store sent it, percent-encoded, empty for anything else; read the
+	// segments it names through DynamicSegments. SLO manifests are fetched
+	// separately when the segment table is opened (?multipart-manifest=get,
+	// Phase 4).
 	Manifest string
 	// DeleteAt is the scheduled expiry (X-Delete-At), zero when none.
 	DeleteAt time.Time
@@ -279,4 +281,50 @@ func identityComparable(headers http.Header) bool {
 		return false
 	}
 	return headers.Get("Etag") != ""
+}
+
+// DynamicSegments is the segment container and prefix a dynamic manifest
+// names. The X-Object-Manifest value is percent-encoded, as the engine and
+// other clients write it, and Swift's dynamic large object middleware
+// decodes it before it lists the prefix, so a reader that lists, names or
+// compares the segments has to decode it the same way (F37). An escape
+// that is not valid is kept as written, as Swift's decoding keeps it. ok is
+// false for a value that names no container.
+func DynamicSegments(manifest string) (container, prefix string, ok bool) {
+	decoded := unquoteManifest(manifest)
+	container, prefix, ok = strings.Cut(decoded, "/")
+	return container, prefix, ok && container != ""
+}
+
+// unquoteManifest decodes each valid %XX escape to its byte and leaves
+// everything else, an invalid escape and a plus sign among them, as it is.
+func unquoteManifest(value string) string {
+	if !strings.Contains(value, "%") {
+		return value
+	}
+	out := make([]byte, 0, len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] == '%' && i+2 < len(value) && isHex(value[i+1]) && isHex(value[i+2]) {
+			out = append(out, unhex(value[i+1])<<4|unhex(value[i+2]))
+			i += 2
+			continue
+		}
+		out = append(out, value[i])
+	}
+	return string(out)
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
