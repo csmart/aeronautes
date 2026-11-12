@@ -72,9 +72,12 @@ func (yes) ConfirmOverwrite(context.Context, app.OverwriteConfirmation) (bool, e
 func (yes) ConfirmPublicRead(context.Context, string, string) (bool, error) { return true, nil }
 
 // newWorld builds the application and connects both clouds, or skips when
-// no clouds.yaml or either entry is configured. Nothing outside the test's
-// temporary directory is opened: the settings file and the database are
-// given explicit paths in it, and the secret store lives for the session.
+// no clouds.yaml or either entry is configured. The application's state
+// stays in the test's temporary directory: the settings file and the
+// database are given explicit paths in it, and the secret store lives for
+// the session. The harness's own files outside it are the private log and
+// job error files under the user cache directory; a transfer's engine
+// scratch directory is the application's, removed when the job returns.
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	path, err := realcloud.ResolveCloudsPath()
