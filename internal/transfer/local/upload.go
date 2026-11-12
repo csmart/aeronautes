@@ -32,6 +32,15 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	if stageID == "" {
 		return nil, errors.New("upload needs a stage id (the job id)")
 	}
+	switch swiftcontrol.ObjectClass(preflight.LargeObjects) {
+	case "", swiftcontrol.ClassDLO:
+	case swiftcontrol.ClassSLO:
+		if preflight.ChunkBytes <= 0 {
+			return nil, errors.New("publishing static large objects needs the engine's chunk size; nothing was written")
+		}
+	default:
+		return nil, fmt.Errorf("unknown large object kind %q; nothing was written", preflight.LargeObjects)
+	}
 	for _, item := range preflight.Items {
 		if !validUploadPath(item.Path) {
 			return nil, errors.New(uploadPathRefusal)
@@ -184,7 +193,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				return report, err
 			}
-			outcome := commitStagedUpload(ctx, dst, container, stageObject(stagePrefix, prefix, item), item, present, u.confirmUnchanged(), recovery)
+			outcome := commitStagedUpload(ctx, dst, container, stageObject(stagePrefix, prefix, item), item, present, u.confirmUnchanged(), recovery,
+				segmentPlan{class: swiftcontrol.ObjectClass(preflight.LargeObjects), chunkBytes: preflight.ChunkBytes, captured: report.CapturedPrefixes})
 			if err := u.settle(ctx, dst, item, outcome, progress); err != nil {
 				return report, err
 			}
@@ -236,13 +246,14 @@ func relativeDir(prefix string, item UploadItem) string {
 
 // verifyUpload asks the live name what it holds, after the publication exists.
 //
-// livePlainDigest is the file's own MD5 when this route published a plain object,
-// and empty when it published a manifest whose binding is the staged content
-// comparison that ran before the commit. For a plain publication ADR 0045 requires
-// the live HEAD to report a plain object whose length AND entity tag equal the
-// local file's length and digest: a plain Swift object's entity tag IS the MD5 of
-// its content, so that is the one question this pass can ask that distinguishes
-// the file's bytes from other bytes of the same length.
+// class and tag are what this route published: a plain object and the file's own
+// MD5, a static large object and the tag its segments' digests make, or nothing
+// for a dynamic manifest, whose binding is the staged content comparison that ran
+// before the commit. For a plain publication ADR 0045 requires the live HEAD to
+// report a plain object whose length AND entity tag equal the local file's length
+// and digest: a plain Swift object's entity tag IS the MD5 of its content, so that
+// is the one question this pass can ask that distinguishes the file's bytes from
+// other bytes of the same length.
 //
 // Length alone was all this checked before, which is what ADR 0045 named as the
 // defect. A declared entity tag on the PUT makes the store refuse a body that
@@ -250,7 +261,7 @@ func relativeDir(prefix string, item UploadItem) string {
 // that header, and then nothing had asked. The store is the only party that can
 // PREVENT such a publication; this is the party that can report it.
 func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem,
-	livePlainDigest string) uploadResult {
+	class swiftcontrol.ObjectClass, tag string) uploadResult {
 	var live *swiftcontrol.ObjectDetail
 	err := untilListed(ctx, func() (bool, error) {
 		var err error
@@ -258,23 +269,22 @@ func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 			return false, err
 		}
 		if live.ContentLength != item.Size {
-			// A published manifest's size is summed from a listing of its
+			// A dynamic object's size is summed from a listing of its
 			// segments, which can still lag the publication; a short one is
 			// read again while it does (ADR 0111 decision 6).
-			return livePlainDigest == "" && live.ContentLength < item.Size,
+			return class == swiftcontrol.ClassDLO && live.ContentLength < item.Size,
 				fmt.Errorf("size %d != local %d", live.ContentLength, item.Size)
 		}
 		return false, nil
 	})
-	if err == nil && livePlainDigest != "" {
-		// The class is asked first and separately. A manifest at a name this
-		// route published as a plain object reports an aggregate over segments
-		// rather than a content digest, so comparing the two values would refuse
-		// for the wrong reason and say the wrong thing about what is live.
-		if live.Class != swiftcontrol.ClassPlain {
-			err = fmt.Errorf("live object is %s, this upload published a plain object", live.Class)
-		} else if tag := strings.Trim(live.ETag, `"`); !strings.EqualFold(tag, livePlainDigest) {
-			err = fmt.Errorf("entity tag %s != local %s", tag, livePlainDigest)
+	if err == nil && tag != "" {
+		// The class is asked first and separately. An object of another class
+		// reports another kind of entity tag, so comparing the two values would
+		// refuse for the wrong reason and say the wrong thing about what is live.
+		if live.Class != class {
+			err = fmt.Errorf("live object is %s, this upload published %s", live.Class, class)
+		} else if liveTag := strings.Trim(live.ETag, `"`); !strings.EqualFold(liveTag, tag) {
+			err = fmt.Errorf("entity tag %s != local %s", liveTag, tag)
 		}
 	}
 	if err != nil {
@@ -572,11 +582,11 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 	}
 	// The digest this route declared is also what the live name must report:
 	// this publication is a plain object and nothing else was sent.
-	return verifyUpload(ctx, dst, container, item, declared)
+	return verifyUpload(ctx, dst, container, item, swiftcontrol.ClassPlain, declared)
 }
 
 func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
-	item UploadItem, replacing bool, confirm unchangedSince, recovery func(kind, container, prefix, object string) error) uploadResult {
+	item UploadItem, replacing bool, confirm unchangedSince, recovery func(kind, container, prefix, object string) error, plan segmentPlan) uploadResult {
 	staged, err := dst.ObjectDetail(ctx, container, stagedName)
 	if err != nil {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageStaging, transfercopy.CodeMissing, "stage-verify", fmt.Errorf("staged object missing: %w", err))
@@ -592,6 +602,9 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		}
 	} else if !swiftcontrol.IsNotFound(err) {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnknown, "commit-rehead", err)
+	}
+	if staged.Class == swiftcontrol.ClassDLO && plan.class == swiftcontrol.ClassSLO {
+		return commitStatic(ctx, dst, container, stagedName, staged, item, replacing, confirm, recovery, plan)
 	}
 	// What the engine staged is compared with the file this job planned
 	// to send, before any of it is published. A large object's assembled
@@ -703,11 +716,11 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 	// is an aggregate over segments, and what binds it is the staged content
 	// comparison above, which ADR 0042's ordering already put before the
 	// committing fact and the manifest PUT.
-	livePlainDigest := declared
+	class, tag := swiftcontrol.ClassPlain, declared
 	if staged.Class == swiftcontrol.ClassDLO {
-		livePlainDigest = ""
+		class, tag = swiftcontrol.ClassDLO, ""
 	}
-	result := verifyUpload(ctx, dst, container, item, livePlainDigest)
+	result := verifyUpload(ctx, dst, container, item, class, tag)
 	result.addIssue(transfercopy.StageRecording, "commit-record", recordErr)
 	result.addIssue(transfercopy.StageStaging, "staged-close", closeErr)
 	if result.Result == transfercopy.ResultCopied && recordErr == nil {

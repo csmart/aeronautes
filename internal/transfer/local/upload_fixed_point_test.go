@@ -433,7 +433,7 @@ func TestStagedCommitComparesAfterOpeningThePublishingReader(t *testing.T) {
 		seed(mock, "media", "docs/object", intruder)
 	}
 	run := &uploadRun{report: &Report{}, recorder: &UploadRecorder{Acknowledged: hook, VersioningUnchanged: versioningHeld}}
-	result := commitStagedUpload(t.Context(), s, "media", stage, item, true, run.confirmUnchanged(), nil)
+	result := commitStagedUpload(t.Context(), s, "media", stage, item, true, run.confirmUnchanged(), nil, segmentPlan{})
 	if result.Result != transfercopy.ResultConflict || result.Effect != transfercopy.EffectNotAttempted {
 		t.Fatalf("a writer arriving while the stage was opened was published over: %+v", result.Observation)
 	}
