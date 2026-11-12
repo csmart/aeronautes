@@ -37,7 +37,13 @@ function button(label: string): HTMLButtonElement {
 describe("copy destination", () => {
   it("suggests names, offers a missing destination, creates it with the preview's scope and plans again", async () => {
     const api = newFakeApi();
-    const create = vi.spyOn(api, "createDestinationContainer");
+    const realCreate = api.createDestinationContainer.bind(api);
+    let finishCreate!: () => void;
+    const createHeld = new Promise<void>((resolve) => { finishCreate = resolve; });
+    const create = vi.spyOn(api, "createDestinationContainer").mockImplementation(async (missing) => {
+      await createHeld;
+      return realCreate(missing);
+    });
     const browser = new BrowserState(api);
     const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "https://example.test/auth",
       username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
@@ -60,6 +66,11 @@ describe("copy destination", () => {
     expect(button("Start copy").disabled).toBe(true);
 
     button("Create container missing-archive on Mock").click();
+    await settle();
+    // A preview asked while the create is in flight would race the one the
+    // create starts when it finishes.
+    expect(button("Preview").disabled).toBe(true);
+    finishCreate();
     await settle();
     expect(create).toHaveBeenCalledWith({ bookmarkId: bookmark.id, generation: 1, container: "missing-archive" });
     expect(text()).not.toContain("does not exist on Mock");
