@@ -47,6 +47,7 @@ import type {
 } from "../../lib/api";
 import { AuditState } from "./auditState.svelte";
 import { SettingsState } from "./settingsState.svelte";
+import { ImportState } from "./importState.svelte";
 import { JobsState } from "./jobsState.svelte";
 import { parentPrefix } from "../../lib/listing";
 
@@ -208,6 +209,8 @@ export class BrowserState {
     this.audit = new AuditState(api, () => this.#connectingBookmarkId ?? this.connectedBookmarkId ?? "");
     // A restore may add bookmarks, so the rail reloads when one finishes.
     this.settings = new SettingsState(api, () => void this.loadBookmarks());
+    // An import adds bookmarks, and its verification flags some.
+    this.imports = new ImportState(api, () => void this.loadBookmarks());
     this.jobs = new JobsState(api);
   }
 
@@ -265,6 +268,7 @@ export class BrowserState {
   readonly audit: AuditState;
   /** The settings document (§38/§40), the rail width it persists, and its backup and restore (ADR 0098). */
   readonly settings: SettingsState;
+  readonly imports: ImportState;
   /** The jobs drawer's data (§46/§47): the filtered list, the recovery status and the interrupted-job notice. */
   readonly jobs: JobsState;
 

@@ -8,6 +8,7 @@ import {
   AppService,
   AuditService,
   BackupService,
+  BookmarkImportService,
   BookmarkService,
   BrowseService,
   BenchmarkService,
@@ -103,6 +104,10 @@ export type {
   DismissInterruptedDTO,
 };
 export type { DownloadPreflightView, UploadPreflight };
+/** An import preview and result with Go's nullable slices made lists here,
+ * so callers never meet a null. */
+export type ImportPreview = ImportPreviewDTO & { rows: ImportRowDTO[] };
+export type ImportResult = ImportResultDTO & { outcomes: ImportOutcomeDTO[] };
 export type {
   DeletePreviewDTO,
   DeleteRequestDTO,
@@ -113,6 +118,10 @@ export type {
   ExportResultDTO,
   BackupResultDTO,
   RestoreResultDTO,
+  ImportPreviewDTO,
+  ImportRowDTO,
+  ImportResultDTO,
+  ImportOutcomeDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   FindStatusDTO,
@@ -130,6 +139,10 @@ import type {
   ExportResultDTO,
   BackupResultDTO,
   RestoreResultDTO,
+  ImportPreviewDTO,
+  ImportRowDTO,
+  ImportResultDTO,
+  ImportOutcomeDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   DeletePreviewDTO,
@@ -248,6 +261,12 @@ export interface Api {
   exportSettings(): Promise<BackupResultDTO | null>;
   /** Restore settings and bookmarks from a backup file the operator chooses (ADR 0098); credentials are never restored, so passwords are re-entered on use; null when cancelled. */
   importSettings(): Promise<RestoreResultDTO | null>;
+  /** Read an rclone.conf or clouds.yaml the operator picks into rows to import, with no secret; an empty token when cancelled (ADR 0114). */
+  previewImport(): Promise<ImportPreview>;
+  /** Save the chosen rows of a preview, spending its token, and verify them in the background when asked. */
+  saveImport(token: string, chosen: number[], verify: boolean): Promise<ImportResult>;
+  /** The latest import's outcomes, as its verification proceeds. */
+  importStatus(token: string): Promise<ImportResult>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
@@ -347,6 +366,18 @@ export const liveApi: Api = {
   exportAudit: (q) => AuditService.ExportAudit(q),
   exportSettings: () => BackupService.ExportSettings(),
   importSettings: () => BackupService.ImportSettings(),
+  previewImport: async () => {
+    const preview = await BookmarkImportService.PreviewImport();
+    return { ...preview, rows: preview.rows ?? [] };
+  },
+  saveImport: async (token, chosen, verify) => {
+    const result = await BookmarkImportService.SaveImport(token, chosen, verify);
+    return { ...result, outcomes: result.outcomes ?? [] };
+  },
+  importStatus: async (token) => {
+    const result = await BookmarkImportService.ImportStatus(token);
+    return { ...result, outcomes: result.outcomes ?? [] };
+  },
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
     if (!dto) throw new Error("empty plan");

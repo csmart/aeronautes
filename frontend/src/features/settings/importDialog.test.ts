@@ -1,0 +1,101 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushSync, mount, unmount } from "svelte";
+import type { ImportPreview, ImportResult } from "../../lib/api";
+import { newFakeApi } from "../browser/fakeApi";
+import { ImportState } from "../browser/importState.svelte";
+import ImportBookmarksDialog from "./ImportBookmarksDialog.svelte";
+
+const mounted = new Set<ReturnType<typeof mount>>();
+afterEach(async () => {
+  for (const component of mounted) await unmount(component);
+  mounted.clear();
+  document.body.innerHTML = "";
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+const preview: ImportPreview = {
+  token: "t-1",
+  fileName: "rclone.conf",
+  rows: [
+    { index: 0, name: "fresh", kind: "TempAuth", authUrl: "https://s.example/auth/v1.0", user: "a:u", project: "", region: "", hasSecret: true, state: "importable", reason: "" },
+    { index: 1, name: "again", kind: "TempAuth", authUrl: "https://s.example/auth/v1.0", user: "a:u", project: "", region: "", hasSecret: true, state: "duplicate", reason: "a bookmark already has this auth URL, user and project" },
+    { index: 2, name: "envy", kind: "Keystone v3", authUrl: "", user: "", project: "", region: "", hasSecret: false, state: "skipped", reason: "takes its credentials from the environment" },
+  ],
+};
+
+function checkbox(name: string): HTMLInputElement {
+  return document.querySelector<HTMLInputElement>(`input[aria-label="Import ${name}"]`)!;
+}
+
+function button(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label);
+  if (!found) throw new Error("Missing button: " + label);
+  return found;
+}
+
+async function settle() {
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+    flushSync();
+  }
+}
+
+// ADR 0114: importable rows start ticked and the others do not, a skipped
+// row cannot be ticked, the save sends the choice with verification on by
+// default, and a row that did not verify offers its editor.
+describe("import bookmarks dialog", () => {
+  it("imports the ticked rows, follows the verification and offers an edit for a failure", async () => {
+    vi.useFakeTimers();
+    const api = newFakeApi();
+    api.previewImport = async () => preview;
+    const pending: ImportResult = { token: "t-1", done: false, outcomes: [{ index: 0, name: "fresh", bookmarkId: "bm-9", verify: "pending", reason: "" }] };
+    const done: ImportResult = { token: "t-1", done: true, outcomes: [{ index: 0, name: "fresh", bookmarkId: "bm-9", verify: "failed", reason: "the identity service refused these credentials" }] };
+    const save = vi.fn(async () => pending);
+    api.saveImport = save;
+    api.importStatus = async () => done;
+    const changed = vi.fn();
+    const imports = new ImportState(api, changed);
+    expect(await imports.pick()).toBe("picked");
+    const edit = vi.fn();
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: edit } }));
+    flushSync();
+
+    expect(checkbox("fresh").checked).toBe(true);
+    expect(checkbox("again").checked).toBe(false);
+    expect(checkbox("envy").disabled).toBe(true);
+    expect(document.body.textContent).toContain("Not imported: it takes its credentials from the environment.");
+
+    button("Import 1 bookmark").click();
+    await settle();
+    expect(save).toHaveBeenCalledWith("t-1", [0], true);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain("Imported; verifying…");
+
+    await vi.advanceTimersByTimeAsync(600);
+    await settle();
+    expect(document.body.textContent).toContain("Imported, but did not verify: the identity service refused these credentials.");
+    expect(changed).toHaveBeenCalledTimes(2);
+    document.querySelector<HTMLButtonElement>('button[aria-label="Edit fresh"]')!.click();
+    expect(edit).toHaveBeenCalledWith("bm-9");
+  });
+
+  it("can untick verification and import a duplicate as a second bookmark", async () => {
+    const api = newFakeApi();
+    api.previewImport = async () => preview;
+    const save = vi.fn(async (token: string) => ({ token, done: true, outcomes: [] }));
+    api.saveImport = save;
+    const imports = new ImportState(api, vi.fn());
+    await imports.pick();
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: vi.fn() } }));
+    flushSync();
+
+    checkbox("again").click();
+    const verify = [...document.querySelectorAll<HTMLInputElement>("label.verify input")][0];
+    verify.click();
+    flushSync();
+    button("Import 2 bookmarks").click();
+    await settle();
+    expect(save).toHaveBeenCalledWith("t-1", [0, 1], false);
+  });
+});

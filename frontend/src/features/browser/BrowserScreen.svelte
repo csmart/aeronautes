@@ -16,6 +16,7 @@
   import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
   import AboutDialog from "./AboutDialog.svelte";
   import SettingsDialog from "../settings/SettingsDialog.svelte";
+  import ImportBookmarksDialog from "../settings/ImportBookmarksDialog.svelte";
   import CredentialStatusDialog from "./CredentialStatusDialog.svelte";
   import DeleteDialog from "../transfer/DeleteDialog.svelte";
   import ObjectDeleteDialog from "../inspector/ObjectDeleteDialog.svelte";
@@ -44,6 +45,7 @@
   let unrecognisedCapabilities: string[] = $state([]);
   let aboutOpen = $state(false);
   let settingsOpen = $state(false);
+  let importOpen = $state(false);
   let credentialStatusOpen = $state(false);
 
   // ADR 0088: the interrupted-job notice. The banner announces it and offers a
@@ -360,7 +362,28 @@
 {/if}
 
 {#if settingsOpen}
-  <SettingsDialog settings={browser.settings} onClose={() => (settingsOpen = false)} />
+  <SettingsDialog
+    settings={browser.settings}
+    onClose={() => (settingsOpen = false)}
+    onImportBookmarks={async () => {
+      settingsOpen = false;
+      // The native picker opens first; the dialog shows what it read, or
+      // why it could not, and nothing when the pick was cancelled.
+      if ((await browser.imports.pick()) !== "cancelled") importOpen = true;
+    }}
+  />
+{/if}
+
+{#if importOpen}
+  <ImportBookmarksDialog
+    imports={browser.imports}
+    onClose={() => (importOpen = false)}
+    onEditBookmark={(bookmarkId) => {
+      importOpen = false;
+      editorExisting = browser.bookmarks.find((b) => b.id === bookmarkId) ?? null;
+      editorOpen = editorExisting !== null;
+    }}
+  />
 {/if}
 
 {#if credentialStatusOpen}
