@@ -8,36 +8,20 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wails is no longer muted. The operator's decision of 17 October 2026
+    # was to ignore the bot while Wails 3 was in beta and to keep on top of
+    # it once a stable release shipped; the project now pins the stable
+    # 3.1.0, so the ignore range that bracketed 3.0.0's betas, here and for
+    # @wailsio/runtime below, was removed: everything it matched is older
+    # than the pin and would never be proposed. Stable Wails releases are
+    # weekly minor bumps. A bot PR carrying one is a notification and not a
+    # merge: three of the five Wails pins are `go install` arguments no bot
+    # can see (scripts/wails-version-coherence.sh), so that PR fails the
+    # coherence check, and a coherent upgrade is always a hand-made
+    # five-pin slice.
     groups:
       go-deps:
         patterns: ["*"]
-    ignore:
-      # Wails 3 PRERELEASES only, by the operator's decision of 17 October
-      # 2026: while it is in beta we ignore the bot, and when 3.0.0 ships we
-      # keep on top of it. The betas are AUTOMATED NIGHTLY releases, roughly
-      # weekly. Every item in beta.28 and beta.29 is Windows-only, macOS-only,
-      # or Linux-only for something this application does not have — a system
-      # tray and a native menu — plus a CLI wizard change and a macOS-only
-      # global-shortcut addition this build cannot use either. Their notes
-      # identify no security fix. A count of them is deliberately not written
-      # here: an earlier version said four Windows fixes where there are five,
-      # and the policy rests on the property rather than the tally.
-      #
-      # TWO LIMITS OF THIS MECHANISM, because neither is obvious. An explicit
-      # version ignore also filters SECURITY updates, so a Dependabot security
-      # PR for a muted beta would be suppressed too — the absence of an
-      # advisory in those notes is not a promise about future ones. And this
-      # range is not an all-prerelease wildcard: it brackets 3.0.0's own betas,
-      # so a later 3.1.0 prerelease would be above it and would open a PR,
-      # which is the right default for a line this project is not on yet.
-      #
-      # The range deliberately ENDS at 3.0.0, so the stable release still
-      # opens a PR. That PR is a notification and not a merge: three of the
-      # five Wails pins are `go install` arguments no bot can see
-      # (scripts/wails-version-coherence.sh), so a coherent upgrade is always
-      # a hand-made five-pin slice.
-      - dependency-name: github.com/wailsapp/wails/v3
-        versions: [">= 3.0.0-beta, < 3.0.0"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
@@ -50,12 +34,6 @@ updates:
       # cannot even npm ci until the Svelte toolchain supports it.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
-      # The JS half of the Wails pin, muted on the same decision and with the
-      # same end to its range as the gomod entry above. The two have to move
-      # together or wails-version-coherence.sh refuses the tree, which is why
-      # muting one without the other would be worse than muting neither.
-      - dependency-name: "@wailsio/runtime"
-        versions: [">= 3.0.0-beta, < 3.0.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
