@@ -251,10 +251,21 @@ func relativeDir(prefix string, item UploadItem) string {
 // PREVENT such a publication; this is the party that can report it.
 func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container string, item UploadItem,
 	livePlainDigest string) uploadResult {
-	live, err := dst.ObjectDetail(ctx, container, item.Name)
-	if err == nil && live.ContentLength != item.Size {
-		err = fmt.Errorf("size %d != local %d", live.ContentLength, item.Size)
-	}
+	var live *swiftcontrol.ObjectDetail
+	err := untilListed(ctx, func() (bool, error) {
+		var err error
+		if live, err = dst.ObjectDetail(ctx, container, item.Name); err != nil {
+			return false, err
+		}
+		if live.ContentLength != item.Size {
+			// A published manifest's size is summed from a listing of its
+			// segments, which can still lag the publication; a short one is
+			// read again while it does (ADR 0111 decision 6).
+			return livePlainDigest == "" && live.ContentLength < item.Size,
+				fmt.Errorf("size %d != local %d", live.ContentLength, item.Size)
+		}
+		return false, nil
+	})
 	if err == nil && livePlainDigest != "" {
 		// The class is asked first and separately. A manifest at a name this
 		// route published as a plain object reports an aggregate over segments
@@ -289,13 +300,24 @@ func verifyUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 // CompareContent consumes the stream to EOF and joins the close and
 // cancellation failures into its verdict, so a reader that reports its
 // corruption only on Close cannot be accepted as a match.
+//
+// A dynamic manifest is assembled from a listing of its prefix, so a
+// complete response that ends short may be a listing that has not caught
+// up with the last segment yet. It is read again while that is so, within
+// a bound (ADR 0111 decision 6); a response that is not complete, and any
+// other disagreement, fails at once.
 func matchesStagedContent(ctx context.Context, dst *swiftcontrol.Session, container, stagedName string,
-	ladder transfercopy.Ladder) (transfercopy.Code, error) {
-	body, err := dst.OpenObjectContent(ctx, container, stagedName)
-	if err != nil {
-		return transfercopy.CodeIncomplete, fmt.Errorf("open complete staged content: %w", err)
-	}
-	return transfercopy.CompareContent(ctx, body, ladder)
+	ladder transfercopy.Ladder) (code transfercopy.Code, err error) {
+	err = untilListed(ctx, func() (bool, error) {
+		body, err := dst.OpenObjectContent(ctx, container, stagedName)
+		if err != nil {
+			code = transfercopy.CodeIncomplete
+			return false, fmt.Errorf("open complete staged content: %w", err)
+		}
+		code, err = transfercopy.CompareContent(ctx, body, ladder)
+		return code == transfercopy.CodeIncomplete, err
+	})
+	return code, err
 }
 
 // localSource is the held local file an upload sends. The native route

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -136,6 +137,28 @@ func TestCopyHygieneAndContract(t *testing.T) {
 	}
 	if string(list) != "a b\nphotos/x.jpg\n" {
 		t.Errorf("list = %q", list)
+	}
+}
+
+// The child's size check stays on unless the caller turns it off, which
+// only a segmented upload does (ADR 0111 decision 2).
+func TestIgnoreSizeOnlyWhenAsked(t *testing.T) {
+	for _, ignore := range []bool{false, true} {
+		bin := stub(t, "v1.74.3", "exit 0")
+		r, err := NewRunner(Options{Binary: bin, IgnoreSize: ignore})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Copy(t.Context(), remotes(), "aeronautes_src:media", "aeronautes_dst:media/.aeronautes/stage/t/batch", []string{"a"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		args, err := os.ReadFile(filepath.Join(dumpDir(bin), "args"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(strings.Split(string(args), "\n"), "--ignore-size"); got != ignore {
+			t.Errorf("IgnoreSize %t: --ignore-size passed = %t", ignore, got)
+		}
 	}
 }
 

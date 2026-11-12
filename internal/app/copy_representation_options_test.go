@@ -36,7 +36,7 @@ func TestCopyRepresentationFactoryPolicy(t *testing.T) {
 				if operation == "download" {
 					remote = "aeronautes_src"
 				}
-				if _, err := h.transfer.localEngine(t.Context(), session, remote, settings); err != nil {
+				if _, err := h.transfer.localEngine(t.Context(), session, remote, settings.options()); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -86,7 +86,7 @@ func TestCopyRepresentationRunnerPolicy(t *testing.T) {
 				if operation == "download" {
 					remote = "aeronautes_src"
 				}
-				engine, err := h.transfer.localEngine(t.Context(), session, remote, settings)
+				engine, err := h.transfer.localEngine(t.Context(), session, remote, settings.options())
 				if err != nil {
 					t.Fatal(err)
 				}

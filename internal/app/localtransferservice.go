@@ -1018,7 +1018,7 @@ func (s *TransferService) localSettings(profile string, overrides TransferSettin
 
 // localEngine builds the single-remote engine for the bookmark's end;
 // remotes resolve per spawn with token refresh (§26.2).
-func (s *TransferService) localEngine(ctx context.Context, session *swiftcontrol.Session, remoteName string, settings TransferSettingsDTO) (local.Engine, error) {
+func (s *TransferService) localEngine(ctx context.Context, session *swiftcontrol.Session, remoteName string, options rclone.Options) (local.Engine, error) {
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
 		remote, err := s.connections.EngineRemote(spawnCtx, session, remoteName)
 		if err != nil {
@@ -1030,9 +1030,9 @@ func (s *TransferService) localEngine(ctx context.Context, session *swiftcontrol
 		return nil, err
 	}
 	if s.engineFactory != nil {
-		return s.engineFactory(source, settings.options())
+		return s.engineFactory(source, options)
 	}
-	runner, err := rclone.NewRunner(settings.options())
+	runner, err := rclone.NewRunner(options)
 	if err != nil {
 		return nil, err
 	}
@@ -1125,7 +1125,13 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if err != nil {
 		return "", err
 	}
-	engine, err := s.localEngine(ctx, session, "aeronautes_dst", settings)
+	options := settings.options()
+	// The engine's one size check after a segmented upload reads the
+	// dynamic manifest's size through a listing that can lag the last
+	// segment (F35); the commit checks the segments instead (ADR 0111
+	// decision 2).
+	options.IgnoreSize = preflight.LargeObjectsAsDLO
+	engine, err := s.localEngine(ctx, session, "aeronautes_dst", options)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
@@ -1250,7 +1256,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		s.destinations.release(reservation)
 		_ = destination.Close()
 	})
-	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings)
+	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings.options())
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
