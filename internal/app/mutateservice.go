@@ -273,7 +273,30 @@ func (s *MutateService) CreateContainer(ctx context.Context, scope ListingScopeD
 	if caps != nil && !caps.AllowsStoragePolicy(create.Policy) {
 		return ContainerDetailDTO{}, fmt.Errorf("cluster does not advertise storage policy %q", create.Policy)
 	}
+	return s.createContainer(ctx, entry, bookmarkID, create)
+}
 
+// CreateDestinationContainer creates a copy's missing destination container
+// on the bookmark and generation the preview found it missing under, which
+// need not be the active connection (ADR 0115). It takes the default storage
+// policy and no metadata, and is the same create as CreateContainer from the
+// session on: an existing container is refused, and the intent, outcome and
+// audit record are kept against the destination bookmark.
+func (s *MutateService) CreateDestinationContainer(ctx context.Context, missing DestinationMissingDTO) (ContainerDetailDTO, error) {
+	if err := s.occupy(); err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	defer s.writers.leave()
+	entry, err := s.connections.destinationSnapshot(ctx, missing.BookmarkID, missing.Generation)
+	if err != nil {
+		return ContainerDetailDTO{}, err
+	}
+	return s.createContainer(ctx, entry, missing.BookmarkID, ContainerCreateDTO{Name: missing.Container})
+}
+
+// createContainer is a create on an admitted session, shared by the view's
+// create and a copy destination's.
+func (s *MutateService) createContainer(ctx context.Context, entry cachedSession, bookmarkID string, create ContainerCreateDTO) (ContainerDetailDTO, error) {
 	// The attempt is a durable fact before the PUT and after it (ADR
 	// 0077): an intent that fails issues no PUT, and a PUT that may have
 	// landed is never reported without its recorded outcome.

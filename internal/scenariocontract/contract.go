@@ -125,15 +125,18 @@ var inventory = map[string]Action{
 	"InspectorService.DLOSegments": {Kind: Read},
 	"InspectorService.SLOManifest": {Kind: Read},
 	// MutateService — the UPDATE mutates carry optimistic-concurrency.
-	"MutateService.CreateContainer":       {Kind: Mutate},
-	"MutateService.UpdateContainer":       {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
-	"MutateService.CreateMarker":          {Kind: Mutate},
-	"MutateService.DeleteMarker":          {Kind: Destructive},
-	"MutateService.DeleteManifest":        {Kind: Destructive},
-	"MutateService.DeleteObject":          {Kind: Destructive},
-	"MutateService.UpdateObjectMetadata":  {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
-	"MutateService.UpdateAccountMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
-	"MutateService.UpdateTempURLKey":      {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.CreateContainer": {Kind: Mutate},
+	// A copy's missing destination, created on the bookmark the preview
+	// found it missing on (ADR 0115).
+	"MutateService.CreateDestinationContainer": {Kind: Mutate},
+	"MutateService.UpdateContainer":            {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.CreateMarker":               {Kind: Mutate},
+	"MutateService.DeleteMarker":               {Kind: Destructive},
+	"MutateService.DeleteManifest":             {Kind: Destructive},
+	"MutateService.DeleteObject":               {Kind: Destructive},
+	"MutateService.UpdateObjectMetadata":       {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.UpdateAccountMetadata":      {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.UpdateTempURLKey":           {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
 	"AuditService.Recent":      {Kind: Read, Scenarios: []string{"refusal"}},
 	"AuditService.RecentFor":   {Kind: Read},
@@ -158,10 +161,13 @@ var inventory = map[string]Action{
 	// The status reads the latest save's outcomes.
 	"BookmarkImportService.ImportStatus": {Kind: Read},
 	// TransferService
-	"TransferService.PlanCopy":          {Kind: Read},
-	"TransferService.PreflightUpload":   {Kind: Read},
-	"TransferService.PreflightDownload": {Kind: Read},
-	"TransferService.PickUploadFiles":   {Kind: Session},
+	"TransferService.PlanCopy": {Kind: Read},
+	// The copy destination's container names, suggested as the operator
+	// types (ADR 0115).
+	"TransferService.DestinationContainers": {Kind: Read},
+	"TransferService.PreflightUpload":       {Kind: Read},
+	"TransferService.PreflightDownload":     {Kind: Read},
+	"TransferService.PickUploadFiles":       {Kind: Session},
 	// The folder pick of ADR 0103 is a session action like the file pick: it
 	// binds a selection to a scope and writes nothing.
 	"TransferService.PickUploadDirectory": {Kind: Session},

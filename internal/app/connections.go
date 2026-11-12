@@ -224,6 +224,27 @@ func (c *Connections) sessionEntryFor(ctx context.Context, bookmarkID string) (c
 	return entry, nil
 }
 
+// destinationSnapshot is the registry session for a copy's destination,
+// bound to the generation the caller's preview read it under (ADR 0115):
+// the destination need not be the active connection, but a write must land
+// on the account and generation the operator was shown.
+func (c *Connections) destinationSnapshot(ctx context.Context, bookmarkID string, generation int64) (cachedSession, error) {
+	if bookmarkID == "" || generation <= 0 {
+		return cachedSession{}, fmt.Errorf("%w: name the bookmark and generation the preview read", ErrMutationScopeChanged)
+	}
+	entry, err := c.sessionEntryFor(ctx, bookmarkID)
+	if err != nil {
+		return cachedSession{}, err
+	}
+	if entry.generation != generation {
+		return cachedSession{}, ErrMutationScopeChanged
+	}
+	if err := c.store.WithCurrentGeneration(ctx, bookmarkID, generation, nil); err != nil {
+		return cachedSession{}, fmt.Errorf("%w: %v", ErrMutationScopeChanged, err)
+	}
+	return entry, nil
+}
+
 // Pin before resolving a job's sessions or doing its preflight, so every
 // later acquisition must still use those bindings through queueing/cleanup.
 func (c *Connections) pinForJob(ctx context.Context, bookmarkIDs ...string) (func(), error) {
