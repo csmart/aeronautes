@@ -112,7 +112,7 @@ func TestPublicConnectHTTPErrorRefusalMock(t *testing.T) {
 		t.Fatalf("owned auth fixture requests/closure = %+v", observed)
 	}
 	afterAccount, err := h.Browse.Account(ctx, h.Primary.BookmarkID)
-	if err != nil || !reflect.DeepEqual(beforeAccount, afterAccount) {
+	if err != nil || !reflect.DeepEqual(withoutDate(beforeAccount), withoutDate(afterAccount)) {
 		t.Fatalf("refused Connect changed active account: before=%+v after=%+v error=%v", beforeAccount, afterAccount, err)
 	}
 	page, err := h.Browse.Containers(ctx, h.Primary.BookmarkID, "", 100)
@@ -142,4 +142,18 @@ func TestPublicConnectHTTPErrorRefusalMock(t *testing.T) {
 		t.Fatalf("public Message = %q, want local Internal Server Error", normalized.Message)
 	}
 	receipt.CreditRefusal()
+}
+
+// withoutDate is the account as the comparison needs it: the server stamps
+// each reply with the time it was sent, so two reads a second apart differ
+// in Date alone though nothing in the account changed.
+func withoutDate(account app.AccountDTO) app.AccountDTO {
+	headers := make(map[string]string, len(account.RawHeaders))
+	for k, v := range account.RawHeaders {
+		if k != "Date" {
+			headers[k] = v
+		}
+	}
+	account.RawHeaders = headers
+	return account
 }
