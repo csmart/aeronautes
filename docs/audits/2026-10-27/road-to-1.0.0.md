@@ -90,6 +90,21 @@ Raising the active-job budget: four at most and two by default, delivered under 
 [ADR 0078](../../adr/0078-overlapping-download-destinations.md) had made two downloads safe, and ADR 0105 decides what keeps any two running jobs apart.
 Keystone authentication is here by finish-line decision 31: a bookmark authentication type beside TempAuth v1, the session's auth version and a Keystone-shaped fixture for its proof, kept cheap because the engine never speaks to Keystone (K-SEC-001); the vault fallback belongs here if the operator decides it is in 1.0.0.
 
+On 12 November 2026 the operator folded every item planned for 0.5.1 into 0.5.0, to make it a good test release candidate.
+The release therefore also carries:
+- copy and download of what is selected ([ADR 0108](../../adr/0108-copy-and-download-what-is-selected.md));
+- the move to Wails 3.1.0;
+- settings in their own file and one database ([ADR 0109](../../adr/0109-where-aeronautes-keeps-its-files.md));
+- account switching that reuses its session, with container settings read for the rows on screen ([ADR 0110](../../adr/0110-switching-and-container-settings-on-screen.md));
+- static large objects for segmented uploads ([ADR 0111](../../adr/0111-segmented-uploads-as-static-large-objects.md));
+- Keystone version discovery and user and project IDs ([ADR 0113](../../adr/0113-keystone-discovery-and-ids.md));
+- bookmark import from rclone.conf and clouds.yaml ([ADR 0114](../../adr/0114-importing-bookmarks.md));
+- context menus on rows;
+- a copy destination picker that can create a missing container ([ADR 0115](../../adr/0115-choosing-and-creating-a-copy-destination.md));
+- the smaller fixes of the test run.
+
+The operator also asked for automated journeys before more features: the real-cloud journeys and the browser journeys ([docs/journeys.md](../../journeys.md), [ADR 0112](../../adr/0112-ui-journeys-in-a-browser.md)) run locally, and the 0.5.0 tag waits for both.
+
 ### 0.6.0 — performance
 
 Measured workload bounds and fairness (P24 and P25), the benchmark's return, bookmark overrides, per-job settings on the local transfer dialog, and the adaptive back-off of K-PERF-003.
