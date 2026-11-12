@@ -51,6 +51,12 @@
   let projectName = $state(existing?.projectName ?? "");
   /* svelte-ignore state_referenced_locally */
   let projectDomain = $state(existing?.projectDomain ?? "");
+  // An ID names the user or the project instead of the name and domain
+  // (ADR 0113), so the name it replaces is no longer required.
+  /* svelte-ignore state_referenced_locally */
+  let userId = $state(existing?.userId ?? "");
+  /* svelte-ignore state_referenced_locally */
+  let projectId = $state(existing?.projectId ?? "");
   /* svelte-ignore state_referenced_locally */
   let region = $state(existing?.region ?? "");
   /* svelte-ignore state_referenced_locally */
@@ -80,6 +86,8 @@
       userDomain: keystone ? userDomain : "",
       projectName: keystone ? projectName : "",
       projectDomain: keystone ? projectDomain : "",
+      userId: keystone ? userId : "",
+      projectId: keystone ? projectId : "",
       region: keystone ? region : "",
       tlsMode,
       caPem,
@@ -194,7 +202,7 @@
       </label>
       <label class="field">
         <span>Username</span>
-        <input class="type-mono" bind:value={username} required placeholder="account:user" />
+        <input class="type-mono" bind:value={username} required={!(keystone && userId !== "")} placeholder="account:user" />
       </label>
       <label class="field">
         <span>{keystone ? "Password" : "API key"}</span>
@@ -209,7 +217,7 @@
           <span class="hint">
             Leave blank to keep the stored {keystone ? "password" : "key"} when the connection
             identity and TLS trust stay the same. Re-enter it when changing the auth URL,
-            username{keystone ? ", domain, project or region" : " or storage override"}.
+            username{keystone ? ", domain, project, IDs or region" : " or storage override"}.
             Old keys may remain in credential storage after replacement or deletion.
           </span>
         {/if}
@@ -217,7 +225,7 @@
       {#if keystone}
         <label class="field">
           <span>Project</span>
-          <input class="type-mono" bind:value={projectName} required placeholder="my-project" />
+          <input class="type-mono" bind:value={projectName} required={projectId === ""} placeholder="my-project" />
         </label>
         <label class="field">
           <span>Region</span>
@@ -230,6 +238,14 @@
         <label class="field">
           <span>Project domain <span class="hint">(default: Default)</span></span>
           <input class="type-mono" bind:value={projectDomain} placeholder="Default" />
+        </label>
+        <label class="field">
+          <span>User ID <span class="hint">(optional: used instead of the username and user domain)</span></span>
+          <input class="type-mono" bind:value={userId} />
+        </label>
+        <label class="field">
+          <span>Project ID <span class="hint">(optional: used instead of the project and project domain)</span></span>
+          <input class="type-mono" bind:value={projectId} />
         </label>
       {/if}
 

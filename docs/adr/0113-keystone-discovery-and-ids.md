@@ -1,6 +1,6 @@
 # ADR 0113 — Keystone version discovery and identity by ID
 
-**Status:** Proposed for 0.5.0 (12 November 2026), from findings K1 and K2 and the operator's decisions: version discovery limited to the same origin, and optional project and user IDs, both folded into 0.5.0 by the final-candidate plan.
+**Status:** Accepted for 0.5.0 (12 November 2026), from findings K1 and K2 and the operator's decisions: version discovery limited to the same origin, and optional project and user IDs, both folded into 0.5.0 by the final-candidate plan; delivered with this record's series.
 **Scope:** how a Keystone v3 bookmark's Identity URL becomes the URL its token request is sent to; which Keystone identity a bookmark can name.
 **Amends:** [ADR 0100](0100-keystone-v3-authentication.md), whose first cut is the password method with project scope by name.
 
