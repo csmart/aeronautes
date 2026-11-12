@@ -48,7 +48,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	folder, digests := w.fixture(1024, 64*1024, 200*1024, 3<<20)
 	src := w.container(from, fmt.Sprintf("src%d", round))
 	if err := from.owned.ClaimSidecar(w.ctx, src); err != nil {
-		t.Fatal(err)
+		t.Fatalf("claim the sidecar: %s", failure(err))
 	}
 	w.picker.dir = folder
 	picked, err := w.transfer.PickUploadDirectory(w.ctx, app.SelectionScopeDTO{BookmarkID: from.bookmarkID, Container: src})
@@ -71,7 +71,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	// The whole container, across clouds.
 	dst := w.container(to, fmt.Sprintf("dst%d", round))
 	if err := to.owned.ClaimSidecar(w.ctx, dst); err != nil {
-		t.Fatal(err)
+		t.Fatalf("claim the sidecar: %s", failure(err))
 	}
 	copyRequest := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, DestBookmarkID: to.bookmarkID, DestContainer: dst}
 	if _, err := w.transfer.PlanCopy(w.ctx, copyRequest); err != nil {
@@ -88,7 +88,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	// Two selected files, across clouds.
 	chosen := w.container(to, fmt.Sprintf("sel%d", round))
 	if err := to.owned.ClaimSidecar(w.ctx, chosen); err != nil {
-		t.Fatal(err)
+		t.Fatalf("claim the sidecar: %s", failure(err))
 	}
 	members := []string{prefix + "file00.bin", prefix + "file02.bin"}
 	selection := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, SourcePrefix: prefix,
