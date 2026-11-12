@@ -40,6 +40,37 @@
     browser.mode = modes[next].id;
     tabButtons[next]?.focus(visibleFocus);
   }
+
+  // Rows report entering and leaving the visible area, so the settings of
+  // the rows on screen can be read (ADR 0110 decision 2). One observer
+  // watches every row, since a page can hold thousands; with no root it
+  // still accounts for the list's own scrolling. A document without
+  // IntersectionObserver reports nothing.
+  let observer: IntersectionObserver | null = null;
+  const rowNames = new WeakMap<Element, string>();
+  function visibility(): IntersectionObserver | null {
+    if (observer || typeof IntersectionObserver === "undefined") return observer;
+    observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const name = rowNames.get(entry.target);
+        if (name !== undefined) browser.containerOnScreen(name, entry.isIntersecting);
+      }
+    });
+    return observer;
+  }
+  function onScreen(node: HTMLElement, name: string) {
+    rowNames.set(node, name);
+    visibility()?.observe(node);
+    return {
+      update(next: string) {
+        rowNames.set(node, next);
+      },
+      destroy() {
+        observer?.unobserve(node);
+        browser.containerOnScreen(rowNames.get(node) ?? name, false);
+      },
+    };
+  }
 </script>
 
 {#snippet badge(label: string, tone: string, detail: string)}
@@ -82,6 +113,7 @@
     class="container-row"
     class:selected={browser.containerName === container.name}
     onclick={() => browser.openContainer(container.name)}
+    use:onScreen={container.name}
   >
     <span class="container-name">
       {container.name}
