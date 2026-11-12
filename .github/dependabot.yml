@@ -18,10 +18,13 @@ updates:
     # merge: three of the five Wails pins are `go install` arguments no bot
     # can see (scripts/wails-version-coherence.sh), so that PR fails the
     # coherence check, and a coherent upgrade is always a hand-made
-    # five-pin slice.
+    # five-pin slice. Wails is therefore left out of the weekly groups, here
+    # and for @wailsio/runtime below, so its notification arrives as a PR of
+    # its own and never holds back the other updates it would be grouped with.
     groups:
       go-deps:
         patterns: ["*"]
+        exclude-patterns: ["github.com/wailsapp/wails/v3"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
@@ -29,6 +32,7 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
+        exclude-patterns: ["@wailsio/runtime"]
     ignore:
       # svelte-check peer-requires typescript ^5 || ^6; the TS 7 major
       # cannot even npm ci until the Svelte toolchain supports it.
