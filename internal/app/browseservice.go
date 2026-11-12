@@ -29,10 +29,20 @@ func NewBrowseService(connections *Connections, ev *evidence.Store) *BrowseServi
 
 // Connect authenticates a bookmark and returns the account portrait.
 func (s *BrowseService) Connect(ctx context.Context, bookmarkID string) (AccountDTO, error) {
-	if err := s.connections.Connect(ctx, bookmarkID); err != nil {
+	undo, err := s.connections.connect(ctx, bookmarkID)
+	if err != nil {
 		return AccountDTO{}, err
 	}
-	return s.Account(ctx, bookmarkID)
+	account, err := s.Account(ctx, bookmarkID)
+	if err != nil {
+		// The portrait is the first request a reused session makes, so a
+		// revoked credential fails here, after the session became active; a
+		// failed connect leaves the bookmark that was active before active
+		// (ADR 0110 decision 1).
+		undo()
+		return AccountDTO{}, err
+	}
+	return account, nil
 }
 
 // Account binds the portrait to the bookmark the caller intended to read.
