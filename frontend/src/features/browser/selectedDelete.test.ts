@@ -307,6 +307,13 @@ describe("the selected-set dialog", () => {
     expect(f.root.textContent).toContain("job-1");
     expect(f.browser.selectionCount).toBe(0);
     expect(f.done).not.toHaveBeenCalled();
+    // "Show in jobs" closes the dialog and opens the drawer on the job, as
+    // the other job dialogs do (0.5.0 test run).
+    const reveal = vi.spyOn(f.browser.jobs, "reveal").mockResolvedValue();
+    click(button("Show in jobs", f.root));
+    expect(f.done).toHaveBeenCalledOnce();
+    expect(reveal).toHaveBeenCalledWith("job-1");
+    f.done.mockClear();
     await f.browser.refreshEntries();
     await settle();
     expect(names(f.browser.entries)).not.toContain("empty-object");
