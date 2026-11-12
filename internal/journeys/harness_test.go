@@ -186,6 +186,25 @@ func (w *world) container(a *account, label string) string {
 	return name
 }
 
+// containerRows lists every container of the connected account, page by
+// page, as the container column loads them.
+func (w *world) containerRows(a *account) []app.ContainerRowDTO {
+	w.t.Helper()
+	var rows []app.ContainerRowDTO
+	marker := ""
+	for {
+		page, err := w.browse.Containers(w.ctx, a.bookmarkID, marker, 1000)
+		if err != nil {
+			w.t.Fatalf("%s: list containers: %s", a.label, realcloud.Failure(err))
+		}
+		rows = append(rows, page.Rows...)
+		if page.NextMarker == "" {
+			return rows
+		}
+		marker = page.NextMarker
+	}
+}
+
 // await waits for a job to end and returns it.
 func (w *world) await(a *account, jobID string) *app.JobDTO {
 	w.t.Helper()
