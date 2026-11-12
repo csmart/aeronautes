@@ -64,7 +64,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	}
 	w.ended("upload", w.await(from, id), "complete")
 	prefix := filepath.Base(folder) + "/"
-	if diff := same(w.stored(from, src, prefix), digests); diff != "" {
+	if diff := w.settled(func() string { return same(w.stored(from, src, prefix), digests) }); diff != "" {
 		t.Fatalf("uploaded files differ from the local ones: %s", diff)
 	}
 
@@ -81,7 +81,7 @@ func copyJourney(w *world, from, to *account, round int) {
 		t.Fatalf("copy: %s", failure(err))
 	}
 	w.ended("copy", w.await(to, id), "complete")
-	if diff := same(w.stored(to, dst, prefix), digests); diff != "" {
+	if diff := w.settled(func() string { return same(w.stored(to, dst, prefix), digests) }); diff != "" {
 		t.Fatalf("copied files differ from the source: %s", diff)
 	}
 
@@ -102,7 +102,7 @@ func copyJourney(w *world, from, to *account, round int) {
 		t.Fatalf("the selection copy recorded %d members, want 2", job.SelectedMembers)
 	}
 	want := map[string][32]byte{"file00.bin": digests["file00.bin"], "file02.bin": digests["file02.bin"]}
-	if diff := same(w.stored(to, chosen, ""), want); diff != "" {
+	if diff := w.settled(func() string { return same(w.stored(to, chosen, ""), want) }); diff != "" {
 		t.Fatalf("the selection copy differs: %s", diff)
 	}
 
