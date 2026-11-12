@@ -37,7 +37,7 @@ func TestDownloadPreflightAppliesTheSettingsCeiling(t *testing.T) {
 		t.Fatalf("default ceiling refused a scope of %d: %+v %v", n, view, err)
 	}
 
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	if _, err := settings.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", DownloadObjectCeiling: minDownloadObjectCeiling}); err != nil {
 		t.Fatal(err)
 	}

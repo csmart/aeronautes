@@ -336,7 +336,7 @@ func TestSelectedDeleteCountsAnUnverifiedMemberOnceWhenCancelled(t *testing.T) {
 // download object ceiling setting, not the browser's retention ceiling.
 func TestSelectedDeleteUsesTheSelectionCeilingSetting(t *testing.T) {
 	h, service := selectedHarness(t)
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	current, err := settings.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)

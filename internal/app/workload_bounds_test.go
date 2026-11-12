@@ -37,7 +37,7 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	}
 	req := pick()
 
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	if _, err := settings.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxQueuedJobs: 1}); err != nil {
 		t.Fatal(err)
 	}

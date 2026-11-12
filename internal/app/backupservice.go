@@ -80,19 +80,12 @@ type RestoreResultDTO struct {
 	Detail              string `json:"detail"`
 }
 
-// dbQuerier is the read surface shared by the pooled reader and a read
-// transaction, so the backup can take both its projections from one
-// consistent snapshot.
-type dbQuerier interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
 // settingsPort is the slice of SettingsService the backup needs: reading the
-// application settings through a caller-supplied querier, so the export shares
-// its snapshot, and replacing them on a restore. A small consumer interface
-// keeps the backup testable without the whole settings service.
+// application settings at the moment of a snapshot taken elsewhere, and
+// replacing them on a restore. A small consumer interface keeps the backup
+// testable without the whole settings service.
 type settingsPort interface {
-	getFrom(ctx context.Context, q dbQuerier) (AppSettingsDTO, error)
+	readAfter(snapshot func() error) (AppSettingsDTO, error)
 	Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error)
 }
 
@@ -129,23 +122,24 @@ func (s *BackupService) ExportSettings(ctx context.Context) (*BackupResultDTO, e
 	if s.picker == nil {
 		return nil, errors.New("no file picker available (headless shell)")
 	}
-	// Take the whole configuration from one read-transaction snapshot, so a
-	// concurrent edit between the two projections cannot put a combination in
-	// the backup that never existed. Under WAL a read transaction is a
-	// consistent point-in-time view; it is read-only and released before the
-	// chooser opens.
-	tx, err := s.db.Reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	// Take the whole configuration at one moment, so a concurrent edit cannot
+	// put a combination in the backup that never existed (ADR 0109 decision
+	// 5). The bookmarks come from one read transaction, whose WAL snapshot is
+	// taken at its first read; no settings save can land from before that read
+	// until the settings file has been read after it. Both are released before
+	// the chooser opens.
+	var records []bookmarks.ExportRecord
+	settings, err := s.settings.readAfter(func() error {
+		tx, err := s.db.Reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		records, err = s.bookmarks.ExportAll(ctx, tx)
+		return err
+	})
 	if err != nil {
 		return nil, err
-	}
-	settings, serr := s.settings.getFrom(ctx, tx)
-	records, rerr := s.bookmarks.ExportAll(ctx, tx)
-	_ = tx.Rollback()
-	if serr != nil {
-		return nil, serr
-	}
-	if rerr != nil {
-		return nil, rerr
 	}
 	doc := SettingsBackupDTO{
 		SchemaVersion: backupSchemaVersion,

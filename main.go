@@ -87,16 +87,28 @@ func main() {
 	}
 }
 
+// storePaths says where the settings file and the database live (ADR 0109):
+// the settings are configuration, in $XDG_CONFIG_HOME/aeronautes/, and the
+// database is data, in $XDG_DATA_HOME/aeronautes/ with its lock and ca/
+// beside it. AERONAUTES_STATE_DIR puts both in that one directory, which must
+// already exist, so a scratch run never touches the real ones.
+func storePaths() (settings, database string, err error) {
+	if dev := os.Getenv("AERONAUTES_STATE_DIR"); dev != "" {
+		return filepath.Join(dev, "settings.json"), filepath.Join(dev, "aeronautes.sqlite"), nil
+	}
+	database, err = xdg.DataFile("aeronautes/aeronautes.sqlite")
+	if err != nil {
+		return "", "", fmt.Errorf("resolve data directory: %w", err)
+	}
+	return filepath.Join(xdg.ConfigHome, "aeronautes", "settings.json"), database, nil
+}
+
 func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	launch func(application.Options) error, openSecrets func() (secrets.SecretStore, secrets.Backend)) (runErr error) {
 
-	statePath, err := xdg.StateFile("aeronautes/state.sqlite")
+	settingsPath, statePath, err := storePaths()
 	if err != nil {
-		return fmt.Errorf("resolve state dir: %w", err)
-	}
-	if dev := os.Getenv("AERONAUTES_STATE_DIR"); dev != "" {
-		// Dev/test override so scratch runs never touch real state.
-		statePath = filepath.Join(dev, "state.sqlite")
+		return err
 	}
 	// One process per state directory: a second instance would mark this
 	// one's running jobs interrupted and sweep its staging litter.
@@ -149,7 +161,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireAuditFilePicker(auditService, wailsPicker{})
 	app.WireConfirmer(mutateService, wailsConfirmer{})
 	app.WireOverwriteConfirmer(transferService, wailsOverwriteConfirmer{})
-	settingsService := app.NewSettingsService(database, jobRunner)
+	settingsService := app.NewSettingsService(settingsPath, jobRunner)
 	app.WireSettings(transferService, settingsService)
 	deleteService := app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)
 	app.WireDeleteSettings(deleteService, settingsService)

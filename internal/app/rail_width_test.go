@@ -2,18 +2,19 @@ package app
 
 import (
 	"context"
-	"database/sql"
+	"os"
+	"strings"
 	"testing"
 )
 
 // The bookmark rail's dragged width is an operator setting like the
 // others: zero for the layout default, stored in pixels, refused outside
 // the range a usable rail allows, and read back as the default when a
-// stored row is outside it.
+// hand-written width is outside it.
 func TestRailWidthSetting(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	base := AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto"}
 
 	got, err := settings.Get(ctx)
@@ -39,17 +40,14 @@ func TestRailWidthSetting(t *testing.T) {
 		t.Fatalf("rail width after refused writes = %d (%v), want the stored 200", got.RailWidthPx, err)
 	}
 
-	// A row written before the range existed, or by hand, reads back as
-	// the default rather than as a width the layout cannot honour.
-	err = h.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE app_settings SET value = '9999' WHERE key = 'rail_width_px'`)
-		return err
-	})
-	if err != nil {
+	// A width written by hand outside the range makes the file unreadable,
+	// so the default is in force rather than a width the layout cannot
+	// honour, and the report says why (ADR 0109 decision 1).
+	if err := os.WriteFile(settings.path, []byte(`{"maxActiveJobs": 1, "defaultProfile": "auto", "railWidthPx": 9999}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err = settings.Get(ctx); err != nil || got.RailWidthPx != 0 {
-		t.Fatalf("out-of-range stored width read back as %d (%v), want 0", got.RailWidthPx, err)
+	if got, err = settings.Get(ctx); err != nil || got.RailWidthPx != 0 || !strings.Contains(got.FileProblem, "rail width 9999") {
+		t.Fatalf("out-of-range hand-written width read back as %d (%v, %q), want 0 and the reason", got.RailWidthPx, err, got.FileProblem)
 	}
 
 	base.RailWidthPx = 0

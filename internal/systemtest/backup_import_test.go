@@ -43,7 +43,7 @@ func TestRestoreSettingsAppliesBackup(t *testing.T) {
 	}, []byte("swift-key")); err != nil {
 		t.Fatal(err)
 	}
-	sourceSettings := app.NewSettingsService(sourceDB, app.NewJobRunner(jobs.NewStore(sourceDB), audit.NewStore(sourceDB)))
+	sourceSettings := app.NewSettingsService(filepath.Join(t.TempDir(), "source-settings.json"), app.NewJobRunner(jobs.NewStore(sourceDB), audit.NewStore(sourceDB)))
 	exporter := app.NewBackupService(sourceDB, sourceStore, sourceSettings)
 	backupDir := t.TempDir()
 	app.WireBackupFilePicker(exporter, exportDirPicker{dir: backupDir})
@@ -64,7 +64,7 @@ func TestRestoreSettingsAppliesBackup(t *testing.T) {
 		}
 	})
 	targetStore := bookmarks.NewStore(targetDB, secrets.NewSessionStore())
-	targetSettings := app.NewSettingsService(targetDB, app.NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
+	targetSettings := app.NewSettingsService(filepath.Join(t.TempDir(), "target-settings.json"), app.NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
 
 	// Refusal: a headless target has no open dialog.
 	headless := &Harness{T: t, Backup: app.NewBackupService(targetDB, targetStore, targetSettings)}

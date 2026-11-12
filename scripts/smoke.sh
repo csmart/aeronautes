@@ -148,8 +148,8 @@ switch_case() {
   printf 'case=%s spec=%q state=%s group=%s\n' "$label" "$spec" "$state" "$group" \
     >>"$ART/switch-launches.txt"
   local failure=""
-  file_saw "$state/state.sqlite" 60 \
-    || failure="the app never opened a state database under $state"
+  file_saw "$state/aeronautes.sqlite" 60 \
+    || failure="the app never opened its database under $state"
   if [ -z "$failure" ]; then
     wait_window 60 || failure="the app never showed a window"
   fi

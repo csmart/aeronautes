@@ -2,43 +2,45 @@ package app
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/csmart/aeronautes/internal/applog"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
-	"strconv"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-// SettingsService is the minimal §38/§40 application-settings surface:
-// the active-job budget and the default performance profile, persisted
-// in the typed app_settings KV. Bookmark-level budgets are deferred to
-// the full settings screen (§44) — stated here, not silently missing.
+// SettingsService is the §38/§40 application-settings surface. The settings
+// are one JSON object in a configuration file of their own, which an operator
+// can read and edit by hand (ADR 0109 decision 1). Bookmark-level budgets are
+// deferred to the full settings screen (§44) — stated here, not silently
+// missing.
 type SettingsService struct {
-	db     *db.DB
+	path   string
 	runner *jobRunner
 	// saving is held across a save's write and its application to the
 	// runner, so that two saves cannot leave the runner on one budget and
-	// the store on the other.
+	// the file on the other, and across the backup's two reads (readAfter).
 	saving sync.Mutex
 }
 
-// NewSettingsService wires the service; it applies the persisted
-// budget to the runner at construction.
-func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
-	s := &SettingsService{db: database, runner: runner}
-	settings, err := s.Get(context.Background())
-	if err != nil {
-		// The runner keeps the defaults it was built with. Said aloud,
-		// because a budget that quietly differs from the stored one cannot
-		// be explained afterwards.
-		applog.Errorf("the settings could not be read at startup, so the job budget and the queue depth are the defaults: %v", err)
-		return s
+// NewSettingsService wires the service over the settings file at path; it
+// applies the budget in force to the runner at construction.
+func NewSettingsService(path string, runner *jobRunner) *SettingsService {
+	s := &SettingsService{path: path, runner: runner}
+	settings, problem := s.read()
+	if problem != nil {
+		// Said aloud, because a budget that quietly differs from the one in
+		// the file cannot be explained afterwards.
+		applog.Errorf("%v", problem)
 	}
 	runner.setMaxActiveJobs(settings.MaxActiveJobs)
 	runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
@@ -48,9 +50,10 @@ func NewSettingsService(database *db.DB, runner *jobRunner) *SettingsService {
 // runRetention applies the §51 prune per the persisted policy: audit
 // events and terminal jobs past their windows (0 disables either).
 // Non-terminal jobs and jobs holding crash-recovery records survive
-// regardless.
+// regardless. An unreadable settings file prunes nothing: the default windows
+// in force are not the operator's, and a pruned record cannot come back.
 func (s *SettingsService) runRetention(ctx context.Context, jobStore *jobs.Store, auditStore *audit.Store) {
-	settings, err := s.Get(ctx)
+	settings, err := s.read()
 	if err != nil {
 		applog.Warnf("retention: read settings: %v", err)
 		return
@@ -119,6 +122,11 @@ type AppSettingsDTO struct {
 	// survive a restart, and a width that resets on every launch is not
 	// a setting.
 	RailWidthPx int `json:"railWidthPx"`
+	// FileProblem says why the settings file could not be read, when it
+	// could not; the defaults are then in force until the next save (ADR
+	// 0109 decision 1). It is a report only: a save ignores it and it is
+	// never written to the file.
+	FileProblem string `json:"fileProblem,omitempty"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -176,106 +184,71 @@ func defaults() AppSettingsDTO {
 		BrowserRetentionCeiling: defaultBrowserRetentionCeiling,
 		MaxQueuedJobs:           defaultMaxQueuedJobs,
 		MaxConnsPerHost:         defaultMaxConnsPerHost,
-		// Defaulting to true is safe against a missing row, because Get
-		// starts from these defaults and overrides only keys the table
-		// actually holds; an absent setting is the default rather than the
-		// zero value.
+		// Defaulting to true is safe against a key the file leaves out,
+		// because read starts from these defaults and overrides only keys
+		// the file actually holds; an absent setting is the default rather
+		// than the zero value.
 		ReclaimReplacedFragments: true,
 	}
 }
 
-// Get returns the persisted settings with defaults filled in.
-func (s *SettingsService) Get(ctx context.Context) (AppSettingsDTO, error) {
-	return s.getFrom(ctx, s.db.Reader())
+// Get returns the settings in force. A settings file that could not be read is
+// reported in FileProblem rather than as an error, because the application
+// runs on the defaults and the Settings view says why.
+func (s *SettingsService) Get(context.Context) (AppSettingsDTO, error) {
+	settings, problem := s.read()
+	if problem != nil {
+		settings.FileProblem = problem.Error()
+	}
+	return settings, nil
 }
 
-// getFrom reads the application settings through a caller-supplied querier,
-// so the settings backup can take them inside its own read-transaction
-// snapshot (ADR 0098) rather than on a separate pooled connection.
-func (s *SettingsService) getFrom(ctx context.Context, q dbQuerier) (AppSettingsDTO, error) {
-	settings := defaults()
-	rows, err := q.QueryContext(ctx, `SELECT key, value FROM app_settings`)
+// read returns the settings in force: the keys the file holds over the
+// defaults, or the defaults alone when there is no file. A file that cannot be
+// used whole is not used at all, so a bad hand edit is never half-applied, and
+// the error says why.
+func (s *SettingsService) read() (AppSettingsDTO, error) {
+	data, err := os.ReadFile(s.path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return defaults(), nil
+	}
 	if err != nil {
-		return settings, err
+		return defaults(), s.unreadable(err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return settings, err
-		}
-		switch key {
-		case "max_active_jobs":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.MaxActiveJobs = n
-			}
-		case "default_profile":
-			settings.DefaultProfile = value
-		case "audit_retention_days":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.AuditRetentionDays = n
-			}
-		case "job_retention_days":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.JobRetentionDays = n
-			}
-		case "download_object_ceiling":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.DownloadObjectCeiling = n
-			}
-		case "browser_retention_ceiling":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.BrowserRetentionCeiling = n
-			}
-		case "max_queued_jobs":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.MaxQueuedJobs = n
-			}
-		case "max_conns_per_host":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.MaxConnsPerHost = n
-			}
-		case "reclaim_replaced_fragments":
-			if on, err := strconv.ParseBool(value); err == nil {
-				settings.ReclaimReplacedFragments = on
-			}
-		case "rail_width_px":
-			if n, err := strconv.Atoi(value); err == nil {
-				settings.RailWidthPx = n
-			}
-		}
+	// Unmarshal sets only the keys present, so a key left out keeps its
+	// default rather than becoming the zero value: reclaiming stays on in a
+	// file that never mentions it.
+	settings := defaults()
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return defaults(), s.unreadable(err)
 	}
-	if err := rows.Err(); err != nil {
-		return settings, err
+	settings.FileProblem = ""
+	checked, err := checkSettings(settings)
+	if err != nil {
+		return defaults(), s.unreadable(err)
 	}
-	// Report what will happen, not what is stored. A value persisted
-	// before the ceiling was enforced must not be read back as though it
-	// still applied; the stored row is deliberately left as written so a
-	// later revert restores the operator's earlier intent (ADR 0047). A
-	// stored value below one reads as the default the runner applies.
-	if settings.MaxActiveJobs > maxActiveJobsCeiling {
-		settings.MaxActiveJobs = maxActiveJobsCeiling
+	return checked, nil
+}
+
+func (s *SettingsService) unreadable(cause error) error {
+	return fmt.Errorf("the settings file %s could not be read, so the defaults are in force; saving the settings keeps that file as %s: %w",
+		s.path, filepath.Base(s.path)+".unreadable", cause)
+}
+
+// readAfter runs snapshot and then reads the settings, holding off every
+// settings save until both are done, so what snapshot reads elsewhere pairs
+// with settings that existed at the same moment (ADR 0109 decision 5). A file
+// that could not be read refuses, because the defaults in force are not the
+// operator's settings.
+func (s *SettingsService) readAfter(snapshot func() error) (AppSettingsDTO, error) {
+	s.saving.Lock()
+	defer s.saving.Unlock()
+	if err := snapshot(); err != nil {
+		return AppSettingsDTO{}, err
 	}
-	if settings.MaxActiveJobs < 1 {
-		settings.MaxActiveJobs = defaultMaxActiveJobs
-	}
-	// A stored ceiling outside the range (or none) reads back as the
-	// default the preflight will actually apply.
-	if settings.DownloadObjectCeiling < minDownloadObjectCeiling || settings.DownloadObjectCeiling > maxDownloadObjectCeiling {
-		settings.DownloadObjectCeiling = defaultDownloadObjectCeiling
-	}
-	if settings.BrowserRetentionCeiling < minBrowserRetentionCeiling || settings.BrowserRetentionCeiling > maxBrowserRetentionCeiling {
-		settings.BrowserRetentionCeiling = defaultBrowserRetentionCeiling
-	}
-	if settings.MaxQueuedJobs < minMaxQueuedJobs || settings.MaxQueuedJobs > maxMaxQueuedJobs {
-		settings.MaxQueuedJobs = defaultMaxQueuedJobs
-	}
-	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
-		settings.MaxConnsPerHost = defaultMaxConnsPerHost
-	}
-	// A stored width the range no longer admits reads back as the default.
-	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
-		settings.RailWidthPx = 0
+	settings, problem := s.read()
+	if problem != nil {
+		return AppSettingsDTO{}, problem
 	}
 	return settings, nil
 }
@@ -299,7 +272,25 @@ func refuseSettings(format string, args ...any) error {
 }
 
 // Set validates, persists, and applies the settings.
-func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
+func (s *SettingsService) Set(_ context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
+	settings, err := checkSettings(settings)
+	if err != nil {
+		return AppSettingsDTO{}, err
+	}
+	settings.FileProblem = ""
+	s.saving.Lock()
+	defer s.saving.Unlock()
+	if err := s.write(settings); err != nil {
+		return AppSettingsDTO{}, err
+	}
+	s.runner.setMaxActiveJobs(settings.MaxActiveJobs)
+	s.runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
+	return settings, nil
+}
+
+// checkSettings refuses a value no setting accepts and fills the default for a
+// ceiling left at zero; a save and a read of the file judge values alike.
+func checkSettings(settings AppSettingsDTO) (AppSettingsDTO, error) {
 	// Refused rather than clamped: a control that appears to change
 	// something it cannot is worse than no control (ADR 0047). One range
 	// and one sentence (ADR 0105 decision 7).
@@ -342,36 +333,70 @@ func (s *SettingsService) Set(ctx context.Context, settings AppSettingsDTO) (App
 	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
 		return AppSettingsDTO{}, refuseSettings("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
 	}
-	s.saving.Lock()
-	defer s.saving.Unlock()
-	err := s.db.WriteTx(ctx, func(tx *sql.Tx) error {
-		for key, value := range map[string]string{
-			"max_active_jobs":           strconv.Itoa(settings.MaxActiveJobs),
-			"default_profile":           settings.DefaultProfile,
-			"audit_retention_days":      strconv.Itoa(settings.AuditRetentionDays),
-			"job_retention_days":        strconv.Itoa(settings.JobRetentionDays),
-			"download_object_ceiling":   strconv.Itoa(settings.DownloadObjectCeiling),
-			"browser_retention_ceiling": strconv.Itoa(settings.BrowserRetentionCeiling),
-			"max_queued_jobs":           strconv.Itoa(settings.MaxQueuedJobs),
-			"max_conns_per_host":        strconv.Itoa(settings.MaxConnsPerHost),
-			// Written explicitly either way, so an operator who turns
-			// reclaiming off has a row saying so rather than relying on the
-			// absence of one.
-			"reclaim_replaced_fragments": strconv.FormatBool(settings.ReclaimReplacedFragments),
-			"rail_width_px":              strconv.Itoa(settings.RailWidthPx),
-		} {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO app_settings (key, value) VALUES (?, ?)
-				 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return AppSettingsDTO{}, err
-	}
-	s.runner.setMaxActiveJobs(settings.MaxActiveJobs)
-	s.runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
 	return settings, nil
+}
+
+// write replaces the settings file whole: a temporary file in the same
+// directory, private from creation, flushed and renamed over the old one, then
+// the directory flushed, so a crash leaves the old file or the new one and
+// never a mixture. A file that could not be read is first kept beside it as
+// settings.json.unreadable, so a save never destroys a hand edit that went
+// wrong (ADR 0109 decision 1).
+func (s *SettingsService) write(settings AppSettingsDTO) error {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	// CreateTemp opens the file with mode 0600, so the settings are never
+	// readable by others, even before the rename.
+	file, err := os.CreateTemp(dir, ".settings-*.json")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	renamed := false
+	defer func() {
+		if !renamed {
+			os.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if _, problem := s.read(); problem != nil {
+		if err := os.Rename(s.path, s.path+".unreadable"); err != nil {
+			return fmt.Errorf("keep the unreadable settings file: %w", err)
+		}
+	}
+	if err := os.Rename(temporary, s.path); err != nil {
+		return err
+	}
+	renamed = true
+	return syncDirectory(dir)
+}
+
+// syncDirectory flushes a directory, so a rename in it survives a crash.
+// Windows cannot flush a directory handle and journals the rename itself.
+func syncDirectory(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	handle, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	return handle.Sync()
 }
