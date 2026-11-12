@@ -1,6 +1,6 @@
 # ADR 0110 — switch accounts without signing in again, and show container settings for the rows on screen
 
-**Status:** Proposed on 12 November 2026, from the operator's reports F26 and F32 during the 0.5.0 test run and the decision of 12 November to bring both into 0.5.0.
+**Status:** Accepted for 0.5.0 (12 November 2026), from the operator's reports F26 and F32 during the 0.5.0 test run and the decision of 12 November to bring both into 0.5.0, delivered with this record's series.
 **Scope:** `Connections.Connect`; the container listing reply; a new remembered-settings table; the container column's reads of the rows on screen and its badges.
 **Amends:** DESIGN §14.2 for container rows only; [ADR 0071](0071-container-settings-indicators.md) decisions 2, 3 and 5, and its rule that a fact read under one connection is not shown under another, for one labelled display. [ADR 0066](0066-named-read-session-snapshot.md) is unchanged.
 
