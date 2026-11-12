@@ -145,6 +145,13 @@ type Options struct {
 	// NoGzipEncoding keeps stored representations opaque for Copy;
 	// other callers retain the child's default transport policy.
 	NoGzipEncoding bool
+	// IgnoreSize turns off the child's one size check after a transfer.
+	// For a segmented upload that check reads the dynamic manifest's
+	// size through the segment listing, once, and a listing that lags
+	// behind the last segment fails a complete upload (F35); the upload
+	// commit checks each segment against the local file instead
+	// (ADR 0111 decision 2).
+	IgnoreSize bool
 	// ChunkSize is the §25 single knob (e.g. "5Gi"); "" leaves rclone's
 	// default in place.
 	ChunkSize string
@@ -387,6 +394,9 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	if r.opts.NoGzipEncoding {
 		args = append(args, "--no-gzip-encoding")
 	}
+	if r.opts.IgnoreSize {
+		args = append(args, "--ignore-size")
+	}
 	// Flags close before "--": nothing in a path can ever be parsed as
 	// a flag, whatever it starts with.
 	args = append(args, "--", src, dst)
@@ -431,6 +441,9 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	args = append(args, r.pacingArgs()...)
 	if r.opts.NoGzipEncoding {
 		args = append(args, "--no-gzip-encoding")
+	}
+	if r.opts.IgnoreSize {
+		args = append(args, "--ignore-size")
 	}
 	args = append(args, "--", src, dst)
 	return r.run(ctx, args, env, onEvent, nil)

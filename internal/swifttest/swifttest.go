@@ -19,6 +19,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -185,6 +186,13 @@ type Server struct {
 	key   string
 	token string
 
+	// ListingLag leaves the last name under a prefix out of that prefix's
+	// listing, and the last segment out of a dynamic large object's
+	// assembled size and content, for the first ListingLag reads of each,
+	// as a store whose container listing lags behind a completed segment
+	// upload does (F35). Set before serving.
+	ListingLag int
+	lagReads   map[string]int
 	// IgnoresACLRemoval answers X-Remove-Container-Read and -Write without
 	// clearing the ACL, as Ceph RGW's Swift API was measured to do (F36);
 	// an empty X-Container-Read or -Write still clears it. Set before
@@ -649,9 +657,17 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	}
 	objectNames := make([]string, 0, len(c.objects))
 	var bytes int64
+	var lastUnderPrefix string
+	prefix := r.URL.Query().Get("prefix")
 	for n, o := range c.objects {
 		objectNames = append(objectNames, n)
 		bytes += o.Bytes
+		if prefix != "" && strings.HasPrefix(n, prefix) && n > lastUnderPrefix {
+			lastUnderPrefix = n
+		}
+	}
+	if r.Method == http.MethodGet && lastUnderPrefix != "" && s.lagging("list "+name+"/"+prefix) {
+		objectNames = slices.DeleteFunc(objectNames, func(n string) bool { return n == lastUnderPrefix })
 	}
 	snapshot := *c
 	// snapshot is a shallow copy, so snapshot.Meta still aliases c.Meta;
@@ -932,6 +948,19 @@ func (s *Server) putObject(w http.ResponseWriter, r *http.Request, container, na
 	}
 	w.Header().Set("Etag", o.ETag)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// lagging counts one read of key and reports whether ListingLag still
+// leaves its newest name out. The caller holds s.mu.
+func (s *Server) lagging(key string) bool {
+	if s.ListingLag == 0 {
+		return false
+	}
+	if s.lagReads == nil {
+		s.lagReads = map[string]int{}
+	}
+	s.lagReads[key]++
+	return s.lagReads[key] <= s.ListingLag
 }
 
 // dropPUTResponse closes the connection after the write has been applied,
@@ -1479,6 +1508,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 					}
 				}
 				sort.Strings(segNames)
+				if len(segNames) > 0 && s.lagging("read "+container+"/"+name) {
+					segNames = segNames[:len(segNames)-1]
+				}
 				length = 0
 				logical = nil
 				var concatenated strings.Builder
