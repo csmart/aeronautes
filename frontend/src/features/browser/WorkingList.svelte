@@ -1,5 +1,6 @@
 <script lang="ts">
   import VirtualList from "../../components/VirtualList.svelte";
+  import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
@@ -38,6 +39,28 @@
   const source = $derived(browser.transferSource);
   const sourceWord = $derived(source.kind === "selected" ? "selected" : source.kind);
   const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
+
+  // The row menu offers the toolbar's own actions for what is selected,
+  // under the same conditions, so the two can never disagree.
+  let menu: { x: number; y: number; entry: ListingRowDTO } | null = $state(null);
+
+  function menuItems(entry: ListingRowDTO): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (entry.kind === "prefix") items.push({ label: "Open", run: () => browser.activate(entry) });
+    if (v1Offers.download) {
+      items.push({ label: `Download ${sourceWord}…`, disabled: noMembers, run: () => (browser.localTransfer = "download") });
+    }
+    if (v1Offers.copy) items.push({ label: `Copy ${sourceWord}…`, disabled: noMembers, run: () => (browser.transferOpen = true) });
+    items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
+    if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
+    if (v1Offers.objectDelete && browser.chosenRows.length > 1 && browser.chosenRows.some((row) => row.kind === "object")) {
+      items.push({ label: "Delete selected…", danger: true, run: () => browser.openSelectedDelete() });
+    }
+    if (v1Offers.bulkDelete && entry.kind === "prefix") {
+      items.push({ label: "Delete prefix…", danger: true, run: () => (browser.deleteOpen = true) });
+    }
+    return items;
+  }
 
   function shortName(entry: ListingRowDTO): string {
     return entry.name.slice(directoryLength);
@@ -272,6 +295,7 @@
         rowSelected={(entry) => browser.isChosen(entry)}
         onSelect={(i, mode) => (mode === "toggle" ? browser.toggleRow(i) : mode === "range" ? browser.extendTo(i) : browser.select(i))}
         onActivate={(entry) => browser.activate(entry)}
+        onContextMenu={(entry, _index, x, y) => (menu = { x, y, entry })}
       >
         {#snippet row(entry: ListingRowDTO, _index: number, isSelected: boolean)}
           <div class="entry" class:selected={isSelected}>
@@ -305,6 +329,18 @@
       </VirtualList>
     {/if}
   </div>
+  {#if menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      label="Actions for {shortName(menu.entry)}"
+      items={menuItems(menu.entry)}
+      onClose={() => {
+        menu = null;
+        virtualList?.focus();
+      }}
+    />
+  {/if}
 
   <footer class="pane-foot num">
     {#if browser.containerName && !browser.entriesLoading}
