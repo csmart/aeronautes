@@ -148,6 +148,15 @@ var inventory = map[string]Action{
 	// configuration — creating bookmarks and replacing settings, never
 	// deleting or overwriting — so it is a mutate.
 	"BackupService.ImportSettings": {Kind: Mutate, Scenarios: []string{"happy", "refusal"}},
+
+	// BookmarkImportService (ADR 0114)
+	// The preview opens the file picker and holds what it read behind a
+	// token, writing nothing, as the upload picks do.
+	"BookmarkImportService.PreviewImport": {Kind: Session},
+	// The save creates bookmarks and never changes or deletes one.
+	"BookmarkImportService.SaveImport": {Kind: Mutate},
+	// The status reads the latest save's outcomes.
+	"BookmarkImportService.ImportStatus": {Kind: Read},
 	// TransferService
 	"TransferService.PlanCopy":          {Kind: Read},
 	"TransferService.PreflightUpload":   {Kind: Read},

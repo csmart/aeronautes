@@ -63,9 +63,13 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"BackupService.ExportSettings": true,
 		// The settings restore merges backed-up configuration; it gates and
 		// lifts nothing, so it is kept.
-		"BackupService.ImportSettings":     true,
-		"BenchmarkService.Latest":          true,
-		"BookmarkService.CredentialStatus": true, "BookmarkService.Delete": true,
+		"BackupService.ImportSettings": true,
+		// The bookmark import (ADR 0114) creates bookmarks from another
+		// tool's configuration; it gates and lifts nothing, so it is kept.
+		"BookmarkImportService.PreviewImport": true, "BookmarkImportService.SaveImport": true,
+		"BookmarkImportService.ImportStatus": true,
+		"BenchmarkService.Latest":            true,
+		"BookmarkService.CredentialStatus":   true, "BookmarkService.Delete": true,
 		"BookmarkService.List": true, "BookmarkService.Save": true,
 		"BookmarkService.Verify": true,
 		"BrowseService.Account":  true, "BrowseService.Capabilities": true,
