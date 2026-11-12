@@ -1,6 +1,6 @@
 # ADR 0111 — segmented uploads as static large objects
 
-**Status:** Accepted for 0.5.0 (12 November 2026), from finding F35 and the operator's decisions of 12 November: static large objects by default, dynamic ones still available, both tested, and the choice settable per bookmark; delivered with this record's series.
+**Status:** Accepted for 0.5.0 (12 November 2026), from finding F35 and the operator's decisions of 12 November: static large objects by default, dynamic ones still available, both tested, and the choice settable per bookmark; delivered with this record's series. Amended the same day by decisions 9 to 11, from finding F38 and the operator's decision to keep static large objects only where the store returns their manifests.
 **Scope:** how an upload stores a file larger than its chunk size; the engine's size check for those uploads; the content binding of a static publication; the per-job and per-bookmark setting and the upload preview's disclosure.
 **Amends:** [ADR 0005](0005-large-object-safety.md) (its sentence that rclone-executed uploads are DLOs and a native SLO composer is out of v1), [ADR 0080](0080-upload-content-binding.md) decisions 3 and 4 and the listing refusal [ADR 0042](0042-source-content-ladder.md) keeps, each for a static publication only, [ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 6's declared-tag exception, requirement K-XFER-007, and DESIGN §25, §62's "SLO creation" non-goal and §63.8 for uploads.
 
@@ -24,9 +24,9 @@ A static large object (SLO) is a manifest listing each segment's path, entity ta
    A bookmark gains a large-object setting, `slo` or `dlo`, beside its segment placement and chunk size; it is carried by the backup like them.
    A bookmark with no value, every existing one among them, reads as `slo` and stays readable, as an empty segment placement already reads as its default.
    A per-job transfer setting of the same name overrides it in the upload dialog's settings.
-   Only a readable `/info` that has no static-large-object entry makes an `slo` choice upload as `dlo`, and the preview says so; when the capability is unknown, because `/info` could not be read, the choice stays `slo` and the publication is the attempt, since unknown is not unsupported.
-   The check uses the session's existing capability snapshot, the one the preview and the commit both read, not a read of its own.
-   The job records, on its existing settings record, the kind it actually published, with an origin from the vocabulary it already uses: `default` for no bookmark value, `override` for the job's own choice, one new origin, `bookmark`, for the bookmark's value, and one more, `capability`, when a readable `/info` without the entry turned a static choice into a dynamic upload.
+   Only a readable `/info` that has no static-large-object entry, or a store found under decision 9 not to return static manifests, makes an `slo` choice upload as `dlo`, and the preview says so; when the capability is unknown, because `/info` could not be read, the choice stays `slo` and the publication is the attempt, since unknown is not unsupported.
+   The `/info` check uses the session's existing capability snapshot, the one the preview and the commit both read, not a read of its own; decision 9's check is the one extra read a connection may make.
+   The job records, on its existing settings record, the kind it actually published, with an origin from the vocabulary it already uses: `default` for no bookmark value, `override` for the job's own choice, one new origin, `bookmark`, for the bookmark's value, and one more, `capability`, when a readable `/info` without the entry, or a store found under decision 9 not to return static manifests, turned a static choice into a dynamic upload.
    The upload preview's disclosure names the kind: a segmented file becomes a static large object, or a dynamic one whose reads depend on listing consistency.
    The setting is ignored when no file is segmented.
 2. **The engine moves the bytes; Aeronautes composes the static manifest at the commit.**
@@ -52,6 +52,26 @@ A static large object (SLO) is a manifest listing each segment's path, entity ta
 7. **ADR 0005's sentence is replaced:** the engine still uploads segments, and for a segmented upload Aeronautes composes the static manifest at the commit; a native static composer is in scope for that and nothing else.
 8. **Copies follow in a second step under this record**: a copy that segments at its destination still writes a dynamic object until then, and the copy preview keeps saying so.
 
+### Amendment of 12 November 2026: static only where the store returns the manifest (F38)
+
+Measured on the Ceph RGW cloud with an object the run created: a static large object is stored and read correctly, and its HEAD says it is static, but GET and HEAD with `?multipart-manifest=get`, with or without `format=raw`, answer 200 with an empty body.
+Download and copy build a static source's content expectation from that manifest, as do the inspector's segment view and segment deletion, so on that store an uploaded static object could not be downloaded or copied by Aeronautes, though nothing is lost.
+The genuine Swift cloud returns the manifest in both forms.
+The operator decided on 12 November to keep static large objects where the store returns their manifests and to upload dynamic ones where it does not.
+
+9. **Whether the store returns static manifests is learned once per connection, before the first static publication.**
+   A job whose plan is static checks before its first static publication, unless its connection has already learned the answer.
+   After pairing that item's segments, it writes the paired manifest at a name of its own under the job's recorded staging prefix, with the create conditional and no content tag, reads it back with the strict bounded manifest reader, and deletes it, the manifest alone.
+   The store returns static manifests when that read lists exactly the entries written, in order; it does not when a complete 200 response carries an empty body, as measured.
+   Any other outcome of the check, a refused check manifest among them, fails that item unresolved before any publication, with its staging kept, and leaves the question open.
+   The answer is kept beside the connection's capability snapshot, as an observation of its own, until the session is forgotten; it does not replace the snapshot's source, so an unreadable `/info` stays unknown and leaves a static choice in place until this check has answered.
+10. **A store that does not return them gets dynamic uploads, recorded as the capability's.**
+   When the check finds the manifest not returned, the job publishes every segmented file as a dynamic large object under decision 6, and before that first publication its settings record is updated to `dlo` with the origin `capability`.
+   Later previews on the connection name a dynamic upload with the same origin, and the dialog says the cluster does not offer static large objects that Aeronautes can read back.
+   A preview on a connection that has not learned the answer names static, and the job's record then states what was published.
+11. **The check manifest is staging.**
+   It names only the item's paired segments, which stay; a check manifest a stopped job leaves behind is staging residue retained under ADR 0020, and is never deleted together with its segments.
+
 ## Consequences
 
 - A segmented upload no longer fails at random on a store with lagging listings, and assembling what it publishes no longer depends on a listing.
@@ -59,9 +79,11 @@ A static large object (SLO) is a manifest listing each segment's path, entity ta
 - Composing the manifest costs one listing of the job's own prefix, repeated only while it lags, and one read of the local file for the chunk digests.
 - The engine's own size check is off for segmented runs; the per-segment pairing is a stronger check than the single size it replaces.
 - Two publication shapes remain while dynamic objects stay available.
+- The check costs one manifest write, one manifest read and one manifest delete per connection, and on a store that does not return static manifests the first preview of a connection can name static while its job publishes dynamic; the job's record and the next preview say so.
 
 ## Tests
 
 - Go: chunks of a file split by the effective chunk size, a short last chunk included; a manifest composed in index order from paired segments; refused before publication: an unexpected name, a missing index after the bound, and a segment whose size or tag differs from its chunk; the bounded wait succeeding when the mock's listing lag ends within it and failing unresolved when it does not; the write declaring no content tag and the live tag checked as the MD5 of the concatenated hexadecimal segment tags; the dynamic path passing under the same lag; an overwrite of an existing large object; segment deletion of a published static object refused without the static-object proof; an existing bookmark without the value reading as `slo`; the bookmark value and the job override with their recorded origins; a readable `/info` without the entry publishing `dlo` with the `capability` origin, and an unreadable `/info` keeping `slo` rather than downgrading silently; the preview naming the kind.
 - System, against SAIO: a segmented upload as a static and as a dynamic object, each downloaded and compared byte for byte, and the live object's class.
 - Real-cloud journeys: the copy journey uploads its segmented file once as a static and once as a dynamic object on both clouds and downloads each back.
+- For decisions 9 to 11, Go against a mock that answers the manifest read with an empty body: the check writes, reads and deletes one manifest and leaves the segments; the job publishes dynamic and its record says `dlo` from `capability`; the connection remembers, so a second job checks nothing and its preview names dynamic from `capability`; a store that returns the manifest publishes static and a second job checks nothing; a check that fails otherwise publishes nothing. Real-cloud journeys: a static choice publishes static on the Swift cloud and dynamic from `capability` on the Ceph RGW cloud, and the copy and download back succeed on both.
