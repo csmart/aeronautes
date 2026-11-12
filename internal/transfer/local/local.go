@@ -538,6 +538,15 @@ func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, conta
 // PreflightDownloadIntoBounded is PreflightDownloadInto with the selection
 // ceiling of PreflightDownloadBounded.
 func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64) (report *DownloadPreflight, err error) {
+	return PreflightDownloadMembersInto(ctx, src, container, prefix, destination, objectCeiling, nil)
+}
+
+// PreflightDownloadMembersInto is PreflightDownloadIntoBounded for the named
+// members of the scope alone (ADR 0108): the listing keeps only them, the
+// ceiling and every check count only them, and a member the listing does not
+// hold refuses the preflight, since it is the last check before the start.
+// No members means the whole scope.
+func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64, members []string) (report *DownloadPreflight, err error) {
 	report = &DownloadPreflight{}
 	if objectCeiling < 0 {
 		return nil, fmt.Errorf("object ceiling %d is negative", objectCeiling)
@@ -562,6 +571,14 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 	byLower := map[string][]string{}
 	byCaseless := map[string][]string{}
 
+	var memberSet map[string]bool
+	if len(members) > 0 {
+		memberSet = make(map[string]bool, len(members))
+		for _, name := range members {
+			memberSet[name] = false
+		}
+	}
+
 	var counted int64
 	for entry, err := range src.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 		if err != nil {
@@ -570,6 +587,12 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 		object, ok := entry.(swiftcontrol.ObjectEntry)
 		if !ok {
 			continue
+		}
+		if memberSet != nil {
+			if _, member := memberSet[object.Name]; !member {
+				continue
+			}
+			memberSet[object.Name] = true
 		}
 		counted++
 		if objectCeiling > 0 && counted > objectCeiling {
@@ -683,6 +706,11 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 		nativeSource[object.Name] = source
 	}
 
+	if missing := missingMember(members, memberSet); missing != "" {
+		report.Problems = append(report.Problems, Problem{Name: missing, Kind: "selection-missing", Reject: true,
+			Detail: "this selected object is no longer at the source; select the objects again"})
+	}
+
 	routeAliasedDirectoriesNatively(prefix, names, candidates)
 	report.Problems = append(report.Problems, fileVersusPrefixProblems(prefix, names)...)
 	report.Problems = append(report.Problems, collisionProblems(prefix, byLower, byCaseless)...)
@@ -697,6 +725,17 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 	}
 	report.nativeSource = nativeSource
 	return report, nil
+}
+
+// missingMember is the first member, in the order given, that the listing
+// did not hold, or "" when it held them all.
+func missingMember(members []string, seen map[string]bool) string {
+	for _, name := range members {
+		if !seen[name] {
+			return name
+		}
+	}
+	return ""
 }
 
 // routeAliasedDirectoriesNatively sends every file beneath a directory that

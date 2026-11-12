@@ -42,6 +42,10 @@ type CopyRequestDTO struct {
 	// ADR 0085 comparison rests on, and an unacknowledged copy behaves
 	// exactly as it does today (ADR 0081 decision 1's shape).
 	AcknowledgeOverwrite bool `json:"acknowledgeOverwrite"`
+	// Members, when given, are the full names of the selected objects the
+	// copy acts on instead of its whole scope (ADR 0108); empty means the
+	// scope.
+	Members []string `json:"members,omitempty"`
 }
 
 // CopyPlanDTO is the §65.4 preflight surface: honest conservative
@@ -61,6 +65,9 @@ type CopyPlanDTO struct {
 	// OverwriteBytes counts listed source bytes in refused Changed rows;
 	// keeping the bridge field does not promise an overwrite or transfer.
 	OverwriteBytes int64 `json:"overwriteBytes"`
+	// MissingMembers counts selected objects the source listing no longer
+	// holds; they are not copied (ADR 0108 decision 3).
+	MissingMembers int `json:"missingMembers,omitempty"`
 }
 
 // TransferService is the bridge's transfer surface (ADR 0011): planning
@@ -172,10 +179,80 @@ func validateCopyRequest(req CopyRequestDTO) error {
 			return fmt.Errorf("prefix %q must be empty or end with '/'", p)
 		}
 	}
+	if err := validateMembers(req.SourcePrefix, req.Members); err != nil {
+		return err
+	}
 	if _, err := profileBase(Profile(req.Profile)); err != nil && req.Profile != string(ProfileCustom) {
 		return err
 	}
 	return req.Settings.Validate()
+}
+
+// missingMembers is how many of a copy's members its last listing did not
+// hold: zero for a copy of the whole scope.
+func missingMembers(req CopyRequestDTO, found int) int {
+	if len(req.Members) == 0 {
+		return 0
+	}
+	return len(req.Members) - found
+}
+
+// validateMembers refuses a selection that cannot be what the operator chose
+// (ADR 0108 decision 2): each member is a full name inside the scope's
+// prefix, not the folder itself, named once, and outside every staging area.
+func validateMembers(prefix string, members []string) error {
+	seen := make(map[string]struct{}, len(members))
+	for _, name := range members {
+		switch {
+		case name == "":
+			return errors.New("a selected object has no name")
+		case name == prefix:
+			// The folder's own marker has no name relative to the folder, so a
+			// copy to a container's top would plan nothing for it and still
+			// end complete; refused by name instead (ADR 0108 decision 2).
+			return fmt.Errorf("selected object %q is the folder's own marker; select it from the folder above to copy or download it", name)
+		case !strings.HasPrefix(name, prefix):
+			return fmt.Errorf("selected object %q is not inside %q", name, prefix)
+		case rclone.InStageNamespace(name):
+			return fmt.Errorf("selected object %q is inside a staging area", name)
+		}
+		if _, repeated := seen[name]; repeated {
+			return fmt.Errorf("selected object %q is named twice", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+// selectedRows keeps only a selection's members from a listing, counting in
+// found how many it met; with no members it is the listing itself.
+func selectedRows(rows iter.Seq2[swiftcontrol.ListingEntry, error], members []string, found *int) iter.Seq2[swiftcontrol.ListingEntry, error] {
+	if len(members) == 0 {
+		return rows
+	}
+	set := make(map[string]struct{}, len(members))
+	for _, name := range members {
+		set[name] = struct{}{}
+	}
+	return func(yield func(swiftcontrol.ListingEntry, error) bool) {
+		for row, err := range rows {
+			if err == nil {
+				object, ok := row.(swiftcontrol.ObjectEntry)
+				if !ok {
+					continue
+				}
+				if _, member := set[object.Name]; !member {
+					continue
+				}
+				if found != nil {
+					*found++
+				}
+			}
+			if !yield(row, err) {
+				return
+			}
+		}
+	}
 }
 
 // describeOverlap says in plain words why two copy scopes in one container
@@ -207,15 +284,17 @@ func sharesNamespace(req CopyRequestDTO, src, dst *swiftcontrol.Session) bool {
 	return req.SourceContainer == req.DestContainer && !provenDistinctAccounts(src.StorageURL(), dst.StorageURL())
 }
 
-// sourceObjects lists a copy's source scope for planning. In a copy into a
-// parent folder of its own source (DESIGN §65.9 item 9) the listing ends with
-// a refusal at the first source name whose destination name lands back inside
-// the source folder, such as files/files/a copied up to files/a: writing it
-// could replace a source object the same run still reads. Every planning pass
-// lists through here, so the passes cannot disagree.
-func sourceObjects(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) iter.Seq2[swiftcontrol.ListingEntry, error] {
-	rows := src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix})
-	if !sharesNamespace(req, src, dst) {
+// sourceObjects lists a copy's source for planning: its scope, or only its
+// members (ADR 0108), counting in found the members it met. For a copy of the
+// whole scope in one namespace, copied up into a parent (DESIGN §65.9 item
+// 9), it ends the listing with a refusal at the first name whose destination
+// lands back inside the source folder, such as files/files/a copied up to
+// files/a, which the same run may still read; a copy of members settles its
+// own overlap in resolve, from the request. Every planning pass lists through
+// here, so the passes cannot disagree.
+func sourceObjects(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session, found *int) iter.Seq2[swiftcontrol.ListingEntry, error] {
+	rows := selectedRows(src.Objects(ctx, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}), req.Members, found)
+	if len(req.Members) > 0 || !sharesNamespace(req, src, dst) {
 		return rows
 	}
 	return func(yield func(swiftcontrol.ListingEntry, error) bool) {
@@ -240,6 +319,9 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if err := validateCopyRequest(req); err != nil {
 		return nil, nil, false, err
 	}
+	if ceiling := s.downloadObjectCeiling(ctx); int64(len(req.Members)) > ceiling {
+		return nil, nil, false, fmt.Errorf("%d objects are selected, more than the selection ceiling of %d; copy the folder instead, or raise the ceiling in Settings", len(req.Members), ceiling)
+	}
 	src, err = s.connections.SessionFor(ctx, req.SourceBookmarkID)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("source: %w", err)
@@ -253,17 +335,38 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	// writes would land in the scope it reads. A copy into a parent folder
 	// of its source is allowed, and sourceObjects refuses any one name that
 	// would land back inside the source. Mirror refuses every nesting on
-	// its own, as it refuses every start (ADR 0020).
-	if sharesNamespace(req, src, dst) && strings.HasPrefix(req.DestPrefix, req.SourcePrefix) {
+	// its own, as it refuses every start (ADR 0020). A copy of members reads
+	// and writes only named objects, so for it sourceObjects refuses instead
+	// a member whose destination is another member (ADR 0108 decision 4).
+	if sharesNamespace(req, src, dst) && len(req.Members) == 0 && strings.HasPrefix(req.DestPrefix, req.SourcePrefix) {
 		sameAccount := swiftcontrol.AccountIdentity(src.StorageURL()) == swiftcontrol.AccountIdentity(dst.StorageURL())
 		return nil, nil, false, fmt.Errorf(
 			"the source and destination overlap: %s, so the copy could copy its own output; choose another container, or a destination folder outside the source folder",
 			describeOverlap(req.SourceContainer, req.SourcePrefix, req.DestPrefix, sameAccount))
 	}
+	// A member whose destination is itself a member would be replaced while
+	// the same run still reads it. The request alone says so, so it is
+	// refused here, before any listing, never by a planning pass that may
+	// already have written earlier members; a destination equal to the source
+	// folder maps every member onto itself (ADR 0108 decision 4).
+	if len(req.Members) > 0 && sharesNamespace(req, src, dst) {
+		members := make(map[string]struct{}, len(req.Members))
+		for _, name := range req.Members {
+			members[name] = struct{}{}
+		}
+		for _, name := range req.Members {
+			target := req.DestPrefix + strings.TrimPrefix(name, req.SourcePrefix)
+			if _, member := members[target]; member {
+				return nil, nil, false, fmt.Errorf("the copy would write %q, which is itself one of the selected objects, so it could replace an object the copy still reads; copy to another folder or container", target)
+			}
+		}
+	}
 	// The job's scratch objects go under the destination prefix and are not
 	// planned names, so a source scope holding that area could have a source
-	// object replaced by one (DESIGN §65.9 item 9).
-	if scratch := req.DestPrefix + rclone.StageNamespace; sharesNamespace(req, src, dst) && strings.HasPrefix(scratch, req.SourcePrefix) {
+	// object replaced by one (DESIGN §65.9 item 9). A copy of members reads
+	// only its members, none of which can be in a staging area, so for it the
+	// scratch area is never read (ADR 0108 decision 4).
+	if scratch := req.DestPrefix + rclone.StageNamespace; sharesNamespace(req, src, dst) && len(req.Members) == 0 && strings.HasPrefix(scratch, req.SourcePrefix) {
 		return nil, nil, false, fmt.Errorf(
 			"the source folder %q holds this copy's working area %q; copy a folder outside it, or to another container",
 			req.SourcePrefix, scratch)
@@ -297,8 +400,9 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 	}
 	largeConservative := false
 	var overwriteBytes int64
+	found := 0
 	summary, err := plan.Copy(ctx,
-		sourceObjects(ctx, req, src, dst),
+		sourceObjects(ctx, req, src, dst, &found),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Reason == plan.ReasonLargeObject || item.Reason == plan.ReasonPossibleManifest {
@@ -318,6 +422,7 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		LargeObjectsAsDLO:    largeConservative,
 		DataPath:             "eligible copies pass through this workstation: source download and destination upload",
 		OverwriteBytes:       overwriteBytes,
+		MissingMembers:       missingMembers(req, found),
 	}, nil
 }
 
@@ -460,6 +565,8 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		DestBookmarkID:     req.DestBookmarkID,
 		Engine:             "rclone+native",
 		Settings:           effectiveJSONWithProfile(Profile(req.Profile), effective, origins),
+		SelectedMembers:    len(req.Members),
+		SelectedNames:      req.Members,
 	})
 	if err != nil {
 		return "", err
@@ -503,7 +610,7 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 	// candidates to ask about.
 	var candidates []string
 	if _, err := plan.Copy(ctx,
-		sourceObjects(ctx, req, src, dst),
+		sourceObjects(ctx, req, src, dst, nil),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
@@ -818,6 +925,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	// terminal handling below so it keeps its kind. An unacknowledged copy streams,
 	// with no set to hold and nothing to compare.
 	var planErr error
+	// How many members the execution listing met; a copy of the whole scope
+	// leaves it unused.
+	found := 0
 	if req.AcknowledgeOverwrite {
 		spool := &copyPlanSpool{}
 		defer func() {
@@ -827,7 +937,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}()
 		seen := map[string]struct{}{}
 		_, planErr = plan.Copy(ctx,
-			sourceObjects(ctx, req, src, dst),
+			sourceObjects(ctx, req, src, dst, &found),
 			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 			req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 				// A destination-only name is ignored by the executor, so spooling
@@ -857,7 +967,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}
 	} else {
 		_, planErr = plan.Copy(ctx,
-			sourceObjects(ctx, req, src, dst),
+			sourceObjects(ctx, req, src, dst, &found),
 			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 			req.SourcePrefix, req.DestPrefix, planned)
 	}
@@ -917,7 +1027,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return
 	}
 	verify, err := executor.Verify(background,
-		src.Objects(background, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}),
+		selectedRows(src.Objects(background, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}), req.Members, nil),
 		dst.Objects(background, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}))
 	countersMu.Lock()
 	counters.ObjectsVerified = verify.Verified
@@ -931,8 +1041,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return
 	}
 
+	missing := missingMembers(req, found)
 	switch {
-	case len(report.Failures) > 0 || len(verify.Failures) > 0 || len(report.Conflicts) > 0:
+	case len(report.Failures) > 0 || len(verify.Failures) > 0 || len(report.Conflicts) > 0 || missing > 0:
 		parts := []string{}
 		if n := len(report.Failures); n > 0 {
 			parts = append(parts, fmt.Sprintf("execution failed (example: %s: %s)", report.Failures[0].Name, report.Failures[0].Err))
@@ -942,6 +1053,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}
 		if n := len(report.Conflicts); n > 0 {
 			parts = append(parts, fmt.Sprintf("%d conflicts (destination changed externally)", n))
+		}
+		if missing > 0 {
+			parts = append(parts, fmt.Sprintf("%d of the selected objects were no longer at the source", missing))
 		}
 		finish(jobs.StatePartial, strings.Join(parts, "; "))
 	default:
@@ -1052,6 +1166,9 @@ type JobDTO struct {
 	// "pausing" while a pause waits for the unit in hand to finish,
 	// "resuming" while a resumed job waits for a slot, and "" otherwise.
 	Pause string `json:"pause"`
+	// SelectedMembers counts the objects a copy or download of selected
+	// objects named; zero means it acted on its whole scope (ADR 0108).
+	SelectedMembers int `json:"selectedMembers,omitempty"`
 }
 
 // JobService is the read-only §47 drawer surface.
@@ -1155,6 +1272,7 @@ func jobDTO(j jobs.Job) JobDTO {
 		FinishedAt: formatTime(j.FinishedAt),
 		Engine:     j.Engine, Counters: j.Counters, Error: j.Error,
 		Settings: j.Settings, RecoveryRecords: j.RecoveryRecords,
+		SelectedMembers: j.SelectedMembers,
 	}
 }
 
@@ -1191,6 +1309,15 @@ func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, e
 	request := CopyRequestDTO{
 		SourceBookmarkID: job.SourceBookmarkID, SourceContainer: srcContainer, SourcePrefix: srcPrefix,
 		DestBookmarkID: job.DestBookmarkID, DestContainer: dstContainer, DestPrefix: dstPrefix,
+	}
+	// A copy of selected objects is re-run as the same members, never as
+	// its whole scope (ADR 0108 decision 5).
+	if job.SelectedMembers > 0 {
+		names, err := s.jobs.SelectedNames(ctx, jobID)
+		if err != nil || len(names) != job.SelectedMembers {
+			return "", fmt.Errorf("the %d objects job %s copied could not be read back; nothing was started", job.SelectedMembers, jobID)
+		}
+		request.Members = names
 	}
 	// The recorded effective configuration re-applies as Custom: the
 	// re-run uses exactly what the original ran with (§45).
