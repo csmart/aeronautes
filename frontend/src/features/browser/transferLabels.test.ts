@@ -138,7 +138,7 @@ it.each(["download", "upload"] as const)("sends the chosen objects only for a do
   api.pickDownloadDir = vi.fn().mockResolvedValue({ token: "dir", dir: "chosen" });
   api.pickUploadFiles = vi.fn().mockResolvedValue({ token: "files", files: ["x"], folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 });
   api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 2, problemCount: 0, rejected: false });
-  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjectsAsDlo: false });
+  api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjects: "", largeObjectsOrigin: "" });
   const root = document.createElement("div");
   document.body.append(root);
   mounted.add(mount(LocalTransferDialog, { target: root, props: { browser, mode, onClose: vi.fn() } }));

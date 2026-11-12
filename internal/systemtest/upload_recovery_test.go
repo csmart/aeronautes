@@ -381,7 +381,7 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 		body := []byte("plain bytes " + name)
 		if test.class == "dlo" {
 			body = []byte(strings.Repeat("abcdefg", 160000))
-			settings.ChunkSize = "1Mi"
+			settings.ChunkSize, settings.LargeObjects = "1Mi", "dlo"
 		}
 		paths = append(paths, seedListingLocal(t, root, name, body))
 		bodies[name] = body

@@ -207,7 +207,7 @@ func stagedUploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harn
 			}
 			id, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{
 				BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/",
-				SelectionToken: picked.Token, Settings: app.TransferSettingsDTO{ChunkSize: "1Mi"}})
+				SelectionToken: picked.Token, Settings: app.TransferSettingsDTO{ChunkSize: "1Mi", LargeObjects: "dlo"}})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -59,6 +59,10 @@ type Bookmark struct {
 	// ChunkSizeBytes 0 means the default: 5 GiB capped at the cluster's
 	// max_file_size (§25).
 	ChunkSizeBytes int64
+	// LargeObjects is what a segmented upload to this bookmark publishes,
+	// "slo" or "dlo" (ADR 0111). Empty reads as static, the default, so a
+	// bookmark saved before the setting existed needs no value.
+	LargeObjects string
 	// HasCredential reports whether a credential is on record for this
 	// bookmark (secret_ref set).
 	HasCredential bool
@@ -460,6 +464,11 @@ func validate(b Bookmark) error {
 	default:
 		return fmt.Errorf("unknown segment placement %q", b.SegmentPlacement)
 	}
+	switch swiftcontrol.ObjectClass(b.LargeObjects) {
+	case "", swiftcontrol.ClassSLO, swiftcontrol.ClassDLO:
+	default:
+		return fmt.Errorf("unknown large object kind %q (static is slo, dynamic is dlo)", b.LargeObjects)
+	}
 	// The version is normalised before this runs, so an unset one is 1 here;
 	// the v3 requirements that New enforces at connect time are checked at
 	// this save boundary too, so an unusable v3 bookmark cannot be stored.
@@ -488,7 +497,7 @@ const selectColumns = `
 		COALESCE(project_domain, ''), COALESCE(region, ''),
 		secret_ref IS NOT NULL,
 		tls_mode, COALESCE(tls_ca_id, ''), performance_profile,
-		segment_placement, COALESCE(chunk_size_bytes, 0),
+		segment_placement, COALESCE(chunk_size_bytes, 0), COALESCE(large_objects, ''),
 		created_at, updated_at, COALESCE(secret_ref, ''), origin_kind,
 		origin_instance, origin_persistent, generation, revision,
 		(SELECT pem FROM ca_certs WHERE id=bookmarks.tls_ca_id)
@@ -508,7 +517,7 @@ func scanRecord(scan func(...any) error) (record, error) {
 		&b.AuthVersion, &b.UserDomain, &b.ProjectName, &b.ProjectDomain, &b.Region,
 		&b.HasCredential,
 		&tlsMode, &b.TLSCAID, &b.PerformanceProfile,
-		&placement, &b.ChunkSizeBytes,
+		&placement, &b.ChunkSizeBytes, &b.LargeObjects,
 		&created, &updated, &r.ref, &r.origin.Kind, &r.origin.Instance, &r.origin.Persistent,
 		&r.generation, &r.revision, &r.ca)
 	if err != nil {

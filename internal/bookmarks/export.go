@@ -31,6 +31,7 @@ type ExportRecord struct {
 	PerformanceProfile string
 	SegmentPlacement   string
 	ChunkSizeBytes     int64
+	LargeObjects       string
 	CACertPEM          string
 }
 
@@ -65,6 +66,7 @@ func (st *Store) ExportAll(ctx context.Context, q Querier) ([]ExportRecord, erro
 			PerformanceProfile: r.Bookmark.PerformanceProfile,
 			SegmentPlacement:   string(r.Bookmark.SegmentPlacement),
 			ChunkSizeBytes:     r.Bookmark.ChunkSizeBytes,
+			LargeObjects:       r.Bookmark.LargeObjects,
 			CACertPEM:          r.ca.String,
 		})
 	}

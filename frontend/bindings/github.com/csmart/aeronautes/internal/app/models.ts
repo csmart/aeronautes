@@ -303,6 +303,12 @@ export interface BookmarkDTO {
     "caPem": string;
     "hasCa": boolean;
     "hasCredential": boolean;
+
+    /**
+     * LargeObjects is what a segmented upload to this bookmark publishes:
+     * "dlo" for dynamic, "slo" or empty for static, the default (ADR 0111).
+     */
+    "largeObjects"?: string;
 }
 
 /**
@@ -1639,6 +1645,14 @@ export interface TransferSettingsDTO {
      * the child memory the record shows (ADR 0074 decision 3).
      */
     "bufferSize": string;
+
+    /**
+     * LargeObjects is an upload's own choice of what a segmented file is
+     * published as, "slo" or "dlo", over the bookmark's (ADR 0111). It is
+     * no engine knob: ResolveSettings leaves it out, and the upload alone
+     * records what it published.
+     */
+    "largeObjects"?: string;
 }
 
 /**

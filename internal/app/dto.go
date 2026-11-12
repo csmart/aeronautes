@@ -38,6 +38,9 @@ type BookmarkDTO struct {
 	CAPem         string `json:"caPem"`
 	HasCA         bool   `json:"hasCa"`
 	HasCredential bool   `json:"hasCredential"`
+	// LargeObjects is what a segmented upload to this bookmark publishes:
+	// "dlo" for dynamic, "slo" or empty for static, the default (ADR 0111).
+	LargeObjects string `json:"largeObjects,omitempty"`
 }
 
 // VerifyResultDTO is what a successful check of unsaved bookmark details

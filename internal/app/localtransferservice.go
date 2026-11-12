@@ -475,11 +475,46 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 		return nil, err
 	}
 	discloseWalk(report, walk)
-	// Name the destination large-object placement before Start, as the copy
-	// preview already does (§63.8): the engine uploads a file larger than the
-	// effective chunk size as a segmented DLO.
-	report.LargeObjectsAsDLO = uploadsLargeObject(report.Items, effective.ChunkSize)
+	// Name what a file larger than the effective chunk size is published
+	// as before Start (§63.8, ADR 0111), and keep the chunk size the
+	// static publication pairs segments by.
+	if uploadsLargeObject(report.Items, effective.ChunkSize) {
+		if report.LargeObjects, report.LargeObjectsOrigin, err = s.largeObjectsFor(ctx, req, session); err != nil {
+			return nil, err
+		}
+		report.ChunkBytes, _ = engineChunkBytes(effective.ChunkSize)
+	}
 	return report, nil
+}
+
+// largeObjectsFor decides what a segmented upload publishes, and the
+// origin its job records (ADR 0111 decision 1): the job's own choice, else
+// the bookmark's, else static. A static choice becomes dynamic only when
+// the session's readable /info has no static large object entry; when the
+// capability is unknown it stays static and the publication is the attempt.
+func (s *TransferService) largeObjectsFor(ctx context.Context, req UploadRequestDTO, session *swiftcontrol.Session) (kind, origin string, err error) {
+	bookmark, err := s.connections.store.Get(ctx, req.BookmarkID)
+	if err != nil {
+		return "", "", err
+	}
+	kind, origin = string(swiftcontrol.ClassSLO), "default"
+	switch {
+	case req.Settings.LargeObjects != "":
+		kind, origin = req.Settings.LargeObjects, "override"
+	case bookmark.LargeObjects != "":
+		kind, origin = bookmark.LargeObjects, "bookmark"
+	}
+	if kind != string(swiftcontrol.ClassSLO) {
+		return kind, origin, nil
+	}
+	capabilities, err := s.connections.capabilitiesOf(ctx, session)
+	if err != nil {
+		return "", "", err
+	}
+	if capabilities.State("slo") == swiftcontrol.CapabilityUnsupported {
+		return string(swiftcontrol.ClassDLO), "capability", nil
+	}
+	return kind, origin, nil
 }
 
 // discloseWalk adds what a folder pick's walk left out to the preflight
@@ -507,8 +542,8 @@ func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection)
 	}
 }
 
-// uploadsLargeObject reports whether any selected file will be uploaded as a
-// segmented destination DLO (§63.8): only the engine route segments, and only
+// uploadsLargeObject reports whether any selected file will be uploaded in
+// segments as a destination large object (§63.8): only the engine route segments, and only
 // a file larger than the effective --swift-chunk-size. A native-routed name is
 // one plain PutObject whatever its size, so it never counts.
 func uploadsLargeObject(items []local.UploadItem, chunkSize string) bool {
@@ -1130,7 +1165,13 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	// dynamic manifest's size through a listing that can lag the last
 	// segment (F35); the commit checks the segments instead (ADR 0111
 	// decision 2).
-	options.IgnoreSize = preflight.LargeObjectsAsDLO
+	options.IgnoreSize = preflight.LargeObjects != ""
+	if preflight.LargeObjects != "" {
+		// The job records the kind it publishes, and why (ADR 0111
+		// decision 1); an upload that segments nothing records none.
+		settings.LargeObjects = preflight.LargeObjects
+		origins["largeObjects"] = preflight.LargeObjectsOrigin
+	}
 	engine, err := s.localEngine(ctx, session, "aeronautes_dst", options)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)

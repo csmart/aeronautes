@@ -179,6 +179,7 @@ func TestValidation(t *testing.T) {
 		func(b *Bookmark) { b.Username = "" },
 		func(b *Bookmark) { b.TLSMode = "yolo" },
 		func(b *Bookmark) { b.SegmentPlacement = "wherever" },
+		func(b *Bookmark) { b.LargeObjects = "multipart" },
 	}
 	for i, mutate := range cases {
 		b := sample()
@@ -186,6 +187,38 @@ func TestValidation(t *testing.T) {
 		if _, err := st.Save(ctx, b, nil); err == nil {
 			t.Errorf("case %d: invalid bookmark saved", i)
 		}
+	}
+}
+
+// A bookmark's large-object kind is kept as saved, and one saved without a
+// value, as every bookmark before ADR 0111 was, reads back with none, which
+// an upload reads as static. Changing it is not a credential change, so the
+// bookmark's generation stays and its sessions remain valid.
+func TestLargeObjectsRoundTrip(t *testing.T) {
+	st, _, _ := newTestStore(t)
+	ctx := context.Background()
+	saved, err := st.Save(ctx, sample(), []byte("key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, before, err := st.ConnectionConfig(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Get(ctx, saved.ID); err != nil || got.LargeObjects != "" {
+		t.Fatalf("a bookmark saved without a kind reads %q, %v", got.LargeObjects, err)
+	}
+	for _, kind := range []string{"dlo", "slo", ""} {
+		saved.LargeObjects = kind
+		if _, err := st.Save(ctx, saved, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := st.Get(ctx, saved.ID); err != nil || got.LargeObjects != kind {
+			t.Fatalf("saved %q, read %q, %v", kind, got.LargeObjects, err)
+		}
+	}
+	if _, after, err := st.ConnectionConfig(ctx, saved.ID); err != nil || after != before {
+		t.Errorf("generation %d became %d (%v) for a large-object change", before, after, err)
 	}
 }
 

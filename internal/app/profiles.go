@@ -44,6 +44,9 @@ func ResolveSettings(p Profile, overrides TransferSettingsDTO, recommendation *T
 	if err := overrides.Validate(); err != nil {
 		return TransferSettingsDTO{}, err
 	}
+	// The large-object choice belongs to the upload that applies it, which
+	// records what it published; a copy or a download must not record it.
+	overrides.LargeObjects = ""
 	if p == ProfileCustom {
 		return overrides.withDefaults(), nil
 	}

@@ -64,6 +64,21 @@ func TestResolveSettings(t *testing.T) {
 	}
 }
 
+// The large-object choice is an upload's alone, which records what it
+// published (ADR 0111), so no profile carries it into a copy's or a
+// download's effective settings, where it would be recorded unapplied.
+func TestResolveSettingsLeavesTheLargeObjectChoiceOut(t *testing.T) {
+	for _, profile := range []Profile{ProfileBalanced, ProfileCustom} {
+		got, err := ResolveSettings(profile, TransferSettingsDTO{LargeObjects: "dlo"}, nil)
+		if err != nil || got.LargeObjects != "" {
+			t.Errorf("%s: resolved large objects %q, %v", profile, got.LargeObjects, err)
+		}
+	}
+	if _, err := ResolveSettings(ProfileBalanced, TransferSettingsDTO{LargeObjects: "multipart"}, nil); err == nil {
+		t.Error("an unknown large-object kind was accepted")
+	}
+}
+
 func TestSettingOrigins(t *testing.T) {
 	// Balanced: a per-job override wins; the rest are the profile's.
 	o := settingOrigins(ProfileBalanced, TransferSettingsDTO{Transfers: 12}, nil)

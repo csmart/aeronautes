@@ -55,6 +55,10 @@
   let region = $state(existing?.region ?? "");
   /* svelte-ignore state_referenced_locally */
   let tlsMode = $state(existing?.tlsMode ?? "system");
+  // What a segmented upload publishes (ADR 0111); a stored "slo" is the
+  // same as the default, so it shows as the default.
+  /* svelte-ignore state_referenced_locally */
+  let largeObjects = $state(existing?.largeObjects === "dlo" ? "dlo" : "");
   let caPem = $state("");
   // Keystone v3 and TempAuth v1 are the two auth types; the v3 identity
   // fields show only for v3 (ADR 0100).
@@ -81,6 +85,7 @@
       caPem,
       hasCa: bookmark?.hasCa ?? false,
       hasCredential: bookmark?.hasCredential ?? false,
+      largeObjects,
     };
   }
 
@@ -251,6 +256,14 @@
           ></textarea>
         </label>
       {/if}
+
+      <label class="field">
+        <span>Segmented uploads</span>
+        <select bind:value={largeObjects}>
+          <option value="">Static large objects (default)</option>
+          <option value="dlo">Dynamic large objects (reads depend on listings)</option>
+        </select>
+      </label>
     </fieldset>
 
     {#if browser.secretBackend === "session"}

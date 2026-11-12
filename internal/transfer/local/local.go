@@ -55,12 +55,6 @@ type UploadPreflight struct {
 	Items      []UploadItem `json:"items"`
 	Problems   []Problem    `json:"problems"`
 	TotalBytes int64        `json:"totalBytes"`
-	// LargeObjectsAsDLO discloses that the selection contains a file the
-	// engine will upload as a segmented destination DLO (§63.8), so the
-	// local dialog can name the placement the copy preview already names.
-	// The app-layer bridge fills it from the effective --swift-chunk-size;
-	// this package, which never resolves that size, leaves it false.
-	LargeObjectsAsDLO bool `json:"largeObjectsAsDlo"`
 	// LargeObjects is what a file larger than the effective chunk size is
 	// published as (ADR 0111): "slo" or "dlo", and empty when no file is
 	// segmented, so the dialog can name it. The app-layer bridge fills it,
@@ -68,10 +62,11 @@ type UploadPreflight struct {
 	// destination's capabilities; a caller that leaves it empty publishes
 	// what the engine staged as it was staged.
 	LargeObjects string `json:"largeObjects"`
-	// LargeObjectsByCapability says a static choice is published as a
-	// dynamic object because the destination's readable /info has no
-	// static large object entry, so the dialog can say why.
-	LargeObjectsByCapability bool `json:"largeObjectsByCapability"`
+	// LargeObjectsOrigin is where that choice came from, as the job
+	// records it: "default", "override" for the job's, "bookmark", or
+	// "capability" when the destination's readable /info has no static
+	// large object entry and a static choice is published as dynamic.
+	LargeObjectsOrigin string `json:"largeObjectsOrigin"`
 	// ChunkBytes is the chunk size the engine segments by. A static
 	// publication pairs each segment with the local chunk at its index, so
 	// it must be the size the engine was given; it never leaves Go.

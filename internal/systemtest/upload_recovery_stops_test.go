@@ -52,7 +52,7 @@ func uploadRecoveryStop(t *testing.T, h *Harness, fault string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: "live/", SelectionToken: picked.Token, Settings: app.TransferSettingsDTO{ChunkSize: "1Mi"}})
+	id, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: "live/", SelectionToken: picked.Token, Settings: app.TransferSettingsDTO{ChunkSize: "1Mi", LargeObjects: "dlo"}})
 	if err != nil {
 		t.Fatal(err)
 	}

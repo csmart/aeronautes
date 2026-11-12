@@ -30,6 +30,11 @@ type TransferSettingsDTO struct {
 	// engine's own default unless overridden, so transfers × buffer is
 	// the child memory the record shows (ADR 0074 decision 3).
 	BufferSize string `json:"bufferSize"`
+	// LargeObjects is an upload's own choice of what a segmented file is
+	// published as, "slo" or "dlo", over the bookmark's (ADR 0111). It is
+	// no engine knob: ResolveSettings leaves it out, and the upload alone
+	// records what it published.
+	LargeObjects string `json:"largeObjects,omitempty"`
 }
 
 // DefaultBufferSize is the engine's own per-transfer buffer, emitted
@@ -74,6 +79,11 @@ func (s TransferSettingsDTO) Validate() error {
 	}
 	if s.TPSLimit < 0 || s.TPSLimit > 10000 {
 		return fmt.Errorf("tps limit %v out of range", s.TPSLimit)
+	}
+	switch swiftcontrol.ObjectClass(s.LargeObjects) {
+	case "", swiftcontrol.ClassSLO, swiftcontrol.ClassDLO:
+	default:
+		return fmt.Errorf("large objects %q is not slo (static) or dlo (dynamic)", s.LargeObjects)
 	}
 	return nil
 }

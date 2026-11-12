@@ -18,11 +18,13 @@ import (
 // backupSchemaVersion is the on-disk format version a backup is written as,
 // and minReadableBackupVersion the oldest a restore still reads (ADR 0098). A
 // restore refuses any version outside that range, including a newer one, so an
-// older build never misreads a file a newer one wrote. Version 2 added the
-// Keystone v3 authentication identity; version 1 holds TempAuth bookmarks
-// only, which still restore because their absent auth fields normalise to v1.
+// older build never misreads a file a newer one wrote. Version 3 added the
+// bookmark's large-object kind (ADR 0111), version 2 the Keystone v3
+// authentication identity; version 1 holds TempAuth bookmarks only. Older
+// versions still restore: an absent auth field normalises to v1 and an
+// absent large-object kind reads as static.
 const (
-	backupSchemaVersion      = 2
+	backupSchemaVersion      = 3
 	minReadableBackupVersion = 1
 )
 
@@ -55,6 +57,7 @@ type BackupBookmarkDTO struct {
 	PerformanceProfile string `json:"performanceProfile"`
 	SegmentPlacement   string `json:"segmentPlacement"`
 	ChunkSizeBytes     int64  `json:"chunkSizeBytes"`
+	LargeObjects       string `json:"largeObjects,omitempty"`
 }
 
 // BackupResultDTO reports a completed export: how many bookmarks it wrote and
@@ -163,6 +166,7 @@ func (s *BackupService) ExportSettings(ctx context.Context) (*BackupResultDTO, e
 			PerformanceProfile: r.PerformanceProfile,
 			SegmentPlacement:   r.SegmentPlacement,
 			ChunkSizeBytes:     r.ChunkSizeBytes,
+			LargeObjects:       r.LargeObjects,
 		})
 	}
 
@@ -287,6 +291,7 @@ func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, 
 			PerformanceProfile: bm.PerformanceProfile,
 			SegmentPlacement:   bookmarks.SegmentPlacement(bm.SegmentPlacement),
 			ChunkSizeBytes:     bm.ChunkSizeBytes,
+			LargeObjects:       bm.LargeObjects,
 		}
 		if err := bookmarks.Validate(mark); err != nil {
 			return nil, fmt.Errorf("bookmark %d (%q): %w", i+1, bm.DisplayName, err)
