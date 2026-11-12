@@ -3,7 +3,7 @@
 During the 0.5.0 test run the operator found many bugs by hand, and manual testing does not scale (12 November 2026).
 The existing suites test the Go services and the Svelte components separately, against the mock or SAIO; nothing walks the operator's journeys between the two real accounts.
 This suite is layer 1 of 2: the same application services the buttons call, against the two real clouds.
-Layer 2 (browser-driven UI journeys with Playwright) follows as its own slice.
+Layer 2, at the end of this page, drives the real frontend in a browser (ADR 0112).
 
 ## Where and how it runs
 
@@ -44,5 +44,17 @@ Each journey runs `REPEAT` times (default 3) so intermittent store faults, like 
 
 ## What it does not do
 
-It does not drive the window, the native dialogs or the Svelte code; layer 2 does.
+It does not drive the window, the native dialogs or the Svelte code; layer 2 drives the Svelte code.
 It does not measure performance.
+
+## Layer 2: UI journeys in a browser
+
+- Run locally: `make uijourneys [CLOUDS=/path/to/clouds.yaml]`. Without `CLOUDS` it runs against the mock only.
+- It needs Node, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
+- `scripts/uijourneys.sh` builds the application with the tags `server` and `uijourney`, starts it and the mock on 127.0.0.1 with `HOME` and the XDG directories in a fresh directory, and runs the Playwright suite in `uijourneys/` against it.
+- The `uijourney` build is the shipped application with only its native seams replaced: the pickers and the two confirmations answer what the suite scripted over a token-guarded control listener, and an unscripted pick or answer fails; the secret store is session-only.
+- Real-cloud bookmarks are made in Go from clouds.yaml, so no password reaches the page; the bookmark editor is driven only against the mock.
+- Every container is one the run created, through layer 1's ownership record, and teardown removes only those and their claimed sidecars.
+- Output names only each journey, its target (`mock`, `ceph` or `swift`) and the private directory under the user cache directory, which keeps the failure details, a screenshot and the page's text, and the application's log.
+
+The journeys, on each target: create a bookmark and connect (mock only); upload a folder with a segmented file, check the large-object disclosure against the uploaded object, and browse it; upload it again with the overwrite confirmed; download it and compare digests with the second upload; edit an object's metadata and read it back after a reload; make the container public and private again; delete an object, the prefix and the container; and, with both clouds, switch between them.
