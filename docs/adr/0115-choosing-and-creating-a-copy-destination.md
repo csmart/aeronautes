@@ -2,7 +2,7 @@
 
 **Status:** Proposed for 0.5.0 (12 November 2026), from the final-candidate plan's item 6 ("copy destination container picker with create-if-missing", operator, 12 November).
 **Scope:** how the copy dialog offers the destination account's containers, and how a missing destination container is created.
-**Amends:** [ADR 0079](0079-caller-named-mutation-binding.md), whose mutations are bound to the active view, by adding one write bound to a destination listing's scope instead.
+**Amends:** [ADR 0079](0079-caller-named-mutation-binding.md), whose mutations are bound to the active view, by adding one write bound instead to the preview's destination scope: the bookmark and generation of the session that answered not found, and the container name it read.
 
 ## Context
 
