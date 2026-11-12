@@ -9,7 +9,7 @@
 # `go install` drops wails3 into $HOME/go/bin (default GOBIN).
 export PATH := $(HOME)/go/bin:$(PATH)
 
-WAILS3_VERSION := v3.0.0-beta.27
+WAILS3_VERSION := v3.1.0
 
 .PHONY: all tools build run dev test test-go test-frontend test-integration \
 	verify-swift-source test-swift-core test-secret-service \

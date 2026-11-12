@@ -94,7 +94,7 @@ jobs:
         run: CGO_ENABLED=0 go build ./internal/...
       - name: bindings drift gate
         run: |
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.27
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
           ~/go/bin/wails3 task common:generate:bindings
           git diff --exit-code frontend/bindings || {
             echo '::error::generated bindings drifted from the Go services — run wails3 task common:generate:bindings and commit'
