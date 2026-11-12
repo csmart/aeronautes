@@ -27,9 +27,11 @@ A copy also verifies by a fresh join of the whole source and destination scopes,
 3. **The plan is the members.**
    Every planning pass lists the source scope as before and keeps only the members; a member the listing does not contain is not at the source.
    A copy's preview counts such members; a copy's run copies the members it found and ends partial, saying how many selected objects were no longer at the source; a download's preflight refuses, naming the first missing member, because it is the last check before the download starts.
-   A copy's verification lists through the same filter, so it judges only the members.
+   A copy's verification keeps only the members on the source side and the whole destination listing as before, whose destination-only names it already ignores, so it judges only the members; filtering the destination by the source names would drop every copied object, which is named by the destination prefix.
 4. **Overlap for a copy of members.**
-   In one namespace a destination equal to or inside the source folder is allowed for a copy of members, because the run writes and reads only named objects: the plan refuses any member whose destination name is itself a member, which would replace an object the same run reads, and names it.
+   In one namespace a destination inside the source folder is allowed for a copy of members, because the run writes and reads only named objects.
+   A member whose destination name is itself a member would replace an object the same run reads; that is known from the request alone, so it is refused with the decision 2 checks, before any listing or job row, naming the member, and never by a planning pass, which for an unacknowledged copy streams and could already have written earlier members.
+   A destination equal to the source folder maps every member onto itself and is refused by that same check.
    The scratch-area refusal does not apply to a copy of members: its listing keeps only the members and no member can be in a staging area, so the run never reads the scratch area, which for a destination inside the source folder lies inside it.
    Everything for a whole-scope copy stays as DESIGN §65.9 item 9 says.
 5. **A copy of members is re-run as the same members.**
