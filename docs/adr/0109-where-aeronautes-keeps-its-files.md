@@ -1,6 +1,6 @@
 # ADR 0109 — where Aeronautes keeps its files
 
-**Status:** Proposed on 12 November 2026, from the operator's decisions of 11 and 12 November during the 0.5.0 test run.
+**Status:** Accepted for 0.5.0 (12 November 2026), from the operator's decisions of 11 and 12 November during the 0.5.0 test run, delivered with this record's series.
 **Scope:** where the application keeps its settings, its database and the files beside them; how `SettingsService` persists the settings; the settings backup's snapshot; the documentation that tells an operator where everything is.
 
 ## Context

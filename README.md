@@ -108,6 +108,21 @@ The Makefile is a thin directory over the real build system, the Wails v3 Taskfi
 Mirror execution and benchmarks are unavailable in v1.
 Their controls are hidden and requests to them are refused.
 
+### Where Aeronautes keeps its files
+
+On Linux Aeronautes follows the XDG Base Directory Specification ([ADR 0109](docs/adr/0109-where-aeronautes-keeps-its-files.md)):
+
+- **Settings**: `~/.config/aeronautes/settings.json` (under `$XDG_CONFIG_HOME`), one JSON object you can read, back up and edit by hand.
+  A file that cannot be read is reported in Settings while the defaults are in force, and the next save keeps it beside the new one as `settings.json.unreadable`.
+- **Bookmarks, jobs, recovery records and the audit trail**: `~/.local/share/aeronautes/aeronautes.sqlite` (under `$XDG_DATA_HOME`), with its `-wal` and `-shm` files, the single-instance lock, and custom CA certificates in `ca/` beside it.
+- **Working files of deletions**: `~/.cache/aeronautes/` (under `$XDG_CACHE_HOME`).
+- **Keys and passwords**: the OS keychain, or the session only when none is reachable; never either file above.
+- **Log**: only where `AERONAUTES_LOG_FILE` names.
+
+Setting `AERONAUTES_STATE_DIR` to an existing directory puts the settings file and the database in it instead, for development and tests.
+Development builds before 0.5.0 kept everything in `~/.local/state/aeronautes/state.sqlite`, which this release does not read.
+To keep bookmarks and jobs from such a build, quit Aeronautes and move `state.sqlite` with its `-wal` and `-shm` files, and `ca/`, to `~/.local/share/aeronautes/`, renaming the three files to `aeronautes.sqlite`, `aeronautes.sqlite-wal` and `aeronautes.sqlite-shm`; its application settings return to their defaults.
+
 ### Before trusting a release against production
 
 The [project audit](docs/audits/2026-09-05/README.md) still blocks use of mutation, recovery and transfer paths on valuable data.
