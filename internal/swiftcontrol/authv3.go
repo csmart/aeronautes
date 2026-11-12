@@ -24,7 +24,9 @@ import (
 //   - the selected object-store endpoint is bound to the configured
 //     region and preserved across re-authentication, so an implicit
 //     re-auth cannot move operations or a metadata write to a different
-//     region's namespace (Config.Region; ADR 0100).
+//     region's namespace (Config.Region; ADR 0100);
+//   - an Identity URL that is not the v3 endpoint is resolved to it once,
+//     at the same origin only, before the first token request (ADR 0113).
 //
 // It WRAPS rather than reimplements: the v3 request, response and catalog
 // parsing are the library's well-exercised code, so our surface is only
@@ -35,20 +37,37 @@ import (
 // interface and region, so the operator selects one there rather than
 // overriding a single returned URL.
 type guardedAuth struct {
-	inner   swift.Authenticator
-	authURL string
-	tlsMode TLSMode
+	inner     swift.Authenticator
+	authURL   string
+	tlsMode   TLSMode
+	discovery *http.Client
+	// v3URL is the v3 endpoint learned from authURL; the library holds its
+	// auth lock around Request, which is the only place it is read or set.
+	v3URL string
 	credentialSnapshot
 }
 
 // newGuardedV3Auth builds the v3 authenticator Session presets on the wire
 // connection. authURL and tlsMode are the bookmark's; they validate the
 // catalog's storage URL under the same policy as the auth endpoint.
-func newGuardedV3Auth(authURL string, tlsMode TLSMode) *guardedAuth {
-	return &guardedAuth{inner: swift.NewV3Authenticator(), authURL: authURL, tlsMode: tlsMode}
+// transport is the session's, so version discovery follows the same TLS
+// rules.
+func newGuardedV3Auth(authURL string, tlsMode TLSMode, transport http.RoundTripper) *guardedAuth {
+	return &guardedAuth{inner: swift.NewV3Authenticator(), authURL: authURL, tlsMode: tlsMode, discovery: newDiscoveryClient(transport)}
 }
 
+// Request learns the v3 endpoint on the first authentication and sets it
+// as the URL the library posts to, so every later one, including the
+// library's own after a 401, reuses it without asking again.
 func (a *guardedAuth) Request(ctx context.Context, c *swift.Connection) (*http.Request, error) {
+	if a.v3URL == "" {
+		endpoint, err := keystoneV3Endpoint(ctx, a.discovery, a.authURL)
+		if err != nil {
+			return nil, err
+		}
+		a.v3URL = endpoint
+	}
+	c.AuthUrl = a.v3URL
 	return a.inner.Request(ctx, c)
 }
 

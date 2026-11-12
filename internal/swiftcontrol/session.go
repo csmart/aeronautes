@@ -144,7 +144,7 @@ func New(cfg Config) (*Session, error) {
 		conn.Domain = cfg.UserDomain
 		conn.Tenant = cfg.ProjectName
 		conn.TenantDomain = cfg.ProjectDomain
-		auth = newGuardedV3Auth(cfg.AuthURL, cfg.TLS.Mode)
+		auth = newGuardedV3Auth(cfg.AuthURL, cfg.TLS.Mode, transport)
 	default:
 		return nil, fmt.Errorf("unsupported auth version %d", cfg.AuthVersion)
 	}
