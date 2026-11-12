@@ -177,6 +177,10 @@
     </header>
 
     <div class="body">
+      {#if settings.document?.fileProblem}
+        <!-- The defaults are in force until a save, which keeps the bad file aside (ADR 0109). -->
+        <p class="note error" role="alert">{settings.document.fileProblem}</p>
+      {/if}
       {#if settings.document}
         {@const current = settings.document}
         <section aria-labelledby={`${id}-general`}>
