@@ -70,7 +70,7 @@ func main() {
 	// A failed database close retains the lock through error reporting,
 	// including GC, until the kernel releases it on process exit.
 	defer runtime.KeepAlive(shutdown)
-	if err := runDesktop(identity, shutdown, launchDesktop, secrets.OpenDefault); err != nil {
+	if err := runDesktop(identity, shutdown, launchDesktop, nativeSecrets); err != nil {
 		if alreadyRunning(err) {
 			// Log the reason first: a console launch sees it here, and on a
 			// host with no display the native notice below cannot appear
@@ -157,11 +157,11 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	}
 	transferService := app.NewTransferServiceWithRunner(connections, jobStore, jobRunner)
 	app.WireEvidenceStore(transferService, evidenceStore)
-	app.WireFilePicker(transferService, wailsPicker{})
+	app.WireFilePicker(transferService, nativePicker())
 	auditService := app.NewAuditService(auditStore)
-	app.WireAuditFilePicker(auditService, wailsPicker{})
-	app.WireConfirmer(mutateService, wailsConfirmer{})
-	app.WireOverwriteConfirmer(transferService, wailsOverwriteConfirmer{})
+	app.WireAuditFilePicker(auditService, nativePicker())
+	app.WireConfirmer(mutateService, nativePublicConfirmer())
+	app.WireOverwriteConfirmer(transferService, nativeOverwriteConfirmer())
 	settingsService := app.NewSettingsService(settingsPath, jobRunner)
 	app.WireSettings(transferService, settingsService)
 	deleteService := app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)
@@ -172,7 +172,12 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireBenchmarkRecommendations(transferService, benchmarkService)
 
 	backupService := app.NewBackupService(database, bookmarkStore, settingsService)
-	app.WireBackupFilePicker(backupService, wailsPicker{})
+	app.WireBackupFilePicker(backupService, nativePicker())
+	bookmarkService := app.NewBookmarkService(bookmarkStore, connections, jobStore)
+	server, err := serveOptions(journeyServices{bookmarks: bookmarkService})
+	if err != nil {
+		return err
+	}
 
 	// No Logger and no LogLevel are set, on purpose. Wails logs every bound
 	// call's arguments and result at debug level, and a bookmark's password
@@ -184,7 +189,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 		OnShutdown:  shutdown.wait,
 		Services: []application.Service{
 			application.NewService(app.NewAppService(identity, string(secretBackend))),
-			application.NewService(app.NewBookmarkService(bookmarkStore, connections, jobStore)),
+			application.NewService(bookmarkService),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(mutateService),
@@ -200,6 +205,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
+		Server: server,
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
@@ -302,6 +308,12 @@ func askNative(ctx context.Context, title, message, refuse, accept string) (bool
 	case <-ctx.Done():
 		return false, ctx.Err()
 	}
+}
+
+// journeyServices are what the uijourney build's control listener needs from
+// the application it drives (ADR 0112); the desktop build needs none of it.
+type journeyServices struct {
+	bookmarks *app.BookmarkService
 }
 
 // wailsConfirmer implements app.PublicACLConfirmer over that surface.
