@@ -4,7 +4,7 @@
   import { onDestroy, tick, untrack } from "svelte";
   import { activeModal, trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { CopyPlanDTO, CopyRequestDTO } from "../../lib/api";
+  import type { CopyPlanDTO, CopyRequestDTO, DestinationMissingDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
   import { v1Offers } from "../../lib/v1.svelte";
   import JobSettingsFields from "./JobSettingsFields.svelte";
@@ -22,6 +22,21 @@
   let jobSettings = $state(newJobSettings(browser.settings.document?.defaultProfile ?? "auto"));
   let destContainer = $state("");
   let destPrefix = $state("");
+  // The destination account's container names, offered as the operator
+  // types; they only suggest, and any name can still be typed (ADR 0115).
+  const uid = $props.id();
+  let destNames: string[] = $state([]);
+  $effect(() => {
+    const bookmarkId = destBookmarkId;
+    destNames = [];
+    if (bookmarkId === "") return;
+    let current = true;
+    browser.destinationContainers(bookmarkId)
+      .then((page) => { if (current) destNames = page.names ?? []; })
+      .catch(() => {});
+    return () => { current = false; };
+  });
+  let creating = $state(false);
   let previewing = $state(false);
   let starting = $state(false);
   let error: string | null = $state(null);
@@ -196,6 +211,28 @@
     prepared = { intent: current.intent, plan: current.plan, request };
   }
 
+  function bookmarkName(id: string): string {
+    return browser.bookmarks.find((b) => b.id === id)?.displayName ?? id;
+  }
+
+  // Creates the container the preview found missing, bound to the scope the
+  // preview returned, then plans again; it never starts the copy.
+  async function createMissing(missing: DestinationMissingDTO, button: HTMLButtonElement) {
+    if (creating) return;
+    creating = true;
+    error = null;
+    try {
+      await browser.createDestinationContainer(missing);
+      destNames = [...destNames, missing.container];
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      return;
+    } finally {
+      creating = false;
+    }
+    await runPreview(button);
+  }
+
   async function start() {
     const current = prepared;
     if (mode !== "copy" || starting || previewing || !current || !isCurrent(current.intent)) return;
@@ -283,12 +320,18 @@
           class="type-mono"
           aria-label="Destination container"
           placeholder="container"
+          list="{uid}-dest-names"
           value={destContainer}
           oninput={(e) => {
             destContainer = e.currentTarget.value;
             invalidate();
           }}
         />
+        <datalist id="{uid}-dest-names">
+          {#each destNames as name (name)}
+            <option value={name}></option>
+          {/each}
+        </datalist>
         <input
           class="type-mono"
           aria-label="Destination prefix"
@@ -330,7 +373,19 @@
       </p>
     {/if}
 
-    {#if preview}
+    {#if preview?.destinationMissing}
+      {@const missing = preview.destinationMissing}
+      <div class="callout warning missing-destination" role="status">
+        <p>
+          The container <span class="type-mono">{missing.container}</span> does not exist on
+          {bookmarkName(missing.bookmarkId)}. Creating it makes an empty container with the default
+          storage policy; nothing is copied until you start the copy.
+        </p>
+        <button onclick={(event) => createMissing(missing, event.currentTarget)} disabled={creating || previewing || closed}>
+          {creating ? "Creating…" : `Create container ${missing.container} on ${bookmarkName(missing.bookmarkId)}`}
+        </button>
+      </div>
+    {:else if preview}
       {@const s = preview.summary}
       <div class="preview num">
         <div class="counts">
@@ -436,7 +491,7 @@
               Replace existing objects…
             </button>
           {/if}
-          <button class:primary={!!preview} onclick={start} disabled={!preview || previewing || starting || closed}>
+          <button class:primary={!!preview && !preview.destinationMissing} onclick={start} disabled={!preview || !!preview.destinationMissing || previewing || starting || closed}>
             {starting ? "Starting…" : "Start copy"}
           </button>
         {:else}
