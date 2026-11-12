@@ -132,6 +132,27 @@ describe("keystone v3 auth-type selector", () => {
     );
   });
 
+  it("names the user and the project by ID, leaving the username and project blank (ADR 0113)", () => {
+    const f = show();
+    field("Prod AU", "Keystone IDs");
+    selectAuth(3);
+    field("https://keystone.example/v3", "https://keystone.example");
+    key("keystone-pass");
+    field("RegionOne", "RegionOne");
+    fieldByLabel("User ID", "u-1");
+    fieldByLabel("Project ID", "p-1");
+    // jsdom submits a form whatever its required fields hold, so the
+    // attribute a real browser enforces is checked directly.
+    expect(document.querySelector<HTMLInputElement>('input[placeholder="account:user"]')!.required).toBe(false);
+    expect(document.querySelector<HTMLInputElement>('input[placeholder="my-project"]')!.required).toBe(false);
+    button("Save").click();
+
+    expect(f.save).toHaveBeenCalledWith(
+      expect.objectContaining({ authVersion: 3, username: "", userId: "u-1", projectName: "", projectId: "p-1" }),
+      "keystone-pass",
+    );
+  });
+
   it("keeps a v1 bookmark free of Keystone fields", () => {
     const f = show();
     field("Prod AU", "TempAuth");
@@ -141,7 +162,7 @@ describe("keystone v3 auth-type selector", () => {
     button("Save").click();
 
     expect(f.save).toHaveBeenCalledWith(
-      expect.objectContaining({ authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "" }),
+      expect.objectContaining({ authVersion: 1, userDomain: "", projectName: "", projectDomain: "", userId: "", projectId: "", region: "" }),
       "swift-key",
     );
   });

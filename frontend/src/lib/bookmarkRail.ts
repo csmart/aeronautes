@@ -40,9 +40,10 @@ export function matchesBookmark(bookmark: BookmarkDTO, filter: string): boolean 
 
 /** The hover text: the name the operator gave, the account it signs in
  * as and where, and the persistent TLS warning when verification is off
- * (K-SEC-005). */
+ * (K-SEC-005). A Keystone user named by ID has no username, so the ID
+ * stands in (ADR 0113). */
 export function hoverText(bookmark: BookmarkDTO): string {
-  const lines = [bookmark.displayName, `${bookmark.username} at ${endpointOf(bookmark)}`];
+  const lines = [bookmark.displayName, `${bookmark.username || bookmark.userId || ""} at ${endpointOf(bookmark)}`];
   if (bookmark.tlsMode === "insecure") {
     lines.push("TLS verification DISABLED");
   }

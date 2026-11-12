@@ -594,6 +594,7 @@ On 401:
 4. then fail.
 
 Keystone v3 authentication, by the password method with project scope, joined v1 by finish-line decision 31 and is decided in [ADR 0100](adr/0100-keystone-v3-authentication.md): the storage URL the catalogue advertises is validated before a token travels, the object-store endpoint is bound to the bookmark's region, and the 401 rule above holds through the library's own re-authentication.
+An Identity URL that is not the v3 endpoint is asked once per session which versions it offers, and its v3 link is used only at the same origin; the user and the project can be named by ID instead of by name and domain ([ADR 0113](adr/0113-keystone-discovery-and-ids.md)).
 Keystone v2, the other v3 methods and any Keystone management UI are not v1 goals.
 
 **Pin the auth target to a real cluster.** "SwiftStack" as a commercial product was discontinued after Nvidia's 2020 acquisition; "SwiftStack-compatible" here means the legacy/OpenStack Swift lineage those deployments run, and "SwiftStack v1 auth" is TempAuth-v1-style auth. Because there is no shipping SwiftStack release to certify against, the concrete auth flow, `/info` behaviour, and versioning model (§21) must be pinned to the **actual cluster the user operates**, and the "SwiftStack release gate" in §57.4 means "a representative instance of that real deployment", not a vendor product.
