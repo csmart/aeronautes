@@ -270,6 +270,11 @@ func (w *world) stored(a *account, container, prefix string) map[string][32]byte
 	sort.Strings(names)
 	for _, name := range names {
 		body, err := a.check.OpenObjectContent(w.ctx, container, name)
+		if swiftcontrol.IsNotFound(err) {
+			// Listed but not yet readable, or already gone: a lagging
+			// listing, which the caller's settled check reads again.
+			continue
+		}
 		if err != nil {
 			w.t.Fatalf("%s: read: %s", a.label, realcloud.Failure(err))
 		}
@@ -284,6 +289,21 @@ func (w *world) stored(a *account, container, prefix string) map[string][32]byte
 		out[name[len(prefix):]] = sum
 	}
 	return out
+}
+
+// settled repeats a check that reads a listing until it reports no problem
+// or a minute passes, and returns the last problem. Listings are eventually
+// consistent (AGENTS.md: verify with bounded retries), so the first read can
+// lag behind a write that has already completed.
+func (w *world) settled(check func() string) string {
+	deadline := time.Now().Add(time.Minute)
+	for {
+		problem := check()
+		if problem == "" || time.Now().After(deadline) {
+			return problem
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // same reports how two name-to-digest sets differ, or "" when they match;
