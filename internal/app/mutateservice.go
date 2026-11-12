@@ -366,7 +366,7 @@ func (s *MutateService) containerAfterDTO(ctx context.Context, entry cachedSessi
 	after := s.containerDetailForBookmark(ctx, bookmarkID, d)
 	after.Scope = scope
 	after.Settings = containerSettings(d, entry.generation, time.Now())
-	s.connections.settings.remember(bookmarkID, entry.generation, d.Name, after.Settings)
+	s.connections.recordSettings(ctx, bookmarkID, entry.generation, entry.session, d.Name, after.Settings)
 	return after
 }
 

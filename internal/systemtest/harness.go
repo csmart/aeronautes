@@ -119,6 +119,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 
 	store := bookmarks.NewStore(database, secrets.NewSessionStore())
 	connections := app.NewConnections(store)
+	app.WireRememberedSettings(connections, database)
 	ev := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)

@@ -74,6 +74,9 @@ func (s *InspectorService) Container(ctx context.Context, bookmarkID, name strin
 	}
 	d, err := session.ContainerDetail(ctx, name)
 	if err != nil {
+		if swiftcontrol.IsNotFound(err) {
+			s.connections.forgetSettings(ctx, scope.BookmarkID, session, name)
+		}
 		return ContainerDetailDTO{}, err
 	}
 	classes, err := s.evidence.ClassifyContainers(ctx, scope.BookmarkID, []string{name})
@@ -83,7 +86,7 @@ func (s *InspectorService) Container(ctx context.Context, bookmarkID, name strin
 	dto := containerDetailDTO(d, string(classes[name]))
 	dto.Scope = scope
 	dto.Settings = containerSettings(d, scope.Generation, time.Now())
-	s.connections.settings.remember(scope.BookmarkID, scope.Generation, name, dto.Settings)
+	s.connections.recordSettings(ctx, scope.BookmarkID, scope.Generation, session, name, dto.Settings)
 	return dto, nil
 }
 
