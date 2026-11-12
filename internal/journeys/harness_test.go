@@ -3,8 +3,10 @@
 package journeys
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -263,7 +265,8 @@ func privateFile(name string) (string, error) {
 
 // ended fails the step when a job did not complete. The job's own error can
 // name a provider's host, so it is not printed: it is kept in a private
-// file, and the line names only the step, the state and that file.
+// file with the job's item records, which say which step of which item
+// failed and why, and the line names only the step, the state and that file.
 func (w *world) ended(step string, job *app.JobDTO, want string) {
 	w.t.Helper()
 	if job.State == want {
@@ -271,12 +274,39 @@ func (w *world) ended(step string, job *app.JobDTO, want string) {
 	}
 	file, err := privateFile(job.ID + ".txt")
 	if err == nil {
-		err = os.WriteFile(file, []byte(job.Error+"\n"), 0o600)
+		err = os.WriteFile(file, w.jobRecord(job), 0o600)
 	}
 	if err != nil {
 		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
 	}
 	w.t.Fatalf("%s ended %s, not %s; its error is kept in %s", step, job.State, want, file)
+}
+
+// jobRecord is a failed job's error followed by each of its item records,
+// one JSON line each, or the reason they could not be read.
+func (w *world) jobRecord(job *app.JobDTO) []byte {
+	var out bytes.Buffer
+	fmt.Fprintln(&out, job.Error)
+	bookmark := job.DestBookmarkID
+	if bookmark == "" {
+		bookmark = job.SourceBookmarkID
+	}
+	for cursor := ""; ; {
+		page, err := w.jobs.Items(w.ctx, bookmark, job.ID, cursor, 200)
+		if err != nil {
+			fmt.Fprintf(&out, "item records could not be read: %v\n", err)
+			break
+		}
+		for _, item := range page.Items {
+			line, _ := json.Marshal(item)
+			out.Write(append(line, '\n'))
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	return out.Bytes()
 }
 
 // fixture writes count files of the given sizes into a fresh folder and
