@@ -387,3 +387,36 @@ func TestMarkers(t *testing.T) {
 		t.Errorf("delete implied marker = %v, want not_found", err)
 	}
 }
+
+// Ceph RGW answers X-Remove-Container-Read and -Write with 204 and keeps
+// the ACL, so making a public container private left it public (F36). The
+// update also sends the header with an empty value, which clears an ACL on
+// that store and on Swift; the mock here ignores the removal headers as
+// RGW does.
+func TestUpdateContainerClearsACLsWhereRemovalIsIgnored(t *testing.T) {
+	mock := swifttest.New("test:tester", "testing")
+	mock.IgnoresACLRemoval = true
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	s, err := New(Config{AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	mock.AddContainer("media", "standard")
+	before, err := s.ContainerDetail(ctx, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := s.UpdateContainer(ctx, "media", before.EditableFingerprint, ContainerEdit{ReadACL: ".r:*,.rlistings", WriteACL: "acct:writer"})
+	if err != nil || public.Outcome != UpdateApplied {
+		t.Fatalf("making it public: %v %+v", err, public)
+	}
+	private, err := s.UpdateContainer(ctx, "media", public.After.EditableFingerprint, ContainerEdit{})
+	if err != nil || private.Outcome != UpdateApplied {
+		t.Fatalf("making it private: %v outcome %q (%s)", err, private.Outcome, private.Mismatch)
+	}
+	if private.After.ReadACL != "" || private.After.WriteACL != "" {
+		t.Fatalf("after clearing, the ACLs read %q and %q", private.After.ReadACL, private.After.WriteACL)
+	}
+}

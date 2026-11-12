@@ -150,8 +150,19 @@ func buildContainerPostHeaders(before *ContainerDetail, edit ContainerEdit) swif
 			headers[removeKey] = "x"
 		}
 	}
-	setOrRemove("X-Container-Read", "X-Remove-Container-Read", before.ReadACL, edit.ReadACL)
-	setOrRemove("X-Container-Write", "X-Remove-Container-Write", before.WriteACL, edit.WriteACL)
+	// Ceph RGW answers X-Remove-Container-Read with 204 and keeps the ACL,
+	// so a public container stayed public (F36). An empty value clears an
+	// ACL there and on Swift, so a cleared ACL sends both. Only the ACLs:
+	// an empty X-Versions-Location beside X-History-Location would ask for
+	// two versioning modes at once.
+	clearableACL := func(setKey, removeKey, current, want string) {
+		setOrRemove(setKey, removeKey, current, want)
+		if want == "" && current != "" {
+			headers[setKey] = ""
+		}
+	}
+	clearableACL("X-Container-Read", "X-Remove-Container-Read", before.ReadACL, edit.ReadACL)
+	clearableACL("X-Container-Write", "X-Remove-Container-Write", before.WriteACL, edit.WriteACL)
 
 	quota := func(name string, current, want int64) {
 		switch {

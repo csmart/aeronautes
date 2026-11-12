@@ -185,6 +185,11 @@ type Server struct {
 	key   string
 	token string
 
+	// IgnoresACLRemoval answers X-Remove-Container-Read and -Write without
+	// clearing the ACL, as Ceph RGW's Swift API was measured to do (F36);
+	// an empty X-Container-Read or -Write still clears it. Set before
+	// serving.
+	IgnoresACLRemoval bool
 	// InfoJSON overrides the /info document (set before serving); ""
 	// serves defaultInfoJSON.
 	InfoJSON string
@@ -709,7 +714,7 @@ func (s *Server) createContainer(w http.ResponseWriter, r *http.Request, name st
 		c = &Container{Policy: policy, objects: map[string]Object{}}
 		s.containers[name] = c
 	}
-	applyContainerHeaders(c, r)
+	applyContainerHeaders(c, r, s.IgnoresACLRemoval)
 	if exists {
 		w.WriteHeader(http.StatusAccepted)
 	} else {
@@ -728,12 +733,12 @@ func (s *Server) updateContainer(w http.ResponseWriter, r *http.Request, name st
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	applyContainerHeaders(c, r)
+	applyContainerHeaders(c, r, s.IgnoresACLRemoval)
 	w.Header().Set("X-Trans-Id", "txswifttest-container-post")
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func applyContainerHeaders(c *Container, r *http.Request) {
+func applyContainerHeaders(c *Container, r *http.Request, ignoresACLRemoval bool) {
 	for key, values := range r.Header {
 		if len(values) == 0 {
 			continue
@@ -756,9 +761,9 @@ func applyContainerHeaders(c *Container, r *http.Request) {
 			c.ReadACL = value
 		case key == "X-Container-Write":
 			c.WriteACL = value
-		case key == "X-Remove-Container-Read":
+		case key == "X-Remove-Container-Read" && !ignoresACLRemoval:
 			c.ReadACL = ""
-		case key == "X-Remove-Container-Write":
+		case key == "X-Remove-Container-Write" && !ignoresACLRemoval:
 			c.WriteACL = ""
 		case key == "X-Versions-Location":
 			c.VersionsLocation = value
