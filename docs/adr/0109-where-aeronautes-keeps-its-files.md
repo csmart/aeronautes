@@ -25,6 +25,7 @@ No release has shipped, so no installed copy has data at the old path.
    A read starts from the defaults and overlays only the keys the file holds, so a key left out keeps its default and never becomes the JSON zero value (left out, `reclaimReplacedFragments` stays on); the result is then checked as `Set` checks it.
    A present value `Set` would refuse, a wrong type, or a file that is not valid JSON makes the whole file unreadable: the application runs on the defaults, the Settings view says the file could not be read and why, and the file is not replaced until the operator saves, when the unreadable one is kept beside it as `settings.json.unreadable`, replacing any earlier one.
    A later read that succeeds clears the report.
+   Where a setting authorises removing something, the reclamation of a replaced large object's segments (ADR 0081 decision 5) and the startup retention prune (§51), an unreadable file is not permission: both decline and say why, as they did when the settings could not be read, because the defaults in force are not the operator's choice and a removal cannot be undone.
    Keys the application does not know are ignored and are not written back.
 2. **Everything else is one database in the data directory.**
    `$XDG_DATA_HOME/aeronautes/aeronautes.sqlite`, with its WAL files, the single-instance lock file and the `ca/` directory beside it, holds the bookmarks with their CA certificates and profiles, the jobs and items, the recovery records, the audit trail and the evidence, so no transaction spans two stores.
@@ -34,7 +35,9 @@ No release has shipped, so no installed copy has data at the old path.
 4. **One override for development and tests.**
    When `AERONAUTES_STATE_DIR` is set, both `settings.json` and `aeronautes.sqlite` (with the lock and `ca/`) live in that one directory, so a scratch run never touches the real ones.
 5. **The settings backup keeps one moment.**
-   The export takes the settings lock, opens the read transaction for the bookmarks, reads the settings file, and releases the lock after both: a bookmark save then falls either inside the snapshot or after it, and no settings save can land between the two reads, so a backup never pairs settings and bookmarks that did not exist together.
+   The export takes the settings lock, opens the read transaction for the bookmarks and reads them, reads the settings file, and releases the lock after both: a bookmark save then falls either inside the snapshot or after it, and no settings save can land between the two reads, so a backup never pairs settings and bookmarks that did not exist together.
+   The bookmarks are read before the settings file because a SQLite read transaction takes its snapshot at its first read, not when it begins.
+   An unreadable settings file refuses the export with its reason, since the defaults in force are not the operator's settings; saving the settings first, which keeps the unreadable file aside, lets the export proceed.
    Restore is unchanged: it applies the settings, then the bookmarks, and reports a problem after the settings write as the partial result it reports now.
 6. **No migration.**
    Nothing reads `$XDG_STATE_HOME/aeronautes/state.sqlite`: no release used it.
@@ -50,8 +53,8 @@ No release has shipped, so no installed copy has data at the old path.
 
 ## Tests
 
-- Go, settings: a save writes the file and a fresh service reads the same values; a missing file gives the defaults; a file with keys left out keeps those keys' defaults, `reclaimReplacedFragments` on among them; invalid JSON, a wrong type and an out-of-range present value each leave the defaults in force, report the reason, and keep the file untouched until a save, which keeps it as `settings.json.unreadable`; a later good read clears the report; the written file and directory have modes 0600 and 0700; a write that fails before the rename leaves the old file whole.
+- Go, settings: a save writes the file and a fresh service reads the same values; a missing file gives the defaults; a file with keys left out keeps those keys' defaults, `reclaimReplacedFragments` on among them; invalid JSON, a wrong type and an out-of-range present value each leave the defaults in force, report the reason, and keep the file untouched until a save, which keeps it as `settings.json.unreadable`; a later good read clears the report; with an unreadable file, reclamation keeps the segments and retention prunes nothing; the written file and directory have modes 0600 and 0700; a write that fails before the rename leaves the old file whole.
 - Go, paths: with `XDG_CONFIG_HOME` and `XDG_DATA_HOME` set, the settings and the database land under each; with `AERONAUTES_STATE_DIR` set, both land in that directory.
 - Go, migration: a database created by the previous schema loses `app_settings` and `ui_preferences` and keeps every other table's rows.
-- Go, backup: the existing one-moment test still holds with settings in the file: a settings save and a bookmark rename committed while the export runs are both absent from, or both present in, the backup.
+- Go, backup: the existing one-moment test still holds with settings in the file: a settings save and a bookmark rename committed while the export runs are both absent from, or both present in, the backup; an unreadable settings file refuses the export.
 - Product: the shipped binary started with empty `XDG_CONFIG_HOME` and `XDG_DATA_HOME` creates `settings.json` on the first save and `aeronautes.sqlite` at start, and nothing under `XDG_STATE_HOME`.

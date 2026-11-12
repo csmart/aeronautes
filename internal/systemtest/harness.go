@@ -127,7 +127,7 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 	app.WireEvidenceStore(transfer, ev)
 	// The settings main.go gives the transfer service, so a case that turns
 	// an option off exercises the same path the shipped shell takes.
-	settings := app.NewSettingsService(database, runner)
+	settings := app.NewSettingsService(filepath.Join(filepath.Dir(statePath), "settings.json"), runner)
 	app.WireSettings(transfer, settings)
 
 	h := &Harness{

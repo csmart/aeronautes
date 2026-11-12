@@ -34,7 +34,7 @@ func TestBackupSettingsWritesConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := app.NewJobRunner(jobs.NewStore(database), audit.NewStore(database))
-	settings := app.NewSettingsService(database, runner)
+	settings := app.NewSettingsService(filepath.Join(t.TempDir(), "settings.json"), runner)
 
 	// Refusal: a headless service has no directory dialog.
 	headless := &Harness{T: t, Backup: app.NewBackupService(database, store, settings)}

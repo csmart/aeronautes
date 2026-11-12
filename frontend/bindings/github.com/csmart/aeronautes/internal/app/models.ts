@@ -180,6 +180,14 @@ export interface AppSettingsDTO {
      * a setting.
      */
     "railWidthPx": number;
+
+    /**
+     * FileProblem says why the settings file could not be read, when it
+     * could not; the defaults are then in force until the next save (ADR
+     * 0109 decision 1). It is a report only: a save ignores it and it is
+     * never written to the file.
+     */
+    "fileProblem"?: string;
 }
 
 /**

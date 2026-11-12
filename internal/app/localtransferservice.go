@@ -983,12 +983,14 @@ func (s *TransferService) reclaimsReplacedFragments(ctx context.Context) bool {
 // being told they would be kept is the outcome that sentence exists to
 // prevent. So the caller declines rather than guessing, and says which.
 // A service with no settings wired has no store to disagree with and takes
-// the same default the question used.
-func (s *TransferService) reclamationSetting(ctx context.Context) (bool, error) {
+// the same default the question used. The file is read strictly, because
+// Get reports an unreadable file and carries on with the defaults, and the
+// default is to reclaim.
+func (s *TransferService) reclamationSetting(context.Context) (bool, error) {
 	if s.settings == nil {
 		return true, nil
 	}
-	settings, err := s.settings.Get(ctx)
+	settings, err := s.settings.read()
 	if err != nil {
 		return false, err
 	}

@@ -164,7 +164,7 @@ func TestDesktopStartupFailureCleansAcquiredLock(t *testing.T) {
 				defer release()
 			}
 			if failure == "database_open" {
-				if err := os.Mkdir(filepath.Join(state, "state.sqlite"), 0700); err != nil {
+				if err := os.Mkdir(filepath.Join(state, "aeronautes.sqlite"), 0700); err != nil {
 					t.Fatal(err)
 				}
 			}

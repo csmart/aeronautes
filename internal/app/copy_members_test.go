@@ -133,7 +133,7 @@ func TestCopyOfMembersWithOneMissing(t *testing.T) {
 func TestCopyMembersRefusals(t *testing.T) {
 	h, bookmark := membersHarness(t)
 	ctx := context.Background()
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	current, err := settings.Get(ctx)
 	if err != nil {
 		t.Fatal(err)

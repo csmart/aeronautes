@@ -27,7 +27,10 @@ import (
 
 type fixedSettings struct{ dto AppSettingsDTO }
 
-func (f fixedSettings) getFrom(context.Context, dbQuerier) (AppSettingsDTO, error) {
+func (f fixedSettings) readAfter(snapshot func() error) (AppSettingsDTO, error) {
+	if err := snapshot(); err != nil {
+		return AppSettingsDTO{}, err
+	}
 	return f.dto, nil
 }
 
@@ -40,20 +43,20 @@ type folderPicker struct{ dir string }
 func (p folderPicker) PickFiles(string) ([]string, error)   { return nil, nil }
 func (p folderPicker) PickDirectory(string) (string, error) { return p.dir, nil }
 
-// interleavingSettings reads settings through the supplied querier, then runs
-// onRead before returning, so a test can commit changes between the backup's
-// two reads and prove they come from one snapshot.
+// interleavingSettings runs between after the backup's bookmark snapshot and
+// before its settings read, so a test can commit changes between the two and
+// prove they pair settings and bookmarks from one moment.
 type interleavingSettings struct {
-	real   *SettingsService
-	onRead func()
+	real    *SettingsService
+	between func()
 }
 
-func (s interleavingSettings) getFrom(ctx context.Context, q dbQuerier) (AppSettingsDTO, error) {
-	dto, err := s.real.getFrom(ctx, q)
-	if s.onRead != nil {
-		s.onRead()
-	}
-	return dto, err
+func (s interleavingSettings) readAfter(snapshot func() error) (AppSettingsDTO, error) {
+	return s.real.readAfter(func() error {
+		err := snapshot()
+		s.between()
+		return err
+	})
 }
 
 func (s interleavingSettings) Set(ctx context.Context, dto AppSettingsDTO) (AppSettingsDTO, error) {
@@ -218,15 +221,16 @@ func TestExportSettingsRefusesHeadlessAndReportsCancellation(t *testing.T) {
 	}
 }
 
-// A backup must be one coherent snapshot: if a settings commit and a bookmark
-// edit both land between the two reads, the file must show the state from
-// before them, never a combination that never existed. This uses the real
-// settings and bookmark stores and fails if the reads stop sharing the
-// read transaction.
+// A backup must be one coherent moment (ADR 0109 decision 5). A bookmark
+// rename committed after the bookmark snapshot is absent from the backup, and
+// a settings save started at the same point waits until the export has read
+// the settings, so it is absent too: the file never pairs settings and
+// bookmarks that did not exist together. The test fails if the save can land
+// between the two reads or the bookmarks stop coming from one transaction.
 func TestExportSettingsTakesOneCoherentSnapshot(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
-	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	settings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
 
 	base := defaults()
 	base.RailWidthPx = 111
@@ -240,27 +244,39 @@ func TestExportSettingsTakesOneCoherentSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Between the settings read and the bookmark read, commit a new settings
-	// value and rename the bookmark. One snapshot must see neither.
-	interleave := func() {
-		changed := defaults()
-		changed.RailWidthPx = 222
-		if _, err := settings.Set(ctx, changed); err != nil {
-			t.Error(err)
-		}
+	settingsSaved := make(chan error, 1)
+	between := func() {
 		edited := saved
 		edited.DisplayName = "after"
 		if _, err := store.Save(ctx, edited, nil); err != nil {
 			t.Error(err)
 		}
+		go func() {
+			changed := defaults()
+			changed.RailWidthPx = 222
+			_, err := settings.Set(ctx, changed)
+			settingsSaved <- err
+		}()
+		// The save must still be waiting when the settings are read. A
+		// save is a few milliseconds; one that lands inside this window is
+		// a save the export let in.
+		select {
+		case err := <-settingsSaved:
+			t.Errorf("a settings save landed while the export held its moment (%v)", err)
+			settingsSaved <- err
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
 
 	dir := t.TempDir()
-	svc := NewBackupService(database, store, interleavingSettings{real: settings, onRead: interleave})
+	svc := NewBackupService(database, store, interleavingSettings{real: settings, between: between})
 	svc.setFilePicker(folderPicker{dir: dir})
 	result, err := svc.ExportSettings(ctx)
 	if err != nil {
 		t.Fatalf("export: %v", err)
+	}
+	if err := <-settingsSaved; err != nil {
+		t.Fatalf("the held-off settings save failed after the export: %v", err)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, result.FileName))
@@ -276,6 +292,29 @@ func TestExportSettingsTakesOneCoherentSnapshot(t *testing.T) {
 	}
 	if len(doc.Bookmarks) != 1 || doc.Bookmarks[0].DisplayName != "before" {
 		t.Fatalf("bookmark not from the same snapshot (never-existed combination): %+v", doc.Bookmarks)
+	}
+}
+
+// An unreadable settings file refuses the export with its reason, because the
+// defaults in force are not the operator's settings (ADR 0109 decision 5).
+func TestExportSettingsRefusesAnUnreadableSettingsFile(t *testing.T) {
+	store, database := newBackupStore(t)
+	path := settingsFile(t)
+	settings := NewSettingsService(path, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	svc := NewBackupService(database, store, settings)
+	svc.setFilePicker(folderPicker{dir: dir})
+	if result, err := svc.ExportSettings(t.Context()); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("export with an unreadable settings file = %+v, %v; want a refusal saying why", result, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("a refused export wrote %d files", len(entries))
 	}
 }
 
@@ -341,7 +380,7 @@ func TestImportSettingsRestoresConfigurationFromExport(t *testing.T) {
 	backupFile := filepath.Join(exportDir, exported.FileName)
 
 	targetStore, targetDB := newBackupStore(t)
-	targetSettings := NewSettingsService(targetDB, NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
+	targetSettings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
 	before, err := targetSettings.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -425,7 +464,7 @@ func TestImportSettingsMergesByCompleteConfiguration(t *testing.T) {
 func TestImportSettingsValidatesWholeFileBeforeApplying(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
-	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	settings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
 	baseline, err := settings.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -488,7 +527,7 @@ func TestImportSettingsRefusesHeadlessAndReportsCancellation(t *testing.T) {
 func TestImportSettingsRefusesABackupCarryingAPrivateKey(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
-	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	settings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
 	before, err := settings.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -559,8 +598,8 @@ func TestImportSettingsDedupsExportIntoSamePopulatedDatabase(t *testing.T) {
 // where the new values may already be durable.
 type failingSettings struct{}
 
-func (failingSettings) getFrom(context.Context, dbQuerier) (AppSettingsDTO, error) {
-	return defaults(), nil
+func (failingSettings) readAfter(snapshot func() error) (AppSettingsDTO, error) {
+	return defaults(), snapshot()
 }
 
 func (failingSettings) Set(context.Context, AppSettingsDTO) (AppSettingsDTO, error) {
@@ -671,7 +710,7 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	}
 
 	targetStore, targetDB := newBackupStore(t)
-	targetSettings := NewSettingsService(targetDB, NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
+	targetSettings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(targetDB), audit.NewStore(targetDB)))
 	if _, err := restoreInto(t, targetDB, targetStore, targetSettings, filepath.Join(exportDir, exported.FileName)); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -698,7 +737,7 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 func TestBackupRestoresLegacyVersionOne(t *testing.T) {
 	ctx := t.Context()
 	store, database := newBackupStore(t)
-	settings := NewSettingsService(database, NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	settings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
 	doc := SettingsBackupDTO{
 		SchemaVersion: 1, // literal: a genuine historical file, independent of the reader's minimum
 		ExportedAt:    "2026-01-01T00:00:00Z",

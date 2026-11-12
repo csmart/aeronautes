@@ -2,15 +2,11 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"path/filepath"
-	"strconv"
+	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/csmart/aeronautes/internal/db"
 )
 
 // Maintained regressions for the active-job budget (ADR 0105, which raised
@@ -79,24 +75,22 @@ func TestTheActiveJobBudgetIsEnforced(t *testing.T) {
 	})
 }
 
-// ADR 0105 decisions 6 and 7: one range with one refusal; an empty store
-// reads the default; a stored value above the ceiling reads as the ceiling
-// with its row left as written, and one below one reads as the default.
+// ADR 0105 decisions 6 and 7: one range with one refusal; no settings file
+// reads the default; a hand-written value outside the range makes the file
+// unreadable, so the default is in force and the file is left as written
+// (ADR 0109 decision 1).
 func TestSettingsStateTheEffectiveBudget(t *testing.T) {
 	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "state.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
 	runner := newJobRunner(nil, nil)
-	service := NewSettingsService(d, runner)
+	path := settingsFile(t)
+	service := NewSettingsService(path, runner)
 
 	if settings, err := service.Get(ctx); err != nil || settings.MaxActiveJobs != 2 {
-		t.Fatalf("an empty store reads a budget of %d, %v; want the default of two", settings.MaxActiveJobs, err)
+		t.Fatalf("no settings file reads a budget of %d, %v; want the default of two", settings.MaxActiveJobs, err)
 	}
 	// A write outside the range is refused and names the range, rather than
 	// being clamped silently or stored as a value that would not apply.
+	var err error
 	for _, outside := range []int{0, 5, 16} {
 		_, err = service.Set(ctx, AppSettingsDTO{MaxActiveJobs: outside, DefaultProfile: "auto"})
 		if err == nil || !strings.Contains(err.Error(), "choose 1 to 4") {
@@ -129,63 +123,29 @@ func TestSettingsStateTheEffectiveBudget(t *testing.T) {
 		}
 	}
 
-	// A row persisted before the ceiling was enforced is reported at the
-	// effective value, and the stored row itself is left as written.
-	seedStoredBudget(t, d, 16)
-	settings, err := service.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
+	// A budget written by hand outside the range is not clamped: the whole
+	// file is unreadable, the default is in force at once and at
+	// construction, the report names the reason, and the file is left as
+	// written until the operator saves.
+	for _, written := range []string{"16", "0"} {
+		hand := []byte(`{"maxActiveJobs": ` + written + `, "defaultProfile": "auto"}`)
+		if err := os.WriteFile(path, hand, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		settings, err := service.Get(ctx)
+		if err != nil || settings.MaxActiveJobs != defaultMaxActiveJobs || !strings.Contains(settings.FileProblem, "max active jobs "+written+" is out of range") {
+			t.Fatalf("a hand-written %s reads as %d (%v, %q); want the default and the reason", written, settings.MaxActiveJobs, err, settings.FileProblem)
+		}
+		runner2 := newJobRunner(nil, nil)
+		NewSettingsService(path, runner2)
+		runner2.mu.Lock()
+		capacity = runner2.capacity
+		runner2.mu.Unlock()
+		if capacity != defaultMaxActiveJobs {
+			t.Fatalf("a hand-written %s seeded capacity %d at construction, want the default %d", written, capacity, defaultMaxActiveJobs)
+		}
+		if kept, err := os.ReadFile(path); err != nil || string(kept) != string(hand) {
+			t.Fatalf("the hand-written file was rewritten to %q (%v)", kept, err)
+		}
 	}
-	if settings.MaxActiveJobs != maxActiveJobsCeiling {
-		t.Fatalf("a stored 16 was reported as %d, want the effective %d",
-			settings.MaxActiveJobs, maxActiveJobsCeiling)
-	}
-	if stored := storedBudget(t, d); stored != 16 {
-		t.Fatalf("the persisted row was rewritten to %d; it must be left as written", stored)
-	}
-
-	// Construction applies the persisted value through the same clamp.
-	runner2 := newJobRunner(nil, nil)
-	NewSettingsService(d, runner2)
-	runner2.mu.Lock()
-	capacity = runner2.capacity
-	runner2.mu.Unlock()
-	if capacity != maxActiveJobsCeiling {
-		t.Fatalf("a stored 16 seeded capacity %d at construction, want %d", capacity, maxActiveJobsCeiling)
-	}
-
-	seedStoredBudget(t, d, 0)
-	if settings, err := service.Get(ctx); err != nil || settings.MaxActiveJobs != defaultMaxActiveJobs {
-		t.Fatalf("a stored 0 was reported as %d, %v; want the default", settings.MaxActiveJobs, err)
-	}
-}
-
-// seedStoredBudget writes max_active_jobs directly, standing in for a row
-// persisted before the ceiling was enforced.
-func seedStoredBudget(t *testing.T, d *db.DB, n int) {
-	t.Helper()
-	if err := d.WriteTx(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(context.Background(),
-			`INSERT INTO app_settings (key, value) VALUES ('max_active_jobs', ?)
-			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(n))
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// storedBudget reads the row back, so a test can tell reporting the
-// effective value apart from rewriting what was stored.
-func storedBudget(t *testing.T, d *db.DB) int {
-	t.Helper()
-	var value string
-	if err := d.Reader().QueryRow(
-		`SELECT value FROM app_settings WHERE key = 'max_active_jobs'`).Scan(&value); err != nil {
-		t.Fatal(err)
-	}
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return n
 }

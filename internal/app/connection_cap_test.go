@@ -15,7 +15,7 @@ import (
 func TestSessionsOpenWithTheOperatorConnectionCap(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	if _, err := settings.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxConnsPerHost: 3}); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestControlPlaneAnswersUnderLoad(t *testing.T) {
 	g.armed.Store(false)
 
 	const bound = 5 * time.Second
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	started := time.Now()
 	page, err := h.browse.Containers(ctx, bookmark, "", 100)
 	listing := time.Since(started)

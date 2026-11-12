@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -101,7 +102,8 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	}
 	t.Cleanup(func() { d.Close() })
 	runner := newJobRunner(nil, nil)
-	service := NewSettingsService(d, runner)
+	path := settingsFile(t)
+	service := NewSettingsService(path, runner)
 	ctx := context.Background()
 
 	settings, err := service.Get(ctx)
@@ -178,13 +180,13 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 		t.Fatalf("omitted connection cap = %+v %v", saved, err)
 	}
 	// A runner built for a store that already holds a depth starts with it.
-	if depth := NewSettingsService(d, newJobRunner(nil, nil)).runner.queueDepth(); depth != defaultMaxQueuedJobs {
+	if depth := NewSettingsService(path, newJobRunner(nil, nil)).runner.queueDepth(); depth != defaultMaxQueuedJobs {
 		t.Fatalf("fresh runner queue depth = %d", depth)
 	}
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxQueuedJobs: 5}); err != nil {
 		t.Fatal(err)
 	}
-	if depth := NewSettingsService(d, newJobRunner(nil, nil)).runner.queueDepth(); depth != 5 {
+	if depth := NewSettingsService(path, newJobRunner(nil, nil)).runner.queueDepth(); depth != 5 {
 		t.Fatalf("runner queue depth at construction = %d", depth)
 	}
 	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 99, DefaultProfile: "auto"}); err == nil {
@@ -203,10 +205,10 @@ func TestSettingsServicePersistsAndApplies(t *testing.T) {
 	if err != nil || saved.MaxActiveJobs != 1 {
 		t.Fatal(err)
 	}
-	// A fresh service over the same database reads it back and applies
-	// the budget at construction.
+	// A fresh service over the same file reads it back and applies the
+	// budget at construction.
 	runner2 := newJobRunner(nil, nil)
-	service2 := NewSettingsService(d, runner2)
+	service2 := NewSettingsService(path, runner2)
 	settings, err = service2.Get(ctx)
 	if err != nil || settings.MaxActiveJobs != 1 || settings.DefaultProfile != "aggressive" {
 		t.Fatalf("reloaded = %+v %v", settings, err)
@@ -229,7 +231,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 	jobStore := jobs.NewStore(d)
 	auditStore := audit.NewStore(d)
 	runner := newJobRunner(jobStore, auditStore)
-	service := NewSettingsService(d, runner)
+	service := NewSettingsService(settingsFile(t), runner)
 
 	old := time.Now().AddDate(0, 0, -120).UTC().Format(time.RFC3339)
 	// Old terminal job; old terminal job WITH recovery records; old
@@ -310,5 +312,15 @@ func TestRetentionPrunesExactly(t *testing.T) {
 	service.runRetention(ctx, jobStore, auditStore)
 	if _, err := jobStore.Get(ctx, freshDone); err != nil {
 		t.Fatal("prune ran with retention disabled")
+	}
+
+	// An unreadable file prunes nothing, although the default windows then
+	// in force would prune that job now (ADR 0109 decision 1).
+	if err := os.WriteFile(service.path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.runRetention(ctx, jobStore, auditStore)
+	if _, err := jobStore.Get(ctx, freshDone); err != nil {
+		t.Fatal("an unreadable settings file let the prune run on the defaults")
 	}
 }

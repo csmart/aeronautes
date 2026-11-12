@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -22,7 +21,7 @@ import (
 // it again.
 func wireReclamation(t *testing.T, h *harness, reclaim bool) *SettingsService {
 	t.Helper()
-	settings := NewSettingsService(h.db, h.transfer.runner)
+	settings := NewSettingsService(settingsFile(t), h.transfer.runner)
 	current, err := settings.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -396,20 +395,16 @@ func TestReclamationDeclinesWhenTheSettingCannotBeRead(t *testing.T) {
 	settings := wireReclamation(t, f.h, true)
 	// The question is asked with the option ON, so it states that the
 	// segments WILL be removed and the answer authorises exactly that. Then
-	// the store stops answering: an unreadable setting is not permission,
-	// even where the answer would have allowed the removal.
+	// the settings file becomes unreadable: the defaults then in force would
+	// reclaim, but an unreadable setting is not permission, even where the
+	// answer would have allowed the removal (ADR 0109 decision 1).
 	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true, before: func() {
-		err := f.h.db.WriteTx(context.Background(), func(tx *sql.Tx) error {
-			_, execErr := tx.ExecContext(context.Background(),
-				`ALTER TABLE app_settings RENAME TO app_settings_unreachable`)
-			return execErr
-		})
-		if err != nil {
-			t.Errorf("hiding the settings table: %v", err)
+		if err := os.WriteFile(settings.path, []byte("{not json"), 0o600); err != nil {
+			t.Errorf("breaking the settings file: %v", err)
 		}
 	}})
-	if _, err := settings.Get(t.Context()); err != nil {
-		t.Fatalf("the setting was not readable before the run: %v", err)
+	if current, err := settings.Get(t.Context()); err != nil || current.FileProblem != "" {
+		t.Fatalf("the setting was not readable before the run: %v %q", err, current.FileProblem)
 	}
 
 	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
@@ -419,7 +414,7 @@ func TestReclamationDeclinesWhenTheSettingCannotBeRead(t *testing.T) {
 	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
 		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
 	}
-	if _, err := settings.Get(t.Context()); err == nil {
+	if current, _ := settings.Get(t.Context()); current.FileProblem == "" {
 		t.Fatal("the fixture did not make the setting unreadable")
 	}
 	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts)); left != len(parts) {
