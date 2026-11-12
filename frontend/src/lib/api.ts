@@ -122,6 +122,8 @@ export type {
   ImportRowDTO,
   ImportResultDTO,
   ImportOutcomeDTO,
+  DestinationContainersDTO,
+  DestinationMissingDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   FindStatusDTO,
@@ -143,6 +145,8 @@ import type {
   ImportRowDTO,
   ImportResultDTO,
   ImportOutcomeDTO,
+  DestinationContainersDTO,
+  DestinationMissingDTO,
   BenchmarkRequestDTO,
   BenchmarkResultDTO,
   DeletePreviewDTO,
@@ -268,6 +272,10 @@ export interface Api {
   /** The latest import's outcomes, as its verification proceeds. */
   importStatus(token: string): Promise<ImportResult>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;
+  /** A copy destination's first page of container names, as suggestions (ADR 0115). */
+  destinationContainers(bookmarkId: string): Promise<DestinationContainersDTO>;
+  /** Create a copy's missing destination container where the preview found it missing (ADR 0115). */
+  createDestinationContainer(missing: DestinationMissingDTO): Promise<ContainerDetailDTO>;
   startCopy(req: CopyRequestDTO): Promise<string>;
   startMirror(req: MirrorRequestDTO): Promise<string>;
   cancelJob(jobId: string): Promise<void>;
@@ -378,6 +386,11 @@ export const liveApi: Api = {
     const result = await BookmarkImportService.ImportStatus(token);
     return { ...result, outcomes: result.outcomes ?? [] };
   },
+  destinationContainers: async (bookmarkId) => {
+    const page = await TransferService.DestinationContainers(bookmarkId);
+    return { ...page, names: page.names ?? [] };
+  },
+  createDestinationContainer: (missing) => MutateService.CreateDestinationContainer(missing),
   planCopy: async (req) => {
     const dto = await TransferService.PlanCopy(req);
     if (!dto) throw new Error("empty plan");
