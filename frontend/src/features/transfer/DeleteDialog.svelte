@@ -292,7 +292,7 @@
             if (jobId) void browser.jobs.reveal(jobId);
           }}>Show in jobs</button
         >
-        <button onclick={close}>Close</button>
+        <button class="primary" onclick={close}>Close</button>
       {:else}
         <!-- The highlight marks the next step: Preview until a preview is
           shown, then the deletion, which stays plain before it. -->
