@@ -516,7 +516,12 @@ func TestPreparedWritePrecedesExternalIO(t *testing.T) {
 	written := make(chan error, 1)
 	go func() {
 		written <- d.WriteTx(t.Context(), func(tx *sql.Tx) error {
-			_, err := tx.Exec(`INSERT INTO ui_preferences (name,value) VALUES ('during-put','ok')`)
+			// A table of the probe's own, so the write touches nothing the
+			// store reads.
+			if _, err := tx.Exec(`CREATE TABLE write_probe (value TEXT)`); err != nil {
+				return err
+			}
+			_, err := tx.Exec(`INSERT INTO write_probe (value) VALUES ('during-put')`)
 			return err
 		})
 	}()
