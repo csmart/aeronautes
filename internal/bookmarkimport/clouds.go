@@ -71,9 +71,7 @@ func cloudSource(cloud map[string]any) Source {
 		b.UserID = text(auth["user_id"])
 	case text(auth["username"]) != "":
 		b.Username, b.UserDomain = text(auth["username"]), text(auth["user_domain_name"])
-		if b.UserDomain == "" {
-			source.Skip = domainSkip(auth["user_domain_id"], SkipUserDomain)
-		}
+		source.Skip = nameSideDomainSkip(auth["user_domain_id"], b.UserDomain, SkipUserDomain)
 	default:
 		source.Skip = SkipNoUser
 	}
@@ -85,9 +83,7 @@ func cloudSource(cloud map[string]any) Source {
 		b.ProjectID = text(auth["project_id"])
 	case text(auth["project_name"]) != "":
 		b.ProjectName, b.ProjectDomain = text(auth["project_name"]), text(auth["project_domain_name"])
-		if b.ProjectDomain == "" {
-			source.Skip = domainSkip(auth["project_domain_id"], SkipProjectDomain)
-		}
+		source.Skip = nameSideDomainSkip(auth["project_domain_id"], b.ProjectDomain, SkipProjectDomain)
 	default:
 		source.Skip = SkipNoProject
 	}
@@ -135,13 +131,19 @@ func systemTrust(cloud map[string]any) bool {
 		text(cloud["cert"]) == "" && text(cloud["key"]) == ""
 }
 
-// domainSkip names a domain given only by ID, which a bookmark cannot
-// carry, apart from a domain that is missing altogether.
-func domainSkip(domainID any, missing string) string {
-	if text(domainID) != "" {
+// nameSideDomainSkip is why a user or project named by name cannot be
+// reproduced, or "". keystoneauth sends a domain ID in place of a domain
+// name whenever it has one (identity/v3/password.py and base.py), and a
+// bookmark carries domain names only, so a domain ID skips the source even
+// beside a name; a missing domain is refused by Keystone.
+func nameSideDomainSkip(domainID any, domainName, missing string) string {
+	switch {
+	case text(domainID) != "":
 		return SkipDomainID
+	case domainName == "":
+		return missing
 	}
-	return missing
+	return ""
 }
 
 // keyAliases are the spellings openstacksdk's loader accepts for each key,

@@ -210,6 +210,11 @@ func TestCloudsSkipWhatTheyCannotReproduce(t *testing.T) {
 		{"a client key alone", cloud("    key: /etc/client.key\n", byName), SkipTrust},
 		{"insecure", cloud("    insecure: true\n", byName), SkipTrust},
 		{"user domain by ID", cloud("", "      username: u\n      user_domain_id: default\n      project_id: p-1\n"), SkipDomainID},
+		// keystoneauth sends the ID over the name, so the pair is skipped too.
+		{"user domain by name and ID", cloud("", "      username: u\n      user_domain_name: d\n      user_domain_id: default\n      project_id: p-1\n"), SkipDomainID},
+		{"project domain by name and ID", cloud("", "      user_id: u-1\n      project_name: p\n      project_domain_name: d\n      project_domain_id: default\n"), SkipDomainID},
+		// The loader copies both generic keys onto each side.
+		{"generic domain name and ID", cloud("", "      username: u\n      domain_name: d\n      domain_id: default\n      project_id: p-1\n"), SkipDomainID},
 		{"user without a domain", cloud("", "      username: u\n      project_id: p-1\n"), SkipUserDomain},
 		{"project without a domain", cloud("", "      user_id: u-1\n      project_name: p\n"), SkipProjectDomain},
 		{"no project", cloud("", "      user_id: u-1\n"), SkipNoProject},
