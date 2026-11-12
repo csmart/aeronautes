@@ -26,6 +26,13 @@
   let starting = $state(false);
   let error: string | null = $state(null);
   let startedJobId: string | null = $state(null);
+  // What the started job deletes, in words, captured at start: the folder a
+  // prefix deletion removed is gone from the listing by the time it ends.
+  let startedWhat = $state("");
+  // The started job as the drawer's poll last saw it, so the dialog says when
+  // it is done instead of leaving the operator to guess.
+  const startedJob = $derived(startedJobId ? browser.jobs.list.find((job) => job.id === startedJobId) ?? null : null);
+  const startedEnded = $derived(!!startedJob && ["complete", "partial", "failed", "cancelled"].includes(startedJob.state));
   let closed = $state(false);
   // `facts` is undefined while the container's versioning facts are still
   // loading, then null or a value once settled. Start waits for settled
@@ -147,7 +154,11 @@
     error = null;
     try {
       const jobId = await browser.startDelete(req);
-      if (isCurrent(current.intent)) startedJobId = jobId;
+      if (isCurrent(current.intent)) {
+        startedJobId = jobId;
+        startedWhat = req.mode === "prefix" ? `prefix ${req.container}/${req.prefix}`
+          : req.mode === "empty" ? `the contents of container ${req.container}` : `container ${req.container}`;
+      }
     } catch (e) {
       if (isCurrent(current.intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -160,10 +171,29 @@
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Delete" tabindex="-1" use:trapFocus={close}>
     <header>
-      <h2>Destructive operation</h2>
+      <h2>
+        {!startedJobId ? "Destructive operation" : !startedEnded ? "Deletion started"
+          : startedJob?.state === "complete" ? "Deletion complete" : "Deletion ended"}
+      </h2>
       <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
 
+    {#if startedJobId}
+      <!-- Once a job has started the dialog only reports it: the choices
+        would read as an offer to delete more (0.5.0 test run). -->
+      <p class="next-step">
+        {#if !startedEnded}
+          Deleting <span class="type-mono">{startedWhat}</span>. Its progress and each object's outcome are in the jobs
+          drawer.
+        {:else if startedJob?.state === "complete"}
+          Deleted <span class="type-mono">{startedWhat}</span>: {startedJob.counters.objectsDeleted}
+          {startedJob.counters.objectsDeleted === 1 ? "object" : "objects"}.
+        {:else}
+          The deletion of <span class="type-mono">{startedWhat}</span> ended {startedJob?.state}; the jobs drawer says
+          what was left and why.
+        {/if}
+      </p>
+    {:else}
     <div class="modes" role="radiogroup" aria-label="Scope">
       {#if hasPrefix}
         <label class="mode">
@@ -194,6 +224,7 @@
         </span>
       </label>
     </div>
+    {/if}
 
     {#if error}
       <p class="error callout danger" role="alert">{error}</p>
