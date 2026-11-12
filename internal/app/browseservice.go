@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -242,5 +243,39 @@ func (s *BrowseService) Objects(ctx context.Context, bookmarkID, container, pref
 			break
 		}
 	}
+	if prefix == "" && coversSlashFolder(marker, page) && !slices.ContainsFunc(page.Rows, isSlashFolder) {
+		found, err := slashFolderExists(ctx, session, container)
+		if err != nil {
+			return ObjectPageDTO{}, err
+		}
+		if found {
+			at := sort.Search(len(page.Rows), func(i int) bool { return page.Rows[i].Name > "/" })
+			page.Rows = slices.Insert(page.Rows, at, ListingRowDTO{Kind: "prefix", Name: "/"})
+		}
+	}
 	return page, nil
+}
+
+// coversSlashFolder reports whether a top-of-container page spans the place
+// where a "/" folder sorts: its marker is before "/", and it either ends the
+// listing or reaches past "/" (ADR 0116).
+func coversSlashFolder(marker string, page ObjectPageDTO) bool {
+	if marker >= "/" {
+		return false
+	}
+	return page.NextMarker == "" || page.Rows[len(page.Rows)-1].Name > "/"
+}
+
+func isSlashFolder(row ListingRowDTO) bool { return row.Kind == "prefix" && row.Name == "/" }
+
+// slashFolderExists asks whether any name starts with "/", which a store
+// such as Ceph RGW leaves out of its top delimiter listing (ADR 0116).
+func slashFolderExists(ctx context.Context, session *swiftcontrol.Session, container string) (bool, error) {
+	for _, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Prefix: "/", PageSize: 1}) {
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }

@@ -97,6 +97,9 @@ func literalBrowse(t *testing.T, h *Harness) {
 					if tc.self != "" {
 						wantRequests++
 					}
+					if tc.prefix == "" {
+						wantRequests++
+					}
 					if len(page.Rows) != 2 || len(trace.snapshot()) != wantRequests {
 						t.Fatalf("first bridge page must consume only two visible rows: page=%+v requests=%+v", page, trace.snapshot())
 					}
@@ -120,10 +123,25 @@ func literalBrowse(t *testing.T, h *Harness) {
 				wantMarkers = append(wantMarkers, row.name)
 			}
 			trace.assertMarkers(t, tc.prefix, "/", wantMarkers...)
+			// At the top, the first page holds no "/" folder, so ADR 0116 asks
+			// once whether the store left one out.
+			probes := 0
 			for _, request := range trace.snapshot() {
+				slashProbe := listingPageRequest{path: request.path, prefix: "/", delimiter: "/", limit: "1"}
+				if tc.prefix == "" && request == slashProbe {
+					probes++
+					continue
+				}
 				if request.prefix != tc.prefix || request.delimiter != "/" || request.limit != "2" {
 					t.Fatalf("bound request altered the literal filter or page limit: %+v", request)
 				}
+			}
+			wantProbes := 0
+			if tc.prefix == "" {
+				wantProbes = 1
+			}
+			if probes != wantProbes {
+				t.Fatalf("slash folder probes = %d, want %d", probes, wantProbes)
 			}
 			trace.assertNoObjectHeads(t)
 		})

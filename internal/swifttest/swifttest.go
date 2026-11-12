@@ -211,6 +211,10 @@ type Server struct {
 	// (this same server). A test sets it to a public http URL to exercise
 	// the client's storage-URL gate on the catalog's choice.
 	V3StorageEndpoint string
+	// OmitsSlashFolder makes the top delimiter listing leave out the "/"
+	// folder, as Ceph RGW does (ADR 0116); a listing with the prefix "/"
+	// still answers.
+	OmitsSlashFolder bool
 	// V3Endpoints, when non-empty, is the full ordered set of object-store
 	// public endpoints the mock Keystone v3 catalog advertises. A test
 	// sets several regions (and reorders them between authentications) to
@@ -1300,6 +1304,9 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 				// Only a complete child-group marker skips that group.
 				// The query's own object must not hide its children.
 				if subdir == marker {
+					continue
+				}
+				if s.OmitsSlashFolder && prefix == "" && subdir == delimiter {
 					continue
 				}
 				if !emittedSubdir[subdir] {
