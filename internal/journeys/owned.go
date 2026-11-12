@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/textproto"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -75,9 +76,13 @@ func (o *Owned) ClaimSidecar(ctx context.Context, container string) error {
 }
 
 // SetAccountKey sets the one account metadata key this run owns, carrying
-// every other key and the quota over unchanged, and returns its name.
+// every other key and the quota over unchanged, and returns its name. The
+// name is kept in the canonical spelling the client sends and the portrait
+// returns, so that teardown deletes the key that is actually on the account:
+// a suffix starting with a letter would otherwise be upper-cased on the way
+// out and missed on the way back.
 func (o *Owned) SetAccountKey(ctx context.Context, value string) (string, error) {
-	key := "Aeronautes-Journey-" + o.suffix
+	key := textproto.CanonicalMIMEHeaderKey("Aeronautes-Journey-" + o.suffix)
 	if err := o.editAccount(ctx, func(meta map[string]string) { meta[key] = value }); err != nil {
 		return "", err
 	}
