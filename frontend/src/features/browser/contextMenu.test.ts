@@ -3,6 +3,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import WorkingList from "./WorkingList.svelte";
+import ContainerColumn from "./ContainerColumn.svelte";
 
 // A row's context menu offers the toolbar's own actions for what is
 // selected: a right-click selects the row unless it is already part of a
@@ -87,5 +88,28 @@ describe("row context menu", () => {
     document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
     flushSync();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+});
+
+describe("container row context menu", () => {
+  it("opens the container and then the chosen action", async () => {
+    const api = newFakeApi();
+    const browser = new BrowserState(api);
+    const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "https://example.test/auth",
+      username: "fixture:user", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+    await browser.connect(bookmark.id);
+    await settle();
+    mounted.add(mount(ContainerColumn, { target: document.body, props: { browser, onCreate: vi.fn() } }));
+    flushSync();
+    const row = [...document.querySelectorAll<HTMLButtonElement>("button.container-row")].find((b) => b.textContent?.includes("fixtures"))!;
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    flushSync();
+    expect(menuLabels()).toEqual(expect.arrayContaining(["Open", "Copy container…", "Copy name"]));
+    expect(browser.containerName).toBeNull();
+
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent?.trim() === "Copy container…")!.click();
+    await settle();
+    expect(browser.containerName).toBe("fixtures");
+    expect(browser.transferOpen).toBe(true);
   });
 });

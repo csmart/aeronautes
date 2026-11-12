@@ -233,7 +233,8 @@ Initial keyboard targets:
 - `/` — focus prefix field;
 - `Cmd/Ctrl+K` — command palette;
 - `Cmd/Ctrl+I` — focus/toggle inspector;
-- `Delete` — open safe delete flow, never immediate deletion.
+- `Delete` — open safe delete flow, never immediate deletion;
+- right-click, `Shift+F10` or the `ContextMenu` key on an object or container row — a menu of the toolbar's own actions for that row or the selection, under the same conditions.
 
 ### 4.5 Mockup terminology corrections (normative)
 
