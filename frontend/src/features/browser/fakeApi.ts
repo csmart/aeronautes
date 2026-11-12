@@ -802,6 +802,9 @@ export function newFakeApi(): Api {
       directory: "/home/operator/exports",
       fileName: "aeronautes-settings-20260102T000000Z.json",
     }),
+    previewImport: async () => ({ token: "", fileName: "", rows: [] }),
+    saveImport: async (token) => ({ token, outcomes: [], done: true }),
+    importStatus: async (token) => ({ token, outcomes: [], done: true }),
     importSettings: async () => ({
       settingsApplied: true,
       bookmarksTotal: 2,

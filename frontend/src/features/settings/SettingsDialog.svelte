@@ -7,7 +7,11 @@
   import type { AppSettingsDTO } from "../../lib/api";
   import type { SettingsState } from "../browser/settingsState.svelte";
 
-  let { settings, onClose }: { settings: SettingsState; onClose: () => void } = $props();
+  let {
+    settings,
+    onClose,
+    onImportBookmarks = () => {},
+  }: { settings: SettingsState; onClose: () => void; onImportBookmarks?: () => void } = $props();
   const id = $props.id();
 
   onMount(() => {
@@ -299,6 +303,12 @@
             disabled={settings.restoring}
           >
             {settings.restoring ? "Restoring…" : "Restore settings…"}
+          </button>
+          <button
+            title="Import bookmarks from an rclone.conf or a clouds.yaml (passwords go to the credential store)"
+            onclick={onImportBookmarks}
+          >
+            Import bookmarks…
           </button>
         </div>
         {#if settings.backupMessage}
