@@ -1,6 +1,6 @@
-// Theme control for the §4 token system (tokens.css). Persistence into
-// ui_preferences arrives with the settings wiring; until then an explicit
-// choice lives for the window's lifetime.
+// Theme control for the §4 token system (tokens.css). An explicit choice
+// lives for the window's lifetime; keeping it would belong in the settings
+// file (ADR 0109), not the database.
 
 /** An explicit theme choice, or "system" to follow the OS. */
 export type Theme = "light" | "dark" | "system";

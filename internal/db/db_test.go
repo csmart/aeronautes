@@ -33,7 +33,6 @@ func TestOpenAppliesMigrations(t *testing.T) {
 		"schema_migrations",
 		"segment_evidence",
 		"segment_ownership",
-		"ui_preferences",
 	}
 	for _, table := range want {
 		var name string
@@ -110,8 +109,12 @@ func TestWriteTxSerialisesWriters(t *testing.T) {
 	d := newTestDB(t)
 	ctx := context.Background()
 
+	// A table of the test's own, so the counter depends on no schema table.
 	if err := d.WriteTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`INSERT INTO ui_preferences (name, value) VALUES ('counter', '0')`)
+		if _, err := tx.Exec(`CREATE TABLE counter (name TEXT PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`INSERT INTO counter (name, value) VALUES ('counter', '0')`)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -127,10 +130,10 @@ func TestWriteTxSerialisesWriters(t *testing.T) {
 			for range increments {
 				err := d.WriteTx(ctx, func(tx *sql.Tx) error {
 					var v int
-					if err := tx.QueryRow(`SELECT value FROM ui_preferences WHERE name='counter'`).Scan(&v); err != nil {
+					if err := tx.QueryRow(`SELECT value FROM counter WHERE name='counter'`).Scan(&v); err != nil {
 						return err
 					}
-					_, err := tx.Exec(`UPDATE ui_preferences SET value=? WHERE name='counter'`, fmt.Sprint(v+1))
+					_, err := tx.Exec(`UPDATE counter SET value=? WHERE name='counter'`, fmt.Sprint(v+1))
 					return err
 				})
 				if err != nil {
@@ -147,7 +150,7 @@ func TestWriteTxSerialisesWriters(t *testing.T) {
 	}
 
 	var got int
-	if err := d.Reader().QueryRow(`SELECT value FROM ui_preferences WHERE name='counter'`).Scan(&got); err != nil {
+	if err := d.Reader().QueryRow(`SELECT value FROM counter WHERE name='counter'`).Scan(&got); err != nil {
 		t.Fatal(err)
 	}
 	if want := workers * increments; got != want {
@@ -252,11 +255,19 @@ func TestStepwiseUpgradeFromEveryHistoricalSchema(t *testing.T) {
 			t.Fatalf("from %04d: head = %04d", migrations[cut-1].version, head)
 		}
 		// Every expected table exists after the upgrade.
-		for _, table := range []string{"bookmarks", "jobs", "audit_events", "segment_ownership", "app_settings", "benchmark_results", "ca_certs", "job_items", "job_item_observations"} {
+		for _, table := range []string{"bookmarks", "jobs", "audit_events", "segment_ownership", "benchmark_results", "ca_certs", "job_items", "job_item_observations"} {
 			var n int
 			if err := d.Reader().QueryRowContext(ctx,
 				`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil || n != 1 {
 				t.Fatalf("from %04d: table %s missing (%v)", migrations[cut-1].version, table, err)
+			}
+		}
+		// The settings moved to a file of their own (ADR 0109 decision 2).
+		for _, table := range []string{"app_settings", "ui_preferences"} {
+			var n int
+			if err := d.Reader().QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil || n != 0 {
+				t.Fatalf("from %04d: table %s is still there (%v)", migrations[cut-1].version, table, err)
 			}
 		}
 		var version, items int
