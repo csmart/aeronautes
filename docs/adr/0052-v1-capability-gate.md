@@ -188,8 +188,10 @@ inventory, with the two derivations agreeing.
     and is kept with it ([ADR 0103](0103-directory-upload.md)). Keystone v3 is a bookmark's
     authentication and adds no action ([ADR 0100](0100-keystone-v3-authentication.md)).
     `TransferService.PauseJob` and `TransferService.ResumeJob` stand beside `CancelJob` and are kept
-    with the transfers they control ([ADR 0104](0104-pause-and-resume.md)). The classification test
-    states each of these with its reason.
+    with the transfers they control ([ADR 0104](0104-pause-and-resume.md)). The bookmark import's
+    preview, save and status create bookmarks from another tool's configuration and are kept
+    ([ADR 0114](0114-importing-bookmarks.md)). The classification test states each of these with
+    its reason.
 
 ## What this does not establish
 

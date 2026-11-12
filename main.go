@@ -174,6 +174,8 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	backupService := app.NewBackupService(database, bookmarkStore, settingsService)
 	app.WireBackupFilePicker(backupService, nativePicker())
 	bookmarkService := app.NewBookmarkService(bookmarkStore, connections, jobStore)
+	importService := app.NewBookmarkImportService(bookmarkService, bookmarkStore)
+	app.WireImportFilePicker(importService, nativePicker())
 	server, err := serveOptions(journeyServices{bookmarks: bookmarkService})
 	if err != nil {
 		return err
@@ -190,6 +192,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 		Services: []application.Service{
 			application.NewService(app.NewAppService(identity, string(secretBackend))),
 			application.NewService(bookmarkService),
+			application.NewService(importService),
 			application.NewService(app.NewBrowseService(connections, evidenceStore)),
 			application.NewService(app.NewInspectorService(connections, evidenceStore)),
 			application.NewService(mutateService),
