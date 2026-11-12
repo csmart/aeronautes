@@ -39,8 +39,9 @@ F33 assumed an obscured key might need decoding; it does not, and no value is gu
    rclone's library sends only the project's ID, but the user's name, domain and ID together (`auth_v3.go`), which Keystone resolves by the name; so an rclone project given both is imported by ID, and an rclone user given both is imported by name and domain, without the ID.
    Either way the bookmark reaches the account its source reached, and the verification that follows the import (decision 8) checks it.
 5. **What Aeronautes does not offer is skipped with a fixed reason, never imported differently.**
-   A source is skipped, and the preview says why, when it takes its credentials from the environment (`env_auth`); uses Keystone v2, application credentials, a pre-made token or another `auth_type`; names an endpoint interface other than public; names by ID the domain of a user or project that it names by name (a domain ID beside a user or project ID is not needed and is ignored); has no region for Keystone v3; sets a storage override for Keystone v3; has an auth version neither stated nor readable from the URL; or trusts other than the system's certificate authorities (`verify` false, `insecure` true, a `cacert`, or a client `cert` and `key`).
+   A source is skipped, and the preview says why, when it takes its credentials from the environment (`env_auth`); uses Keystone v2, application credentials, a pre-made token or another `auth_type`; names an endpoint interface other than public; names by ID the domain of a user or project that it names by name (a domain ID beside a user or project ID is not needed and is ignored); names a user by name with no user domain, which neither client completes and Keystone refuses; names a clouds.yaml project by name with no project domain, which the OpenStack client does not complete either (an rclone project's domain falls back to the user domain and then to `Default`, as its library sends); has no region for Keystone v3; sets a storage override for Keystone v3; has an auth version neither stated nor readable from the URL; or trusts other than the system's certificate authorities (`verify` false, `insecure` true, a `cacert`, or a client `cert` and `key`).
    An absent `verify`, or `verify` true, is the system default and is imported.
+   Because of these skips, the save's `Default` fill for a blank domain (ADR 0100) never supplies a domain an imported source did not send.
    Each reason is a fixed phrase and never quotes a value from the file.
 6. **The preview holds no secret.**
    The parsed entries stay in Go behind a one-use token; the frontend receives, for each, its name, kind, endpoint, user, project, region, whether a secret was found, and one state: importable, already a bookmark, or skipped with its reason.
@@ -64,11 +65,11 @@ F33 assumed an obscured key might need decoding; it does not, and no value is gu
 - A source Aeronautes cannot reproduce exactly is skipped and named, so no bookmark connects somewhere other than its source did.
 - A failed verification does not lose the work of the import: the bookmark is there to fix.
 - Bookmarks gain one nullable column for the flag.
-- Encrypted rclone configs, application credentials and imported TLS settings stay out; each can be added later as its own decision.
+- Encrypted rclone configs, application credentials, domains named only by ID (including the common `default` ID) and imported TLS settings stay out; each can be added later as its own decision.
 
 ## Tests
 
-- Each reader against fixture files: every mapped field, both auth versions, the version read from the URL in the library's order, the `secure.yaml` merge, the domain fallbacks, a name and an ID together for each source and each side, a domain ID beside an ID, `verify` true imported, and each skip reason; the encrypted marker after a comment is refused, a comment naming the marker is not, and a file of neither kind is refused; a file over the size bound is refused before it is parsed.
+- Each reader against fixture files: every mapped field, both auth versions, the version read from the URL in the library's order, the `secure.yaml` merge, the domain fallbacks, a name and an ID together for each source and each side, a domain ID beside an ID, `verify` true imported, a name with no domain skipped for each source and an rclone project falling back to the user domain, and each skip reason; the encrypted marker after a comment is refused, a comment naming the marker is not, and a file of neither kind is refused; a file over the size bound is refused before it is parsed.
 - No preview row, skip reason, error or log line contains a secret from the fixture.
 - An entry that matches an existing bookmark is not ticked; a ticked one is saved as a second bookmark.
 - A save stores each secret in the secret store and none in SQLite; an entry without a secret is saved without a credential; a reused token is refused.
