@@ -1400,7 +1400,11 @@ Notes:
 - **One control, not two.** rclone's Swift backend has a single `--swift-chunk-size` that governs *both* the threshold at which an object becomes segmented *and* the size of each uploaded segment. Until Aeronautes ships its own uploader, do not present independent "threshold" and "segment size" settings the engine cannot honour — expose a single "large-object chunk size".
 - **5 GiB is safe against standard Swift.** Swift's default `max_file_size` is `5368709122` bytes — 2 bytes *above* 5 GiB — so a 5 GiB object/segment is under the limit and does **not** 413 (rclone ships the same 5 GiB default for exactly this reason). The rule is simply that the chunk size must not exceed the cluster's advertised `max_file_size`: read it from `/info` when available and lower the chunk size only if a particular cluster reports a smaller maximum.
 - **Never tiny.** 64 MiB (or similar) remains forbidden as a production default (§64); small chunk sizes may be used intentionally for tests.
-- **rclone uploads DLOs.** rclone's Swift backend creates **Dynamic** Large Objects (`X-Object-Manifest`) by default, not SLOs; SLO creation is a non-goal (§62). So the default large-object upload path is a DLO under an Aeronautes-tracked segment location; the inspector must still *read* both DLO and SLO because clusters contain both.
+- **Segmented uploads are static by default (ADR 0111).** rclone's Swift backend creates only **Dynamic** Large Objects (`X-Object-Manifest`), whose size and content Swift computes from an eventually consistent listing on every read.
+  So the engine uploads the segments under an Aeronautes-tracked segment location and stages its DLO, and the upload's commit pairs each segment with the local file's chunk and publishes a **Static** Large Object naming them.
+  A bookmark or a job can choose a DLO instead, and a cluster whose readable `/info` does not offer static large objects gets one; the preview and the job record name which.
+  Copies that segment still write DLOs.
+  The inspector must still *read* both DLO and SLO because clusters contain both.
 
 Default replication semantics are **logical**, not physical.
 
@@ -3286,7 +3290,7 @@ Not v1 (or not ever):
 - raw `rclone sync`/`purge`/`delete` as execution engines (ADR 0004);
 - embedding rclone libraries;
 - native Go replacement for rclone transfer engine;
-- SLO creation/uploader;
+- SLO uploader, and SLO creation beyond a segmented upload's own manifest (ADR 0111);
 - arbitrary external DLO auto-cleanup;
 - global orphan scanner;
 - raw physical segment replication;
@@ -3358,7 +3362,7 @@ The operator can:
 5. Mirror Swift→Swift;
 6. see progress, throughput and worker allocation;
 7. cancel;
-8. understand destination large-object placement.
+8. understand destination large-object placement, and choose static or dynamic large objects for a segmented upload (ADR 0111).
 
 ### Delete
 

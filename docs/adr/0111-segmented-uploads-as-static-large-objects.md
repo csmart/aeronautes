@@ -1,8 +1,8 @@
 # ADR 0111 — segmented uploads as static large objects
 
-**Status:** Proposed on 12 November 2026, from finding F35 and the operator's decisions of 12 November: static large objects by default, dynamic ones still available, both tested, and the choice settable per bookmark.
+**Status:** Accepted for 0.5.0 (12 November 2026), from finding F35 and the operator's decisions of 12 November: static large objects by default, dynamic ones still available, both tested, and the choice settable per bookmark; delivered with this record's series.
 **Scope:** how an upload stores a file larger than its chunk size; the engine's size check for those uploads; the content binding of a static publication; the per-job and per-bookmark setting and the upload preview's disclosure.
-**Amends:** [ADR 0005](0005-large-object-safety.md) (its sentence that rclone-executed uploads are DLOs and a native SLO composer is out of v1), [ADR 0080](0080-upload-content-binding.md) decisions 3 and 4 and the listing refusal [ADR 0042](0042-source-content-ladder.md) keeps, each for a static publication only, [ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 6's declared-tag exception, requirement K-XFER-007, and DESIGN §25 and §63.8 for uploads.
+**Amends:** [ADR 0005](0005-large-object-safety.md) (its sentence that rclone-executed uploads are DLOs and a native SLO composer is out of v1), [ADR 0080](0080-upload-content-binding.md) decisions 3 and 4 and the listing refusal [ADR 0042](0042-source-content-ladder.md) keeps, each for a static publication only, [ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 6's declared-tag exception, requirement K-XFER-007, and DESIGN §25, §62's "SLO creation" non-goal and §63.8 for uploads.
 
 ## Context
 
