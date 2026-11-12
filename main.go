@@ -256,9 +256,10 @@ func showAlreadyRunningNotice() {
 		dialog := a.Dialog.Info().
 			SetTitle("Aeronautes is already running").
 			SetMessage("Another Aeronautes window is already open on this computer. Switch to it to carry on — only one instance can use your saved bookmarks and jobs at a time.")
-		// The pinned Wails beta.27 Windows backend maps IDOK to the label
-		// "Ok" and matches it case-sensitively, so the button must be "Ok"
-		// for its callback to fire there; Linux matches by index either way.
+		// The pinned Wails Windows backend shows an Info dialog through
+		// MessageBox and finds the button for IDOK by the caption "Ok"
+		// (compared case-insensitively), so the label must stay "Ok" for its
+		// callback to fire there; Linux matches by index either way.
 		ok := dialog.AddButton("Ok")
 		ok.OnClick(func() { a.Quit() })
 		dialog.SetDefaultButton(ok)

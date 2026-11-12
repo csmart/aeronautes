@@ -30,15 +30,16 @@ complain() { printf '%s\n' "coherence: $*" >&2; status=1; }
 # and compared five empty strings, found them equal, and passed.
 declare -A version=()
 
-# The only accepted spelling of a pin, anchored. The Go module and the install
-# arguments carry the leading v; the npm runtime does not. Anything else — a branch
-# name, a prerelease suffix, a range operator, a trailing comment — fails here
-# rather than being pattern-matched out of a longer string.
-readonly exact='^v?3\.0\.0-beta\.[0-9]+$'
+# The only accepted spelling of a pin, anchored: an exact 3.<minor>.<patch>
+# release. The Go module and the install arguments carry the leading v; the npm
+# runtime does not. Anything else — a branch name, a prerelease suffix such as a
+# nightly or a beta, a range operator, a trailing comment — fails here rather
+# than being pattern-matched out of a longer string.
+readonly exact='^v?3\.[0-9]+\.[0-9]+$'
 
 # Comment syntax is a property of each format and they do not agree, so one
 # stripper for all of them is wrong in both directions. A boolean "has comments"
-# flag truncated at any hash, which turned v3.0.0-beta.27#suffix — a complete token
+# flag truncated at any hash, which turned v3.1.0#suffix — a complete token
 # that is not a pin — into a valid pin in go.mod, in YAML and in the install
 # arguments.
 #
@@ -108,7 +109,7 @@ record() {
     return
   fi
   if ! printf '%s' "$value" | grep -qE "$exact"; then
-    complain "$key: $file pins \"$value\", which is not an exact 3.0.0-beta.<n> version; ranges, branches and prerelease suffixes are refused rather than interpreted"
+    complain "$key: $file pins \"$value\", which is not an exact 3.<minor>.<patch> release; ranges, branches and prerelease suffixes are refused rather than interpreted"
     return
   fi
   # Compared without the leading v, a spelling difference between Go and npm.
