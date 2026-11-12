@@ -30,7 +30,8 @@ A copy also verifies by a fresh join of the whole source and destination scopes,
    A copy's verification lists through the same filter, so it judges only the members.
 4. **Overlap for a copy of members.**
    In one namespace a destination equal to or inside the source folder is allowed for a copy of members, because the run writes and reads only named objects: the plan refuses any member whose destination name is itself a member, which would replace an object the same run reads, and names it.
-   The scratch-area refusal and everything for a whole-scope copy stay as DESIGN §65.9 item 9 says.
+   The scratch-area refusal does not apply to a copy of members: its listing keeps only the members and no member can be in a staging area, so the run never reads the scratch area, which for a destination inside the source folder lies inside it.
+   Everything for a whole-scope copy stays as DESIGN §65.9 item 9 says.
 5. **A copy of members is re-run as the same members.**
    The member names are recorded with the job, and Re-run plans those names again under the current state; a member gone since is not at the source as above.
    The job's source reads the folder and the count, for example `testing/files/ (2 selected)`.
