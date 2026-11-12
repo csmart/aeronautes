@@ -25,11 +25,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/realcloud"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 func TestLegacyVersioningOracle(t *testing.T) {
-	runOnOracleBackends(t, func(t *testing.T, label, backend string, c oracleCloud) {
+	runOnOracleBackends(t, func(t *testing.T, label, backend string, c realcloud.Cloud) {
 		s, err := swiftcontrol.New(swiftcontrol.Config{
 			AuthVersion:   3,
 			AuthURL:       c.AuthURL,
@@ -41,17 +42,17 @@ func TestLegacyVersioningOracle(t *testing.T) {
 			Region:        c.Region,
 		})
 		if err != nil {
-			t.Fatalf("New(v3): %s", oracleFailure(err))
+			t.Fatalf("New(v3): %s", realcloud.Failure(err))
 		}
 		defer s.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := s.Authenticate(ctx); err != nil {
-			t.Fatalf("Authenticate against %s: %s", label, oracleFailure(err))
+			t.Fatalf("Authenticate against %s: %s", label, realcloud.Failure(err))
 		}
 		caps, err := s.FetchCapabilities(ctx)
 		if err != nil {
-			t.Fatalf("FetchCapabilities: %s", oracleFailure(err))
+			t.Fatalf("FetchCapabilities: %s", realcloud.Failure(err))
 		}
 		// The flags themselves are the store's strings; whether each mode is
 		// allowed is all the matrix needs to say.
@@ -76,7 +77,7 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, mode swiftcontrol.
 	// goroutine is an error of its own.
 	fail := func(op string, err error) {
 		t.Helper()
-		t.Fatalf("%s: %s", op, oracleFailure(err))
+		t.Fatalf("%s: %s", op, realcloud.Failure(err))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -178,7 +179,7 @@ func expectCurrent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, c
 	t.Helper()
 	detail, err := s.ObjectDetail(ctx, container, name)
 	if err != nil {
-		t.Fatalf("ObjectDetail %s: %s", name, oracleFailure(err))
+		t.Fatalf("ObjectDetail %s: %s", name, realcloud.Failure(err))
 	}
 	if detail.ContentLength != int64(len(body)) {
 		t.Fatalf("%s: HEAD length %d, want %d", name, detail.ContentLength, len(body))
@@ -195,7 +196,7 @@ func expectAbsent(t *testing.T, ctx context.Context, s *swiftcontrol.Session, co
 	case err == nil:
 		t.Fatalf("%s: still present, want not found", name)
 	case !swiftcontrol.IsNotFound(err):
-		t.Fatalf("ObjectDetail %s: %s", name, oracleFailure(err))
+		t.Fatalf("ObjectDetail %s: %s", name, realcloud.Failure(err))
 	}
 }
 
@@ -210,7 +211,7 @@ func expectArchive(t *testing.T, ctx context.Context, s *swiftcontrol.Session, a
 		got = got[:0]
 		for entry, err := range s.Objects(ctx, archive, swiftcontrol.ObjectListOptions{Deep: true}) {
 			if err != nil {
-				t.Fatalf("list %s: %s", archive, oracleFailure(err))
+				t.Fatalf("list %s: %s", archive, realcloud.Failure(err))
 			}
 			if obj, ok := entry.(swiftcontrol.ObjectEntry); ok {
 				got = append(got, readBody(t, ctx, s, archive, obj.Name))
@@ -231,12 +232,12 @@ func readBody(t *testing.T, ctx context.Context, s *swiftcontrol.Session, contai
 	if err != nil {
 		// The name can be one the store listed, so the container this run
 		// named stands for it.
-		t.Fatalf("open an object in %s: %s", container, oracleFailure(err))
+		t.Fatalf("open an object in %s: %s", container, realcloud.Failure(err))
 	}
 	defer rc.Close()
 	body, err := io.ReadAll(rc)
 	if err != nil {
-		t.Fatalf("read an object in %s: %s", container, oracleFailure(err))
+		t.Fatalf("read an object in %s: %s", container, realcloud.Failure(err))
 	}
 	return string(body)
 }
@@ -270,7 +271,7 @@ func teardownVersioningProbe(t *testing.T, s *swiftcontrol.Session, created []st
 	}
 	for _, container := range created {
 		if err := s.DeleteContainer(ctx, container); err != nil {
-			t.Errorf("probe container %s was not removed: %s", container, oracleFailure(err))
+			t.Errorf("probe container %s was not removed: %s", container, realcloud.Failure(err))
 		}
 	}
 }

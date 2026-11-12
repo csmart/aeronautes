@@ -44,6 +44,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/realcloud"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
@@ -55,8 +56,8 @@ func TestKeystoneV3Oracle(t *testing.T) {
 // clouds.yaml selection and skip rules every real-cloud test shares, so a
 // second oracle cannot drift from the first in how it finds, validates or
 // declines a cloud.
-func runOnOracleBackends(t *testing.T, run func(t *testing.T, label, backend string, c oracleCloud)) {
-	path, err := resolveCloudsPath()
+func runOnOracleBackends(t *testing.T, run func(t *testing.T, label, backend string, c realcloud.Cloud)) {
+	path, err := realcloud.ResolveCloudsPath()
 	if err != nil {
 		// An explicitly selected source that cannot be used is an error, never
 		// a reason to silently read a different account's clouds.yaml.
@@ -67,27 +68,27 @@ func runOnOracleBackends(t *testing.T, run func(t *testing.T, label, backend str
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("the selected clouds.yaml could not be read (%s)", oracleFailure(err))
+		t.Fatalf("the selected clouds.yaml could not be read (%s)", realcloud.Failure(err))
 	}
 	// Only the label is printed from here on; the path and the clouds.yaml
 	// key can each be named for a provider.
-	for _, b := range selectOracleBackends(os.Getenv("ORACLE_CLOUD")) {
-		t.Run(b.label, func(t *testing.T) {
-			cloud, err := loadCloud(raw, b.cloud)
+	for _, b := range realcloud.SelectBackends(os.Getenv("ORACLE_CLOUD")) {
+		t.Run(b.Label, func(t *testing.T) {
+			cloud, err := realcloud.LoadCloud(raw, b.Cloud)
 			switch {
-			case errors.Is(err, errCloudAbsent):
-				t.Skipf("the %s entry is not in the selected clouds.yaml; skipping (%s)", b.label, b.backend)
-			case errors.Is(err, errNoPassword):
-				t.Skipf("the %s entry has no password in clouds.yaml; add it to run the oracle", b.label)
+			case errors.Is(err, realcloud.ErrCloudAbsent):
+				t.Skipf("the %s entry is not in the selected clouds.yaml; skipping (%s)", b.Label, b.Backend)
+			case errors.Is(err, realcloud.ErrNoPassword):
+				t.Skipf("the %s entry has no password in clouds.yaml; add it to run the oracle", b.Label)
 			case err != nil:
-				t.Fatalf("the %s entry is misconfigured: %v", b.label, err)
+				t.Fatalf("the %s entry is misconfigured: %v", b.Label, err)
 			}
-			run(t, b.label, b.backend, cloud)
+			run(t, b.Label, b.Backend, cloud)
 		})
 	}
 }
 
-func runOracle(t *testing.T, label, backend string, c oracleCloud) {
+func runOracle(t *testing.T, label, backend string, c realcloud.Cloud) {
 	// Nothing that names the provider is logged, on success or failure: no
 	// endpoint, region or host, as well as no password, user or project. A run's
 	// output is evidence that gets kept and pasted, and a CI log is public.
@@ -104,7 +105,7 @@ func runOracle(t *testing.T, label, backend string, c oracleCloud) {
 		Region:        c.Region,
 	})
 	if err != nil {
-		t.Fatalf("New(v3): %s", oracleFailure(err))
+		t.Fatalf("New(v3): %s", realcloud.Failure(err))
 	}
 	defer s.Close()
 	// fail reports which operation failed and what kind of error it met. The
@@ -112,7 +113,7 @@ func runOracle(t *testing.T, label, backend string, c oracleCloud) {
 	// names the project, and hosts no configured value can predict.
 	fail := func(op string, err error) {
 		t.Helper()
-		t.Fatalf("%s: %s", op, oracleFailure(err))
+		t.Fatalf("%s: %s", op, realcloud.Failure(err))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
