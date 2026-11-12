@@ -1,6 +1,6 @@
 # ADR 0108 — copy and download what is selected
 
-**Status:** Proposed on 12 November 2026, from the operator's report during the 0.5.0 test run and the decision to hold 0.5.0 for it.
+**Status:** Accepted for 0.5.0 (12 November 2026), from the operator's report during the 0.5.0 test run and the decision to hold 0.5.0 for it, delivered with this record's series.
 **Scope:** `TransferService.PlanCopy`, `StartCopy`, the copy job's planning passes, its verification and `RerunJob`; `LocalTransferService.PreflightDownload` and `StartDownload`; the working list's Copy and Download buttons and the two dialogs.
 **Amends:** DESIGN §65.9 item 9 (as amended by its 11 November paragraph) for a copy of named objects.
 
