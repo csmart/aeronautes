@@ -34,17 +34,19 @@ func TestCopyJourney(t *testing.T) {
 		for _, pair := range [][2]string{{"ceph", "swift"}, {"swift", "ceph"}} {
 			t.Run(fmt.Sprintf("%s_to_%s/%d", pair[0], pair[1], round), func(t *testing.T) {
 				w.t = t
-				copyJourney(w, w.accounts[pair[0]], w.accounts[pair[1]])
+				copyJourney(w, w.accounts[pair[0]], w.accounts[pair[1]], round)
 			})
 		}
 	}
 }
 
-func copyJourney(w *world, from, to *account) {
+// copyJourney names its containers for the round, because the run's suffix
+// is shared by every round and a name can be created only once.
+func copyJourney(w *world, from, to *account, round int) {
 	t := w.t
 	// Three small files and one of 3 MiB, segmented at 1 MiB.
 	folder, digests := w.fixture(1024, 64*1024, 200*1024, 3<<20)
-	src := w.container(from, "src")
+	src := w.container(from, fmt.Sprintf("src%d", round))
 	if err := from.owned.ClaimSidecar(w.ctx, src); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +71,7 @@ func copyJourney(w *world, from, to *account) {
 	}
 
 	// The whole container, across clouds.
-	dst := w.container(to, "dst")
+	dst := w.container(to, fmt.Sprintf("dst%d", round))
 	if err := to.owned.ClaimSidecar(w.ctx, dst); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +90,7 @@ func copyJourney(w *world, from, to *account) {
 	}
 
 	// Two selected files, across clouds.
-	chosen := w.container(to, "sel")
+	chosen := w.container(to, fmt.Sprintf("sel%d", round))
 	members := []string{prefix + "file00.bin", prefix + "file02.bin"}
 	selection := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, SourcePrefix: prefix,
 		DestBookmarkID: to.bookmarkID, DestContainer: chosen, Members: members}
