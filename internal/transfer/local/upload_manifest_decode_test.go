@@ -34,7 +34,7 @@ func TestStagedCommitRecordsTheDecodedSegmentPrefix(t *testing.T) {
 		records = append(records, kind+" "+container+"/"+prefix)
 		return nil
 	}
-	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, comparesAgainstLive(t, session, "media", item), recovery)
+	result := commitStagedUpload(t.Context(), session, "media", stagedName, item, item.Replaces, comparesAgainstLive(t, session, "media", item), recovery, segmentPlan{})
 	if result.Result != transfercopy.ResultCopied {
 		t.Fatalf("result = %+v %q", result.Observation, result.label)
 	}

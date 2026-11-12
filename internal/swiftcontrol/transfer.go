@@ -1,8 +1,11 @@
 package swiftcontrol
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,6 +48,61 @@ func (s *Session) PutObject(ctx context.Context, container, name string, body io
 	respHeaders, err := s.conn.ObjectPut(ctx, container, name, body, false, "", contentType, swift.Headers(headers))
 	if err != nil {
 		return "", Normalize(err)
+	}
+	return etagValue(respHeaders["Etag"]), nil
+}
+
+// StaticSegment is one whole object a static manifest names, with the
+// size and entity tag the store must find it at.
+type StaticSegment struct {
+	Container, Name string
+	ETag            string
+	Bytes           int64
+}
+
+// PutStaticManifest writes a static large object (?multipart-manifest=put)
+// naming each segment by path, entity tag and size, in order. The store
+// checks every named segment against its entry and refuses the whole
+// manifest, storing nothing, when one does not match. The headers ride
+// the PUT verbatim, as PutObject's do; the returned value is the stored
+// object's entity tag when the server reports one.
+func (s *Session) PutStaticManifest(ctx context.Context, container, name string, segments []StaticSegment, contentType string, headers map[string]string) (string, error) {
+	type entry struct {
+		Path      string `json:"path"`
+		ETag      string `json:"etag"`
+		SizeBytes int64  `json:"size_bytes"`
+	}
+	entries := make([]entry, len(segments))
+	for i, segment := range segments {
+		entries[i] = entry{Path: "/" + segment.Container + "/" + segment.Name, ETag: segment.ETag, SizeBytes: segment.Bytes}
+	}
+	body, err := json.Marshal(entries)
+	if err != nil {
+		return "", err
+	}
+	credentials, err := s.Credentials(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	requestHeaders := swift.Headers{}
+	for k, v := range headers {
+		requestHeaders[k] = v
+	}
+	if contentType != "" {
+		requestHeaders["Content-Type"] = contentType
+	}
+	_, respHeaders, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
+		Container:  container,
+		ObjectName: name,
+		Operation:  "PUT",
+		Parameters: url.Values{"multipart-manifest": []string{"put"}},
+		Headers:    requestHeaders,
+		Body:       bytes.NewReader(body),
+		NoResponse: true,
+		OnReAuth:   s.auth.storageTarget,
+	})
+	if err != nil {
+		return "", WithTransID(Normalize(err), respHeaders)
 	}
 	return etagValue(respHeaders["Etag"]), nil
 }

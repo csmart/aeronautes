@@ -121,7 +121,7 @@ func TestUploadRefusesANameRecreatedAfterItsPredecessorVanished(t *testing.T) {
 
 		witness := uploadWitness(t, mock)
 		before := uploadSnapshot(t, witness)
-		result := commitStagedUpload(t.Context(), s, "media", stage, item, present, nil, nil)
+		result := commitStagedUpload(t.Context(), s, "media", stage, item, present, nil, nil, segmentPlan{})
 		if result.Result != transfercopy.ResultConflict {
 			t.Fatalf("a name recreated after its predecessor vanished was committed over: %+v", result.Observation)
 		}
