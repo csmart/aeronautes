@@ -2664,7 +2664,6 @@ segment_ownership
 performance_profiles
 jobs
 audit_events
-ui_preferences
 schema_migrations
 ```
 
