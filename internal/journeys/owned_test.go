@@ -115,32 +115,54 @@ func TestTeardownRemovesOnlyWhatTheRunCreated(t *testing.T) {
 }
 
 // The account key is the run's own, every other key and the quota are left
-// as they were, and teardown removes the key.
+// as they were, and teardown removes the key whatever its suffix starts
+// with: the client upper-cases a letter after a hyphen, so a suffix starting
+// with a-f is spelt differently on the account than as first written.
 func TestTheAccountKeyIsTheRunsOwn(t *testing.T) {
-	_, session := mockSession(t)
-	ctx := context.Background()
-	if _, err := session.UpdateAccount(ctx, "", swiftcontrol.AccountEdit{Meta: map[string]string{"Operator": "kept"}}); err != nil {
-		t.Fatal(err)
+	for _, suffix := range []string{"abcdef0123456789", "0123456789abcdef"} {
+		t.Run(suffix[:1], func(t *testing.T) {
+			_, session := mockSession(t)
+			ctx := context.Background()
+			if _, err := session.UpdateAccount(ctx, "", swiftcontrol.AccountEdit{Meta: map[string]string{"Operator": "kept"}, QuotaBytes: 1 << 30}); err != nil {
+				t.Fatal(err)
+			}
+			owned, err := NewOwned(session)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owned.suffix = suffix
+			if _, err := owned.SetAccountKey(ctx, "set by the journey"); err != nil {
+				t.Fatal(err)
+			}
+			if !accountHolds(t, session, suffix) {
+				t.Fatal("the run's key was not set")
+			}
+			if failures := owned.Teardown(ctx); len(failures) != 0 {
+				t.Fatal(failures)
+			}
+			portrait, err := session.AccountPortrait(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if accountHolds(t, session, suffix) || portrait.Meta["Operator"] != "kept" || portrait.QuotaBytes != 1<<30 {
+				t.Fatalf("after teardown the account holds %v with quota %d", portrait.Meta, portrait.QuotaBytes)
+			}
+		})
 	}
-	owned, err := NewOwned(session)
+}
+
+// accountHolds reports whether any account metadata key, in any spelling,
+// carries the run's suffix.
+func accountHolds(t *testing.T, session *swiftcontrol.Session, suffix string) bool {
+	t.Helper()
+	portrait, err := session.AccountPortrait(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := owned.SetAccountKey(ctx, "set by the journey")
-	if err != nil {
-		t.Fatal(err)
+	for key := range portrait.Meta {
+		if strings.Contains(strings.ToLower(key), suffix) {
+			return true
+		}
 	}
-	if !strings.HasSuffix(key, owned.suffix) {
-		t.Fatalf("key %q is not named for this run", key)
-	}
-	if failures := owned.Teardown(ctx); len(failures) != 0 {
-		t.Fatal(failures)
-	}
-	portrait, err := session.AccountPortrait(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, left := portrait.Meta[key]; left || portrait.Meta["Operator"] != "kept" {
-		t.Fatalf("after teardown the account metadata is %v", portrait.Meta)
-	}
+	return false
 }
