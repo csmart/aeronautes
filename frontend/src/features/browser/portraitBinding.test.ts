@@ -3,6 +3,12 @@ import { BrowserState } from "./browserState.svelte";
 import { liveApi } from "../../lib/api";
 
 const bridge = vi.hoisted(() => ({ connect: vi.fn(), capabilities: vi.fn(), containers: vi.fn(), recent: vi.fn() }));
+// The real Wails runtime polls for its drag handlers on a timer for five
+// seconds after import, and that timer touches window; once vitest tears
+// this file's environment down it throws, failing a run whose tests all
+// passed. Nothing here needs the runtime: lib/api reaches it only for the
+// clipboard, and the bindings are mocked below.
+vi.mock("@wailsio/runtime", () => ({ Clipboard: { SetText: vi.fn() } }));
 vi.mock("../../../bindings/github.com/csmart/aeronautes/internal/app", () => ({
   AppService: {}, BookmarkService: {}, BenchmarkService: {}, DeleteService: {}, SettingsService: {},
   MutateService: {}, TransferService: {}, InspectorService: {}, FindService: {}, JobService: {},
