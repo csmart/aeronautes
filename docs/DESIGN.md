@@ -3958,7 +3958,8 @@ regression test in the same commit):
    A copy of named objects ([ADR 0108](adr/0108-copy-and-download-what-is-selected.md)) reads and
    writes only its members, so for it a destination inside the source folder is allowed and the
    scratch-area refusal does not apply; a member whose destination name is itself a member is
-   refused before any listing, which also refuses a destination equal to the source folder.
+   refused before any job row or listing, which also refuses a destination equal to the source
+   folder, and a member named exactly the source prefix is refused by name rather than skipped.
 10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
     source absence immediately before deletion; any successful delete followed by
     failure/cancel yields Partial with exact accounting.
