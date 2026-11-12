@@ -350,6 +350,14 @@
         </div>
         {#if mode === "copy"}
           <div class="notes">
+            {#if preview.missingMembers}
+              <!-- The copy still copies the rest and ends partial (ADR 0108 decision 3). -->
+              <p class="warn">
+                {preview.missingMembers} of the selected objects {preview.missingMembers === 1 ? "was" : "were"} no longer
+                at the source; {preview.missingMembers === source.members.length ? "nothing is copied" : "the others are copied"}
+                and the job will end partial.
+              </p>
+            {/if}
             {#if acknowledged}
               <p class="warn">
                 This copy will REPLACE what still differs at the destination. The application
