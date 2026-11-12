@@ -2,8 +2,47 @@
   import type { BrowserState, ContainerMode } from "./browserState.svelte";
   import type { ContainerRowDTO, ContainerSettingsDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
+  import { v1Offers } from "../../lib/v1.svelte";
+  import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
 
   let { browser, onCreate }: { browser: BrowserState; onCreate: () => void } = $props();
+
+  // A container row's menu opens the container and then the toolbar's own
+  // action for it, under the toolbar's conditions; an action waits for the
+  // open and runs only if that container is the one now open.
+  let menu: { x: number; y: number; name: string } | null = $state(null);
+  let menuFrom: HTMLElement | null = null;
+
+  async function inContainer(name: string, run: () => void) {
+    await browser.openContainer(name);
+    if (browser.containerName === name) run();
+  }
+
+  function menuItems(name: string): MenuItem[] {
+    const items: MenuItem[] = [{ label: "Open", run: () => void browser.openContainer(name) }];
+    if (v1Offers.upload) items.push({ label: "Upload…", run: () => void inContainer(name, () => (browser.localTransfer = "upload")) });
+    if (v1Offers.download) items.push({ label: "Download container…", run: () => void inContainer(name, () => (browser.localTransfer = "download")) });
+    if (v1Offers.copy) items.push({ label: "Copy container…", run: () => void inContainer(name, () => (browser.transferOpen = true)) });
+    items.push({ label: "Copy name", run: () => void browser.copyText(name) });
+    if (v1Offers.bulkDelete) {
+      items.push({ label: "Empty or delete container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = true)) });
+    }
+    return items;
+  }
+
+  function openMenuAt(event: MouseEvent, name: string) {
+    event.preventDefault();
+    menuFrom = event.currentTarget as HTMLElement;
+    menu = { x: event.clientX, y: event.clientY, name };
+  }
+
+  function menuKey(event: KeyboardEvent, name: string) {
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+    event.preventDefault();
+    menuFrom = event.currentTarget as HTMLElement;
+    const box = menuFrom.getBoundingClientRect();
+    menu = { x: box.left + 24, y: box.bottom, name };
+  }
 
   const modes: { id: ContainerMode; label: string }[] = [
     { id: "logical", label: "Logical" },
@@ -113,6 +152,8 @@
     class="container-row"
     class:selected={browser.containerName === container.name}
     onclick={() => browser.openContainer(container.name)}
+    oncontextmenu={(event) => openMenuAt(event, container.name)}
+    onkeydown={(event) => menuKey(event, container.name)}
     use:onScreen={container.name}
   >
     <span class="container-name">
@@ -243,6 +284,19 @@
     </footer>
   {/if}
 </section>
+
+{#if menu}
+  <ContextMenu
+    x={menu.x}
+    y={menu.y}
+    label="Actions for container {menu.name}"
+    items={menuItems(menu.name)}
+    onClose={() => {
+      menu = null;
+      menuFrom?.focus();
+    }}
+  />
+{/if}
 
 <style>
   .pane {
