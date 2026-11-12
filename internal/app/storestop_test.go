@@ -127,6 +127,39 @@ func publishedUnder(t *testing.T, h *harness, bookmark string, names ...string) 
 	return published
 }
 
+// A start that comes after the store stopped is refused at admission with the
+// store's reason, before it registers or does any I/O. The runner's own
+// notice arrives later, on a goroutine of its own, and cancels every start it
+// finds, so a start admitted in between used to end as "context canceled"
+// rather than say why. The notice is held back here so that window is
+// certain.
+func TestAStoppedStoreRefusesAStartBeforeTheRunnerIsTold(t *testing.T) {
+	h := newHarness(t)
+	runner := h.transfer.runner
+	release := make(chan struct{})
+	h.transfer.jobs.OnStop(func(failed string) {
+		<-release
+		runner.storeStopped(failed)
+	})
+	defer close(release)
+	breakStore(t, h)
+
+	owner, _, err := runner.admit(context.Background())
+	if err == nil {
+		owner.finishStart()
+		t.Fatal("a start was admitted after the store stopped")
+	}
+	if !strings.Contains(err.Error(), "new jobs are blocked") {
+		t.Fatalf("admission refused with %q, not the store's reason", err)
+	}
+	runner.mu.Lock()
+	held := len(runner.owners)
+	runner.mu.Unlock()
+	if held != 0 {
+		t.Fatalf("a refused start left %d owners registered", held)
+	}
+}
+
 // ADR 0105 decision 9: an upload admits every item before its engine runs, so
 // when another job's record stops the store nothing in the upload's own
 // records would stop it publishing. The runner cancels it: held in its engine

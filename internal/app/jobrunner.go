@@ -137,6 +137,17 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 	if err := ctx.Err(); err != nil {
 		return nil, nil, fmt.Errorf("start job: %w", err)
 	}
+	// A store that can no longer record refuses every new job. Refused here,
+	// before the start registers or does any I/O, because the store's notice
+	// to the runner (storeStopped) arrives on a goroutine of its own and
+	// cancels every start it finds: a start that came after the stop but
+	// before that notice would end as "context canceled" instead of being
+	// told why.
+	if r.jobs != nil {
+		if err := r.jobs.Available(); err != nil {
+			return nil, nil, err
+		}
+	}
 	// Once as many jobs wait for a slot as the queue depth allows, a new
 	// start is refused rather than queued without bound (ADR 0074
 	// decision 2).
