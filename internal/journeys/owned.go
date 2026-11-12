@@ -100,8 +100,17 @@ func (o *Owned) editAccount(ctx context.Context, change func(map[string]string))
 		meta[k] = v
 	}
 	change(meta)
-	_, err = o.session.UpdateAccount(ctx, "", swiftcontrol.AccountEdit{Meta: meta, QuotaBytes: portrait.QuotaBytes})
-	return err
+	result, err := o.session.UpdateAccount(ctx, "", swiftcontrol.AccountEdit{Meta: meta, QuotaBytes: portrait.QuotaBytes})
+	if err != nil {
+		return err
+	}
+	// A store can answer an edit it did not apply, as Ceph RGW does for
+	// container ACL removal (F36), so an edit that did not read back as
+	// made is a failure, not a teardown that quietly left the key.
+	if result.Outcome != swiftcontrol.UpdateApplied {
+		return fmt.Errorf("the account edit ended %s: %s", result.Outcome, result.Mismatch)
+	}
+	return nil
 }
 
 func (o *Owned) created(container string) bool {
