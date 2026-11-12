@@ -41,6 +41,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,36 @@ import (
 
 func TestKeystoneV3Oracle(t *testing.T) {
 	runOnOracleBackends(t, runOracle)
+}
+
+// The Identity service's root, which a clouds.yaml auth_url usually names,
+// must reach the same object-store endpoint as the v3 URL through version
+// discovery (ADR 0113). Only the label and the outcome are printed.
+func TestKeystoneV3OracleDiscoversFromTheRoot(t *testing.T) {
+	runOnOracleBackends(t, func(t *testing.T, label, backend string, c realcloud.Cloud) {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		storageURL := func(authURL string) string {
+			t.Helper()
+			s, err := swiftcontrol.New(swiftcontrol.Config{
+				AuthVersion: 3, AuthURL: authURL, Username: c.Username, APIKey: c.Password,
+				UserDomain: c.UserDomain, ProjectName: c.ProjectName, ProjectDomain: c.ProjectDomain, Region: c.Region,
+			})
+			if err != nil {
+				t.Fatalf("New(v3): %s", realcloud.Failure(err))
+			}
+			defer s.Close()
+			if err := s.Authenticate(ctx); err != nil {
+				t.Fatalf("Authenticate against %s: %s", label, realcloud.Failure(err))
+			}
+			return s.StorageURL()
+		}
+		fromV3 := storageURL(c.AuthURL)
+		if fromRoot := storageURL(strings.TrimSuffix(c.AuthURL, "/v3")); fromRoot != fromV3 {
+			t.Errorf("[%s] the root URL reached a different storage endpoint than the v3 URL", label)
+		}
+		t.Logf("[%s] backend=%s discovery from the root reached the v3 endpoint", label, backend)
+	})
 }
 
 // runOnOracleBackends runs one oracle body per configured backend under the
