@@ -2652,6 +2652,7 @@ Sensitive fields should be typed/redacted at the domain layer, not cleaned up wi
 ## 51. SQLite
 
 SQLite is required from day one.
+Where the database and the application settings live, and why the settings are a separate file, is [ADR 0109](adr/0109-where-aeronautes-keeps-its-files.md).
 
 Suggested tables:
 
