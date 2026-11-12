@@ -563,6 +563,13 @@ export interface CopyPlanDTO {
      * holds; they are not copied (ADR 0108 decision 3).
      */
     "missingMembers"?: number;
+
+    /**
+     * DestinationMissing is set, and nothing else is, when the destination
+     * container does not exist: the dialog offers to create it, bound to
+     * this scope (ADR 0115 decision 2).
+     */
+    "destinationMissing"?: DestinationMissingDTO | null;
 }
 
 /**
@@ -723,6 +730,26 @@ export interface DeleteRequestDTO {
      * §28.2); checked at Start, not Preview.
      */
     "confirm": string;
+}
+
+/**
+ * DestinationContainersDTO is the first page of a copy destination's
+ * container names, which the dialog suggests as the operator types.
+ */
+export interface DestinationContainersDTO {
+    "names": string[] | null;
+    "more": boolean;
+}
+
+/**
+ * DestinationMissingDTO names a copy destination container the preview
+ * found missing: the bookmark and generation of the session that answered
+ * not found, and the name it read. A create is bound to exactly this.
+ */
+export interface DestinationMissingDTO {
+    "bookmarkId": string;
+    "generation": number;
+    "container": string;
 }
 
 /**

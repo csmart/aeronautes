@@ -62,6 +62,8 @@ export type {
     DLOSegmentsDTO,
     DeletePreviewDTO,
     DeleteRequestDTO,
+    DestinationContainersDTO,
+    DestinationMissingDTO,
     DismissInterruptedDTO,
     DownloadRequestDTO,
     ExportResultDTO,

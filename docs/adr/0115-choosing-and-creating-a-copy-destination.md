@@ -1,6 +1,6 @@
 # ADR 0115 — choosing and creating a copy's destination container
 
-**Status:** Proposed for 0.5.0 (12 November 2026), from the final-candidate plan's item 6 ("copy destination container picker with create-if-missing", operator, 12 November).
+**Status:** Accepted for 0.5.0 (12 November 2026), delivered with this record's series, from the final-candidate plan's item 6 ("copy destination container picker with create-if-missing", operator, 12 November).
 **Scope:** how the copy dialog offers the destination account's containers, and how a missing destination container is created.
 **Amends:** [ADR 0079](0079-caller-named-mutation-binding.md), whose mutations are bound to the active view, by adding one write bound instead to the preview's destination scope: the bookmark and generation of the session that answered not found, and the container name it read.
 
@@ -26,14 +26,14 @@ The copy plan itself already reads the destination through the per-bookmark sess
    A preview that cannot name the destination's generation offers no create, and any other failure of that read is reported as it is today.
    The offer is for the name the preview read, whether or not the list suggested it.
 3. **Creating it is its own action, bound to that preview's destination scope.**
-   `TransferService.CreateDestinationContainer(scope, name)` creates the container named in the scope's not-found result, on the scope's bookmark, with the cluster's default storage policy and no metadata, through the registry session for that bookmark.
-   It is refused before any request when the scope is empty, names no generation, or names a generation that has moved since the preview, or when the name is not the one the preview found missing (the rule of ADR 0079 decision 2, applied to the destination the preview read rather than the active view).
+   `MutateService.CreateDestinationContainer(missing)`, beside the other creates, takes the preview's not-found result whole and creates the container it names, on its bookmark, with the cluster's default storage policy and no metadata, through the registry session for that bookmark.
+   It is refused before any request when the scope is empty, names no generation, or names a generation that has moved since the preview (the rule of ADR 0079 decision 2, applied to the destination the preview read rather than the active view); the name travels in the same result, so it is the one the preview found missing.
    It is a new path rather than `MutateService.CreateContainer`, which requires the active connection, and it keeps that create's guarantees: a container that already exists is refused, never treated as created; the intent and outcome are durable facts (ADR 0077); and the audit trail records the creation against the destination bookmark.
    After it succeeds the dialog runs the preview again; it never starts a copy.
 4. **A copy never creates its destination.**
    Starting a copy still requires the destination container to exist when the plan reads it, so a container appears only when the operator asked for it by name.
 5. **Both actions join the inventory.**
-   `DestinationContainers` is a read row and `CreateDestinationContainer` a mutate row (happy and refusal) in the scenario contract (ADR 0011); both are kept in v1 (ADR 0052); the baseline changes through the drift route of [ADR 0069](0069-preserve-covered-scenario-cells.md).
+   `TransferService.DestinationContainers` is a read row and `MutateService.CreateDestinationContainer` a mutate row (happy and refusal) in the scenario contract (ADR 0011); both are kept in v1 (ADR 0052); the baseline changes through the drift route of [ADR 0069](0069-preserve-covered-scenario-cells.md).
 
 ## Consequences
 

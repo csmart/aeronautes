@@ -87,6 +87,9 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		// decision lifts nothing and gates nothing, so both are kept.
 		"JobService.InterruptedDisclosures": true, "JobService.DismissInterrupted": true,
 		"MutateService.CreateContainer": true, "MutateService.CreateMarker": true,
+		// A copy's destination is listed and, when missing, created where
+		// the preview read it (ADR 0115); both serve the kept copy.
+		"TransferService.DestinationContainers": true, "MutateService.CreateDestinationContainer": true,
 		// Upload was returned on 16 October 2026, once ADR 0085's comparison
 		// completed its path: its three actions are kept rather than deferred.
 		"TransferService.PickUploadFiles": true, "TransferService.PreflightUpload": true,

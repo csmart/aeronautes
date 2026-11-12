@@ -190,8 +190,10 @@ inventory, with the two derivations agreeing.
     `TransferService.PauseJob` and `TransferService.ResumeJob` stand beside `CancelJob` and are kept
     with the transfers they control ([ADR 0104](0104-pause-and-resume.md)). The bookmark import's
     preview, save and status create bookmarks from another tool's configuration and are kept
-    ([ADR 0114](0114-importing-bookmarks.md)). The classification test states each of these with
-    its reason.
+    ([ADR 0114](0114-importing-bookmarks.md)).
+    `TransferService.DestinationContainers` and `MutateService.CreateDestinationContainer` serve the
+    kept copy's destination and are kept with it ([ADR 0115](0115-choosing-and-creating-a-copy-destination.md)).
+    The classification test states each of these with its reason.
 
 ## What this does not establish
 
