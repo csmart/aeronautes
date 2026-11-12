@@ -35,8 +35,16 @@ function get<T extends HTMLElement = HTMLElement>(selector: string, root: Parent
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
+// The transfer buttons name what they act on (ADR 0108: "Download folder…",
+// "Copy selected…"); these tests are about which controls exist and what they
+// open, so they know them as "Download…" and "Copy to…". The wording itself
+// is tested in transferLabels.test.ts.
+function transferLabel(text: string): string {
+  return text.replace(/^Download (container|folder|object|selected)…$/, "Download…").replace(/^Copy (container|folder|object|selected)…$/, "Copy to…");
+}
+
 function button(label: string): HTMLButtonElement {
-  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label);
+  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => transferLabel(b.textContent?.trim() ?? "") === label);
   if (!found) throw new Error(`Missing button ${label}`);
   return found;
 }

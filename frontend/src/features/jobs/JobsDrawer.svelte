@@ -351,6 +351,11 @@
   // The bookmarks a job touched, by name: one for an upload, a download or a
   // deletion, both for a copy between two. A side with no bookmark, such as a
   // local folder, is left out rather than drawn as an ellipsis.
+  // A copy or download of selected objects says how many (ADR 0108).
+  function selectedNote(job: JobDTO): string {
+    return job.selectedMembers ? ` (${job.selectedMembers} selected)` : "";
+  }
+
   function recoveryRecordsLabel(count: number): string {
     return `${count} recovery ${count === 1 ? "record" : "records"}`;
   }
@@ -644,8 +649,8 @@
                   <span class="operation">{operationLabel(job.type)}</span>
                   <span class="badge {job.state}">{job.state}</span>
                 </span>
-                <span class="route type-mono" title="{job.source} → {job.destination}">
-                  {job.source} → {job.destination}
+                <span class="route type-mono" title="{job.source}{selectedNote(job)} → {job.destination}">
+                  {job.source}{selectedNote(job)} → {job.destination}
                 </span>
                 <span class="accounts">{accountsOf(job)}</span>
                 <span class="counts">

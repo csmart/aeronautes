@@ -46,8 +46,16 @@
   }
   let prepared = $state.raw<{ intent: Intent; plan: CopyPlanDTO; request: CopyRequestDTO } | null>(null);
   const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
+  // What the copy acts on follows the selection (ADR 0108): its prefix and
+  // members are part of the request, so a change of selection disarms a
+  // preview like any other change of scope.
+  const source = $derived(browser.transferSource);
+  // A multi-selection of folder rows alone names no objects; sending it would
+  // ask for the whole folder, so it cannot be previewed.
+  const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
+
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
-    && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "");
+    && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "" && !noMembers);
   // The overwrite question only has an answer once a copy preview shows a
   // destination that exists: Changed is a listed difference, Unknown a pair the
   // listing could not prove equal. Both are refused by default and both can be
@@ -56,11 +64,21 @@
   const overwriteCandidates = $derived(mode === "copy" && preview ? preview.summary.changed + preview.summary.unknown : 0);
   const acknowledged = $derived(!!preview && prepared?.request.acknowledgeOverwrite === true);
 
+  // The selected objects in words: how many, and the first few by name
+  // within the folder.
+  function selectedSummary(members: string[], prefix: string): string {
+    const shown = members.slice(0, 5).map((name) => name.slice(prefix.length));
+    const more = members.length > shown.length ? `, and ${members.length - shown.length} more` : "";
+    return `${members.length} selected ${members.length === 1 ? "object" : "objects"}: ${shown.join(", ")}${more}`;
+  }
+
   function scope(): Scope {
     return {
       sourceBookmarkId: browser.connectedBookmarkId ?? "",
       sourceContainer: browser.containerName ?? "",
-      sourcePrefix: browser.prefix,
+      sourcePrefix: source.prefix,
+      // Left out for a whole scope, so its request is the same as before.
+      members: source.members.length > 0 ? source.members : undefined,
       destBookmarkId,
       destContainer,
       destPrefix,
@@ -237,7 +255,13 @@
         <span class="side-label">Source</span>
         <div class="scope-text type-mono" role="group" aria-label="Source scope">
           <span>Container: {browser.containerName == null ? "—" : JSON.stringify(browser.containerName)}</span>
-          <span>Prefix: {JSON.stringify(browser.prefix)}{browser.prefix === "" ? " (container root)" : ""}</span>
+          <span>Prefix: {JSON.stringify(source.prefix)}{source.prefix === "" ? " (container root)" : ""}</span>
+          {#if source.members.length > 0}
+            <span>{selectedSummary(source.members, source.prefix)}</span>
+          {/if}
+          {#if source.excludedFolders > 0}
+            <span>{source.excludedFolders} selected {source.excludedFolders === 1 ? "folder is" : "folders are"} not included</span>
+          {/if}
         </div>
       </div>
       <span class="arrow">→</span>
