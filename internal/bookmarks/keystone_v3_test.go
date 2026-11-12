@@ -85,6 +85,8 @@ func TestNormalizeAuth(t *testing.T) {
 		{"v1 leaves keystone fields blank", Bookmark{AuthVersion: 1}, Bookmark{AuthVersion: 1}},
 		{"v3 blank domains default", Bookmark{AuthVersion: 3}, Bookmark{AuthVersion: 3, UserDomain: "Default", ProjectDomain: "Default"}},
 		{"v3 keeps explicit domains", Bookmark{AuthVersion: 3, UserDomain: "ldap", ProjectDomain: "ops"}, Bookmark{AuthVersion: 3, UserDomain: "ldap", ProjectDomain: "ops"}},
+		// A side named by ID sends no domain, so none is filled there.
+		{"v3 IDs take no default domain", Bookmark{AuthVersion: 3, UserID: "u-1", ProjectID: "p-1"}, Bookmark{AuthVersion: 3, UserID: "u-1", ProjectID: "p-1"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -106,13 +108,20 @@ func TestValidateKeystoneV3(t *testing.T) {
 	if err := validate(base()); err != nil {
 		t.Fatalf("a valid v3 bookmark was rejected: %v", err)
 	}
+	byID := base()
+	byID.Username, byID.UserID, byID.ProjectName, byID.ProjectID = "", "u-1", "", "p-1"
+	if err := validate(byID); err != nil {
+		t.Fatalf("a v3 bookmark naming its user and project by ID was rejected: %v", err)
+	}
 	cases := []struct {
 		name string
 		edit func(*Bookmark)
 		want string
 	}{
 		{"no region", func(b *Bookmark) { b.Region = "" }, "region"},
-		{"no project", func(b *Bookmark) { b.ProjectName = "" }, "project"},
+		{"no project", func(b *Bookmark) { b.ProjectName = "" }, "project name or a project ID"},
+		{"no user", func(b *Bookmark) { b.Username = "" }, "username or a user ID"},
+		{"TempAuth with IDs", func(b *Bookmark) { b.AuthVersion = 1; b.UserID = "u-1" }, "no Keystone user or project ID"},
 		{"storage override", func(b *Bookmark) { b.StorageURLOverride = "https://keystone.example/v1/AUTH_x" }, "override"},
 		{"unknown version", func(b *Bookmark) { b.AuthVersion = 2 }, "unsupported auth version"},
 	}
@@ -142,6 +151,8 @@ func TestKeystoneV3BindingRequiresReentry(t *testing.T) {
 		{"project", v3Sample(), func(b *Bookmark) { b.ProjectName = "other" }},
 		{"user domain", v3Sample(), func(b *Bookmark) { b.UserDomain = "ldap-users" }},
 		{"project domain", v3Sample(), func(b *Bookmark) { b.ProjectDomain = "ops" }},
+		{"user ID", v3Sample(), func(b *Bookmark) { b.UserID = "u-1" }},
+		{"project ID", v3Sample(), func(b *Bookmark) { b.ProjectID = "p-1" }},
 		{"version v1 to v3", sample(), func(b *Bookmark) { b.AuthVersion = 3; b.ProjectName = "demo"; b.Region = "RegionOne" }},
 		// Changes only the auth version, leaving every other field equal, so
 		// this case fails if the auth-version term is dropped from the binding
@@ -254,5 +265,41 @@ func TestImportNormalisesLegacyAuthVersion(t *testing.T) {
 	list, err := st.List(ctx)
 	if err != nil || len(list) != 1 || list[0].AuthVersion != 1 {
 		t.Fatalf("legacy import not normalised to v1: %+v (%v)", list, err)
+	}
+}
+
+// A bookmark naming its user and project by ID keeps both IDs through a
+// save, the connection config, an export and a restore, and a restore keeps
+// it apart from a bookmark that differs only in its IDs (ADR 0113).
+func TestKeystoneIDsSurviveSaveExportAndImport(t *testing.T) {
+	st, d, _ := newTestStore(t)
+	ctx := context.Background()
+	byID := v3Sample()
+	byID.Username, byID.UserID, byID.ProjectName, byID.ProjectID = "", "u-1", "", "p-1"
+	saved, err := st.Save(ctx, byID, []byte("k"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UserID != "u-1" || got.ProjectID != "p-1" || got.UserDomain != "" || got.ProjectDomain != "" {
+		t.Fatalf("stored = %+v, want both IDs and no filled domains", got)
+	}
+	if cfg := got.SwiftConfig([]byte("k"), nil); cfg.UserID != "u-1" || cfg.ProjectID != "p-1" {
+		t.Fatalf("SwiftConfig = %+v, want both IDs", cfg)
+	}
+	records, err := st.ExportAll(ctx, d.Reader())
+	if err != nil || len(records) != 1 || records[0].UserID != "u-1" || records[0].ProjectID != "p-1" {
+		t.Fatalf("export = %+v (%v), want both IDs", records, err)
+	}
+	other := byID
+	other.ProjectID = "p-2"
+	if o, err := st.ImportBookmark(ctx, other, nil); err != nil || o != ImportCreated {
+		t.Fatalf("import of another project ID = %v (%v), want ImportCreated", o, err)
+	}
+	if o, err := st.ImportBookmark(ctx, byID, nil); err != nil || o != ImportSkipped {
+		t.Fatalf("re-import of the same IDs = %v (%v), want ImportSkipped", o, err)
 	}
 }

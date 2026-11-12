@@ -665,10 +665,12 @@ Bookmark
     KeystoneV3                 # password method, project scope (ADR 0100)
 
   auth_url
-  username
-  user_domain?                 # Keystone v3 only, "Default" when blank
-  project_name?                # Keystone v3 only
-  project_domain?              # Keystone v3 only, "Default" when blank
+  username?                    # required unless a v3 user_id is given
+  user_domain?                 # Keystone v3 only, "Default" when blank and no user_id
+  project_name?                # Keystone v3 only, required unless project_id
+  project_domain?              # Keystone v3 only, "Default" when blank and no project_id
+  user_id?                     # Keystone v3 only, replaces username and user_domain (ADR 0113)
+  project_id?                  # Keystone v3 only, replaces project_name and project_domain
   region?                      # Keystone v3 only, binds the object-store endpoint
   storage_url_override?
 

@@ -28,7 +28,11 @@ type BookmarkDTO struct {
 	UserDomain    string `json:"userDomain"`
 	ProjectName   string `json:"projectName"`
 	ProjectDomain string `json:"projectDomain"`
-	Region        string `json:"region"`
+	// UserID and ProjectID name the v3 user and project by ID instead of
+	// by name and domain; either may be empty (ADR 0113).
+	UserID    string `json:"userId,omitempty"`
+	ProjectID string `json:"projectId,omitempty"`
+	Region    string `json:"region"`
 	// TLSMode is "system", "custom_ca", or "insecure".
 	TLSMode string `json:"tlsMode"`
 	// CAPem carries a custom CA bundle one way (frontend → Go) on save;

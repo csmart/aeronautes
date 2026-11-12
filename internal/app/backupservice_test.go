@@ -689,6 +689,11 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	if _, err := sourceStore.Save(ctx, src, []byte("keystone-pass")); err != nil {
 		t.Fatal(err)
 	}
+	byID := src
+	byID.DisplayName, byID.Username, byID.UserID, byID.ProjectName, byID.ProjectID = "Keystone IDs", "", "u-1", "", "p-1"
+	if _, err := sourceStore.Save(ctx, byID, []byte("keystone-pass")); err != nil {
+		t.Fatal(err)
+	}
 
 	exportDir := t.TempDir()
 	exporter := NewBackupService(sourceDB, sourceStore, fixedSettings{dto: defaults()})
@@ -701,7 +706,9 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	// constant: a v3 export must use a format newer than the legacy version 1,
 	// so an older version-1-only reader refuses it rather than dropping the
 	// identity. Version 3 also carries the large-object kind (ADR 0111), so an
-	// older reader refuses that rather than restoring a bookmark as static.
+	// older reader refuses that rather than restoring a bookmark as static,
+	// and version 4 the Keystone IDs (ADR 0113), so an older reader refuses
+	// that rather than restoring a bookmark with no user or project.
 	raw, err := os.ReadFile(filepath.Join(exportDir, exported.FileName))
 	if err != nil {
 		t.Fatal(err)
@@ -710,8 +717,8 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.SchemaVersion != 3 {
-		t.Fatalf("v3 export schema version = %d, want the literal 3", doc.SchemaVersion)
+	if doc.SchemaVersion != 4 {
+		t.Fatalf("v3 export schema version = %d, want the literal 4", doc.SchemaVersion)
 	}
 
 	targetStore, targetDB := newBackupStore(t)
@@ -721,16 +728,26 @@ func TestBackupRoundTripPreservesKeystoneV3(t *testing.T) {
 	}
 
 	marks, err := targetStore.List(ctx)
-	if err != nil || len(marks) != 1 {
+	if err != nil || len(marks) != 2 {
 		t.Fatalf("restored bookmarks = %+v %v", marks, err)
 	}
-	got := marks[0]
-	if got.AuthVersion != 3 || got.ProjectName != "demo" || got.Region != "RegionOne" ||
-		got.UserDomain != "Default" || got.ProjectDomain != "Default" {
-		t.Fatalf("restore dropped the v3 identity: %+v", got)
-	}
-	if got.HasCredential {
-		t.Fatal("restored bookmark carried a credential")
+	for _, got := range marks {
+		switch got.DisplayName {
+		case "Keystone AU":
+			if got.AuthVersion != 3 || got.ProjectName != "demo" || got.Region != "RegionOne" ||
+				got.UserDomain != "Default" || got.ProjectDomain != "Default" || got.UserID != "" || got.ProjectID != "" {
+				t.Fatalf("restore dropped the v3 identity: %+v", got)
+			}
+		case "Keystone IDs":
+			if got.UserID != "u-1" || got.ProjectID != "p-1" || got.Username != "" || got.ProjectName != "" {
+				t.Fatalf("restore dropped the Keystone IDs: %+v", got)
+			}
+		default:
+			t.Fatalf("unexpected restored bookmark %+v", got)
+		}
+		if got.HasCredential {
+			t.Fatal("restored bookmark carried a credential")
+		}
 	}
 }
 
@@ -767,5 +784,29 @@ func TestBackupRestoresLegacyVersionOne(t *testing.T) {
 	}
 	if marks[0].LargeObjects != "" {
 		t.Fatalf("legacy bookmark restored with large objects %q, want none, which reads as static", marks[0].LargeObjects)
+	}
+}
+
+// A version-3 backup, written before the Keystone IDs existed, restores its
+// v3 bookmarks by name with no IDs (ADR 0113).
+func TestBackupRestoresVersionThreeWithoutIDs(t *testing.T) {
+	ctx := t.Context()
+	store, database := newBackupStore(t)
+	settings := NewSettingsService(settingsFile(t), NewJobRunner(jobs.NewStore(database), audit.NewStore(database)))
+	doc := SettingsBackupDTO{
+		SchemaVersion: 3, // literal: a file from the build before the IDs
+		ExportedAt:    "2026-11-11T00:00:00Z",
+		AppSettings:   defaults(),
+		Bookmarks: []BackupBookmarkDTO{{
+			DisplayName: "Keystone AU", AuthURL: "https://keystone.example/v3", Username: "keystoneuser",
+			AuthVersion: 3, UserDomain: "Default", ProjectName: "demo", ProjectDomain: "Default", Region: "RegionOne", TLSMode: "system",
+		}},
+	}
+	if _, err := restoreInto(t, database, store, settings, writeBackup(t, doc)); err != nil {
+		t.Fatalf("version-3 restore: %v", err)
+	}
+	marks, err := store.List(ctx)
+	if err != nil || len(marks) != 1 || marks[0].ProjectName != "demo" || marks[0].UserID != "" || marks[0].ProjectID != "" {
+		t.Fatalf("restored = %+v (%v), want the bookmark by name with no IDs", marks, err)
 	}
 }
