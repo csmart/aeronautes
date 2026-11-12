@@ -120,6 +120,12 @@ type Job struct {
 	RecoveryRecords int64
 	// Version zero means item facts were never captured, not an empty ledger.
 	ItemRecordsVersion int
+	// SelectedMembers counts the objects a copy or download of selected
+	// objects named; zero means the job acted on its whole scope (ADR 0108).
+	SelectedMembers int
+	// SelectedNames are those objects' names, written with the job so Re-run
+	// plans the same members; only Create reads it.
+	SelectedNames []string
 }
 
 // Store persists jobs.
@@ -241,12 +247,26 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO jobs (id, type, state, source, destination, created_at,
-				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json, item_records_version)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				execution_engine, counters_json, source_bookmark_id, dest_bookmark_id, settings_json, item_records_version,
+				selected_members)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			j.ID, string(j.Type), string(j.State), nullable(j.Source), nullable(j.Destination),
 			j.CreatedAt.Format(time.RFC3339), nullable(j.Engine), string(counters),
-			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID), nullable(j.Settings), j.ItemRecordsVersion)
-		return err
+			nullable(j.SourceBookmarkID), nullable(j.DestBookmarkID), nullable(j.Settings), j.ItemRecordsVersion,
+			j.SelectedMembers)
+		if err != nil {
+			return err
+		}
+		// In the same transaction as the job, so a job that says it acted on
+		// selected objects can never lose their names and be re-run as its
+		// whole scope.
+		for i, name := range j.SelectedNames {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO job_selected_names (job_id, ordinal, name) VALUES (?, ?, ?)`, j.ID, i, name); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return Job{}, err
@@ -358,7 +378,7 @@ const selectJob = `
 		COALESCE(execution_engine,''), COALESCE(counters_json,'{}'),
 		COALESCE(error,''), COALESCE(source_bookmark_id,''), COALESCE(dest_bookmark_id,''),
 		COALESCE(settings_json,''),
-		(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=jobs.id), item_records_version
+		(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=jobs.id), item_records_version, selected_members
 	FROM jobs`
 
 // Get returns one job.
@@ -425,7 +445,8 @@ func scanJob(scan func(...any) error) (Job, error) {
 	var typ, state, created, started, finished, counters string
 	err := scan(&j.ID, &typ, &state, &j.Source, &j.Destination,
 		&created, &started, &finished, &j.Engine, &counters,
-		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings, &j.RecoveryRecords, &j.ItemRecordsVersion)
+		&j.Error, &j.SourceBookmarkID, &j.DestBookmarkID, &j.Settings, &j.RecoveryRecords, &j.ItemRecordsVersion,
+		&j.SelectedMembers)
 	if err != nil {
 		return Job{}, err
 	}
@@ -448,6 +469,26 @@ func scanJob(scan func(...any) error) (Job, error) {
 		return Job{}, fmt.Errorf("job %s: bad counters: %w", j.ID, err)
 	}
 	return j, nil
+}
+
+// SelectedNames returns the names a copy of selected objects recorded, in
+// the order they were given; empty for a job that acted on its whole scope.
+func (s *Store) SelectedNames(ctx context.Context, jobID string) ([]string, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		`SELECT name FROM job_selected_names WHERE job_id=? ORDER BY ordinal`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
 }
 
 func nullable(s string) *string {
