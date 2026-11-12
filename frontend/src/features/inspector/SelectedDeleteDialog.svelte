@@ -110,6 +110,16 @@
     </div>
     <div class="actions">
       {#if op.status === "done" || abandoned}
+        {#if op.status === "done" && op.jobId}
+          {@const jobId = op.jobId}
+          <button
+            class="secondary"
+            onclick={() => {
+              onClose();
+              void browser.jobs.reveal(jobId);
+            }}>Show in jobs</button
+          >
+        {/if}
         <button class="secondary" onclick={onClose}>Close</button>
       {:else}
         <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
