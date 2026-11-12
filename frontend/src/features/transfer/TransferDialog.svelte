@@ -69,7 +69,7 @@
   // ask for the whole folder, so it cannot be previewed.
   const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
 
-  const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
+  const canPreview = $derived(!closed && !previewing && !starting && !creating && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "" && !noMembers);
   // The overwrite question only has an answer once a copy preview shows a
   // destination that exists: Changed is a listed difference, Unknown a pair the
