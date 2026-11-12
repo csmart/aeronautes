@@ -14,9 +14,13 @@ Layer 2 (browser-driven UI journeys with Playwright) follows as its own slice.
 
 ## Safety
 
-- Every container the run creates is named `aeronautes-journey-<random>`; the run reads and writes only containers it created, and teardown deletes only those, with their segment containers, even after a failure.
+- Every container the run uses is one it created, named `aeronautes-journey-<random>`, with the oracle's rule: a create that finds the name already taken is not a creation, and that name is never written to or deleted.
+- Large-object segments go to the exact sidecar `<container>_segments`, which is a second container. Before a step that can create it, the run reads that exact name; if it already exists the step does not start, and the sidecar is then never deleted. A sidecar the run's own step created is deleted with its container.
+- Teardown deletes only the exact containers this run created and the exact sidecar of each that the run's steps created, and nothing else, even after a failure; it never lists the account and sweeps a prefix.
 - No step lists, edits or deletes anything else on either account; a step that would is a bug in the suite.
-- Bookmarks live in a temporary database with a session-only secret store; nothing is written to the operator's keyring or settings.
+- Account metadata is the one account-level write: the metadata journey sets only a key the run owns, `X-Account-Meta-Aeronautes-Journey-<random>`, which no earlier run or person can have set, and teardown removes it even after a failure. A run that is killed before teardown can leave that one key behind; a later run does not touch it, and it can be removed by hand. TempURL keys and quotas are never written, as `UpdateAccount` already refuses them.
+- The run never opens the operator's settings file, database or keyring. It creates one temporary directory before any service starts and gives the services explicit paths inside it for both `settings.json` and the database, with a session-only secret store for the bookmarks; nothing reads `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or `AERONAUTES_STATE_DIR`.
+- The harness has its own default-build tests, against the mock: a container name that already exists and a sidecar that already exists receive no destructive request, and teardown sends deletes only for what the run created.
 
 ## Harness
 
@@ -29,10 +33,10 @@ Layer 2 (browser-driven UI journeys with Playwright) follows as its own slice.
 1. Upload a folder of small files and one file larger than the chunk size (segmented), then re-upload with overwrite acknowledged.
 2. Copy a whole container from one cloud to the other; copy a selection of two of N; copy within a container into a subfolder; copy a folder up to the container's top.
 3. Download a folder, a selection and a large object; compare every file's digest with the source.
-4. Edit object, container and account metadata and read them back; set and clear a read ACL with the acknowledgement.
+4. Edit object and container metadata and the run's own account metadata key, and read them back; set and clear a read ACL on the run's container with the acknowledgement.
 5. Delete one object, a marker, a manifest with its segments, a selection, a prefix, a container's contents and the container.
 6. Switch between the two bookmarks repeatedly; check that the listing and remembered settings follow the account and that no sign-in repeats.
-7. Settings: save, restart the services over the same files, read back; export and restore the backup.
+7. Settings: save, restart the services over the same temporary files, read back; export and restore the backup, inside the temporary directory.
 
 Each journey runs `REPEAT` times (default 3) so intermittent store faults, like the 502 on a large copy, show up as a count rather than a one-off.
 
