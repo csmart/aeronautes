@@ -45,6 +45,9 @@ type BookmarkDTO struct {
 	// LargeObjects is what a segmented upload to this bookmark publishes:
 	// "dlo" for dynamic, "slo" or empty for static, the default (ADR 0111).
 	LargeObjects string `json:"largeObjects,omitempty"`
+	// VerifyFailure is why the bookmark did not verify after import, shown
+	// on its rail tile until it next connects or verifies (ADR 0114).
+	VerifyFailure string `json:"verifyFailure,omitempty"`
 }
 
 // VerifyResultDTO is what a successful check of unsaved bookmark details

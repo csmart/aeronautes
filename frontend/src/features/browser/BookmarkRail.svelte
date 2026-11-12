@@ -107,6 +107,11 @@
               editor-only detail. -->
             <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
           {/if}
+          {#if bookmark.verifyFailure}
+            <!-- ADR 0114: an imported bookmark that did not verify keeps its
+              plain reason in view until it connects or verifies. -->
+            <span class="verify-flag" role="img" aria-label="Did not verify: {bookmark.verifyFailure}" title="Did not verify: {bookmark.verifyFailure}">!</span>
+          {/if}
         </button>
         <button
           class="edit"
@@ -227,6 +232,12 @@
   .insecure-flag {
     font-size: var(--text-xs);
     color: var(--color-danger);
+  }
+
+  .verify-flag {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--color-warning);
   }
 
   .rail {
