@@ -28,7 +28,7 @@ The vendored library already sends an ID when it is given one, so the gap is in 
    Refusing redirects keeps the same rule for the document itself.
    There is no fallback to appending `/v3`, and no other host is tried.
 4. **A URL that offers no v3 at its own origin is refused with words the operator can act on.**
-   When the request fails, the document cannot be read, it names no stable v3, or its v3 link has another origin, connecting fails before any credential is sent, with an error saying that the Identity URL does not offer Keystone v3 at the same address and to give the v3 endpoint, for example `https://identity.example.com:5000/v3`.
+   When the request fails, the document cannot be read, it names no stable v3 or more than one stable v3 link, or its v3 link has another origin, connecting fails before any credential is sent, with an error saying that the Identity URL does not offer Keystone v3 at the same address and to give the v3 endpoint, for example `https://identity.example.com:5000/v3`.
    The error names the configured URL and not the learned link.
 5. **A bookmark can name the user and the project by ID.**
    Two optional fields, User ID and Project ID, sit beside the names.
