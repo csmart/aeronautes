@@ -10,6 +10,8 @@ import type {
   AccountEditDTO,
   TempURLKeyEditDTO,
   CopyPlanDTO,
+  DestinationContainersDTO,
+  DestinationMissingDTO,
   CopyRequestDTO,
   DeletePreviewDTO,
   MirrorRequestDTO,
@@ -1375,6 +1377,14 @@ export class BrowserState {
 
   async planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO> {
     return await this.#api.planCopy(req);
+  }
+
+  async destinationContainers(bookmarkId: string): Promise<DestinationContainersDTO> {
+    return await this.#api.destinationContainers(bookmarkId);
+  }
+
+  async createDestinationContainer(missing: DestinationMissingDTO): Promise<ContainerDetailDTO> {
+    return await this.#api.createDestinationContainer(missing);
   }
 
   async startCopy(req: CopyRequestDTO): Promise<string> {

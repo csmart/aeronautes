@@ -659,6 +659,18 @@ export function newFakeApi(): Api {
       return containerDetailOf(create.name);
     },
 
+    destinationContainers: async () => ({ names: containers.map((c) => c.name), more: false }),
+    createDestinationContainer: async (missing) => {
+      if (missing.bookmarkId === "" || missing.generation !== (generations.get(missing.bookmarkId) ?? 1)) {
+        throw new Error("the connected account changed; nothing was written");
+      }
+      if (containers.some((c) => c.name === missing.container)) throw new Error("already exists");
+      containers.push({ name: missing.container, objectCount: 0, bytes: 0, policy: "standard", segmentRole: "normal" });
+      objects[missing.container] = [];
+      record("container.create", missing.container, "applied");
+      return containerDetailOf(missing.container);
+    },
+
     createMarker: async (scope, container, prefix) => {
       requireWriteScope(scope);
       const existing = findObject(container, prefix);
@@ -817,7 +829,17 @@ export function newFakeApi(): Api {
 
     // Transfers: the fake plans a canned preview and runs jobs through a
     // tiny scripted lifecycle so drawer logic is testable.
-    planCopy: async (req) => ({
+    // A destination named "missing…" that the fake does not hold answers
+    // as the plan answers a missing destination (ADR 0115); every other name
+    // keeps the canned plan the existing tests rely on.
+    planCopy: async (req) => req.destContainer.startsWith("missing") && !containers.some((c) => c.name === req.destContainer) ? ({
+      summary: { new: 0, same: 0, changed: 0, unknown: 0, destOnly: 0, transferObjects: 0, transferBytes: 0, overwrites: 0, nativeRouted: 0, destOnlyBytes: 0 },
+      dataPath: "",
+      overwriteBytes: 0,
+      versionedDestination: false,
+      largeObjectsAsDlo: false,
+      destinationMissing: { bookmarkId: req.destBookmarkId, generation: generations.get(req.destBookmarkId) ?? 1, container: req.destContainer },
+    }) : ({
       summary: {
         new: 3,
         same: 2,
