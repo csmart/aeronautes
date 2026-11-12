@@ -389,7 +389,7 @@ it("names the large-object kind for an upload that segments", async () => {
   for (const [kind, origin, says, never] of [
     ["slo", "default", "as static large objects", "dynamic"],
     ["dlo", "override", "as dynamic large objects", "does not offer"],
-    ["dlo", "capability", "this cluster does not offer static large objects", "as static"],
+    ["dlo", "capability", "this cluster does not offer static large objects that Aeronautes can read back", "as static"],
   ]) {
     const f = show("upload");
     await f.reach("preflight");

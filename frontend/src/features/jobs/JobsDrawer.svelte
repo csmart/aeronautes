@@ -306,7 +306,7 @@
       case "bookmark":
         return "from bookmark";
       case "capability":
-        return "this cluster does not offer static large objects";
+        return "this cluster does not offer static large objects that Aeronautes can read back";
       default:
         return "";
     }

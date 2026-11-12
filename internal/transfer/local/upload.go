@@ -47,6 +47,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		}
 	}
 	u := &uploadRun{recorder: recorder, report: &Report{}}
+	u.static = staticManifests{known: preflight.StaticManifestsReturned, returned: preflight.StaticManifestsReturned}
 	report = u.report
 	total := int64(len(preflight.Items))
 	progress := func() {
@@ -193,8 +194,9 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if err != nil {
 				return report, err
 			}
-			outcome := commitStagedUpload(ctx, dst, container, stageObject(stagePrefix, prefix, item), item, present, u.confirmUnchanged(), recovery,
-				segmentPlan{class: swiftcontrol.ObjectClass(preflight.LargeObjects), chunkBytes: preflight.ChunkBytes, captured: report.CapturedPrefixes})
+			plan := segmentPlan{class: swiftcontrol.ObjectClass(preflight.LargeObjects), chunkBytes: preflight.ChunkBytes,
+				captured: report.CapturedPrefixes, check: u.staticCheck(rclone.StageNamespace + stageID + "/static-check")}
+			outcome := commitStagedUpload(ctx, dst, container, stageObject(stagePrefix, prefix, item), item, present, u.confirmUnchanged(), recovery, plan)
 			if err := u.settle(ctx, dst, item, outcome, progress); err != nil {
 				return report, err
 			}
@@ -603,8 +605,15 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 	} else if !swiftcontrol.IsNotFound(err) {
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeUnknown, "commit-rehead", err)
 	}
+	var checkCleanup error
 	if staged.Class == swiftcontrol.ClassDLO && plan.class == swiftcontrol.ClassSLO {
-		return commitStatic(ctx, dst, container, stagedName, staged, item, replacing, confirm, recovery, plan)
+		result, published, cleanup := commitStatic(ctx, dst, container, stagedName, staged, item, replacing, confirm, recovery, plan)
+		if published {
+			return result
+		}
+		// The store does not return static manifests, so what the engine
+		// staged is published as it was staged (ADR 0111 decision 10).
+		checkCleanup = cleanup
 	}
 	// What the engine staged is compared with the file this job planned
 	// to send, before any of it is published. A large object's assembled
@@ -722,6 +731,7 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 	}
 	result := verifyUpload(ctx, dst, container, item, class, tag)
 	result.addIssue(transfercopy.StageRecording, "commit-record", recordErr)
+	result.addIssue(transfercopy.StageCleanup, "static-check-cleanup", checkCleanup)
 	result.addIssue(transfercopy.StageStaging, "staged-close", closeErr)
 	if result.Result == transfercopy.ResultCopied && recordErr == nil {
 		if err := dst.DeleteObject(ctx, container, stagedName); err != nil && !swiftcontrol.IsNotFound(err) {

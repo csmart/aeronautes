@@ -131,9 +131,20 @@ func TestStaticUploadPublishesTheSegmentsAsOneObject(t *testing.T) {
 	if got := readLive(t, s, "media", "live/my file"); got != "0123456789" {
 		t.Errorf("live content = %q", got)
 	}
+	// The first is the check that the store returns static manifests, the
+	// second the live object; both are conditional creates with no content
+	// tag, and the check is gone again (ADR 0111 decisions 4 and 9).
 	puts := watch.puts()
-	if len(puts) != 1 || puts[0].Get("If-None-Match") != "*" || puts[0].Get("ETag") != "" {
-		t.Errorf("manifest PUTs = %v, want one conditional create declaring no content tag", puts)
+	if len(puts) != 2 {
+		t.Fatalf("%d manifest PUTs, want the check and the live object", len(puts))
+	}
+	for _, put := range puts {
+		if put.Get("If-None-Match") != "*" || put.Get("ETag") != "" {
+			t.Errorf("manifest PUT headers = %v, want a conditional create declaring no content tag", put)
+		}
+	}
+	if _, err := s.ObjectDetail(t.Context(), "media", ".aeronautes/stage/job1/static-check"); !swiftcontrol.IsNotFound(err) {
+		t.Errorf("the check manifest was not deleted: %v", err)
 	}
 	if _, err := s.ObjectDetail(t.Context(), "media", ".aeronautes/stage/job1/batch/my file"); !swiftcontrol.IsNotFound(err) {
 		t.Errorf("the staged dynamic manifest was not removed: %v", err)

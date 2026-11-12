@@ -37,8 +37,13 @@ type Connections struct {
 	// It is keyed by the session rather than kept in cachedSession, which
 	// is compared by value to tell whether a cached entry is still current.
 	discovered map[*swiftcontrol.Session]*swiftcontrol.Capabilities
-	caDir      string
-	caMu       sync.Mutex
+	// staticManifests holds whether a job found that the store returns
+	// static manifests, per cached session (ADR 0111 decision 9). It sits
+	// beside discovered rather than in it, so an /info that could not be
+	// read stays unknown and every other capability keeps its source.
+	staticManifests map[*swiftcontrol.Session]bool
+	caDir           string
+	caMu            sync.Mutex
 	// settings holds the container settings facts observed under each
 	// bookmark's current connection generation (ADR 0071); seen remembers
 	// them across connections (ADR 0110 decision 3), nil when not wired.
@@ -56,7 +61,8 @@ type cachedSession struct {
 
 // NewConnections builds the registry over the bookmark store.
 func NewConnections(store *bookmarks.Store) *Connections {
-	return &Connections{store: store, sessions: map[string]cachedSession{}, discovered: map[*swiftcontrol.Session]*swiftcontrol.Capabilities{}}
+	return &Connections{store: store, sessions: map[string]cachedSession{},
+		discovered: map[*swiftcontrol.Session]*swiftcontrol.Capabilities{}, staticManifests: map[*swiftcontrol.Session]bool{}}
 }
 
 // open authenticates one bookmark into a fresh session.
@@ -262,6 +268,7 @@ func (c *Connections) forgetObsolete(id string, entry cachedSession, cause error
 	// this caller was waiting to validate its older snapshot.
 	if c.sessions[id] == entry {
 		delete(c.discovered, entry.session)
+		delete(c.staticManifests, entry.session)
 		delete(c.sessions, id)
 	}
 	if c.activeID == id && c.active == entry {
@@ -317,6 +324,7 @@ func (c *Connections) Invalidate(bookmarkID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.discovered, c.sessions[bookmarkID].session)
+	delete(c.staticManifests, c.sessions[bookmarkID].session)
 	delete(c.sessions, bookmarkID)
 	if c.activeID == bookmarkID {
 		// The active browse pointer is the SAME staleness: drop it too,
@@ -439,6 +447,28 @@ func (c *Connections) capabilitiesOf(ctx context.Context, session *swiftcontrol.
 		}
 	}
 	return read, nil
+}
+
+// observeStaticManifests keeps what a job's check found, for a session
+// that is still cached; a forgotten session's answer goes with it.
+func (c *Connections) observeStaticManifests(session *swiftcontrol.Session, returned bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, entry := range c.sessions {
+		if entry.session == session {
+			c.staticManifests[session] = returned
+			return
+		}
+	}
+}
+
+// staticManifestsOf is what the session has learned: known is false until a
+// job's check has answered on it.
+func (c *Connections) staticManifestsOf(session *swiftcontrol.Session) (known, returned bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	returned, known = c.staticManifests[session]
+	return known, returned
 }
 
 // Capabilities returns the active connection's capability snapshot, nil

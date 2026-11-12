@@ -301,7 +301,7 @@
           <p class="note">
             Files larger than the chunk size upload in segments as dynamic large
             objects, whose reads depend on container-listing consistency{largeObjectsByCapability
-              ? ": this cluster does not offer static large objects"
+              ? ": this cluster does not offer static large objects that Aeronautes can read back"
               : ""}.
           </p>
         {/if}

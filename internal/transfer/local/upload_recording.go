@@ -70,6 +70,14 @@ type UploadRecorder struct {
 	// like it a replacing item with no hook is refused rather than published
 	// under versioning nobody re-read.
 	VersioningUnchanged func(ctx context.Context, item UploadItem) (refusal string, err error)
+	// StaticManifests is told what the job's check learned about whether
+	// the store returns static manifests (ADR 0111 decision 9), so the
+	// connection can remember it and, when they are not returned, the job's
+	// record can say the kind is now dynamic from the capability before
+	// that first publication (decision 10). An error is a record that could
+	// not be kept, and stops the run before anything is published. A run
+	// with no hook learns for itself alone.
+	StaticManifests func(returned bool) error
 	// Pause is asked at the head of each unit and nowhere else: before an
 	// engine group is handed to a child and before a native-routed item starts
 	// (ADR 0104 decision 1). It returns at once unless the job has been asked
@@ -377,7 +385,14 @@ type uploadRun struct {
 	// bulkLimit is how many names one reclamation request carries,
 	// resolved once per run, 0 until then.
 	bulkLimit int
+	// static is what this run knows about whether the store returns static
+	// manifests: from the connection when the preflight says so, or from
+	// its own check (ADR 0111 decision 9).
+	static staticManifests
 }
+
+// staticManifests is whether the answer is known and what it is.
+type staticManifests struct{ known, returned bool }
 
 // MaxReclaimBatch is the largest number of names one reclamation request
 // carries. It matches the bound internal/deletion sets for the same verb:

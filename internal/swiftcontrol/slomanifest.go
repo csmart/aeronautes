@@ -329,7 +329,28 @@ func readSLOManifest[T any](ctx context.Context, s *Session, container, name str
 		return zero, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
 			container, name, resp.StatusCode)
 	}
-	return parse(resp.Body, container+"/"+name)
+	body := &countingReader{reader: resp.Body}
+	result, err = parse(body, container+"/"+name)
+	if err != nil && body.read == 0 {
+		return zero, fmt.Errorf("SLO manifest for %s/%s: %w", container, name, ErrManifestNotReturned)
+	}
+	return result, err
+}
+
+// ErrManifestNotReturned is a complete 200 answer to a static manifest read
+// with an empty body: the store holds the static large object but does not
+// return its manifest, as Ceph RGW was measured to (ADR 0111 decision 9).
+var ErrManifestNotReturned = errors.New("the store answered the static manifest read with an empty body")
+
+type countingReader struct {
+	reader io.Reader
+	read   int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.reader.Read(p)
+	c.read += int64(n)
+	return n, err
 }
 
 // parseSLOManifestEntries is the bounded, complete-list parse that keeps

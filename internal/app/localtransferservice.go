@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -483,6 +484,7 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 			return nil, err
 		}
 		report.ChunkBytes, _ = engineChunkBytes(effective.ChunkSize)
+		_, report.StaticManifestsReturned = s.connections.staticManifestsOf(session)
 	}
 	return report, nil
 }
@@ -490,8 +492,10 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 // largeObjectsFor decides what a segmented upload publishes, and the
 // origin its job records (ADR 0111 decision 1): the job's own choice, else
 // the bookmark's, else static. A static choice becomes dynamic only when
-// the session's readable /info has no static large object entry; when the
-// capability is unknown it stays static and the publication is the attempt.
+// the session's readable /info has no static large object entry, or a job
+// on the session found the store does not return static manifests
+// (decision 10); when the capability is unknown it stays static and the
+// publication is the attempt.
 func (s *TransferService) largeObjectsFor(ctx context.Context, req UploadRequestDTO, session *swiftcontrol.Session) (kind, origin string, err error) {
 	bookmark, err := s.connections.store.Get(ctx, req.BookmarkID)
 	if err != nil {
@@ -512,6 +516,9 @@ func (s *TransferService) largeObjectsFor(ctx context.Context, req UploadRequest
 		return "", "", err
 	}
 	if capabilities.State("slo") == swiftcontrol.CapabilityUnsupported {
+		return string(swiftcontrol.ClassDLO), "capability", nil
+	}
+	if known, returned := s.connections.staticManifestsOf(session); known && !returned {
 		return string(swiftcontrol.ClassDLO), "capability", nil
 	}
 	return kind, origin, nil
@@ -1210,8 +1217,20 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
+			recorder := s.uploadItemRecorder(background, job.ID, req, answered)
+			recorder.StaticManifests = func(returned bool) error {
+				s.connections.observeStaticManifests(session, returned)
+				if returned {
+					return nil
+				}
+				// The record states what is published, and it is about to
+				// be dynamic (ADR 0111 decision 10).
+				recorded, recordedOrigins := settings, maps.Clone(origins)
+				recorded.LargeObjects, recordedOrigins["largeObjects"] = string(swiftcontrol.ClassDLO), "capability"
+				return s.jobs.SetSettings(background, job.ID, effectiveJSONWithProfile(Profile(req.Profile), recorded, recordedOrigins))
+			}
 			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
-				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), s.uploadItemRecorder(background, job.ID, req, answered))
+				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), recorder)
 			if report != nil && err == nil && len(report.Failures) == 0 {
 				// Verification does not prove cleanup completed or exclude
 				// outside references, so recovery records stay (ADR 0020).
