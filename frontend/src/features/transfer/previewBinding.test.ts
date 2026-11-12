@@ -531,6 +531,19 @@ it("Delete keeps its started job through a scope change and closes when its cont
   f.startButton().click(); flushSync();
   f.startReply.resolve("deleting-job"); await settle();
   expect(f.root.textContent).toContain("Job deleting-job started");
+  // A started dialog only reports the job: no choice reads as an offer to
+  // delete more (0.5.0 test run).
+  expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion started");
+  expect(f.root.querySelector('[role="radiogroup"]')).toBeNull();
+  expect(f.root.textContent).toContain("Deleting container media.");
+  // When the drawer's poll sees the job complete, the dialog says it is done.
+  f.browser.jobs.list = [{ id: "deleting-job", type: "delete_container", state: "complete", source: "media/", destination: "(deleted)",
+    sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
+    recoveryRecords: 0, pause: "", counters: { objectsPlanned: 3, objectsCopied: 3, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 3 } }];
+  flushSync();
+  expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion complete");
+  expect(f.root.textContent).toMatch(/Deleted\s*container media:\s*3\s*objects\./);
   f.browser.prefix = "elsewhere/"; flushSync();
   expect(f.root.textContent).toContain("Job deleting-job started");
   expect(f.onClose).not.toHaveBeenCalled();
