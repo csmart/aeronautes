@@ -216,6 +216,9 @@ type Server struct {
 	// sets several regions (and reorders them between authentications) to
 	// exercise region-pinned endpoint selection across a re-auth.
 	V3Endpoints []V3Endpoint
+	// V3UserID, when set, is a user ID the mock Keystone accepts in place
+	// of the username, for tests of a user named by ID.
+	V3UserID string
 
 	mu          sync.Mutex
 	containers  map[string]*Container
@@ -493,6 +496,7 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 			Identity struct {
 				Password struct {
 					User struct {
+						ID       string `json:"id"`
 						Name     string `json:"name"`
 						Password string `json:"password"`
 					} `json:"user"`
@@ -505,7 +509,8 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := body.Auth.Identity.Password.User
-	if user.Name != s.user || user.Password != s.currentKey() {
+	named := user.Name == s.user || (s.V3UserID != "" && user.ID == s.V3UserID)
+	if !named || user.Password != s.currentKey() {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}

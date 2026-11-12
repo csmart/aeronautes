@@ -50,6 +50,12 @@ type Config struct {
 	UserDomain    string
 	ProjectName   string
 	ProjectDomain string
+	// UserID and ProjectID name the user and the project by ID instead
+	// (ADR 0113). An ID replaces the matching name and its domain on the
+	// wire, because Keystone resolves an ID on its own and a name sent
+	// beside it could disagree.
+	UserID    string
+	ProjectID string
 	// Region names the catalog region whose object-store endpoint the
 	// token binds to. It is required for v3: a Keystone catalog can
 	// advertise object-store endpoints in several regions, and without an
@@ -141,9 +147,20 @@ func New(cfg Config) (*Session, error) {
 		}
 		conn.AuthVersion = 3
 		conn.Region = cfg.Region
-		conn.Domain = cfg.UserDomain
-		conn.Tenant = cfg.ProjectName
-		conn.TenantDomain = cfg.ProjectDomain
+		// The library sends a user's name and domain whenever they are
+		// set, even beside an ID, so a side named by ID leaves them empty.
+		if cfg.UserID != "" {
+			conn.UserId = cfg.UserID
+			conn.UserName = ""
+		} else {
+			conn.Domain = cfg.UserDomain
+		}
+		if cfg.ProjectID != "" {
+			conn.TenantId = cfg.ProjectID
+		} else {
+			conn.Tenant = cfg.ProjectName
+			conn.TenantDomain = cfg.ProjectDomain
+		}
 		auth = newGuardedV3Auth(cfg.AuthURL, cfg.TLS.Mode, transport)
 	default:
 		return nil, fmt.Errorf("unsupported auth version %d", cfg.AuthVersion)

@@ -1,8 +1,13 @@
 package swiftcontrol
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -214,4 +219,75 @@ func TestKeystoneV3RefusesEndpointSwitchOnReauth(t *testing.T) {
 	if err := s.Authenticate(ctx); err == nil {
 		t.Fatal("expected a refusal when the re-auth endpoint differs from the one in use")
 	}
+}
+
+// A user or a project named by ID is sent by ID alone: the matching name
+// and its domain stay off the wire, and a side named by name is unchanged
+// (ADR 0113 decision 5).
+func TestKeystoneV3SendsIDsInPlaceOfNames(t *testing.T) {
+	cases := []struct {
+		name, userID, projectID string
+		user, project           string
+	}{
+		{"names", "", "", `{"domain":{"name":"Default"},"name":"keystoneuser","password":"keystonepass"}`, `{"domain":{"name":"Default"},"name":"demo"}`},
+		{"user ID", "u-1", "", `{"id":"u-1","password":"keystonepass"}`, `{"domain":{"name":"Default"},"name":"demo"}`},
+		{"project ID", "", "p-1", `{"domain":{"name":"Default"},"name":"keystoneuser","password":"keystonepass"}`, `{"id":"p-1"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := swifttest.New("keystoneuser", "keystonepass")
+			mock.V3UserID = "u-1"
+			var sent []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v3/auth/tokens" {
+					sent, _ = io.ReadAll(r.Body)
+					r.Body = io.NopCloser(bytes.NewReader(sent))
+				}
+				mock.ServeHTTP(w, r)
+			}))
+			defer srv.Close()
+			cfg := v3Config(srv.URL)
+			cfg.UserID, cfg.ProjectID = tc.userID, tc.projectID
+			s, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Authenticate(context.Background()); err != nil {
+				t.Fatalf("authenticate: %v", err)
+			}
+			var body struct {
+				Auth struct {
+					Identity struct {
+						Password struct {
+							User json.RawMessage `json:"user"`
+						} `json:"password"`
+					} `json:"identity"`
+					Scope struct {
+						Project json.RawMessage `json:"project"`
+					} `json:"scope"`
+				} `json:"auth"`
+			}
+			if err := json.Unmarshal(sent, &body); err != nil {
+				t.Fatal(err)
+			}
+			if !sameJSON(t, body.Auth.Identity.Password.User, tc.user) {
+				t.Errorf("user = %s, want %s", body.Auth.Identity.Password.User, tc.user)
+			}
+			if !sameJSON(t, body.Auth.Scope.Project, tc.project) {
+				t.Errorf("project = %s, want %s", body.Auth.Scope.Project, tc.project)
+			}
+		})
+	}
+}
+
+func sameJSON(t *testing.T, got json.RawMessage, want string) bool {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatal(err)
+	}
+	return reflect.DeepEqual(g, w)
 }
