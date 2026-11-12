@@ -29,14 +29,22 @@ async function settle() {
   for (let i = 0; i < 24; i++) { await Promise.resolve(); flushSync(); }
 }
 
+// The transfer buttons name what they act on (ADR 0108: "Download folder…",
+// "Copy selected…"); these tests are about which controls exist and what they
+// open, so they know them as "Download…" and "Copy to…". The wording itself
+// is tested in transferLabels.test.ts.
+function transferLabel(text: string): string {
+  return text.replace(/^Download (container|folder|object|selected)…$/, "Download…").replace(/^Copy (container|folder|object|selected)…$/, "Copy to…");
+}
+
 function button(label: string) {
-  const found = [...document.querySelectorAll("button")].find((el) => el.textContent?.trim() === label);
+  const found = [...document.querySelectorAll("button")].find((el) => transferLabel(el.textContent?.trim() ?? "") === label);
   if (!found) throw new Error(`Missing button: ${label}`);
   return found;
 }
 
 function labels() {
-  return [...document.querySelectorAll("button")].map((el) => el.textContent?.trim());
+  return [...document.querySelectorAll("button")].map((el) => transferLabel(el.textContent?.trim() ?? ""));
 }
 
 async function prepare(enabled: string[] = [], unrecognised: string[] = []) {

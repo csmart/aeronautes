@@ -146,6 +146,17 @@ export function isLink(detail: ObjectDetailDTO): boolean {
   return detail.followedSymlink || !!detail.symlinkTarget;
 }
 
+/** What a copy or download acts on (ADR 0108). */
+export interface TransferSource {
+  kind: "selected" | "object" | "folder" | "container";
+  /** The source prefix: the browsed folder, or the selected folder. */
+  prefix: string;
+  /** Full names of the objects acted on; empty means the whole prefix. */
+  members: string[];
+  /** Folder rows in a multi-selection, which are not members. */
+  excludedFolders: number;
+}
+
 /** Which shown-object deletion an operation is (ADR 0092, ADR 0094). */
 export type ShownDeleteKind = "object" | "marker" | "manifest";
 
@@ -867,6 +878,25 @@ export class BrowserState {
 
   get selectedEntry(): ListingRowDTO | null {
     return this.visibleEntries[this.selectedIndex] ?? null;
+  }
+
+  /** What Copy and Download act on (ADR 0108 decision 1): the chosen
+   * objects, the one selected object, the one selected folder, or else the
+   * folder being browsed (the container at its top). Folder rows in a
+   * multi-selection are not members; a multi-selection of folder rows only
+   * has no members, which callers must refuse rather than send, because no
+   * members means the whole scope. */
+  get transferSource(): TransferSource {
+    const chosen = this.chosenRows;
+    if (chosen.length >= 2) {
+      const members = [...new Set(chosen.filter((row) => row.kind === "object").map((row) => row.name))];
+      const excludedFolders = chosen.filter((row) => row.kind === "prefix").length;
+      return { kind: "selected", prefix: this.prefix, members, excludedFolders };
+    }
+    const entry = this.selectedEntry;
+    if (entry?.kind === "object") return { kind: "object", prefix: this.prefix, members: [entry.name], excludedFolders: 0 };
+    if (entry?.kind === "prefix") return { kind: "folder", prefix: entry.name, members: [], excludedFolders: 0 };
+    return { kind: this.prefix === "" ? "container" : "folder", prefix: this.prefix, members: [], excludedFolders: 0 };
   }
 
   /** The selected row's prefix when exactly one row is selected and it is a

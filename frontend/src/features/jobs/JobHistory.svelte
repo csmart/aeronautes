@@ -63,7 +63,7 @@
             <button class="history-details" aria-expanded={expanded === job.id} onclick={() => (expanded = expanded === job.id ? null : job.id)}>
               {job.type} · {job.state} when page loaded · {job.createdAt} · {job.id}
             </button>
-            <p><code>{quoted(job.source)} → {quoted(job.destination)}</code></p>
+            <p><code>{quoted(job.source)}{job.selectedMembers ? ` (${job.selectedMembers} selected)` : ""} → {quoted(job.destination)}</code></p>
             {#if job.error}<p>{job.error}</p>{/if}
             {#if job.counters.deletionAccountingIncomplete}
               <p>Deletion accounting is incomplete. Final failure and unresolved totals are unavailable.</p>

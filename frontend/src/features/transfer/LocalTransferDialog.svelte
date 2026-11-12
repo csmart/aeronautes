@@ -39,7 +39,8 @@
   // Overwrite acknowledgement is not one of them — it is an upload-only
   // answer this dialog never gives, so it is set at the upload request
   // and kept out of the identity a late navigation is compared against.
-  type Scope = Omit<UploadRequestDTO, "selectionToken" | "acknowledgeOverwrite">;
+  // Members name a download's selected objects (ADR 0108); an upload has none.
+  type Scope = Omit<UploadRequestDTO, "selectionToken" | "acknowledgeOverwrite"> & { members?: string[] };
   interface Intent {
     generation: number;
     browser: BrowserState;
@@ -65,8 +66,17 @@
   const current = $derived(prepared && isCurrent(prepared.intent) ? prepared : null);
   const report = $derived(current?.report ?? null);
   const destDir = $derived(current?.destination ?? "");
+  // A download follows the selection (ADR 0108); an upload goes into the
+  // folder being browsed. The members are part of the scope, so a change of
+  // selection disarms a preflight.
+  const source = $derived(browser.transferSource);
+  const downloadSource = $derived(mode === "download" ? source : null);
+
+  // A multi-selection of folder rows alone names no objects; sending it would
+  // ask for the whole folder, so it cannot be downloaded.
+  const noMembers = $derived(downloadSource?.kind === "selected" && downloadSource.members.length === 0);
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
-    && !!browser.connectedBookmarkId && !!browser.containerName);
+    && !!browser.connectedBookmarkId && !!browser.containerName && !noMembers);
 
   const problemRows = $derived((current?.mode === "download" ? current.report.problemSamples : current?.report.problems) ?? []);
   const rejected = $derived(current?.mode === "download" ? current.report.rejected : problemRows.some((p) => p.reject));
@@ -97,7 +107,9 @@
     return {
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
-      prefix: browser.prefix,
+      prefix: downloadSource ? downloadSource.prefix : browser.prefix,
+      // Left out for an upload and for a whole scope, whose requests stay as before.
+      members: downloadSource && downloadSource.members.length > 0 ? downloadSource.members : undefined,
       profile: jobSettings.profile,
       // A download segments nothing, so it never sends a chunk size.
       settings: requestSettings(mode === "upload" ? jobSettings : { ...jobSettings, chunkSize: "" }),
@@ -227,7 +239,9 @@
       <h2>
         {mode === "upload"
           ? `Upload to ${browser.containerName}/${browser.prefix}`
-          : `Download ${browser.containerName}/${browser.prefix}`}
+          : downloadSource && downloadSource.members.length > 0
+            ? `Download ${downloadSource.members.length} selected ${downloadSource.members.length === 1 ? "object" : "objects"} from ${browser.containerName}/${downloadSource.prefix}`
+            : `Download ${browser.containerName}/${downloadSource?.prefix ?? browser.prefix}`}
       </h2>
       <button class="close" onclick={close} aria-label="Close">✕</button>
     </header>
@@ -240,7 +254,9 @@
       <p class="hint">
         {mode === "upload"
           ? "Choose files to upload into this prefix, or a folder to upload as a folder of its own name inside it; every collision is reported before anything is written."
-          : "Choose a destination directory; the whole scope is checked for collisions first."}
+          : downloadSource && downloadSource.members.length > 0
+            ? "Choose a destination directory; the selected objects are checked for collisions first."
+            : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
       {#if folder}
         <p class="folder" class:hint={!folderWarns(folder)} class:callout={folderWarns(folder)} class:warning={folderWarns(folder)} role="status">{folderSummary(folder, `${browser.containerName}/${browser.prefix}`)}</p>

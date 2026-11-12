@@ -24,8 +24,16 @@ afterEach(async () => {
 async function settle() {
   for (let i = 0; i < 16; i++) { await Promise.resolve(); flushSync(); }
 }
+// The transfer buttons name what they act on (ADR 0108: "Download folder…",
+// "Copy selected…"); these tests are about which controls exist and what they
+// open, so they know them as "Download…" and "Copy to…". The wording itself
+// is tested in transferLabels.test.ts.
+function transferLabel(text: string): string {
+  return text.replace(/^Download (container|folder|object|selected)…$/, "Download…").replace(/^Copy (container|folder|object|selected)…$/, "Copy to…");
+}
+
 function labels(): string[] {
-  return [...document.querySelectorAll("button")].map((b) => b.textContent?.trim() ?? "");
+  return [...document.querySelectorAll("button")].map((b) => transferLabel(b.textContent?.trim() ?? ""));
 }
 
 async function connectedScreen(enabled: string[] = [], unrecognised: string[] = []) {
@@ -67,7 +75,7 @@ it("keeps download, upload, copy and bulk delete and withholds benchmark", async
 // would still satisfy a test that only asserted a dialog appeared.
 it("opens each local transfer control in its own mode", async () => {
   await connectedScreen();
-  [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Download…")!.click();
+  [...document.querySelectorAll("button")].find((b) => transferLabel(b.textContent?.trim() ?? "") === "Download…")!.click();
   await settle();
   let dialog = document.querySelector('[role="dialog"]');
   expect(dialog?.getAttribute("aria-label")).toBe("Download");

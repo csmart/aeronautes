@@ -31,6 +31,13 @@
   const partialPrefix = $derived(browser.prefix.slice(directoryLength));
 
   const rowDelete = $derived(singleRowDelete(browser));
+  // Copy and Download act on what is selected and say so (ADR 0108): the
+  // selected objects, the selected object or folder, or else the folder or
+  // container being browsed. A selection of folder rows alone names no
+  // objects, so its transfers are disabled rather than widened to the folder.
+  const source = $derived(browser.transferSource);
+  const sourceWord = $derived(source.kind === "selected" ? "selected" : source.kind);
+  const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
 
   function shortName(entry: ListingRowDTO): string {
     return entry.name.slice(directoryLength);
@@ -124,21 +131,21 @@
       {#if v1Offers.download}
         <button
           class="find"
-          title="Download this prefix to a local directory"
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          title={noMembers ? "Select objects to download; selected folders are not downloaded" : "Download it to a local directory"}
+          disabled={browser.containerName === null || browser.backstageFrom !== null || noMembers}
           onclick={() => (browser.localTransfer = "download")}
         >
-          Download…
+          Download {sourceWord}…
         </button>
       {/if}
       {#if v1Offers.copy}
         <button
           class="find"
-          title="Copy this container/prefix to another account or container"
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          title={noMembers ? "Select objects to copy; selected folders are not copied" : "Copy it to another account, container or folder"}
+          disabled={browser.containerName === null || browser.backstageFrom !== null || noMembers}
           onclick={() => (browser.transferOpen = true)}
         >
-          Copy to…
+          Copy {sourceWord}…
         </button>
       {/if}
       <span class="gap"></span>
