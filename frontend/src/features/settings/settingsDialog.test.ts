@@ -59,6 +59,23 @@ function statusOf(element: HTMLElement): string {
   return document.getElementById(status)?.textContent?.trim() ?? "";
 }
 
+// A settings file that could not be read is said at the top, over the
+// defaults in force; a save replaces the file, and the report goes with it
+// (ADR 0109 decision 1).
+it("says when the settings file could not be read, until a save", async () => {
+  const api = newFakeApi();
+  api.appSettings = vi.fn(async () => ({ ...original, fileProblem: "the settings file /cfg/settings.json could not be read" }));
+  api.saveAppSettings = vi.fn(async ({ fileProblem: _report, ...saved }: AppSettingsDTO) => saved);
+  const browser = new BrowserState(api);
+  mounted = mount(SettingsDialog, { target: document.body, props: { settings: browser.settings, onClose: () => {} } });
+  await settle();
+  expect(document.querySelector('.body [role="alert"]')?.textContent).toContain("/cfg/settings.json could not be read");
+  change(control<HTMLSelectElement>("Default performance profile", "select"), "aggressive");
+  await settle();
+  expect(api.saveAppSettings).toHaveBeenCalledOnce();
+  expect(document.querySelector('.body [role="alert"]')).toBeNull();
+});
+
 it("saves the chosen default profile and shows it once acknowledged", async () => {
   const api = await show();
   const profile = control<HTMLSelectElement>("Default performance profile", "select");
