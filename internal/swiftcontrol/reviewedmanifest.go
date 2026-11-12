@@ -3,7 +3,6 @@ package swiftcontrol
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // ReviewedEntry is one whole-object segment of a static large object as the
@@ -139,12 +138,8 @@ func (g *reviewedGraph) differs(before *ObjectDetail, liveEntries []ReviewedEntr
 // what the review recorded, so a header with or without a trailing slash
 // compares equal.
 func canonicalNamespace(manifest string) string {
-	slash := strings.IndexByte(manifest, '/')
-	if slash <= 0 {
-		return manifest
-	}
-	container, prefix := manifest[:slash], manifest[slash+1:]
-	if prefix == "" {
+	container, prefix, ok := DynamicSegments(manifest)
+	if !ok || prefix == "" {
 		return manifest
 	}
 	if prefix[len(prefix)-1] != '/' {

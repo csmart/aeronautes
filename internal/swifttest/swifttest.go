@@ -1470,8 +1470,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 	if ok && o.Manifest != "" && !rawManifest {
 		// A DLO manifest HEAD reports the assembled logical size (§20):
 		// the summed bytes of everything under container/prefix right now.
-		if slash := strings.Index(o.Manifest, "/"); slash > 0 {
-			segContainer, segPrefix := o.Manifest[:slash], o.Manifest[slash+1:]
+		if segContainer, segPrefix, ok := ManifestSegments(o.Manifest); ok {
 			if sc, scOK := s.containers[segContainer]; scOK {
 				var segNames []string
 				for segName := range sc.objects {
@@ -1712,3 +1711,25 @@ func (d *discardResponse) Header() http.Header {
 }
 func (d *discardResponse) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardResponse) WriteHeader(int)             {}
+
+// ManifestSegments is the segment container and prefix an X-Object-Manifest
+// value names, decoded as Swift's dynamic large object middleware decodes
+// it: each valid %XX escape becomes its byte and anything else, an invalid
+// escape or a plus sign among them, is kept. It is written here, apart from
+// the client's own decoder, so the mock and the oracle that use it stay
+// independent witnesses of the code they test.
+func ManifestSegments(value string) (container, prefix string, ok bool) {
+	var decoded []byte
+	for i := 0; i < len(value); i++ {
+		if value[i] == '%' && i+2 < len(value) {
+			if b, err := hex.DecodeString(value[i+1 : i+3]); err == nil {
+				decoded = append(decoded, b[0])
+				i += 2
+				continue
+			}
+		}
+		decoded = append(decoded, value[i])
+	}
+	container, prefix, ok = strings.Cut(string(decoded), "/")
+	return container, prefix, ok && container != ""
+}

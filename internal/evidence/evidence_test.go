@@ -94,6 +94,11 @@ func TestFromObjectDetail(t *testing.T) {
 	if got := FromObjectDetail(&swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassPlain}); got != nil {
 		t.Errorf("plain object produced evidence: %+v", got)
 	}
+	// The header is percent-encoded; the prefix confirmed is the decoded
+	// one the store lists (F37).
+	if got := FromObjectDetail(&swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassDLO, Manifest: "media_segments/my%20video/"}); len(got) != 1 || got[0].Prefix != "my video/" {
+		t.Errorf("encoded manifest = %+v, want the decoded prefix", got)
+	}
 	if got := FromObjectDetail(&swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassDLO, Manifest: "nosplit"}); got != nil {
 		t.Errorf("unsplittable manifest produced evidence: %+v", got)
 	}

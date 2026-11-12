@@ -389,6 +389,77 @@ func seedDynamicSourceUnchecked(t *testing.T, w *world, segments ...string) stri
 	return strings.Join(segments, "")
 }
 
+// A dynamic source's manifest header is percent-encoded and Swift decodes
+// it, so its expectation is built from the decoded prefix's segments (F37);
+// read raw, the listing would find none.
+func TestDynamicSourceLadderReadsTheDecodedPrefix(t *testing.T) {
+	w := newWorld(t)
+	w.srcMock.AddContainer("media_segments", "standard")
+	seed(w.srcMock, "media_segments", "my asset/src/000000", []byte("GOOD"), nil)
+	seed(w.srcMock, "media_segments", "my asset/src/000001", []byte("DATA"), nil)
+	w.srcMock.PutObject("media", "asset", swifttest.Object{Manifest: "media_segments/my%20asset/src/"})
+	src, err := w.src.ObjectDetail(context.Background(), "media", "asset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ladder, err := newExecutor(t, w, nil).dynamicSourceLadder(context.Background(), src, 4)
+	if err != nil || len(ladder) != 2 {
+		t.Fatalf("ladder = %d runs, %v; want the two decoded segments", len(ladder), err)
+	}
+}
+
+// A staged dynamic object the engine wrote under a name it had to encode is
+// checked against the decoded prefix's segments, so a complete stage is not
+// refused as empty (F37).
+func TestStagedSegmentsAreListedUnderTheDecodedPrefix(t *testing.T) {
+	w := newWorld(t)
+	w.dstMock.AddContainer("media_segments", "standard")
+	seed(w.dstMock, "media_segments", "my asset/run/000000", []byte("GOOD"), nil)
+	seed(w.dstMock, "media_segments", "my asset/run/000001", []byte("DATA"), nil)
+	staged := &swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassDLO, Manifest: "media_segments/my%20asset/run/"}
+	if err := newExecutor(t, w, nil).verifyStagedSegments(context.Background(), staged, 8); err != nil {
+		t.Fatalf("a complete encoded stage was refused: %v", err)
+	}
+}
+
+// A copy staged under a name the engine had to encode records committing
+// and committed for the decoded prefix it captured, so the pair matches and
+// the job owns the segments it published (F37).
+func TestCopyCommitRecordsTheDecodedSegmentPrefix(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "my asset", []byte("GOODDATA"), nil)
+	var records []string
+	e, err := New(Config{
+		Source: w.src, Dest: w.dst, Engine: &fakeEngine{w: w, chunk: 4, interruptAfter: -1},
+		SrcSpec: "aeronautes_src:media", DstSpec: "aeronautes_dst:backup",
+		SrcContainer: "media", DstContainer: "backup", JobID: "job01",
+		OnRecovery: func(kind, container, prefix, object string) error {
+			records = append(records, kind+" "+container+"/"+prefix)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() })
+	report, err := e.Run(context.Background(), []plan.Item{{Name: "my asset", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 8}})
+	if err != nil || report.Copied != 1 {
+		t.Fatalf("report = %+v, %v", report, err)
+	}
+	if len(report.CommittedPrefixes) != 1 || report.CommittedPrefixes[0] != report.CapturedPrefixes[0] {
+		t.Fatalf("committed %v, captured %v; want the captured prefix committed", report.CommittedPrefixes, report.CapturedPrefixes)
+	}
+	want := report.CapturedPrefixes[0].Container + "/" + report.CapturedPrefixes[0].Prefix
+	var committing, committed bool
+	for _, record := range records {
+		committing = committing || record == "committing "+want
+		committed = committed || record == "committed "+want
+	}
+	if !committing || !committed || !strings.Contains(want, "my asset/") {
+		t.Errorf("records = %q, want committing and committed for %q", records, want)
+	}
+}
+
 func TestSourceLadderCeilingRefusesRatherThanTruncating(t *testing.T) {
 	// A source past the ceiling must refuse with that reason, not be
 	// compared against an expectation that quietly stops early. The

@@ -99,8 +99,8 @@ func FromObjectDetail(d *swiftcontrol.ObjectDetail) []Observation {
 	if d.Class != swiftcontrol.ClassDLO || d.Manifest == "" {
 		return nil
 	}
-	container, prefix, ok := strings.Cut(d.Manifest, "/")
-	if !ok || container == "" {
+	container, prefix, ok := swiftcontrol.DynamicSegments(d.Manifest)
+	if !ok {
 		return nil
 	}
 	return []Observation{{

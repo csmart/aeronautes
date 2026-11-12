@@ -51,6 +51,13 @@ func TestDLOSegmentPreview(t *testing.T) {
 		t.Errorf("PreviewBytes = %d", full.PreviewBytes)
 	}
 
+	// The header is percent-encoded and Swift decodes it, so the preview
+	// lists the decoded prefix's segments (F37).
+	encoded, err := s.DLOSegmentPreview(ctx, "external-dlo-segments/wedding%2Dvideo/", 10)
+	if err != nil || encoded.Prefix != "wedding-video/" || len(encoded.Segments) != 3 {
+		t.Fatalf("encoded preview = %+v %v, want the three decoded segments", encoded, err)
+	}
+
 	// Bounded: a smaller limit truncates and reports more.
 	bounded, err := s.DLOSegmentPreview(ctx, "external-dlo-segments/wedding-video/", 2)
 	if err != nil {

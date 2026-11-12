@@ -427,8 +427,8 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 		}
 		return inventory
 	case swiftcontrol.ClassDLO:
-		segmentContainer, prefix, ok := strings.Cut(detail.Manifest, "/")
-		if !ok || segmentContainer == "" {
+		segmentContainer, prefix, ok := swiftcontrol.DynamicSegments(detail.Manifest)
+		if !ok {
 			return FragmentInventory{Unread: "the dynamic manifest names no segment prefix"}
 		}
 		// Listed rather than named, so it is a lower bound: a listing on an
@@ -439,7 +439,7 @@ func fragmentInventory(ctx context.Context, dst *swiftcontrol.Session, container
 		// pseudo-directory row that names no object. A manifest whose
 		// segments sit below child paths would otherwise be inventoried as
 		// holding nothing at all.
-		inventory := FragmentInventory{Prefix: detail.Manifest}
+		inventory := FragmentInventory{Prefix: segmentContainer + "/" + prefix}
 		for entry, err := range dst.Objects(ctx, segmentContainer,
 			swiftcontrol.ObjectListOptions{Prefix: prefix, Deep: true}) {
 			if err != nil {
@@ -617,8 +617,8 @@ func commitStagedUpload(ctx context.Context, dst *swiftcontrol.Session, containe
 		if err := confirmBefore(ctx, confirm, dst, container, item, replacing); err != nil {
 			return uploadRefusedBefore("commit-reobserve", err)
 		}
-		segmentContainer, segmentPrefix, hasIntent := strings.Cut(staged.Manifest, "/")
-		hasIntent = hasIntent && segmentContainer != "" && recovery != nil
+		segmentContainer, segmentPrefix, hasIntent := swiftcontrol.DynamicSegments(staged.Manifest)
+		hasIntent = hasIntent && recovery != nil
 		intent := rclone.SegmentPrefix{Container: segmentContainer, Prefix: segmentPrefix}.Canonical()
 		if hasIntent {
 			if err := recovery("committing", intent.Container, intent.Prefix, container+"/"+item.Name); err != nil {

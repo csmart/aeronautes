@@ -199,11 +199,10 @@ func (s *DeleteService) segmentScope(ctx context.Context, session *swiftcontrol.
 	ownership := &SegmentOwnershipDTO{Class: string(detail.Class)}
 	switch detail.Class {
 	case swiftcontrol.ClassDLO:
-		slash := strings.Index(detail.Manifest, "/")
-		if slash <= 0 {
+		segContainer, segPrefix, ok := swiftcontrol.DynamicSegments(detail.Manifest)
+		if !ok {
 			return nil, nil, nil, nil, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
 		}
-		segContainer, segPrefix := detail.Manifest[:slash], detail.Manifest[slash+1:]
 		if segPrefix == "" {
 			// A manifest naming a container and no prefix would make the
 			// namespace the whole container, which no manifest's
@@ -337,12 +336,12 @@ func reviewedMembership(detail *swiftcontrol.ObjectDetail, manifest *swiftcontro
 				Container: entry.Container, Object: entry.Object, Size: entry.Size, ETag: entry.ETag})
 		}
 	case swiftcontrol.ClassDLO:
-		slash := strings.Index(detail.Manifest, "/")
-		if slash <= 0 {
+		segContainer, segPrefix, ok := swiftcontrol.DynamicSegments(detail.Manifest)
+		if !ok {
 			return ReviewedMembershipDTO{}, fmt.Errorf("malformed X-Object-Manifest %q", detail.Manifest)
 		}
 		reviewed.RawManifest = detail.Manifest
-		reviewed.Namespace = detail.Manifest[:slash] + "/" + dloNamespace(detail.Manifest[slash+1:])
+		reviewed.Namespace = segContainer + "/" + dloNamespace(segPrefix)
 	}
 	return reviewed, nil
 }
@@ -391,11 +390,11 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		// The scope and the outside-name check rest on the one reviewed
 		// namespace, so a temporary graph change during startup cannot widen
 		// what the reviewed request deletes (ADR 0095 decision 8, ADR 0044).
-		slash := strings.Index(req.Reviewed.RawManifest, "/")
-		if req.Reviewed.Namespace == "" || slash <= 0 {
+		segContainer, segPrefix, ok := swiftcontrol.DynamicSegments(req.Reviewed.RawManifest)
+		if req.Reviewed.Namespace == "" || !ok {
 			return "", fmt.Errorf("the reviewed dynamic graph is incomplete — re-open the dialog")
 		}
-		job.segContainer, job.segPrefix = req.Reviewed.RawManifest[:slash], req.Reviewed.RawManifest[slash+1:]
+		job.segContainer, job.segPrefix = segContainer, segPrefix
 		job.namespace = dloNamespace(job.segPrefix)
 		if job.segContainer+"/"+job.namespace != req.Reviewed.Namespace {
 			return "", fmt.Errorf("the reviewed dynamic graph is inconsistent — re-open the dialog")

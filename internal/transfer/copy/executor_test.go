@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -150,8 +151,10 @@ func (f *fakeEngine) one(ctx context.Context, srcC, srcName, dstC, dstName strin
 			})
 		}
 		result.SegmentPrefixes = append(result.SegmentPrefixes, rclone.SegmentPrefix{Container: segContainer, Prefix: prefix})
+		// The pinned engine percent-encodes the header, as Swift expects.
+		manifest := (&url.URL{Path: segContainer + "/" + prefix}).EscapedPath()
 		if _, err := f.w.dst.PutObject(ctx, dstC, dstName, strings.NewReader(""), "application/octet-stream",
-			map[string]string{"X-Object-Manifest": segContainer + "/" + prefix, "X-Object-Meta-Mtime": mtime["Mtime"]}); err != nil {
+			map[string]string{"X-Object-Manifest": manifest, "X-Object-Meta-Mtime": mtime["Mtime"]}); err != nil {
 			return err
 		}
 		return nil

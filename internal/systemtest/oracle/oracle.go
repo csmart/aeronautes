@@ -27,6 +27,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
 // Oracle reads one Swift account over raw HTTP.
@@ -370,7 +372,8 @@ func (o *Oracle) snapshotObject(container, name string) (ObjectState, error) {
 
 // segmentInventory lists a DLO prefix and digests each segment.
 func (o *Oracle) segmentInventory(manifest string) ([]SegmentState, error) {
-	container, prefix, found := strings.Cut(manifest, "/")
+	// Swift decodes the header before it lists the prefix (F37).
+	container, prefix, found := swifttest.ManifestSegments(manifest)
 	if !found {
 		return nil, fmt.Errorf("oracle: malformed manifest %q", manifest)
 	}

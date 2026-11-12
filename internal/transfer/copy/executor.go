@@ -1090,8 +1090,8 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 		// binds the segment prefix to the LIVE identity, so a crash in
 		// the gap resolves from the live name's actual manifest instead
 		// of guesswork. No intent, no PUT.
-		if slash := strings.Index(staged.Manifest, "/"); slash > 0 && e.cfg.OnRecovery != nil {
-			intent := rclone.SegmentPrefix{Container: staged.Manifest[:slash], Prefix: staged.Manifest[slash+1:]}.Canonical()
+		if segmentContainer, segmentPrefix, ok := swiftcontrol.DynamicSegments(staged.Manifest); ok && e.cfg.OnRecovery != nil {
+			intent := rclone.SegmentPrefix{Container: segmentContainer, Prefix: segmentPrefix}.Canonical()
 			if err := e.cfg.OnRecovery("committing", intent.Container, intent.Prefix,
 				e.cfg.DstContainer+"/"+dstName); err != nil {
 				result = failed(EffectUnresolved, StageRecording, CodeUnknown, "commit-intent", err)
@@ -1170,8 +1170,8 @@ func (e *Executor) commitStaged(ctx context.Context, item plan.Item, stagedName 
 // by a committed manifest ("container/prefix"), so reconciliation never
 // sweeps it.
 func (e *Executor) markCommitted(manifest string) error {
-	if slash := strings.Index(manifest, "/"); slash > 0 {
-		p := rclone.SegmentPrefix{Container: manifest[:slash], Prefix: manifest[slash+1:]}.Canonical()
+	if container, prefix, ok := swiftcontrol.DynamicSegments(manifest); ok {
+		p := rclone.SegmentPrefix{Container: container, Prefix: prefix}.Canonical()
 		if !e.printed[p] {
 			// Never promote a manifest this job did not OBSERVE its own
 			// child create: an unobserved prefix is not ours to own
@@ -1215,11 +1215,10 @@ func (e *Executor) cleanStaged(ctx context.Context, stagedName string) error {
 // requires the summed segment bytes to equal the source's logical size,
 // with bounded retries for listing consistency (§15.3, K-CON-001).
 func (e *Executor) verifyStagedSegments(ctx context.Context, staged *swiftcontrol.ObjectDetail, want int64) error {
-	slash := strings.Index(staged.Manifest, "/")
-	if slash <= 0 {
+	container, prefix, ok := swiftcontrol.DynamicSegments(staged.Manifest)
+	if !ok {
 		return fmt.Errorf("staged DLO carries malformed manifest %q", staged.Manifest)
 	}
-	container, prefix := staged.Manifest[:slash], staged.Manifest[slash+1:]
 	var sum int64
 	var count int
 	for attempt := 0; attempt < 4; attempt++ {

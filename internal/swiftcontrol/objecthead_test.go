@@ -199,3 +199,33 @@ func TestBuildObjectDetailFingerprintCoversEditable(t *testing.T) {
 		t.Error("editable changes must move the fingerprint")
 	}
 }
+
+// The engine percent-encodes X-Object-Manifest and Swift decodes it, so the
+// segments a dynamic manifest names are the decoded container and prefix;
+// an invalid escape and a plus sign are kept, as Swift keeps them (F37).
+func TestDynamicSegmentsDecodesAsSwiftDoes(t *testing.T) {
+	for _, tc := range []struct {
+		manifest, container, prefix string
+		ok                          bool
+	}{
+		{"media_segments/video/", "media_segments", "video/", true},
+		{"media_segments/my%20video%25.bin/run/", "media_segments", "my video%.bin/run/", true},
+		{"media%5Fsegments/a%2Fb/", "media_segments", "a/b/", true},
+		{"media_segments/100%zz/a+b", "media_segments", "100%zz/a+b", true},
+		{"media_segments/50%", "media_segments", "50%", true},
+		{"media_segments/my%20video%zz/", "media_segments", "my video%zz/", true},
+		{"nosplit", "", "", false},
+		{"/prefix", "", "", false},
+	} {
+		container, prefix, ok := DynamicSegments(tc.manifest)
+		if ok != tc.ok || (ok && (container != tc.container || prefix != tc.prefix)) {
+			t.Errorf("%q = %q %q %t, want %q %q %t", tc.manifest, container, prefix, ok, tc.container, tc.prefix, tc.ok)
+		}
+		// The mock and the oracle decode with their own copy, which must
+		// agree, or a test could pass against one and fail against the other.
+		mockContainer, mockPrefix, mockOK := swifttest.ManifestSegments(tc.manifest)
+		if mockOK != ok || mockContainer != container || mockPrefix != prefix {
+			t.Errorf("%q: the mock decodes %q %q %t", tc.manifest, mockContainer, mockPrefix, mockOK)
+		}
+	}
+}
