@@ -3955,6 +3955,9 @@ regression test in the same commit):
    of a container its destination name would be empty, which addresses the container
    itself, so in any copy the plan leaves such an object with the originals and never
    writes it.
+   A copy of named objects ([ADR 0108](adr/0108-copy-and-download-what-is-selected.md)) reads and
+   writes only its members, so for it a destination inside the source folder is allowed and the
+   plan refuses instead any member whose destination name is itself a member.
 10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
     source absence immediately before deletion; any successful delete followed by
     failure/cancel yields Partial with exact accounting.
