@@ -2,6 +2,8 @@
 # the applied code with git apply --whitespace=error-all.
 third_party/ncw-swift/*.patch -whitespace
 
-# Go and Wails rewrite these inputs with LF during a build.
+# Go and Wails rewrite these inputs with LF during a build. The bindings are
+# also generated, and CI's drift gate compares them byte for byte, so the
+# generator's own whitespace is exempt from the whitespace checks.
 go.mod text eol=lf
-frontend/bindings/** text eol=lf
+frontend/bindings/** text eol=lf -whitespace
