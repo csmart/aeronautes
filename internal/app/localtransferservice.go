@@ -55,6 +55,9 @@ type DownloadRequestDTO struct {
 	Profile string `json:"profile"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
+	// Members, when given, are the full names of the selected objects to
+	// download instead of the whole scope (ADR 0108); empty means the scope.
+	Members []string `json:"members,omitempty"`
 }
 
 // SelectionScopeDTO is the scope a pick is being made for. The service
@@ -914,6 +917,12 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 	if req.BookmarkID == "" || req.Container == "" {
 		return nil, errors.New("bookmark and container are required")
 	}
+	if err := validateMembers(req.Prefix, req.Members); err != nil {
+		return nil, err
+	}
+	if ceiling := s.downloadObjectCeiling(ctx); int64(len(req.Members)) > ceiling {
+		return nil, fmt.Errorf("%d objects are selected, more than the selection ceiling of %d; download the folder instead, or raise the ceiling in Settings", len(req.Members), ceiling)
+	}
 	scope, session, err := s.requestScope(ctx, req.BookmarkID, req.Container, req.Prefix)
 	if err != nil {
 		return nil, err
@@ -928,7 +937,7 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 		// without any effect.
 		return local.PreflightDownloadBounded(ctx, session, req.Container, req.Prefix, destDir, ceiling)
 	}
-	report, err := local.PreflightDownloadIntoBounded(ctx, session, req.Container, req.Prefix, destination, ceiling)
+	report, err := local.PreflightDownloadMembersInto(ctx, session, req.Container, req.Prefix, destination, ceiling, req.Members)
 	if err == nil && report != nil {
 		// A directory another active download is using is refused before
 		// any effect, naming that job (ADR 0078).
@@ -1254,6 +1263,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		Destination:        "local directory (picker-selected)",
 		SourceBookmarkID:   req.BookmarkID,
 		Engine:             "rclone+native",
+		SelectedMembers:    len(req.Members),
 		Counters: jobs.Counters{
 			ObjectsPlanned: preflight.Objects, BytesPlanned: preflight.TotalBytes,
 		},

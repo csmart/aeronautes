@@ -523,6 +523,12 @@ export interface CopyPlanDTO {
      * keeping the bridge field does not promise an overwrite or transfer.
      */
     "overwriteBytes": number;
+
+    /**
+     * MissingMembers counts selected objects the source listing no longer
+     * holds; they are not copied (ADR 0108 decision 3).
+     */
+    "missingMembers"?: number;
 }
 
 /**
@@ -557,6 +563,13 @@ export interface CopyRequestDTO {
      * exactly as it does today (ADR 0081 decision 1's shape).
      */
     "acknowledgeOverwrite": boolean;
+
+    /**
+     * Members, when given, are the full names of the selected objects the
+     * copy acts on instead of its whole scope (ADR 0108); empty means the
+     * scope.
+     */
+    "members"?: string[] | null;
 }
 
 /**
@@ -709,6 +722,12 @@ export interface DownloadRequestDTO {
      * Settings are the per-job §44.1 overrides.
      */
     "settings": TransferSettingsDTO;
+
+    /**
+     * Members, when given, are the full names of the selected objects to
+     * download instead of the whole scope (ADR 0108); empty means the scope.
+     */
+    "members"?: string[] | null;
 }
 
 /**
@@ -904,6 +923,12 @@ export interface JobDTO {
      * "resuming" while a resumed job waits for a slot, and "" otherwise.
      */
     "pause": string;
+
+    /**
+     * SelectedMembers counts the objects a copy or download of selected
+     * objects named; zero means it acted on its whole scope (ADR 0108).
+     */
+    "selectedMembers"?: number;
 }
 
 export interface JobHistoryDTO {
@@ -1170,6 +1195,13 @@ export interface MirrorRequestDTO {
      * exactly as it does today (ADR 0081 decision 1's shape).
      */
     "acknowledgeOverwrite": boolean;
+
+    /**
+     * Members, when given, are the full names of the selected objects the
+     * copy acts on instead of its whole scope (ADR 0108); empty means the
+     * scope.
+     */
+    "members"?: string[] | null;
     "confirm": string;
 }
 
