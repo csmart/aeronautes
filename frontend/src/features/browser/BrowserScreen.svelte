@@ -22,6 +22,7 @@
   import ManifestDeleteDialog from "../inspector/ManifestDeleteDialog.svelte";
   import SelectedDeleteDialog from "../inspector/SelectedDeleteDialog.svelte";
   import { BrowserState } from "./browserState.svelte";
+  import { openSelectionDelete } from "./selectionDelete";
   import { activeModal } from "../../lib/trapFocus";
   import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 
@@ -200,18 +201,8 @@
       }
     } else if (event.key === "Delete") {
       // §4.4: Delete opens the safe delete flow that owns the selection and
-      // never deletes: several rows open the selected-set deletion (ADR 0093
-      // decision 5), one row the flow of its own kind (ADR 0092, ADR 0094
-      // decision 5); a link, an implied prefix and a real object at a prefix
-      // name have none, and a prefix's own deletion is bulk deletion with
-      // its own dialog.
-      const kind = browser.deletableSelectionKind();
-      const opened = browser.chosenRows.length >= 2 ? v1Offers.objectDelete && browser.openSelectedDelete()
-        : kind === "object" ? v1Offers.objectDelete && browser.openObjectDelete()
-        : kind === "marker" ? v1Offers.markerDelete && browser.openMarkerDelete()
-        : kind === "manifest" ? v1Offers.manifestDelete && browser.openManifestDelete()
-        : false;
-      if (opened) event.preventDefault();
+      // never deletes; selectionDelete.ts says which.
+      if (openSelectionDelete(browser)) event.preventDefault();
     }
   }
 </script>

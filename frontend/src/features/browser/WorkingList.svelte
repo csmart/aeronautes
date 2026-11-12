@@ -6,6 +6,7 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import type { BrowserState } from "./browserState.svelte";
   import FindPanel from "./FindPanel.svelte";
+  import { openSelectionDelete, singleRowDelete } from "./selectionDelete";
 
   let { browser }: { browser: BrowserState } = $props();
 
@@ -28,6 +29,8 @@
   const crumbs = $derived(breadcrumbs(browser.prefix));
   const directoryLength = $derived(browser.prefix.lastIndexOf("/") + 1);
   const partialPrefix = $derived(browser.prefix.slice(directoryLength));
+
+  const rowDelete = $derived(singleRowDelete(browser));
 
   function shortName(entry: ListingRowDTO): string {
     return entry.name.slice(directoryLength);
@@ -158,6 +161,13 @@
         {browser.countRunning ? "Stop counting" : "Count objects"}
       </button>
       <span class="deletions">
+      {#if rowDelete}
+        <!-- One selected row's own deletion, as the Delete key and the
+          inspector open it, so a single file is deleted from here too. -->
+        <button class="find danger" title="Delete only the selected row, checked against what was listed" onclick={() => openSelectionDelete(browser)}>
+          {rowDelete.label}
+        </button>
+      {/if}
       {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
         <button
           class="find danger"
