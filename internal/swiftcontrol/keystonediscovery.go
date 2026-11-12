@@ -47,10 +47,24 @@ func keystoneV3Endpoint(ctx context.Context, client *http.Client, authURL string
 		example := *configured
 		example.Path = trimmed + "/v3"
 		example.RawQuery, example.Fragment = "", ""
-		return "", fmt.Errorf("the Identity URL %s does not offer Keystone v3 at the same address (%w); give the v3 endpoint, for example %s", authURL, err, example.String())
+		return "", &NoKeystoneV3Error{AuthURL: authURL, Example: example.String(), Cause: err}
 	}
 	return link.String(), nil
 }
+
+// NoKeystoneV3Error refuses an Identity URL that offers no v3 at its own
+// origin. It is a type so that a caller summarising a failure, such as the
+// import's verification (ADR 0114), can name this case.
+type NoKeystoneV3Error struct {
+	AuthURL, Example string
+	Cause            error
+}
+
+func (e *NoKeystoneV3Error) Error() string {
+	return fmt.Sprintf("the Identity URL %s does not offer Keystone v3 at the same address (%v); give the v3 endpoint, for example %s", e.AuthURL, e.Cause, e.Example)
+}
+
+func (e *NoKeystoneV3Error) Unwrap() error { return e.Cause }
 
 // keystoneVersion is one entry of a Keystone version document.
 type keystoneVersion struct {

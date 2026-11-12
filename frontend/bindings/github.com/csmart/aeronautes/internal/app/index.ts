@@ -5,6 +5,7 @@ import * as AppService from "./appservice.js";
 import * as AuditService from "./auditservice.js";
 import * as BackupService from "./backupservice.js";
 import * as BenchmarkService from "./benchmarkservice.js";
+import * as BookmarkImportService from "./bookmarkimportservice.js";
 import * as BookmarkService from "./bookmarkservice.js";
 import * as BrowseService from "./browseservice.js";
 import * as DeleteService from "./deleteservice.js";
@@ -19,6 +20,7 @@ export {
     AuditService,
     BackupService,
     BenchmarkService,
+    BookmarkImportService,
     BookmarkService,
     BrowseService,
     DeleteService,
@@ -65,6 +67,10 @@ export type {
     ExportResultDTO,
     FindMatchDTO,
     FindStatusDTO,
+    ImportOutcomeDTO,
+    ImportPreviewDTO,
+    ImportResultDTO,
+    ImportRowDTO,
     Info,
     InterruptedDisclosureDTO,
     InterruptedDisclosuresDTO,

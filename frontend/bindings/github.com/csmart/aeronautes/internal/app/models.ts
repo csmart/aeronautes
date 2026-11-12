@@ -811,6 +811,61 @@ export interface FindStatusDTO {
 }
 
 /**
+ * ImportOutcomeDTO is what happened to one chosen row. Verify is
+ * "not_requested", "pending", "verified", "failed", "no_secret" or
+ * "not_saved"; Reason explains a failed save or verification in plain
+ * words, never an error's own text.
+ */
+export interface ImportOutcomeDTO {
+    "index": number;
+    "name": string;
+    "bookmarkId": string;
+    "verify": string;
+    "reason": string;
+}
+
+/**
+ * ImportPreviewDTO is what a picked file offers. An empty Token means no
+ * file was chosen.
+ */
+export interface ImportPreviewDTO {
+    "token": string;
+    "fileName": string;
+    "rows": ImportRowDTO[] | null;
+}
+
+/**
+ * ImportResultDTO is a save's outcomes so far; Done once no verification
+ * is pending.
+ */
+export interface ImportResultDTO {
+    "token": string;
+    "outcomes": ImportOutcomeDTO[] | null;
+    "done": boolean;
+}
+
+/**
+ * ImportRowDTO is one account the file describes, with no secret.
+ */
+export interface ImportRowDTO {
+    "index": number;
+    "name": string;
+    "kind": string;
+    "authUrl": string;
+    "user": string;
+    "project": string;
+    "region": string;
+    "hasSecret": boolean;
+
+    /**
+     * State is "importable", "duplicate" (an existing bookmark has the same
+     * auth URL, user and project) or "skipped", with Reason saying why.
+     */
+    "state": string;
+    "reason": string;
+}
+
+/**
  * Info is the shell identity the frontend shows at startup; fetching it
  * over the bindings bridge is the hello-window proof that the typed
  * service transport works.
