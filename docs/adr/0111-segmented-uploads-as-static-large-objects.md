@@ -21,9 +21,12 @@ A static large object (SLO) is a manifest listing each segment's path, entity ta
 ## Decision
 
 1. **Segmented uploads are static large objects by default, settable per bookmark and per job.**
-   A bookmark gains a large-object setting, `slo` (the default) or `dlo`, beside its segment placement and chunk size; it is carried by the backup like them.
-   A per-job transfer setting of the same name overrides it in the upload dialog's settings, and the job records the effective value and where it came from (default, bookmark or job), as it does for its other settings.
-   When the destination's `/info` does not advertise static large objects, an `slo` choice uploads as `dlo` and the preview says so.
+   A bookmark gains a large-object setting, `slo` or `dlo`, beside its segment placement and chunk size; it is carried by the backup like them.
+   A bookmark with no value, every existing one among them, reads as `slo` and stays readable, as an empty segment placement already reads as its default.
+   A per-job transfer setting of the same name overrides it in the upload dialog's settings.
+   Only a readable `/info` that has no static-large-object entry makes an `slo` choice upload as `dlo`, and the preview says so; when the capability is unknown, because `/info` could not be read, the choice stays `slo` and the publication is the attempt, since unknown is not unsupported.
+   The check uses the session's existing capability snapshot, the one the preview and the commit both read, not a read of its own.
+   The job records, on its existing settings record, the kind it actually published, with an origin from the vocabulary it already uses: `default` for no bookmark value, `override` for the job's own choice, one new origin, `bookmark`, for the bookmark's value, and one more, `capability`, when a readable `/info` without the entry turned a static choice into a dynamic upload.
    The upload preview's disclosure names the kind: a segmented file becomes a static large object, or a dynamic one whose reads depend on listing consistency.
    The setting is ignored when no file is segmented.
 2. **The engine moves the bytes; Aeronautes composes the static manifest at the commit.**
@@ -59,6 +62,6 @@ A static large object (SLO) is a manifest listing each segment's path, entity ta
 
 ## Tests
 
-- Go: chunks of a file split by the effective chunk size, a short last chunk included; a manifest composed in index order from paired segments; refused before publication: an unexpected name, a missing index after the bound, and a segment whose size or tag differs from its chunk; the bounded wait succeeding when the mock's listing lag ends within it and failing unresolved when it does not; the write declaring no content tag and the live tag checked as the MD5 of the concatenated hexadecimal segment tags; the dynamic path passing under the same lag; an overwrite of an existing large object; segment deletion of a published static object refused without the static-object proof; the bookmark default, the job override and the recorded origin; the `/info` fallback and the preview naming the kind.
+- Go: chunks of a file split by the effective chunk size, a short last chunk included; a manifest composed in index order from paired segments; refused before publication: an unexpected name, a missing index after the bound, and a segment whose size or tag differs from its chunk; the bounded wait succeeding when the mock's listing lag ends within it and failing unresolved when it does not; the write declaring no content tag and the live tag checked as the MD5 of the concatenated hexadecimal segment tags; the dynamic path passing under the same lag; an overwrite of an existing large object; segment deletion of a published static object refused without the static-object proof; an existing bookmark without the value reading as `slo`; the bookmark value and the job override with their recorded origins; a readable `/info` without the entry publishing `dlo` with the `capability` origin, and an unreadable `/info` keeping `slo` rather than downgrading silently; the preview naming the kind.
 - System, against SAIO: a segmented upload as a static and as a dynamic object, each downloaded and compared byte for byte, and the live object's class.
 - Real-cloud journeys: the copy journey uploads its segmented file once as a static and once as a dynamic object on both clouds and downloads each back.
