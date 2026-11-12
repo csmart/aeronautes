@@ -120,7 +120,7 @@
             }}>Show in jobs</button
           >
         {/if}
-        <button class="secondary" onclick={onClose}>Close</button>
+        <button class="primary" onclick={onClose}>Close</button>
       {:else}
         <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
         <button class="danger" onclick={confirm} disabled={!canConfirm}>
@@ -232,6 +232,14 @@
     font-size: var(--text-sm);
     border-radius: var(--radius-control);
     cursor: pointer;
+  }
+
+  /* A finished dialog's Close is its next step, highlighted as in the copy
+    and transfer dialogs; anything beside it stays plain. */
+  .primary {
+    color: var(--color-bg);
+    background: var(--color-accent);
+    border: 1px solid var(--color-accent);
   }
 
   .secondary {
