@@ -12,6 +12,7 @@ import (
 
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/realcloud"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // repeats is how many times each journey runs, so an intermittent fault in
@@ -27,7 +28,10 @@ func repeats(t *testing.T) int {
 // TestCopyJourney: upload a folder, one file large enough to be segmented,
 // to one cloud; copy the container to the other cloud; copy two selected
 // files; download the copy back. Every step is checked byte for byte by an
-// independent read, in both directions, repeatedly (journeys 1 to 3).
+// independent read, in both directions, repeatedly (journeys 1 to 3). Odd
+// rounds publish the segmented file as a static large object, the default,
+// and even rounds as a dynamic one, so two rounds or more cover both kinds
+// on both clouds (ADR 0111).
 func TestCopyJourney(t *testing.T) {
 	w := newWorld(t)
 	for round := 1; round <= repeats(t); round++ {
@@ -55,9 +59,12 @@ func copyJourney(w *world, from, to *account, round int) {
 	if err != nil || picked == nil {
 		t.Fatalf("pick the folder: %v", failure(err))
 	}
+	settings, kind := app.TransferSettingsDTO{ChunkSize: "1Mi"}, swiftcontrol.ClassSLO
+	if round%2 == 0 {
+		settings.LargeObjects, kind = "dlo", swiftcontrol.ClassDLO
+	}
 	id, err := w.transfer.StartUpload(w.ctx, app.UploadRequestDTO{
-		BookmarkID: from.bookmarkID, Container: src, SelectionToken: picked.Token,
-		Settings: app.TransferSettingsDTO{ChunkSize: "1Mi"},
+		BookmarkID: from.bookmarkID, Container: src, SelectionToken: picked.Token, Settings: settings,
 	})
 	if err != nil {
 		t.Fatalf("upload: %s", failure(err))
@@ -66,6 +73,13 @@ func copyJourney(w *world, from, to *account, round int) {
 	prefix := filepath.Base(folder) + "/"
 	if diff := w.settled(func() string { return same(w.stored(from, src, prefix), digests) }); diff != "" {
 		t.Fatalf("uploaded files differ from the local ones: %s", diff)
+	}
+	detail, err := from.check.ObjectDetail(w.ctx, src, prefix+"file03.bin")
+	if err != nil {
+		t.Fatalf("read the segmented file: %s", failure(err))
+	}
+	if detail.Class != kind {
+		t.Fatalf("the segmented file is a %s object, want %s", detail.Class, kind)
 	}
 
 	// The whole container, across clouds.

@@ -31,6 +31,7 @@ Layer 2 (browser-driven UI journeys with Playwright) follows as its own slice.
 ## Journeys (each on both clouds, and across them where it says so)
 
 1. Upload a folder of small files and one file larger than the chunk size (segmented), then re-upload with overwrite acknowledged.
+   The segmented file is published as a static large object in odd rounds and as a dynamic one in even rounds, so two rounds or more cover both kinds on both clouds (ADR 0111).
 2. Copy a whole container from one cloud to the other; copy a selection of two of N; copy within a container into a subfolder; copy a folder up to the container's top.
 3. Download a folder, a selection and a large object; compare every file's digest with the source.
 4. Edit object and container metadata and the run's own account metadata key, and read them back; set and clear a read ACL on the run's container with the acknowledgement.
