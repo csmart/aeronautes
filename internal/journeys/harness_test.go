@@ -205,6 +205,30 @@ func (w *world) await(a *account, jobID string) *app.JobDTO {
 	return nil
 }
 
+// ended fails the step when a job did not complete. The job's own error can
+// name a provider's host, so it is not printed: it is kept in a private
+// file under the user's cache directory, outside the repository, and the
+// line names only the step, the state and that file.
+func (w *world) ended(step string, job *app.JobDTO, want string) {
+	w.t.Helper()
+	if job.State == want {
+		return
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
+	}
+	dir = filepath.Join(dir, "aeronautes-journeys")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
+	}
+	file := filepath.Join(dir, fmt.Sprintf("%s-%s.txt", time.Now().UTC().Format("20060102T150405Z"), job.ID))
+	if err := os.WriteFile(file, []byte(job.Error+"\n"), 0o600); err != nil {
+		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
+	}
+	w.t.Fatalf("%s ended %s, not %s; its error is kept in %s", step, job.State, want, file)
+}
+
 // fixture writes count files of the given sizes into a fresh folder and
 // returns it with each name's digest.
 func (w *world) fixture(sizes ...int) (string, map[string][32]byte) {

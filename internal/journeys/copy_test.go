@@ -62,9 +62,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	if err != nil {
 		t.Fatalf("upload: %s", failure(err))
 	}
-	if job := w.await(from, id); job.State != "complete" {
-		t.Fatalf("upload ended %s: %s", job.State, job.Error)
-	}
+	w.ended("upload", w.await(from, id), "complete")
 	prefix := filepath.Base(folder) + "/"
 	if diff := same(w.stored(from, src, prefix), digests); diff != "" {
 		t.Fatalf("uploaded files differ from the local ones: %s", diff)
@@ -82,23 +80,26 @@ func copyJourney(w *world, from, to *account, round int) {
 	if id, err = w.transfer.StartCopy(w.ctx, copyRequest); err != nil {
 		t.Fatalf("copy: %s", failure(err))
 	}
-	if job := w.await(to, id); job.State != "complete" {
-		t.Fatalf("copy ended %s: %s", job.State, job.Error)
-	}
+	w.ended("copy", w.await(to, id), "complete")
 	if diff := same(w.stored(to, dst, prefix), digests); diff != "" {
 		t.Fatalf("copied files differ from the source: %s", diff)
 	}
 
 	// Two selected files, across clouds.
 	chosen := w.container(to, fmt.Sprintf("sel%d", round))
+	if err := to.owned.ClaimSidecar(w.ctx, chosen); err != nil {
+		t.Fatal(err)
+	}
 	members := []string{prefix + "file00.bin", prefix + "file02.bin"}
 	selection := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, SourcePrefix: prefix,
 		DestBookmarkID: to.bookmarkID, DestContainer: chosen, Members: members}
 	if id, err = w.transfer.StartCopy(w.ctx, selection); err != nil {
 		t.Fatalf("copy the selection: %s", failure(err))
 	}
-	if job := w.await(to, id); job.State != "complete" || job.SelectedMembers != 2 {
-		t.Fatalf("selection copy ended %s with %d members: %s", job.State, job.SelectedMembers, job.Error)
+	job := w.await(to, id)
+	w.ended("selection copy", job, "complete")
+	if job.SelectedMembers != 2 {
+		t.Fatalf("the selection copy recorded %d members, want 2", job.SelectedMembers)
 	}
 	want := map[string][32]byte{"file00.bin": digests["file00.bin"], "file02.bin": digests["file02.bin"]}
 	if diff := same(w.stored(to, chosen, ""), want); diff != "" {
@@ -118,9 +119,7 @@ func copyJourney(w *world, from, to *account, round int) {
 	if id, err = w.transfer.StartDownload(w.ctx, app.DownloadRequestDTO{BookmarkID: to.bookmarkID, Container: dst, Prefix: prefix, DestDirToken: dest.Token}); err != nil {
 		t.Fatalf("download: %s", failure(err))
 	}
-	if job := w.await(to, id); job.State != "complete" {
-		t.Fatalf("download ended %s: %s", job.State, job.Error)
-	}
+	w.ended("download", w.await(to, id), "complete")
 	got := map[string][32]byte{}
 	for name := range digests {
 		body, err := os.ReadFile(filepath.Join(local, name))
