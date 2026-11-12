@@ -110,6 +110,17 @@ func Configure() (path string, closeFn func() error, err error) {
 	return path, closeFn, nil
 }
 
+// Redirect sends the log to w alone, at the level the environment names, and
+// returns a function that puts the previous logger back. It is for a caller
+// whose own output must not carry the log: the real-cloud journeys print
+// nothing that can name a provider, and the storage gateway's warnings name
+// the host they retried.
+func Redirect(w io.Writer) (restore func()) {
+	previous := logger.Load()
+	logger.Store(slog.New(newHandler(w, parseLevel(os.Getenv(EnvLevel)))))
+	return func() { logger.Store(previous) }
+}
+
 // parseLevel maps a level name to its slog level, defaulting to info.
 func parseLevel(name string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(name)) {
