@@ -96,10 +96,15 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
           ~/go/bin/wails3 task common:generate:bindings
-          git diff --exit-code frontend/bindings || {
+          # git diff alone does not see a newly generated file, so status
+          # is read too: changed, removed and untracked files all count.
+          drift=$(git status --porcelain --untracked-files=all frontend/bindings)
+          if [ -n "$drift" ]; then
+            echo "$drift"
+            git diff frontend/bindings
             echo '::error::generated bindings drifted from the Go services — run wails3 task common:generate:bindings and commit'
             exit 1
-          }
+          fi
       - name: Fetch pinned rclone (verified)
         run: |
           ./scripts/fetch-rclone.sh linux amd64 "$RUNNER_TEMP/rclone-pin"
