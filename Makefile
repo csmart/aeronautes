@@ -11,7 +11,7 @@ export PATH := $(HOME)/go/bin:$(PATH)
 
 WAILS3_VERSION := v3.1.0
 
-.PHONY: all tools build run dev test test-go test-frontend test-integration \
+.PHONY: all tools build run dev test test-go test-frontend test-integration uijourneys \
 	verify-swift-source test-swift-core test-secret-service \
 	rpm deb package spike rclone-matrix clean oracle journeys
 
@@ -99,3 +99,8 @@ oracle:
 # make journeys CLOUDS=~/code/clouds.yaml [REPEAT=3] [ONLY=Copy]
 journeys:
 	ORACLE_CLOUDS="$(CLOUDS)" JOURNEY_REPEAT="$(REPEAT)" go test -tags realcloud -run 'Test$(ONLY).*Journey' -count=1 -timeout 2h -v ./internal/journeys/
+
+## uijourneys: the same journeys through the real frontend in a browser (ADR 0112), local only; CLOUDS adds the two real clouds to the mock
+# make uijourneys [CLOUDS=~/code/clouds.yaml]
+uijourneys:
+	CLOUDS="$(CLOUDS)" ./scripts/uijourneys.sh

@@ -1,0 +1,9 @@
+{
+  "name": "aeronautes-uijourneys",
+  "private": true,
+  "description": "Browser-driven UI journeys (ADR 0112); run with make uijourneys",
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
