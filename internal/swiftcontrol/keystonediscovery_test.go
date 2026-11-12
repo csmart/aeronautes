@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -173,6 +174,9 @@ func TestKeystoneV3DiscoveryRefusals(t *testing.T) {
 				versionEntry("v3.10", "stable", base+"/identity/v3/"),
 			)
 		}, nil},
+		{"user information in the link", func(base string) (int, string) {
+			return stable(strings.Replace(base, "http://", "http://someone:secret@", 1) + "/v3/")
+		}, func(string) string { return "someone" }},
 		{"a malformed document", func(string) (int, string) { return http.StatusMultipleChoices, "<html>" }, nil},
 		{"a failed request", func(string) (int, string) { return http.StatusInternalServerError, "{}" }, nil},
 	}
@@ -202,6 +206,27 @@ func TestKeystoneV3DiscoveryRefusals(t *testing.T) {
 				t.Errorf("refusal %q quotes the advertised link", text)
 			}
 		})
+	}
+}
+
+// A connect the caller gave up on reports the cancellation, not a URL that
+// offers no v3, and sends no token request.
+func TestKeystoneV3DiscoveryReportsCancellation(t *testing.T) {
+	id := newIdentityService(t, "/", unexpectedDocument(t))
+	cfg := v3Config(id.srv.URL)
+	cfg.AuthURL = id.srv.URL + "/"
+	s, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = s.Authenticate(ctx)
+	if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "does not offer Keystone v3") {
+		t.Fatalf("Authenticate after cancel = %v, want the cancellation", err)
+	}
+	if n := id.mock.AuthRequests(); n != 0 {
+		t.Errorf("%d token requests after a cancelled connect", n)
 	}
 }
 

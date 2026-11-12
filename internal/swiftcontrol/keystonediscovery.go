@@ -115,7 +115,9 @@ func discoverV3Link(ctx context.Context, client *http.Client, authURL string) (*
 		return nil, errors.New("its version document names more than one stable v3")
 	}
 	link, err := url.Parse(links[0])
-	if err != nil || !link.IsAbs() {
+	// A link carrying user information would add a credential of the
+	// service's choosing to the token request.
+	if err != nil || !link.IsAbs() || link.User != nil {
 		return nil, errors.New("its v3 link could not be read")
 	}
 	return link, nil
