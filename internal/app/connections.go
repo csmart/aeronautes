@@ -40,8 +40,10 @@ type Connections struct {
 	caDir      string
 	caMu       sync.Mutex
 	// settings holds the container settings facts observed under each
-	// bookmark's current connection generation (ADR 0071).
+	// bookmark's current connection generation (ADR 0071); seen remembers
+	// them across connections (ADR 0110 decision 3), nil when not wired.
 	settings settingsFacts
+	seen     *rememberedSettings
 	// connectionCap supplies the per-host connection cap a session is
 	// opened with (ADR 0074 decision 4); nil means the session default.
 	connectionCap func(context.Context) int

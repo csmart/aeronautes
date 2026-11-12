@@ -46,30 +46,34 @@
   <span class="setting-badge {tone}" title={detail}>{label}</span>
 {/snippet}
 
-{#snippet settingsBadges(settings: ContainerSettingsDTO)}
+{#snippet settingsBadges(settings: ContainerSettingsDTO, remembered: boolean)}
   <!-- Every badge is a positive fact one HEAD reported (ADR 0071); the
-       tooltip carries the exact header value and when it was observed. -->
-  {@const observed = `observed ${settings.observedAt}`}
+       tooltip carries the exact header value and when it was observed.
+       Remembered settings from an earlier connection are muted and say so
+       (ADR 0110 decision 4). -->
+  {@const observed = remembered
+    ? `last seen ${settings.observedAt}, not checked under this connection`
+    : `observed ${settings.observedAt}`}
   {#if settings.publicRead}
-    {@render badge(settings.publicListing ? "public + listing" : "public", "danger", `read ACL ${settings.readAcl} · ${observed}`)}
+    {@render badge(settings.publicListing ? "public + listing" : "public", remembered ? "muted" : "danger", `read ACL ${settings.readAcl} · ${observed}`)}
   {/if}
   {#if (settings.referrerGrants?.length ?? 0) > 0}
-    {@render badge("referrer", "warning", `read ACL ${settings.readAcl} · ${observed}`)}
+    {@render badge("referrer", remembered ? "muted" : "warning", `read ACL ${settings.readAcl} · ${observed}`)}
   {/if}
   {#if settings.sharedWrite}
-    {@render badge("shared write", "warning", `write ACL ${settings.writeAcl} · ${observed}`)}
+    {@render badge("shared write", remembered ? "muted" : "warning", `write ACL ${settings.writeAcl} · ${observed}`)}
   {/if}
   {#if settings.staticWeb}
-    {@render badge("web", "neutral", `static web configured · ${observed}`)}
+    {@render badge("web", remembered ? "muted" : "neutral", `static web configured · ${observed}`)}
   {/if}
   {#if settings.versioningMode !== "off" && settings.versioningMode !== ""}
-    {@render badge("versioned", "neutral", `versioning ${settings.versioningMode}${settings.versioningArchive ? ` → ${settings.versioningArchive}` : ""} · ${observed}`)}
+    {@render badge("versioned", remembered ? "muted" : "neutral", `versioning ${settings.versioningMode}${settings.versioningArchive ? ` → ${settings.versioningArchive}` : ""} · ${observed}`)}
   {/if}
   {#if settings.quota}
-    {@render badge("quota", "neutral", `quota set · ${observed}`)}
+    {@render badge("quota", remembered ? "muted" : "neutral", `quota set · ${observed}`)}
   {/if}
   {#if settings.cors}
-    {@render badge("cors", "neutral", `CORS configured · ${observed}`)}
+    {@render badge("cors", remembered ? "muted" : "neutral", `CORS configured · ${observed}`)}
   {/if}
 {/snippet}
 
@@ -85,9 +89,14 @@
         <span class="class-chip">{container.class}</span>
       {/if}
       {#if container.settings}
-        {@render settingsBadges(container.settings)}
-      {:else if browser.settingsErrors[container.name]}
-        <span class="setting-badge muted" title={`settings could not be checked: ${browser.settingsErrors[container.name]}`}>unchecked</span>
+        {@render settingsBadges(container.settings, false)}
+      {:else}
+        {#if container.lastSeen}
+          {@render settingsBadges(container.lastSeen, true)}
+        {/if}
+        {#if browser.settingsErrors[container.name]}
+          <span class="setting-badge muted" title={`settings could not be checked: ${browser.settingsErrors[container.name]}`}>unchecked</span>
+        {/if}
       {/if}
     </span>
     <span class="container-detail num">

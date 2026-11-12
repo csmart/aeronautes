@@ -192,10 +192,13 @@ func (s *BrowseService) Containers(ctx context.Context, bookmarkID, marker strin
 		return ContainerPageDTO{}, err
 	}
 	known := s.connections.settings.known(scope.BookmarkID, scope.Generation, names)
+	seen := s.connections.lastSeenSettings(ctx, scope.BookmarkID, session, names)
 	for i := range page.Rows {
 		page.Rows[i].Class = string(classes[page.Rows[i].Name])
 		if fact, ok := known[page.Rows[i].Name]; ok {
 			page.Rows[i].Settings = &fact
+		} else if remembered, ok := seen[page.Rows[i].Name]; ok {
+			page.Rows[i].LastSeen = &remembered
 		}
 	}
 	return page, nil

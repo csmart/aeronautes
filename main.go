@@ -140,6 +140,7 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	bookmarkStore := bookmarks.NewStore(database, secretStore)
 	connections := app.NewConnections(bookmarkStore)
 	connections.SetCADir(filepath.Join(filepath.Dir(statePath), "ca"))
+	app.WireRememberedSettings(connections, database)
 	evidenceStore := evidence.NewStore(database)
 	auditStore := audit.NewStore(database)
 	jobStore := jobs.NewStore(database)

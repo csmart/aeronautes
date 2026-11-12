@@ -111,6 +111,10 @@ type ContainerRowDTO struct {
 	// edit or the operator's check already observed; nil means unchecked.
 	// Listing never HEADs a row to fill it (DESIGN 14.2, ADR 0071).
 	Settings *ContainerSettingsDTO `json:"settings"`
+	// LastSeen is the settings remembered from an earlier connection, for
+	// a row with no current fact: shown muted and dated, and used for
+	// nothing with authority (ADR 0110 decisions 3 and 4).
+	LastSeen *ContainerSettingsDTO `json:"lastSeen,omitempty"`
 }
 
 // ContainerDetailDTO is the container inspector's §53 section.

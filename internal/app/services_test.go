@@ -87,6 +87,7 @@ func newHarnessAt(t *testing.T, path, infoJSON string) *harness {
 
 	store := bookmarks.NewStore(d, secrets.NewSessionStore())
 	connections := NewConnections(store)
+	WireRememberedSettings(connections, d)
 	ev := evidence.NewStore(d)
 	auditStore := audit.NewStore(d)
 	jobStore := jobs.NewStore(d)
