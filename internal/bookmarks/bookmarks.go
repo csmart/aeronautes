@@ -68,6 +68,10 @@ type Bookmark struct {
 	// "slo" or "dlo" (ADR 0111). Empty reads as static, the default, so a
 	// bookmark saved before the setting existed needs no value.
 	LargeObjects string
+	// VerifyFailure is why the bookmark did not verify after import, or
+	// empty (ADR 0114). It is not part of the binding: SetVerifyFailure
+	// writes it, and a save neither carries nor clears it.
+	VerifyFailure string
 	// HasCredential reports whether a credential is on record for this
 	// bookmark (secret_ref set).
 	HasCredential bool
@@ -514,6 +518,7 @@ const selectColumns = `
 		secret_ref IS NOT NULL,
 		tls_mode, COALESCE(tls_ca_id, ''), performance_profile,
 		segment_placement, COALESCE(chunk_size_bytes, 0), COALESCE(large_objects, ''),
+		COALESCE(verify_failure, ''),
 		created_at, updated_at, COALESCE(secret_ref, ''), origin_kind,
 		origin_instance, origin_persistent, generation, revision,
 		(SELECT pem FROM ca_certs WHERE id=bookmarks.tls_ca_id)
@@ -535,6 +540,7 @@ func scanRecord(scan func(...any) error) (record, error) {
 		&b.HasCredential,
 		&tlsMode, &b.TLSCAID, &b.PerformanceProfile,
 		&placement, &b.ChunkSizeBytes, &b.LargeObjects,
+		&b.VerifyFailure,
 		&created, &updated, &r.ref, &r.origin.Kind, &r.origin.Instance, &r.origin.Persistent,
 		&r.generation, &r.revision, &r.ca)
 	if err != nil {
@@ -563,6 +569,17 @@ func nullableInt(n int64) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// SetVerifyFailure records why a bookmark did not verify after import, or
+// clears the record when reason is empty (ADR 0114 decision 9). The flag is
+// not part of the binding, so the bookmark's generation and revision stay
+// as they are and no cached session or edit in flight is invalidated.
+func (st *Store) SetVerifyFailure(ctx context.Context, id, reason string) error {
+	return st.db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE bookmarks SET verify_failure=? WHERE id=?`, nullable(reason), id)
+		return err
+	})
 }
 
 // SaveCA stores a CA bundle after checking the PEM actually parses to

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -94,6 +95,11 @@ func (c *Connections) open(ctx context.Context, bookmarkID string) (cachedSessio
 	}
 	if err := c.store.WithCurrentGeneration(ctx, bookmarkID, generation, nil); err != nil {
 		return cachedSession{}, err
+	}
+	// A bookmark that now signs in no longer needs the import's warning
+	// (ADR 0114 decision 9); failing to clear it leaves only a stale note.
+	if err := c.store.SetVerifyFailure(ctx, bookmarkID, ""); err != nil {
+		applog.Warnf("clearing a bookmark's verification flag: %v", err)
 	}
 	return cachedSession{session: session, generation: generation}, nil
 }
