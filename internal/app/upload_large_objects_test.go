@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -162,5 +163,78 @@ func TestUploadPreviewNamesTheCapabilityDowngrade(t *testing.T) {
 	// own, because it uses the snapshot taken at connect.
 	if extra := h.mock.InfoRequests() - reads; extra != 1 {
 		t.Errorf("the preview read /info %d times, want only the chunk cap's one", extra)
+	}
+}
+
+// manifestPuts counts the static manifest writes the mock has answered.
+func manifestPuts(h *harness) int {
+	n := 0
+	for _, line := range h.mock.RequestLog() {
+		if strings.HasPrefix(line, "PUT ") && strings.Contains(line, "multipart-manifest=put") {
+			n++
+		}
+	}
+	return n
+}
+
+// A store that does not return static manifests gets a dynamic upload,
+// recorded as the capability's, and the connection remembers: the next
+// preview names dynamic from the capability and the next job checks
+// nothing. A store that returns them is checked once per connection too
+// (ADR 0111 decisions 9 and 10).
+func TestUploadLearnsWhetherTheStoreReturnsStaticManifests(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		notReturned  bool
+		kind, origin string
+		checks       int
+	}{
+		{"returned", false, "slo", "default", 1},
+		{"not returned", true, "dlo", "capability", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.connect(t)
+			h.mock.ManifestsNotReturned = tc.notReturned
+			job, live := uploadFile(t, h, segmentedSize, TransferSettingsDTO{})
+			if job.State != "complete" || live == nil || string(live.Class) != tc.kind {
+				t.Fatalf("first job %s, live %+v; want a complete %s upload", job.State, live, tc.kind)
+			}
+			if kind, origin := recordedLargeObjects(t, job); kind != tc.kind || origin != tc.origin {
+				t.Errorf("first job records %q from %q, want %q from %q", kind, origin, tc.kind, tc.origin)
+			}
+			first := manifestPuts(h)
+
+			path := filepath.Join(t.TempDir(), "again.bin")
+			if err := os.WriteFile(path, bytes.Repeat([]byte("again!!!"), segmentedSize/8), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			h.transfer.setFilePicker(fakePicker{files: []string{path}})
+			picked, err := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: h.bookmarkID(), Container: "media"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := UploadRequestDTO{BookmarkID: h.bookmarkID(), Container: "media", SelectionToken: picked.Token, Settings: TransferSettingsDTO{ChunkSize: "1Mi"}}
+			preview, err := h.transfer.PreflightUpload(t.Context(), req)
+			if err != nil || preview.LargeObjects != tc.kind || preview.LargeObjectsOrigin != tc.origin {
+				t.Fatalf("second preview names %q from %q (%v), want %q from %q", preview.LargeObjects, preview.LargeObjectsOrigin, err, tc.kind, tc.origin)
+			}
+			id, err := h.transfer.StartUpload(t.Context(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if second := awaitTerminal(t, h, id); second.State != "complete" {
+				t.Fatalf("second job %s", second.State)
+			}
+			// The first job checked once; the second checks nothing and
+			// writes only its own live manifest when it is static.
+			wantFirst, wantSecond := tc.checks, 0
+			if tc.kind == "slo" {
+				wantFirst, wantSecond = tc.checks+1, 1
+			}
+			if second := manifestPuts(h) - first; first != wantFirst || second != wantSecond {
+				t.Errorf("manifest writes: first job %d, second %d; want %d and %d", first, second, wantFirst, wantSecond)
+			}
+		})
 	}
 }

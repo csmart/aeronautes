@@ -67,6 +67,11 @@ type UploadPreflight struct {
 	// "capability" when the destination's readable /info has no static
 	// large object entry and a static choice is published as dynamic.
 	LargeObjectsOrigin string `json:"largeObjectsOrigin"`
+	// StaticManifestsReturned says the connection already learned that the
+	// store returns static manifests, so a static plan needs no check of
+	// its own (ADR 0111 decision 9). A store known not to return them gets
+	// a dynamic plan from the bridge instead.
+	StaticManifestsReturned bool `json:"-"`
 	// ChunkBytes is the chunk size the engine segments by. A static
 	// publication pairs each segment with the local chunk at its index, so
 	// it must be the size the engine was given; it never leaves Go.

@@ -197,7 +197,7 @@ it("shows where each effective setting came from (§45 provenance)", async () =>
 
 for (const [largeObjects, origin, value, note] of [
   ["dlo", "bookmark", "dynamic", "from bookmark"],
-  ["dlo", "capability", "dynamic", "this cluster does not offer static large objects"],
+  ["dlo", "capability", "dynamic", "this cluster does not offer static large objects that Aeronautes can read back"],
   ["slo", "default", "static", "default"],
 ]) {
   it(`names an upload's ${value} large objects from ${origin} (ADR 0111)`, async () => {

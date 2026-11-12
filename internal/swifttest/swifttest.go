@@ -186,6 +186,11 @@ type Server struct {
 	key   string
 	token string
 
+	// ManifestsNotReturned answers a static manifest read
+	// (?multipart-manifest=get) with 200 and an empty body, as Ceph RGW
+	// was measured to; the object itself is served as usual. Set before
+	// serving.
+	ManifestsNotReturned bool
 	// ListingLag leaves the last name under a prefix out of that prefix's
 	// listing, and the last segment out of a dynamic large object's
 	// assembled size and content, for the first ListingLag reads of each,
@@ -1541,6 +1546,12 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 		return
 	}
 
+	if r.URL.Query().Get("multipart-manifest") == "get" && o.SLOManifestJSON != "" && s.ManifestsNotReturned {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if r.URL.Query().Get("multipart-manifest") == "get" && o.SLOManifestJSON != "" {
 		w.Header().Set("Content-Type", "application/json")
 		body, status := o.SLOManifestJSON, http.StatusOK
