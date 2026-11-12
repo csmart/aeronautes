@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/app"
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
@@ -95,6 +96,24 @@ func newWorld(t *testing.T) *world {
 		}
 		clouds[b.Label] = c
 	}
+
+	// The application's own log names the hosts it talks to, the storage
+	// gateway's retry warnings among them, so it goes to a private file
+	// beside the job errors and never into the journey output.
+	logPath, err := privateFile("app.log")
+	if err != nil {
+		t.Fatalf("the application log has nowhere private to go (%s)", realcloud.Failure(err))
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatalf("the application log has nowhere private to go (%s)", realcloud.Failure(err))
+	}
+	restoreLog := applog.Redirect(logFile)
+	t.Cleanup(func() {
+		restoreLog()
+		logFile.Close()
+	})
+	t.Logf("the application log is kept in %s", logPath)
 
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -224,25 +243,34 @@ func (w *world) await(a *account, jobID string) *app.JobDTO {
 	return nil
 }
 
+// privateFile names a file in a private directory under the user's cache
+// directory, outside the repository, for what the journey output must not
+// print.
+func privateFile(name string) (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "aeronautes-journeys")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, time.Now().UTC().Format("20060102T150405Z")+"-"+name), nil
+}
+
 // ended fails the step when a job did not complete. The job's own error can
 // name a provider's host, so it is not printed: it is kept in a private
-// file under the user's cache directory, outside the repository, and the
-// line names only the step, the state and that file.
+// file, and the line names only the step, the state and that file.
 func (w *world) ended(step string, job *app.JobDTO, want string) {
 	w.t.Helper()
 	if job.State == want {
 		return
 	}
-	dir, err := os.UserCacheDir()
+	file, err := privateFile(job.ID + ".txt")
+	if err == nil {
+		err = os.WriteFile(file, []byte(job.Error+"\n"), 0o600)
+	}
 	if err != nil {
-		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
-	}
-	dir = filepath.Join(dir, "aeronautes-journeys")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
-	}
-	file := filepath.Join(dir, fmt.Sprintf("%s-%s.txt", time.Now().UTC().Format("20060102T150405Z"), job.ID))
-	if err := os.WriteFile(file, []byte(job.Error+"\n"), 0o600); err != nil {
 		w.t.Fatalf("%s ended %s; its error could not be kept (%s)", step, job.State, realcloud.Failure(err))
 	}
 	w.t.Fatalf("%s ended %s, not %s; its error is kept in %s", step, job.State, want, file)

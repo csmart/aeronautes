@@ -259,3 +259,20 @@ func TestConfigureIsSafeDuringConcurrentLogging(t *testing.T) {
 		t.Error("no lines were written during concurrent logging")
 	}
 }
+
+// A redirected log is written to the given writer and nowhere else, and the
+// previous logger is back once restored.
+func TestRedirectWritesOnlyToTheWriterUntilRestored(t *testing.T) {
+	var kept, before bytes.Buffer
+	logger.Store(slog.New(newHandler(&before, slog.LevelInfo)))
+	restore := Redirect(&kept)
+	Warnf("kept-warn")
+	restore()
+	Warnf("after-restore")
+	if !strings.Contains(kept.String(), "kept-warn") || strings.Contains(kept.String(), "after-restore") {
+		t.Errorf("redirected log = %q", kept.String())
+	}
+	if strings.Contains(before.String(), "kept-warn") || !strings.Contains(before.String(), "after-restore") {
+		t.Errorf("previous logger = %q", before.String())
+	}
+}
