@@ -365,6 +365,17 @@ export class BrowserState {
   #settingsCheckSeq = 0;
   /** Rows whose HEAD failed during a check, by name, with the reason. */
   settingsErrors: Record<string, string> = $state({});
+  // Container HEADs for settings share four slots, so the check and the
+  // reads of rows on screen never have more than four in flight between
+  // them (ADR 0071 decision 5, ADR 0110 decision 2).
+  #headSlots = 4;
+  #headWaiters: (() => void)[] = [];
+  // Rows waiting out the on-screen dwell, rows queued to be read, and the
+  // rows already read this way, keyed by bookmark, generation and name so a
+  // switch back to an unchanged bookmark reads none of them again.
+  #onScreenTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #onScreenQueue: string[] = [];
+  #onScreenTried = new Set<string>();
   /** Set while viewing a manifest's segment location (§23.1 backstage
    * jump): the label of where we came from; null in normal browsing. */
   backstageFrom: string | null = $state(null);
@@ -544,6 +555,11 @@ export class BrowserState {
     this.#containersPageError = null;
     this.containers = [];
     this.settingsErrors = {};
+    // Rows of the old view are not read on the new one; what was already
+    // read stays keyed by its bookmark and generation.
+    for (const timer of this.#onScreenTimers.values()) clearTimeout(timer);
+    this.#onScreenTimers.clear();
+    this.#onScreenQueue = [];
     this.settingsCheck = null;
     this.containerDetailError = null;
     this.containersMarker = "";
@@ -1880,6 +1896,72 @@ export class BrowserState {
     }
   }
 
+  async #acquireHead() {
+    if (this.#headSlots > 0) {
+      this.#headSlots--;
+      return;
+    }
+    await new Promise<void>((resolve) => this.#headWaiters.push(resolve));
+  }
+
+  #releaseHead() {
+    const next = this.#headWaiters.shift();
+    if (next) next();
+    else this.#headSlots++;
+  }
+
+  #onScreenKey(name: string): string | null {
+    const bookmarkId = this.connectedBookmarkId;
+    const generation = this.account?.scope.generation;
+    return bookmarkId && generation !== undefined ? `${bookmarkId}\n${generation}\n${name}` : null;
+  }
+
+  /** A container row came into or left the column's visible area. One that
+   * stays visible for 300 ms, has no current fact and was not read this way
+   * under this bookmark generation is read, through the same HEAD selection
+   * makes (ADR 0110 decision 2). */
+  containerOnScreen(name: string, visible: boolean) {
+    const timer = this.#onScreenTimers.get(name);
+    if (timer !== undefined) clearTimeout(timer);
+    this.#onScreenTimers.delete(name);
+    if (!visible) {
+      this.#onScreenQueue = this.#onScreenQueue.filter((queued) => queued !== name);
+      return;
+    }
+    this.#onScreenTimers.set(name, setTimeout(() => {
+      this.#onScreenTimers.delete(name);
+      const key = this.#onScreenKey(name);
+      const row = this.containers.find((r) => r.name === name);
+      if (!key || !row || row.settings || this.#onScreenTried.has(key) || this.#onScreenQueue.includes(name)) return;
+      this.#onScreenQueue.push(name);
+      this.#readOnScreen();
+    }, 300));
+  }
+
+  #readOnScreen() {
+    // A running check covers every loaded row, so these wait for it.
+    while (this.#onScreenQueue.length > 0 && !this.settingsCheck?.running && this.#headSlots > 0) {
+      const name = this.#onScreenQueue.shift()!;
+      const key = this.#onScreenKey(name);
+      const bookmarkId = this.connectedBookmarkId;
+      if (!key || !bookmarkId || this.#onScreenTried.has(key) || this.containers.find((r) => r.name === name)?.settings) continue;
+      this.#onScreenTried.add(key);
+      const connection = this.#connectionRevision;
+      this.#headSlots--;
+      void this.#api.containerDetail(name, bookmarkId).then((detail) => {
+        if (connection !== this.#connectionRevision) return;
+        if (detail.name === name && this.#answeredBy(detail.scope, bookmarkId) && this.#factCurrent(detail)) {
+          this.#applySettings(name, detail.settings);
+        }
+      }, (err) => {
+        if (connection === this.#connectionRevision) this.settingsErrors = { ...this.settingsErrors, [name]: messageOf(err) };
+      }).finally(() => {
+        this.#releaseHead();
+        this.#readOnScreen();
+      });
+    }
+  }
+
   /** HEAD every loaded container once, in listing order with at most four
    * in flight, through the same read selection makes; stops on request
    * or when the scope changes (ADR 0071 decision 5). */
@@ -1900,6 +1982,7 @@ export class BrowserState {
     const worker = async () => {
       while (live() && next < names.length) {
         const name = names[next++];
+        await this.#acquireHead();
         try {
           const detail = await this.#api.containerDetail(name, bookmarkId);
           if (!live()) return;
@@ -1911,6 +1994,8 @@ export class BrowserState {
         } catch (err) {
           if (!live()) return;
           this.settingsErrors = { ...this.settingsErrors, [name]: messageOf(err) };
+        } finally {
+          this.#releaseHead();
         }
         check.checked++;
         this.settingsCheck = { ...check };
@@ -1922,6 +2007,7 @@ export class BrowserState {
       if (scope !== this.#scopeRevision && check.checked < check.total) check.stopped = true;
       this.settingsCheck = { ...check };
     }
+    this.#readOnScreen();
   }
 
   stopSettingsCheck() {
@@ -1929,6 +2015,7 @@ export class BrowserState {
     if (check?.running) {
       this.settingsCheck = { ...check, running: false, stopped: true };
       this.#settingsCheckSeq++;
+      this.#readOnScreen();
     }
   }
 
