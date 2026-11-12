@@ -29,9 +29,10 @@ func repeats(t *testing.T) int {
 // to one cloud; copy the container to the other cloud; copy two selected
 // files; download the copy back. Every step is checked byte for byte by an
 // independent read, in both directions, repeatedly (journeys 1 to 3). Odd
-// rounds publish the segmented file as a static large object, the default,
-// and even rounds as a dynamic one, so two rounds or more cover both kinds
-// on both clouds (ADR 0111).
+// rounds choose static for the segmented file, the default, and even rounds
+// dynamic, so two rounds or more cover both choices on both clouds; a
+// static choice is published static where the store returns static
+// manifests and dynamic where it does not (ADR 0111).
 func TestCopyJourney(t *testing.T) {
 	w := newWorld(t)
 	for round := 1; round <= repeats(t); round++ {
@@ -60,8 +61,13 @@ func copyJourney(w *world, from, to *account, round int) {
 		t.Fatalf("pick the folder: %v", failure(err))
 	}
 	settings, kind := app.TransferSettingsDTO{ChunkSize: "1Mi"}, swiftcontrol.ClassSLO
-	if round%2 == 0 {
+	switch {
+	case round%2 == 0:
 		settings.LargeObjects, kind = "dlo", swiftcontrol.ClassDLO
+	case from.label == "ceph":
+		// The Ceph RGW cloud does not return static manifests, so a static
+		// choice is published dynamic there (ADR 0111 decision 10).
+		kind = swiftcontrol.ClassDLO
 	}
 	id, err := w.transfer.StartUpload(w.ctx, app.UploadRequestDTO{
 		BookmarkID: from.bookmarkID, Container: src, SelectionToken: picked.Token, Settings: settings,
