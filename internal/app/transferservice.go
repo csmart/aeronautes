@@ -68,7 +68,44 @@ type CopyPlanDTO struct {
 	// MissingMembers counts selected objects the source listing no longer
 	// holds; they are not copied (ADR 0108 decision 3).
 	MissingMembers int `json:"missingMembers,omitempty"`
+	// DestinationMissing is set, and nothing else is, when the destination
+	// container does not exist: the dialog offers to create it, bound to
+	// this scope (ADR 0115 decision 2).
+	DestinationMissing *DestinationMissingDTO `json:"destinationMissing,omitempty"`
 }
+
+// DestinationMissingDTO names a copy destination container the preview
+// found missing: the bookmark and generation of the session that answered
+// not found, and the name it read. A create is bound to exactly this.
+type DestinationMissingDTO struct {
+	BookmarkID string `json:"bookmarkId"`
+	Generation int64  `json:"generation"`
+	Container  string `json:"container"`
+}
+
+// destinationMissingError is resolve's not-found answer for the destination
+// container. A preview turns it into DestinationMissing; a start reports it
+// as the error it always was.
+type destinationMissingError struct {
+	missing DestinationMissingDTO
+	cause   error
+}
+
+func (e *destinationMissingError) Error() string {
+	return fmt.Sprintf("destination container %q: %v", e.missing.Container, e.cause)
+}
+
+func (e *destinationMissingError) Unwrap() error { return e.cause }
+
+// DestinationContainersDTO is the first page of a copy destination's
+// container names, which the dialog suggests as the operator types.
+type DestinationContainersDTO struct {
+	Names []string `json:"names"`
+	More  bool     `json:"more"`
+}
+
+// destinationNameLimit bounds the suggestions (ADR 0115 decision 1).
+const destinationNameLimit = 1000
 
 // TransferService is the bridge's transfer surface (ADR 0011): planning
 // previews, job start, and cancellation. Execution itself runs in a
@@ -326,10 +363,11 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("source: %w", err)
 	}
-	dst, err = s.connections.SessionFor(ctx, req.DestBookmarkID)
+	dstEntry, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("destination: %w", err)
 	}
+	dst = dstEntry.session
 	// A destination equal to or inside the source in ONE namespace is
 	// refused outright (C-03, DESIGN §65.9 item 9): every name the copy
 	// writes would land in the scope it reads. A copy into a parent folder
@@ -372,6 +410,10 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 			req.SourcePrefix, scratch)
 	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
+	if swiftcontrol.IsNotFound(err) {
+		missing := DestinationMissingDTO{BookmarkID: req.DestBookmarkID, Generation: dstEntry.generation, Container: req.DestContainer}
+		return nil, nil, false, &destinationMissingError{missing: missing, cause: err}
+	}
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("destination container %q: %w", req.DestContainer, err)
 	}
@@ -395,6 +437,10 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		return nil, err
 	}
 	src, dst, versioned, err := s.resolve(ctx, req)
+	var missing *destinationMissingError
+	if errors.As(err, &missing) {
+		return &CopyPlanDTO{DestinationMissing: &missing.missing}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +470,28 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		OverwriteBytes:       overwriteBytes,
 		MissingMembers:       missingMembers(req, found),
 	}, nil
+}
+
+// DestinationContainers lists the first page of a copy destination's
+// containers, through the registry session the copy plan reads it with, so
+// the destination need not be the active connection (ADR 0115 decision 1).
+func (s *TransferService) DestinationContainers(ctx context.Context, bookmarkID string) (DestinationContainersDTO, error) {
+	session, err := s.connections.SessionFor(ctx, bookmarkID)
+	if err != nil {
+		return DestinationContainersDTO{}, err
+	}
+	page := DestinationContainersDTO{Names: []string{}}
+	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{PageSize: destinationNameLimit}) {
+		if err != nil {
+			return DestinationContainersDTO{}, err
+		}
+		if len(page.Names) == destinationNameLimit {
+			page.More = true
+			break
+		}
+		page.Names = append(page.Names, entry.Name)
+	}
+	return page, nil
 }
 
 // effectiveSettings resolves profile + overrides (§40/§38);

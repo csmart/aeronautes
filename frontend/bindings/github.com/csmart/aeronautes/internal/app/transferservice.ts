@@ -30,6 +30,15 @@ export function CancelJob(jobID: string): $CancellablePromise<void> {
 }
 
 /**
+ * DestinationContainers lists the first page of a copy destination's
+ * containers, through the registry session the copy plan reads it with, so
+ * the destination need not be the active connection (ADR 0115 decision 1).
+ */
+export function DestinationContainers(bookmarkID: string): $CancellablePromise<$models.DestinationContainersDTO> {
+    return $Call.ByID(2932381170, bookmarkID);
+}
+
+/**
  * PauseJob asks an upload, a download or a copy to pause at its next unit
  * boundary (ADR 0104): the unit in hand finishes and is recorded, nothing is
  * killed, and the job is then paused until it is resumed or cancelled. A

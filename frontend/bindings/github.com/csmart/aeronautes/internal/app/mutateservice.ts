@@ -27,6 +27,18 @@ export function CreateContainer(scope: $models.ListingScopeDTO, create: $models.
 }
 
 /**
+ * CreateDestinationContainer creates a copy's missing destination container
+ * on the bookmark and generation the preview found it missing under, which
+ * need not be the active connection (ADR 0115). It takes the default storage
+ * policy and no metadata, and is the same create as CreateContainer from the
+ * session on: an existing container is refused, and the intent, outcome and
+ * audit record are kept against the destination bookmark.
+ */
+export function CreateDestinationContainer(missing: $models.DestinationMissingDTO): $CancellablePromise<$models.ContainerDetailDTO> {
+    return $Call.ByID(3728299452, missing);
+}
+
+/**
  * CreateMarker creates the explicit §14.1 marker object at a prefix.
  */
 export function CreateMarker(scope: $models.ListingScopeDTO, container: string, prefix: string): $CancellablePromise<$models.PrefixDetailDTO> {
