@@ -860,6 +860,7 @@ Selection triggers authoritative HEAD/inspection — `PrefixDetail` for prefixes
 for objects.
 
 This is a hard performance rule.
+Container rows are its one exception: the container column reads the settings of the rows the operator keeps on screen, at most 4 at a time and each once per connection, as [ADR 0110](adr/0110-switching-and-container-settings-on-screen.md) decision 2 bounds it; listing itself still HEADs nothing, and object rows are unchanged.
 
 ### 14.3 Object-name encoding tests
 
@@ -2683,7 +2684,7 @@ Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pu
 
 ## 52. UI detail: container modes
 
-In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, checked or edited: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a badge is unchecked, not private, and listing never HEADs a row to fill one (§14.2).
+In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, checked, edited or kept on screen: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a current fact shows the settings last seen for it, muted and dated, if any were recorded ([ADR 0110](adr/0110-switching-and-container-settings-on-screen.md)); a row without a badge is unchecked, not private, and listing never HEADs a row to fill one (§14.2).
 The column's "Check settings" control HEADs every loaded row once, four in flight, with a running count and a stop.
 
 ### Logical — default
