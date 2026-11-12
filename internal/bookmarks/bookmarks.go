@@ -48,9 +48,14 @@ type Bookmark struct {
 	// identity for the password method with project scope; empty for v1.
 	// The domains default to "Default" and Region is required for v3 and
 	// binds the token to one catalog region (ADR 0100).
-	UserDomain         string
-	ProjectName        string
-	ProjectDomain      string
+	UserDomain    string
+	ProjectName   string
+	ProjectDomain string
+	// UserID and ProjectID name the v3 user and project by ID instead of
+	// by name and domain (ADR 0113); empty for v1 and for a side named by
+	// name.
+	UserID             string
+	ProjectID          string
 	Region             string
 	TLSMode            swiftcontrol.TLSMode
 	TLSCAID            string
@@ -83,6 +88,8 @@ func (b Bookmark) SwiftConfig(apiKey, caPEM []byte) swiftcontrol.Config {
 		UserDomain:         b.UserDomain,
 		ProjectName:        b.ProjectName,
 		ProjectDomain:      b.ProjectDomain,
+		UserID:             b.UserID,
+		ProjectID:          b.ProjectID,
 		Region:             b.Region,
 		TLS:                swiftcontrol.TLSConfig{Mode: b.TLSMode, CACertPEM: caPEM},
 	}
@@ -92,7 +99,8 @@ func (b Bookmark) SwiftConfig(apiKey, caPEM []byte) swiftcontrol.Config {
 // saved or verified without them: TempAuth v1 when no version is named, and
 // Keystone's conventional "Default" domain for a v3 bookmark that leaves the
 // user or project domain blank (the wire library requires a user domain, and
-// an explicit project domain keeps the scoped token deterministic). The save
+// an explicit project domain keeps the scoped token deterministic). A side
+// named by ID has no domain, so none is filled there (ADR 0113). The save
 // and verify paths both apply it so a bookmark's stored form and the form a
 // pre-save check authenticates with cannot drift (ADR 0100).
 func NormalizeAuth(b *Bookmark) {
@@ -100,10 +108,10 @@ func NormalizeAuth(b *Bookmark) {
 		b.AuthVersion = 1
 	}
 	if b.AuthVersion == 3 {
-		if b.UserDomain == "" {
+		if b.UserDomain == "" && b.UserID == "" {
 			b.UserDomain = "Default"
 		}
-		if b.ProjectDomain == "" {
+		if b.ProjectDomain == "" && b.ProjectID == "" {
 			b.ProjectDomain = "Default"
 		}
 	}
@@ -285,7 +293,7 @@ func (st *Store) SaveWithCA(ctx context.Context, b Bookmark, secret, caPEM []byt
 	return proposed.Bookmark, nil
 }
 
-var errKeyReentry = errors.New("re-enter the key when changing the auth URL, username, storage override, auth version, Keystone domain, project or region, or TLS trust")
+var errKeyReentry = errors.New("re-enter the key when changing the auth URL, username, storage override, auth version, Keystone domain, project, IDs or region, or TLS trust")
 
 // SameBinding reports whether two connection configurations name the same
 // credential binding (ADR 0015): the endpoint, the user, the storage
@@ -304,6 +312,7 @@ func SameBinding(current, proposed swiftcontrol.Config) bool {
 		current.StorageURLOverride == proposed.StorageURLOverride &&
 		current.AuthVersion == proposed.AuthVersion && current.UserDomain == proposed.UserDomain &&
 		current.ProjectName == proposed.ProjectName && current.ProjectDomain == proposed.ProjectDomain &&
+		current.UserID == proposed.UserID && current.ProjectID == proposed.ProjectID &&
 		current.Region == proposed.Region && mode(current.TLS.Mode) == mode(proposed.TLS.Mode)
 }
 
@@ -443,7 +452,7 @@ func validate(b Bookmark) error {
 		return errors.New("bookmark needs a display name")
 	case b.AuthURL == "":
 		return errors.New("bookmark needs an auth URL")
-	case b.Username == "":
+	case b.Username == "" && b.AuthVersion != 3:
 		return errors.New("bookmark needs a username")
 	}
 	if err := swiftcontrol.ValidateEndpointURL(b.AuthURL, b.TLSMode); err != nil {
@@ -474,12 +483,18 @@ func validate(b Bookmark) error {
 	// this save boundary too, so an unusable v3 bookmark cannot be stored.
 	switch b.AuthVersion {
 	case 1:
+		if b.UserID != "" || b.ProjectID != "" {
+			return errors.New("a TempAuth bookmark has no Keystone user or project ID")
+		}
 	case 3:
 		if b.Region == "" {
 			return errors.New("Keystone v3 bookmark needs a region")
 		}
-		if b.ProjectName == "" {
-			return errors.New("Keystone v3 bookmark needs a project")
+		if b.Username == "" && b.UserID == "" {
+			return errors.New("Keystone v3 bookmark needs a username or a user ID")
+		}
+		if b.ProjectName == "" && b.ProjectID == "" {
+			return errors.New("Keystone v3 bookmark needs a project name or a project ID")
 		}
 		if b.StorageURLOverride != "" {
 			return errors.New("Keystone v3 does not use a storage-URL override; the identity catalog selects the endpoint")
@@ -494,7 +509,8 @@ const selectColumns = `
 	SELECT id, display_name, auth_url, username,
 		COALESCE(storage_url_override, ''),
 		auth_version, COALESCE(user_domain, ''), COALESCE(project_name, ''),
-		COALESCE(project_domain, ''), COALESCE(region, ''),
+		COALESCE(project_domain, ''), COALESCE(user_id, ''), COALESCE(project_id, ''),
+		COALESCE(region, ''),
 		secret_ref IS NOT NULL,
 		tls_mode, COALESCE(tls_ca_id, ''), performance_profile,
 		segment_placement, COALESCE(chunk_size_bytes, 0), COALESCE(large_objects, ''),
@@ -514,7 +530,8 @@ func scanRecord(scan func(...any) error) (record, error) {
 	var tlsMode, placement, created, updated string
 	err := scan(&b.ID, &b.DisplayName, &b.AuthURL, &b.Username,
 		&b.StorageURLOverride,
-		&b.AuthVersion, &b.UserDomain, &b.ProjectName, &b.ProjectDomain, &b.Region,
+		&b.AuthVersion, &b.UserDomain, &b.ProjectName, &b.ProjectDomain, &b.UserID, &b.ProjectID,
+		&b.Region,
 		&b.HasCredential,
 		&tlsMode, &b.TLSCAID, &b.PerformanceProfile,
 		&placement, &b.ChunkSizeBytes, &b.LargeObjects,

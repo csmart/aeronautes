@@ -287,6 +287,13 @@ export interface BookmarkDTO {
     "userDomain": string;
     "projectName": string;
     "projectDomain": string;
+
+    /**
+     * UserID and ProjectID name the v3 user and project by ID instead of
+     * by name and domain; either may be empty (ADR 0113).
+     */
+    "userId"?: string;
+    "projectId"?: string;
     "region": string;
 
     /**

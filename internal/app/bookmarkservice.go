@@ -278,6 +278,8 @@ func connectionFields(b *bookmarks.Bookmark, dto BookmarkDTO) {
 	b.UserDomain = dto.UserDomain
 	b.ProjectName = dto.ProjectName
 	b.ProjectDomain = dto.ProjectDomain
+	b.UserID = dto.UserID
+	b.ProjectID = dto.ProjectID
 	b.Region = dto.Region
 	b.TLSMode = swiftcontrol.TLSMode(dto.TLSMode)
 }
@@ -293,6 +295,8 @@ func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
 		UserDomain:         b.UserDomain,
 		ProjectName:        b.ProjectName,
 		ProjectDomain:      b.ProjectDomain,
+		UserID:             b.UserID,
+		ProjectID:          b.ProjectID,
 		Region:             b.Region,
 		TLSMode:            string(b.TLSMode),
 		HasCA:              b.TLSCAID != "",

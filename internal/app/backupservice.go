@@ -18,13 +18,14 @@ import (
 // backupSchemaVersion is the on-disk format version a backup is written as,
 // and minReadableBackupVersion the oldest a restore still reads (ADR 0098). A
 // restore refuses any version outside that range, including a newer one, so an
-// older build never misreads a file a newer one wrote. Version 3 added the
-// bookmark's large-object kind (ADR 0111), version 2 the Keystone v3
-// authentication identity; version 1 holds TempAuth bookmarks only. Older
-// versions still restore: an absent auth field normalises to v1 and an
-// absent large-object kind reads as static.
+// older build never misreads a file a newer one wrote. Version 4 added the
+// Keystone user and project IDs (ADR 0113), version 3 the bookmark's
+// large-object kind (ADR 0111), version 2 the Keystone v3 authentication
+// identity; version 1 holds TempAuth bookmarks only. Older versions still
+// restore: an absent auth field normalises to v1, an absent large-object
+// kind reads as static, and absent IDs leave the names in use.
 const (
-	backupSchemaVersion      = 3
+	backupSchemaVersion      = 4
 	minReadableBackupVersion = 1
 )
 
@@ -51,6 +52,8 @@ type BackupBookmarkDTO struct {
 	UserDomain         string `json:"userDomain"`
 	ProjectName        string `json:"projectName"`
 	ProjectDomain      string `json:"projectDomain"`
+	UserID             string `json:"userId,omitempty"`
+	ProjectID          string `json:"projectId,omitempty"`
 	Region             string `json:"region"`
 	TLSMode            string `json:"tlsMode"`
 	CACertPEM          string `json:"caCertPem"`
@@ -160,6 +163,8 @@ func (s *BackupService) ExportSettings(ctx context.Context) (*BackupResultDTO, e
 			UserDomain:         r.UserDomain,
 			ProjectName:        r.ProjectName,
 			ProjectDomain:      r.ProjectDomain,
+			UserID:             r.UserID,
+			ProjectID:          r.ProjectID,
 			Region:             r.Region,
 			TLSMode:            r.TLSMode,
 			CACertPEM:          string(bookmarks.CertificatesOnly([]byte(r.CACertPEM))),
@@ -286,6 +291,8 @@ func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, 
 			UserDomain:         bm.UserDomain,
 			ProjectName:        bm.ProjectName,
 			ProjectDomain:      bm.ProjectDomain,
+			UserID:             bm.UserID,
+			ProjectID:          bm.ProjectID,
 			Region:             bm.Region,
 			TLSMode:            swiftcontrol.TLSMode(bm.TLSMode),
 			PerformanceProfile: bm.PerformanceProfile,

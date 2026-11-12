@@ -26,6 +26,8 @@ type ExportRecord struct {
 	UserDomain         string
 	ProjectName        string
 	ProjectDomain      string
+	UserID             string
+	ProjectID          string
 	Region             string
 	TLSMode            string
 	PerformanceProfile string
@@ -61,6 +63,8 @@ func (st *Store) ExportAll(ctx context.Context, q Querier) ([]ExportRecord, erro
 			UserDomain:         r.Bookmark.UserDomain,
 			ProjectName:        r.Bookmark.ProjectName,
 			ProjectDomain:      r.Bookmark.ProjectDomain,
+			UserID:             r.Bookmark.UserID,
+			ProjectID:          r.Bookmark.ProjectID,
 			Region:             r.Bookmark.Region,
 			TLSMode:            string(r.Bookmark.TLSMode),
 			PerformanceProfile: r.Bookmark.PerformanceProfile,
