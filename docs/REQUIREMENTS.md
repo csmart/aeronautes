@@ -37,8 +37,10 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   cross-remote copy is client-side (hairpins through the workstation) and MUST be labelled as such. (§28.5, ADR 0008)
 - **K-XFER-006** — Aeronautes MUST NOT expose a free-form arbitrary-rclone-argument textbox in normal or
   expert UI. (§44, §44.1)
-- **K-XFER-007** — rclone-executed large-object uploads are DLOs (`X-Object-Manifest`), not SLOs; a
-  native SLO composer is out of v1. (§25, §62)
+- **K-XFER-007** — rclone-executed large-object uploads stage DLOs (`X-Object-Manifest`); a native
+  SLO composer is in scope only to publish a segmented upload as a static large object over the
+  engine's own segments, and is the default, with a dynamic object chosen per bookmark or job.
+  (§25, §62, ADR 0111)
 - **K-XFER-008** — rclone `Update` (overwrite) and `Remove` (delete) bulk-delete a large object's old
   referenced segments, so rclone MUST NOT overwrite or delete **any** existing destination object.
   Current Copy MUST refuse changed existing destinations before staging, including uncertain pairs resolved as unequal; eligible new names use native conditional creation with no unconditional fallback.

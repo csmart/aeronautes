@@ -1,6 +1,6 @@
 # ADR 0005 — Large-object safety: manifest-only defaults and ExclusiveOwnershipProof
 
-**Status:** Accepted (2026-08-28)
+**Status:** Accepted (2026-08-28); its sentence on rclone-executed uploads is amended by [ADR 0111](0111-segmented-uploads-as-static-large-objects.md), which has a segmented upload published as a static large object.
 **Detail:** `DESIGN.md` §23–§25, §28.4, §28.6, §34–§35; requirements K-SEG-001..004, K-XFER-007,
 K-META-002
 
@@ -22,8 +22,9 @@ therefore destroy unrelated data.
   satisfies for externally-created objects; external SLO/DLO segment purges are deliberate
   Backstage flows (§28.6b, §34, §35).
 - Naming heuristics never authorize destruction (K-SEG-001/002).
-- rclone-executed uploads are DLOs; a native SLO composer is out of v1 (K-XFER-007); overwrites
-  commit via stage-and-commit (ADR 0004).
+- The engine uploads segments and stages a DLO; for a segmented upload Aeronautes composes the
+  static manifest at the commit, and a native static composer is in scope for that and nothing
+  else (ADR 0111, K-XFER-007); overwrites commit via stage-and-commit (ADR 0004).
 
 ## Consequences
 
