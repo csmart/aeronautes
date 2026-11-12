@@ -164,7 +164,7 @@ describe("the object delete dialog", () => {
 });
 
 describe("the Delete key", () => {
-  async function screen(enabled: string[]) {
+  async function screen(enabled: string[], pressDelete = true) {
     Object.assign(api, newFakeApi());
     const info = api.info;
     api.info = async () => ({ ...(await info()), enabledCapabilities: enabled, unrecognisedCapabilities: [] });
@@ -184,9 +184,23 @@ describe("the Delete key", () => {
       .find((el) => el.querySelector(".name")?.textContent?.trim() === "empty-object")!;
     row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
     const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
-    listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
+    if (pressDelete) {
+      listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
+    }
     return { realDeleteObject };
   }
+
+  // One selected file is deleted from the working list too, not only from
+  // the inspector or the key: its button opens the same dialog, which still
+  // deletes nothing by itself (0.5.0 test run).
+  it("offers the selected object's own deletion in the working list", async () => {
+    await screen([], false);
+    const toolbar = button("Delete object…", document.querySelector<HTMLElement>(".deletions")!);
+    expect(labels(document.querySelector<HTMLElement>(".deletions")!)).toContain("Empty or delete container…");
+    click(toolbar); await settle();
+    expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
+    expect(api.deleteObject).not.toHaveBeenCalled();
+  });
 
   it("opens the delete dialog for a selected plain object and deletes nothing by itself", async () => {
     await screen(["Object deletion"]);
