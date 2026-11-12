@@ -1,6 +1,6 @@
 # ADR 0116 — showing the "/" folder a store leaves out at the top
 
-**Status:** Proposed for 0.5.0 (13 November 2026), from finding F31 and the final-candidate plan's item 7 ("the '/' folder some stores omit at the top").
+**Status:** Accepted for 0.5.0 (13 November 2026), delivered with this record's series, from finding F31 and the final-candidate plan's item 7 ("the '/' folder some stores omit at the top").
 **Scope:** the browse view's listing at the top of a container.
 
 ## Context
@@ -24,6 +24,7 @@ Listing inside it with the prefix "/" works on both stores, and jobs list withou
    A page covers it when its marker sorts before "/" and either it is the last page or its last row sorts after "/".
    The browse service then lists with the prefix "/" and a limit of one; when anything is there, it adds a "/" folder row in its sorted place on that page.
    A page that already shows the "/" folder, as Swift's does, asks nothing.
+   A failure of that listing fails the page, as a failure of its own listing does, rather than hiding the folder.
 2. **The row is the same folder row a store that lists it would give.**
    Opening it lists the prefix "/", which both stores answer, and every action on a folder (download, copy, the prefix deletion) takes the prefix "/" exactly as it would on Swift.
    Nothing else is synthesised: inside a folder, and in every listing without the delimiter, the store's own answer is shown.
