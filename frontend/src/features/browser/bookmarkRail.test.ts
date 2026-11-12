@@ -54,6 +54,20 @@ function railNames(): string[] {
 }
 
 
+describe("an imported bookmark that did not verify", () => {
+  // ADR 0114: the reason stays on the tile until the bookmark signs in.
+  it("shows its reason on the tile until a connect clears it", async () => {
+    const saved = await api.saveBookmark(bookmark("", "Imported", "swift.example"), "key");
+    const state = showRail([{ ...saved, verifyFailure: "the identity service refused these credentials" }]);
+    const flag = () => document.querySelector('[aria-label="Did not verify: the identity service refused these credentials"]');
+    expect(flag()).not.toBeNull();
+
+    await state.connect(saved.id);
+    await settle();
+    expect(flag()).toBeNull();
+  });
+});
+
 describe("bookmark rail arrangement", () => {
   // The operator found the host headings noise in the 0.5.0 test run: the
   // rail is one list of letter tiles, named beneath, with the host on hover.

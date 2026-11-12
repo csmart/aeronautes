@@ -131,6 +131,12 @@ func (s *BookmarkService) Verify(ctx context.Context, dto BookmarkDTO, secret st
 		if err := published(ctx); err != nil {
 			return VerifyResultDTO{}, err
 		}
+		// What verified is the saved bookmark itself, so the import's
+		// warning no longer applies (ADR 0114 decision 9); details typed
+		// but not saved prove nothing about the stored ones.
+		if err := s.store.SetVerifyFailure(ctx, dto.ID, ""); err != nil {
+			applog.Warnf("clearing a bookmark's verification flag: %v", err)
+		}
 	}
 	storageURL := session.StorageURL()
 	return VerifyResultDTO{
@@ -302,5 +308,6 @@ func toBookmarkDTO(b bookmarks.Bookmark) BookmarkDTO {
 		HasCA:              b.TLSCAID != "",
 		HasCredential:      b.HasCredential,
 		LargeObjects:       b.LargeObjects,
+		VerifyFailure:      b.VerifyFailure,
 	}
 }

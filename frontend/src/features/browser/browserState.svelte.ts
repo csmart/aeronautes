@@ -727,6 +727,11 @@ export class BrowserState {
       this.containersMarker = containers.nextMarker;
       this.containersError = containersError;
       this.connectedBookmarkId = bookmarkId;
+      // The backend clears an import's verification flag on a connect that
+      // signs in (ADR 0114); the rail's copy follows without a reload.
+      if (this.bookmarks.some((b) => b.id === bookmarkId && b.verifyFailure)) {
+        this.bookmarks = this.bookmarks.map((b) => (b.id === bookmarkId ? { ...b, verifyFailure: "" } : b));
+      }
       return true;
     } catch (err) {
       if (current()) this.connectError = messageOf(err);

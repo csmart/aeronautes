@@ -69,6 +69,9 @@
   // Keystone v3 and TempAuth v1 are the two auth types; the v3 identity
   // fields show only for v3 (ADR 0100).
   const keystone = $derived(authVersion === 3);
+  // Read from the shared list, which the backend's answer refreshes, since
+  // only a verify of the saved bookmark clears the flag (ADR 0114).
+  const verifyFailure = $derived(browser.bookmarks.find((b) => b.id === bookmark?.id)?.verifyFailure ?? "");
   let action = $state<"save" | "connect" | "delete" | "verify" | null>(null);
   const saving = $derived(action !== null);
   let error: string | null = $state(null);
@@ -105,6 +108,7 @@
     try {
       const result = await browser.verifyBookmark(draft(), apiKey);
       if (!isCurrent()) return;
+      if (verifyFailure) void browser.loadBookmarks();
       verified = `Verified: account ${result.account}, ${result.containers.toLocaleString("en-US")} containers, ${result.objects.toLocaleString("en-US")} objects.`;
     } catch (err) {
       if (isCurrent()) error = err instanceof Error ? err.message : String(err);
@@ -177,6 +181,12 @@
     }}
   >
     <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
+    {#if verifyFailure}
+      <p class="callout warning" role="status">
+        This bookmark did not verify after import: {verifyFailure}. Verifying it here with its saved
+        key, or connecting to it, clears this note.
+      </p>
+    {/if}
 
     <fieldset class="fields" disabled={saving || !isCurrent()} aria-label="Bookmark settings" oninput={() => (verified = null)}>
       <label class="field">

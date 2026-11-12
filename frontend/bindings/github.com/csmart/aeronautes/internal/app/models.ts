@@ -316,6 +316,12 @@ export interface BookmarkDTO {
      * "dlo" for dynamic, "slo" or empty for static, the default (ADR 0111).
      */
     "largeObjects"?: string;
+
+    /**
+     * VerifyFailure is why the bookmark did not verify after import, shown
+     * on its rail tile until it next connects or verifies (ADR 0114).
+     */
+    "verifyFailure"?: string;
 }
 
 /**
