@@ -374,6 +374,17 @@ func (g *storageGateway) roundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil && repeatableRead(req) && req.Context().Err() == nil {
 		applog.Warnf("storage gateway: %s to %s failed, trying once more: %v", req.Method, g.upstream.Host, transportCause(err))
 		resp, err = g.transport.RoundTrip(req.Clone(req.Context()))
+		return resp, err
+	}
+	// The store's own 502 is the same blip to the engine, which retries a
+	// 503 itself but never a 502, so a read it answers with 502 is sent once
+	// more too. A 503 is left to the engine, so an overloaded store is not
+	// asked twice as often.
+	if err == nil && resp.StatusCode == http.StatusBadGateway && repeatableRead(req) && req.Context().Err() == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		applog.Warnf("storage gateway: %s to %s answered 502, trying once more", req.Method, g.upstream.Host)
+		resp, err = g.transport.RoundTrip(req.Clone(req.Context()))
 	}
 	return resp, err
 }

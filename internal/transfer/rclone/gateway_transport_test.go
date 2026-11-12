@@ -390,3 +390,70 @@ func TestGatewayRepeatsAReadThatFailedInTransit(t *testing.T) {
 		t.Fatalf("write: error %v after %d connections, want a failure after 1", err, listener.accepted.Load())
 	}
 }
+
+// A read the store itself answers with 502 reaches the engine as the
+// store's second answer, because the engine does not retry a 502. A write
+// answered 502, and a read answered 503, which the engine retries itself,
+// pass through after one request.
+func TestGatewayRepeatsAReadTheStoreAnswered502(t *testing.T) {
+	var requests, failing atomic.Int32
+	status := atomic.Int32{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if failing.Add(-1) >= 0 {
+			w.WriteHeader(int(status.Load()))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	gateway, local, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "fixture-token"}, nil, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gateway.Close()
+	through := func(method string) int {
+		t.Helper()
+		req, err := http.NewRequest(method, local.StorageURL+"/owned/object", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Auth-Token", local.Token)
+		resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	requests.Store(0)
+	status.Store(http.StatusBadGateway)
+	failing.Store(1)
+	if got := through(http.MethodHead); got != http.StatusNoContent || requests.Load() != 2 {
+		t.Fatalf("read answered 502: status %d after %d requests, want 204 after 2", got, requests.Load())
+	}
+
+	requests.Store(0)
+	status.Store(http.StatusServiceUnavailable)
+	failing.Store(1)
+	if got := through(http.MethodHead); got != http.StatusServiceUnavailable || requests.Load() != 1 {
+		t.Fatalf("read answered 503: status %d after %d requests, want 503 after 1", got, requests.Load())
+	}
+
+	requests.Store(0)
+	status.Store(http.StatusBadGateway)
+	failing.Store(1)
+	put, err := http.NewRequestWithContext(t.Context(), http.MethodPut, upstream.URL+gatewayAccount+"/owned/object", strings.NewReader("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := gateway.roundTrip(put)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway || requests.Load() != 1 {
+		t.Fatalf("write answered 502: status %d after %d requests, want 502 after 1", resp.StatusCode, requests.Load())
+	}
+}
