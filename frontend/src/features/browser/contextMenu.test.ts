@@ -77,6 +77,40 @@ describe("row context menu", () => {
     expect(menuLabels()).toEqual(expect.arrayContaining(["Download selected…", "Copy selected…", "Delete selected…"]));
   });
 
+  it("refuses in a segment listing what the toolbar refuses there", async () => {
+    const { browser, objects } = await list();
+    browser.backstageFrom = "a manifest";
+    flushSync();
+    rightClick(rowElement(objects[0].i));
+    const item = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent?.trim() === label);
+    expect(item("Download object…")?.disabled).toBe(true);
+    expect(item("Copy object…")?.disabled).toBe(true);
+  });
+
+  it("offers a prefix deletion only for the one selected folder, and right-click ignores modifiers on an unselected row", async () => {
+    const { browser, objects } = await list();
+    const folders = browser.visibleEntries.map((row, i) => ({ row, i })).filter(({ row }) => row.kind === "prefix");
+    expect(folders.length).toBeGreaterThan(0);
+    rightClick(rowElement(folders[0].i));
+    expect(menuLabels()).toContain("Delete prefix…");
+    document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+    flushSync();
+
+    browser.select(folders[0].i);
+    browser.toggleRow(objects[0].i);
+    flushSync();
+    rightClick(rowElement(folders[0].i));
+    expect(browser.chosenRows.length).toBe(2);
+    expect(menuLabels()).not.toContain("Delete prefix…");
+    document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+    flushSync();
+
+    rowElement(objects[1].i).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 2, shiftKey: true }));
+    flushSync();
+    expect(browser.chosenRows.length).toBe(0);
+    expect(browser.selectedIndex).toBe(objects[1].i);
+  });
+
   it("opens from the keyboard on the focused row and closes with Escape", async () => {
     const { browser, objects } = await list();
     browser.select(objects[0].i);

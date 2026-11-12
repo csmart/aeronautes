@@ -45,19 +45,27 @@
   let menu: { x: number; y: number; entry: ListingRowDTO } | null = $state(null);
 
   function menuItems(entry: ListingRowDTO): MenuItem[] {
+    // The toolbar's own refusals: nothing to act in, a segment listing, or
+    // a selection that names no objects.
+    const noScope = browser.containerName === null || browser.backstageFrom !== null;
     const items: MenuItem[] = [];
     if (entry.kind === "prefix") items.push({ label: "Open", run: () => browser.activate(entry) });
     if (v1Offers.download) {
-      items.push({ label: `Download ${sourceWord}…`, disabled: noMembers, run: () => (browser.localTransfer = "download") });
+      items.push({ label: `Download ${sourceWord}…`, disabled: noScope || noMembers, run: () => (browser.localTransfer = "download") });
     }
-    if (v1Offers.copy) items.push({ label: `Copy ${sourceWord}…`, disabled: noMembers, run: () => (browser.transferOpen = true) });
+    if (v1Offers.copy) {
+      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope || noMembers, run: () => (browser.transferOpen = true) });
+    }
     items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
     if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
     if (v1Offers.objectDelete && browser.chosenRows.length > 1 && browser.chosenRows.some((row) => row.kind === "object")) {
       items.push({ label: "Delete selected…", danger: true, run: () => browser.openSelectedDelete() });
     }
-    if (v1Offers.bulkDelete && entry.kind === "prefix") {
-      items.push({ label: "Delete prefix…", danger: true, run: () => (browser.deleteOpen = true) });
+    // The prefix deletion's target is the selected folder only when that
+    // folder is the one row selected; otherwise the dialog would act on the
+    // folder being browsed or the container, under a label naming this row.
+    if (v1Offers.bulkDelete && entry.kind === "prefix" && browser.selectedPrefix === entry.name) {
+      items.push({ label: "Delete prefix…", danger: true, disabled: noScope, run: () => (browser.deleteOpen = true) });
     }
     return items;
   }

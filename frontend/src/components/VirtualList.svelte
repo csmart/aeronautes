@@ -63,8 +63,12 @@
 
   function handlePointerdown(event: PointerEvent, index: number) {
     // A right-click on a row already selected keeps a multi-selection, so
-    // its menu acts on everything selected, as in a file manager.
-    if (event.button === 2 && isSelected(items[index], index)) return;
+    // its menu acts on everything selected, as in a file manager; on any
+    // other row it is a plain select, whatever modifier is held.
+    if (event.button === 2) {
+      if (!isSelected(items[index], index)) onSelect?.(index, "single");
+      return;
+    }
     const mode = modeOf(event);
     if (mode === "range") {
       // A Shift click would otherwise select the rows' text; the focus the
