@@ -58,6 +58,9 @@ export type ContainerMode = "logical" | "all" | "backstage";
 
 /** Bridge page size for both listing levels. */
 const pageLimit = 1000;
+// How old the container list may be before coming back to the window
+// re-reads it.
+const containersStaleMs = 30_000;
 /** The rows a column keeps before it stops loading pages, until the
  * operator's setting is read (ADR 0074 decision 1); mirrors
  * defaultBrowserRetentionCeiling in internal/app/settingsservice.go. */
@@ -335,6 +338,8 @@ export class BrowserState {
   containersMarker = $state("");
   containersError: string | null = $state(null);
   #containersSeq = 0;
+  /** When the first page now shown was read, for the re-read on return. */
+  #containersReadAt = 0;
   #containersLoadingScope = $state<number | null>(null);
   #containersPage = $state.raw<PageRequest | null>(null);
   #containersPageError = $state.raw<(PageRequest & { message: string }) | null>(null);
@@ -731,6 +736,7 @@ export class BrowserState {
       this.account = account;
       this.capabilities = capabilities;
       this.containers = containers.rows;
+      this.#containersReadAt = Date.now();
       this.containersMarker = containers.nextMarker;
       this.containersError = containersError;
       this.connectedBookmarkId = bookmarkId;
@@ -807,12 +813,26 @@ export class BrowserState {
       if (scope !== this.#scopeRevision || seq !== this.#containersSeq) return;
       this.#requireListingScope(page.scope, bookmarkId, portrait);
       this.containers = page.rows;
+      this.#containersReadAt = Date.now();
       this.containersMarker = page.nextMarker;
     } catch (err) {
       if (scope === this.#scopeRevision && seq === this.#containersSeq) this.containersError = messageOf(err);
     } finally {
       if (seq === this.#containersSeq) this.#containersLoadingScope = null;
     }
+  }
+
+  /** The operator came back to the window: re-read the container list when
+   * it was read a while ago, because another client, or another tool of
+   * the operator's, may have made or deleted containers meanwhile and
+   * nothing else would show it. Only a list that fits one page is re-read
+   * this way: a re-read keeps the first page alone, and pages the operator
+   * loaded should not vanish because they looked away. The column's
+   * Refresh re-reads any list on request. */
+  async refreshContainersOnReturn() {
+    if (this.connecting || this.connectedBookmarkId === null || this.containersLoading) return;
+    if (this.containers.length > pageLimit || Date.now() - this.#containersReadAt < containersStaleMs) return;
+    await this.loadContainers();
   }
 
   /** The retention ceiling in force (ADR 0074 decision 1): the operator's
