@@ -838,6 +838,15 @@ export interface FindStatusDTO {
 }
 
 /**
+ * ImportChoiceDTO is one row the operator ticked, under the name they gave
+ * it in the preview (ADR 0118 decision 3).
+ */
+export interface ImportChoiceDTO {
+    "index": number;
+    "name": string;
+}
+
+/**
  * ImportOutcomeDTO is what happened to one chosen row. Verify is
  * "not_requested", "pending", "verified", "failed", "no_secret" or
  * "not_saved"; Reason explains a failed save or verification in plain

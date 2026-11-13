@@ -26,6 +26,9 @@ export class ImportState {
 
   preview: ImportPreview | null = $state(null);
   chosen: number[] = $state([]);
+  /** The name each row is saved under: its source's, until the operator
+   * changes it in the preview (ADR 0118 decision 3). */
+  names: Record<number, string> = $state({});
   verify = $state(true);
   result: ImportResult | null = $state(null);
   busy = $state(false);
@@ -43,6 +46,7 @@ export class ImportState {
       this.preview = preview;
       // Duplicates and skipped rows start unticked (ADR 0114 decision 6).
       this.chosen = preview.rows.filter((row) => row.state === "importable").map((row) => row.index);
+      this.names = Object.fromEntries(preview.rows.map((row) => [row.index, row.name]));
       this.verify = true;
       return "picked";
     } catch (error) {
@@ -58,12 +62,18 @@ export class ImportState {
     this.chosen = on ? [...new Set([...this.chosen, index])] : this.chosen.filter((i) => i !== index);
   }
 
+  /** A ticked row with no name cannot be saved. */
+  get unnamed(): boolean {
+    return this.chosen.some((index) => (this.names[index] ?? "").trim() === "");
+  }
+
   async save() {
-    if (this.preview === null || this.chosen.length === 0 || this.busy) return;
+    if (this.preview === null || this.chosen.length === 0 || this.unnamed || this.busy) return;
     this.busy = true;
     this.error = null;
     try {
-      this.result = await this.#api.saveImport(this.preview.token, [...this.chosen].sort((a, b) => a - b), this.verify);
+      const chosen = [...this.chosen].sort((a, b) => a - b).map((index) => ({ index, name: this.names[index].trim() }));
+      this.result = await this.#api.saveImport(this.preview.token, chosen, this.verify);
       this.#onChanged();
       if (!this.result.done) this.#follow(this.result.token);
     } catch (error) {

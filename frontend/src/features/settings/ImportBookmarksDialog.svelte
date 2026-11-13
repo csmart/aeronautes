@@ -86,7 +86,11 @@
                     onchange={(e) => imports.toggle(row.index, e.currentTarget.checked)}
                     aria-label="Import {row.name}"
                   />
-                  <span class="name">{row.name}</span>
+                  {#if row.state === "skipped"}
+                    <span class="name">{row.name}</span>
+                  {:else}
+                    <input class="name" bind:value={imports.names[row.index]} aria-label="Name for {row.name}" />
+                  {/if}
                   <span class="kind">{row.kind}</span>
                 </label>
                 {#if row.state !== "skipped"}
@@ -102,6 +106,9 @@
               </li>
             {/each}
           </ul>
+          {#if imports.unnamed}
+            <p class="note" role="status">Give every ticked row a name.</p>
+          {/if}
           <label class="verify">
             <input type="checkbox" bind:checked={imports.verify} />
             <span>Verify after import (signs in and reads each account; nothing is changed)</span>
@@ -115,7 +122,7 @@
       {:else}
         <button onclick={close}>Cancel</button>
         {#if imports.preview && imports.preview.rows.length > 0}
-          <button class="primary" onclick={() => imports.save()} disabled={count === 0 || imports.busy}>
+          <button class="primary" onclick={() => imports.save()} disabled={count === 0 || imports.unnamed || imports.busy}>
             {imports.busy ? "Importing…" : `Import ${count} ${count === 1 ? "bookmark" : "bookmarks"}`}
           </button>
         {/if}

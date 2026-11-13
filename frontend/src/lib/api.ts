@@ -122,6 +122,7 @@ export type {
   ImportRowDTO,
   ImportResultDTO,
   ImportOutcomeDTO,
+  ImportChoiceDTO,
   DestinationContainersDTO,
   DestinationMissingDTO,
   BenchmarkRequestDTO,
@@ -145,6 +146,7 @@ import type {
   ImportRowDTO,
   ImportResultDTO,
   ImportOutcomeDTO,
+  ImportChoiceDTO,
   DestinationContainersDTO,
   DestinationMissingDTO,
   BenchmarkRequestDTO,
@@ -268,7 +270,7 @@ export interface Api {
   /** Read an rclone.conf or clouds.yaml the operator picks into rows to import, with no secret; an empty token when cancelled (ADR 0114). */
   previewImport(): Promise<ImportPreview>;
   /** Save the chosen rows of a preview, spending its token, and verify them in the background when asked. */
-  saveImport(token: string, chosen: number[], verify: boolean): Promise<ImportResult>;
+  saveImport(token: string, chosen: ImportChoiceDTO[], verify: boolean): Promise<ImportResult>;
   /** The latest import's outcomes, as its verification proceeds. */
   importStatus(token: string): Promise<ImportResult>;
   planCopy(req: CopyRequestDTO): Promise<CopyPlanDTO>;

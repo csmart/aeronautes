@@ -37,6 +37,6 @@ export function PreviewImport(): $CancellablePromise<$models.ImportPreviewDTO> {
  * when verify is set, verifies them in the background. The preview's token
  * is spent, so a second save with it is refused.
  */
-export function SaveImport(token: string, chosen: number[] | null, verify: boolean): $CancellablePromise<$models.ImportResultDTO> {
+export function SaveImport(token: string, chosen: $models.ImportChoiceDTO[] | null, verify: boolean): $CancellablePromise<$models.ImportResultDTO> {
     return $Call.ByID(2106949336, token, chosen, verify);
 }
