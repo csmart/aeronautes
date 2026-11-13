@@ -61,6 +61,9 @@ async function connectFixture() {
   mounted.add(component);
   flushSync(); await settle();
   click(get(`[aria-label="${fixtureBookmark.displayName}"]`)); await settle();
+  // These cases read rows of the "Possible backstage" group, which starts
+  // collapsed (ADR 0117).
+  click(get(".group-toggle")); await settle();
   return saved;
 }
 
