@@ -70,6 +70,41 @@ must be green.
 - **No destructive test runs against real user data** — only Aeronautes-owned test containers; a
   benchmark needs a dedicated bookmark or a typed cluster-name confirmation (§42).
 
+## Four standing preferences
+
+Judge every change, and every review of one, against these four:
+
+- **Maintainable by humans.** The next reader can follow it without its author.
+- **Suited to the problem.** The design fits what is being solved, not a wider problem nobody has.
+- **The smallest change that meets the contract.** No speculative options or layers, and no refactor of nearby code.
+- **Tests proportionate to the behaviour they protect.** Enough to catch the rule being broken, and no more.
+
+Name avoidable complexity, indirection or test bloat as a review finding, and say when the complexity that remains is justified.
+
+### Keeping the tests minimal, targeted and up to date
+
+- **One home for each rule.**
+  Swift semantics, planning and safety are tested in the Go package that owns them, against SAIO when the store's behaviour is the question.
+  How the window behaves is tested once, in a component test of the lowest component that owns it.
+  What an operator can do end to end is one browser journey (`uijourneys/`), on the mock and, run locally, on the real clouds.
+  Do not pin the same rule at two layers unless each can fail by itself.
+- **Everything the window offers has a row** in the coverage table of [docs/journeys.md](docs/journeys.md).
+  A new feature arrives with its browser journey, and a change or removal changes the row in the same pull request.
+  A row may say "not yet"; it may not be missing or stale.
+- **A test must be able to fail.**
+  Before review, break the rule it protects and watch it fail, without committing the break; a test that cannot fail is deleted.
+- **Prove the outcome with an independent read where one exists:** bytes compared by digest, a second session's listing, a fresh connection.
+  The code under test does not mark its own work.
+- **Tests change with the behaviour.**
+  Change or delete the tests that pinned the old behaviour in the same commit, and remove a feature's tests with the feature.
+  Never skip or weaken a test to get green.
+- **A bug found by hand gets the test that would have caught it,** with its fix, at the lowest layer that can catch it.
+- **Do not add a test because a line changed,** or one that mirrors the implementation.
+  Extend an existing case or table before adding a file, and keep fakes at external boundaries.
+- **A test that fails now and then is a finding.**
+  Find whether the store lagged or the product is wrong and fix that; never retry until green.
+- **Keep the manual test plan for what automation cannot see:** native dialogs, the desktop window, installation and how things look.
+
 ## Stack & targets
 
 Go core · `github.com/ncw/swift/v2` (wrapped) · **Wails v3** (beta, chosen — §6.6) · Svelte 5 + TS ·
