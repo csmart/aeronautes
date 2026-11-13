@@ -37,10 +37,11 @@ function showRail(bookmarks: BookmarkDTO[]) {
   state.bookmarks = bookmarks;
   state.bookmarksLoaded = true;
   mounted.add(mount(BookmarkRail, { target: document.body,
-    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn(), onOpenSettings: vi.fn() } }));
+    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn(), onImportBookmarks: importBookmarks, onOpenSettings: vi.fn() } }));
   flushSync();
   return state;
 }
+const importBookmarks = vi.fn();
 
 function typeFilter(value: string) {
   const filter = document.querySelector<HTMLInputElement>(".filter")!;
@@ -65,6 +66,15 @@ describe("an imported bookmark that did not verify", () => {
     await state.connect(saved.id);
     await settle();
     expect(flag()).toBeNull();
+  });
+});
+
+describe("the rail's import", () => {
+  it("is offered beside Add (ADR 0118 decision 2)", () => {
+    showRail([]);
+    importBookmarks.mockClear();
+    document.querySelector<HTMLButtonElement>('button[title="Import bookmarks from an rclone.conf or a clouds.yaml"]')!.click();
+    expect(importBookmarks).toHaveBeenCalledTimes(1);
   });
 });
 

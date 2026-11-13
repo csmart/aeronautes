@@ -13,10 +13,12 @@
     browser,
     onAddBookmark,
     onEditBookmark,
+    onImportBookmarks,
     onOpenSettings,
   }: {
     browser: BrowserState;
     onAddBookmark: () => void;
+    onImportBookmarks: () => void;
     onEditBookmark: (bookmark: BookmarkDTO) => void;
     onOpenSettings: () => void;
   } = $props();
@@ -125,6 +127,10 @@
     <button class="bookmark add" title="Add bookmark" onclick={onAddBookmark}>
       <span class="badge plus">+</span>
       <span class="label">Add</span>
+    </button>
+    <button class="bookmark add" title="Import bookmarks from an rclone.conf or a clouds.yaml" onclick={onImportBookmarks}>
+      <span class="badge plus">⇩</span>
+      <span class="label">Import</span>
     </button>
   </div>
 

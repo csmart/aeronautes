@@ -41,6 +41,12 @@
   let editorExisting = $state<BookmarkDTO | null>(null);
   let editorCopyOf = $state<BookmarkDTO | null>(null);
 
+  // The native picker opens first; the dialog shows what it read, or why
+  // it could not, and nothing when the pick was cancelled.
+  async function openImport() {
+    if ((await browser.imports.pick()) !== "cancelled") importOpen = true;
+  }
+
   // The editor is mounted afresh for each bookmark it edits, so a copy
   // closes the editor it was asked from before opening its own.
   async function duplicateBookmark(bookmark: BookmarkDTO) {
@@ -277,6 +283,7 @@
       editorExisting = bookmark;
       editorOpen = true;
     }}
+    onImportBookmarks={() => void openImport()}
     onOpenSettings={() => (settingsOpen = true)}
   />
   <!-- The WAI-ARIA window-splitter pattern: a focusable separator that
@@ -332,6 +339,10 @@
       editorExisting = null;
       editorOpen = true;
     }}
+    onImport={() => {
+      welcomeDismissed = true;
+      void openImport();
+    }}
     onDismiss={() => (welcomeDismissed = true)}
   />
 {/if}
@@ -385,11 +396,9 @@
   <SettingsDialog
     settings={browser.settings}
     onClose={() => (settingsOpen = false)}
-    onImportBookmarks={async () => {
+    onImportBookmarks={() => {
       settingsOpen = false;
-      // The native picker opens first; the dialog shows what it read, or
-      // why it could not, and nothing when the pick was cancelled.
-      if ((await browser.imports.pick()) !== "cancelled") importOpen = true;
+      void openImport();
     }}
   />
 {/if}

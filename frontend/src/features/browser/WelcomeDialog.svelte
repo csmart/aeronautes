@@ -5,7 +5,7 @@
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
 
-  let { onAdd, onDismiss }: { onAdd: () => void; onDismiss: () => void } = $props();
+  let { onAdd, onImport, onDismiss }: { onAdd: () => void; onImport: () => void; onDismiss: () => void } = $props();
 </script>
 
 <div class="scrim" role="presentation">
@@ -18,8 +18,10 @@
       system's credential store when one is available and is never written to the application's own
       database. You can verify the details against the endpoint before saving them.
     </p>
+    <p>Accounts already written in an rclone.conf or a clouds.yaml can be imported instead of typed.</p>
     <div class="actions">
       <button type="button" class="secondary" onclick={onDismiss}>Not now</button>
+      <button type="button" class="secondary" onclick={onImport}>Import bookmarks…</button>
       <!-- svelte-ignore a11y_autofocus -->
       <button type="button" class="primary" onclick={onAdd} autofocus>Add a bookmark</button>
     </div>

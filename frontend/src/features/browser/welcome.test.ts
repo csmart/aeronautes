@@ -51,6 +51,17 @@ describe("first run", () => {
     expect(editor()).not.toBeNull();
   });
 
+  it("offers the import, which opens the file picker and steps aside (ADR 0118 decision 2)", async () => {
+    const pick = vi.spyOn(api, "previewImport");
+    await showScreen();
+    expect(document.body.textContent).toContain("can be imported instead of typed");
+    button("Import bookmarks…").click();
+    flushSync();
+    await settle();
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(welcome()).toBeNull();
+  });
+
   it("stays away for the window once declined, even after the list is read again", async () => {
     await showScreen();
     button("Not now").click();
