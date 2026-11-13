@@ -3,7 +3,7 @@
   back. Verify checks the typed details against the endpoint and saves
   nothing, so a wrong URL, user or key is found before anything is stored. -->
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BookmarkDTO } from "../../lib/api";
   import type { BrowserState } from "./browserState.svelte";
@@ -46,6 +46,15 @@
   // capturing the prop's initial values is exactly right.
   /* svelte-ignore state_referenced_locally */
   const from = existing ?? copyOf;
+  // A saved bookmark with no key is opened to have one entered (ADR 0118
+  // decision 4), so the cursor starts in the key field. The dialog's focus
+  // trap puts it in the first field as it mounts, so this waits for that.
+  let keyField: HTMLInputElement | undefined = $state();
+  onMount(async () => {
+    if (existing === null || existing.hasCredential) return;
+    await tick();
+    keyField?.focus();
+  });
   /* svelte-ignore state_referenced_locally */
   let displayName = $state(existing?.displayName ?? (copyOf ? `${copyOf.displayName} copy` : ""));
   let authUrl = $state(from?.authUrl ?? "");
@@ -189,6 +198,9 @@
           : ""}
       </p>
     {/if}
+    {#if bookmark && !bookmark.hasCredential}
+      <p class="warning" role="status">This bookmark has no saved key. Enter it below to connect.</p>
+    {/if}
     {#if verifyFailure}
       <p class="callout warning" role="status">
         This bookmark did not verify after import: {verifyFailure}. Verifying it here with its saved
@@ -228,6 +240,7 @@
           class="type-mono"
           type="password"
           bind:value={apiKey}
+          bind:this={keyField}
           autocomplete="off"
           required={!bookmark?.hasCredential}
         />

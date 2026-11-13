@@ -313,7 +313,11 @@
           }}
         >
           {#each browser.bookmarks as bookmark (bookmark.id)}
-            <option value={bookmark.id}>{bookmark.displayName}</option>
+            <!-- Nothing can be read or written with a bookmark that has
+              no saved key (ADR 0118 decision 4). -->
+            <option value={bookmark.id} disabled={!bookmark.hasCredential}>
+              {bookmark.displayName}{bookmark.hasCredential ? "" : " (no saved key)"}
+            </option>
           {/each}
         </select>
         <input

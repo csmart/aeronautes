@@ -28,6 +28,13 @@ function checkbox(name: string): HTMLInputElement {
   return document.querySelector<HTMLInputElement>(`input[aria-label="Import ${name}"]`)!;
 }
 
+// One account whose source holds no password.
+const keyless: ImportPreview = {
+  token: "t-2",
+  fileName: "clouds.yaml",
+  rows: [{ index: 0, name: "bare", kind: "Keystone v3", authUrl: "https://k.example/v3", user: "u", project: "p", region: "r", hasSecret: false, state: "importable", reason: "" }],
+};
+
 function rename(name: string, to: string) {
   const field = document.querySelector<HTMLInputElement>(`input[aria-label="Name for ${name}"]`)!;
   field.value = to;
@@ -126,5 +133,21 @@ describe("import bookmarks dialog", () => {
     rename("fresh", "fresh again");
     expect(button("Import 1 bookmark").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Give every ticked row a name.");
+  });
+
+  it("offers the editor for a row imported without a password (ADR 0118 decision 4)", async () => {
+    const api = newFakeApi();
+    api.previewImport = async () => keyless;
+    api.saveImport = async (token) => ({ token, done: true, outcomes: [{ index: 0, name: "bare", bookmarkId: "bm-3", verify: "no_secret", reason: "" }] });
+    const imports = new ImportState(api, vi.fn());
+    await imports.pick();
+    const edit = vi.fn();
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: edit } }));
+    flushSync();
+
+    button("Import 1 bookmark").click();
+    await settle();
+    document.querySelector<HTMLButtonElement>('button[aria-label="Enter key for bare"]')!.click();
+    expect(edit).toHaveBeenCalledWith("bm-3");
   });
 });

@@ -100,7 +100,12 @@
           aria-label={bookmark.displayName}
           aria-pressed={browser.connectedBookmarkId === bookmark.id}
           disabled={browser.connecting}
-          onclick={() => browser.connect(bookmark.id).catch(() => {})}
+          onclick={() => {
+            // With no saved key a connection can only fail, so the editor
+            // opens for the key instead (ADR 0118 decision 4).
+            if (bookmark.hasCredential) browser.connect(bookmark.id).catch(() => {});
+            else onEditBookmark(bookmark);
+          }}
         >
           <span class="badge">{initials(bookmark.displayName)}</span>
           <span class="label">{bookmark.displayName}</span>
@@ -108,6 +113,9 @@
             <!-- K-SEC-005: the warning is persistent chrome, not an
               editor-only detail. -->
             <span class="insecure-flag" role="img" aria-label="TLS verification disabled">⚠</span>
+          {/if}
+          {#if !bookmark.hasCredential}
+            <span class="verify-flag" role="img" aria-label="No saved key" title="No saved key: choose this bookmark to enter it">!</span>
           {/if}
           {#if bookmark.verifyFailure}
             <!-- ADR 0114: an imported bookmark that did not verify keeps its

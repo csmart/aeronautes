@@ -21,6 +21,12 @@
     onClose();
   }
 
+  // A row saved from a source with no password has no key to connect with
+  // until one is entered in its editor (ADR 0118 decision 4).
+  function hadSecret(index: number): boolean {
+    return imports.preview?.rows.find((row) => row.index === index)?.hasSecret ?? true;
+  }
+
   function outcomeText(outcome: ImportOutcomeDTO): string {
     switch (outcome.verify) {
       case "verified":
@@ -64,6 +70,8 @@
               <span class="what">{outcomeText(outcome)}</span>
               {#if outcome.verify === "failed" && outcome.bookmarkId}
                 <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Edit {outcome.name}">Edit</button>
+              {:else if outcome.bookmarkId && !hadSecret(outcome.index)}
+                <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Enter key for {outcome.name}">Enter key</button>
               {/if}
             </li>
           {/each}
