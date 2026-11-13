@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { test, type Locator, type Page } from "@playwright/test";
 import { basename } from "node:path";
 import { control } from "../control.ts";
 import { expect, localFolder, openContainer, ownContainer, writeFiles } from "../helpers.ts";
@@ -24,13 +24,21 @@ test("see the slash folder at the top of a container", async ({ page }, info) =>
   // The upload is one small file; the listing shows it once it is written.
   await openContainer(page, info.project.name, container);
   const objects = page.getByRole("listbox", { name: "Objects" });
+  const slashFolder = objects.getByRole("option", { name: /^\/ / });
+  await refreshUntilListed(page, slashFolder);
+  await slashFolder.dblclick();
+  await refreshUntilListed(page, objects.getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) }));
+});
+
+// On a real store one listing can lag another: the top listing can show the
+// "/" folder before the listing inside it holds the upload. So a row the
+// upload should have made is looked for across refreshes.
+async function refreshUntilListed(page: Page, row: Locator) {
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh listing" }).click();
-    await expect(objects.getByRole("option", { name: /^\/ / })).toBeVisible({ timeout: 2000 });
+    await expect(row).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 60_000 });
-  await objects.getByRole("option", { name: /^\/ / }).dblclick();
-  await expect(objects.getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) })).toBeVisible();
-});
+}
 
 async function goTo(page: Page, prefix: string) {
   const field = page.getByRole("textbox", { name: "Prefix" });
