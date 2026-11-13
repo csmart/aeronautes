@@ -58,3 +58,49 @@ It does not measure performance.
 - Output names only each journey, its target (`mock`, `ceph` or `swift`) and the private directory under the user cache directory, which keeps the failure details, a screenshot and the page's text, and the application's log.
 
 The journeys, on each target: create a bookmark and connect (mock only); import bookmarks from an rclone.conf, one verified and one flagged, through Settings (mock only); upload a folder with a segmented file, check the large-object disclosure against the uploaded object, and browse it; upload it again with the overwrite confirmed; download it and compare digests with the second upload; edit an object's metadata and read it back after a reload; make the container public and private again; delete an object, the prefix and the container; open a copy from a container's context menu; see the "/" folder at the top of a container that holds names starting with "/"; find a container named like a segment store behind the "Possible backstage" heading, with the caution above its listing and in its delete dialog; see a container made outside the window once the column's Refresh is pressed; and, with both clouds, switch between them.
+
+## What the browser journeys cover
+
+This table is the list the browser suite is built up against: one row per thing the window offers, with the journey that drives it, or "not yet".
+A row is covered only when a journey does it through the window against a store; a component test against a fake does not count here.
+A change that adds, changes or removes something the window offers changes its row in the same pull request ([AGENTS.md](../AGENTS.md)).
+Where a row says "not yet" and layer 1 runs the same service against the real clouds, the row names that layer 1 journey by its number in the list above.
+
+| Area | Through the window | Journey | How the outcome is checked |
+| --- | --- | --- | --- |
+| Bookmarks | create a TempAuth bookmark in the editor and connect | create a bookmark in the editor and connect (mock only) | the account's containers are listed |
+| Bookmarks | import bookmarks from an rclone.conf | import bookmarks from an rclone config (mock only) | the dialog reports one verified and one that did not verify, the rail flags the second, and the first connects |
+| Bookmarks | switch between accounts from the rail | switch between the two clouds (both clouds) | each account lists its own container and not the other's |
+| Bookmarks | edit, verify or delete a bookmark; the Keystone fields; import from a clouds.yaml | not yet | |
+| Containers | list an account's containers | every journey that opens a container | the run's own container is in the list |
+| Containers | read the list again with the column's refresh | refresh the container list after a change made elsewhere | a container made by the run's own session, outside the window, appears |
+| Containers | the list read again when the window is focused | not journeyed: a browser cannot show what the desktop window does; test plan step 19k | |
+| Containers | create a container | find a container named like a segment store behind its heading | its row is listed |
+| Containers | the closed "Possible backstage" group and the segment-store caution | find a container named like a segment store behind its heading | the row is absent until the group is opened; the caution is read above the listing and in the delete dialog |
+| Containers | the All and Backstage modes; load more containers; "Check settings" and the settings badges | not yet | |
+| Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
+| Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
+| Listing | load more objects; the filter; "Find in container"; "Count objects"; marker folders | not yet | |
+| Inspector | an object's large-object kind | upload a folder with a segmented file and browse it | it is the kind the job recorded |
+| Inspector | an object's user metadata; a container's public notice | edit an object's metadata; make the container public and private again | read after connecting again |
+| Inspector | the account card; segment tables; "Open segments backstage"; raw headers | not yet | |
+| Edit | add a key to an object's metadata | edit an object's metadata | read back after connecting again |
+| Edit | make a container public, with the native confirmation answered by the run, and private again | make the container public and private again | the inspector's sentence after connecting again |
+| Edit | container metadata, quotas, versioning locations, CORS and TempURL keys; account metadata; a large object's metadata; an edit that conflicts | not yet; layer 1 journey 4 edits object, container and account metadata | |
+| Upload | a folder holding a file that uploads in segments, with a per-job chunk size | upload a folder with a segmented file and browse it | the job completes, the uploaded names are listed, and the inspector shows the large-object kind the job recorded |
+| Upload | replace existing objects, with the native confirmation answered by the run | upload it again and confirm the overwrite | the download that follows returns the second upload's bytes |
+| Upload | chosen files instead of a folder | not yet | |
+| Download | a whole container into a local folder | download it back | each file's SHA-256 is that of the file uploaded |
+| Download | one object, a folder or a selection | not yet; layer 1 journey 3 | |
+| Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
+| Copy | run a copy, within an account or across two; create the destination container; replace existing objects | not yet; layer 1 journey 2 runs the copies | |
+| Jobs | follow a job to its end and read its details | the upload and download journeys, and the prefix and container deletes of the delete journey (an object delete is not a job) | the job's state is "complete" |
+| Jobs | pause, resume and cancel a job; per-object records; history and "Recent changes" | not yet | |
+| Delete | an object, confirmed with a button | delete an object, the prefix and the container | its row is gone |
+| Delete | a prefix and a container, each with a typed confirmation | delete an object, the prefix and the container | the listing is empty, and the container is gone after connecting again |
+| Delete | empty a container and keep it; a selection; a marker; a manifest, with or without its segments | not yet; layer 1 journey 5 | |
+| Menus | a container row's menu | open a copy from a container's context menu; find a container named like a segment store behind its heading | the chosen entry opens its dialog |
+| Menus | an object's and a folder's menu; "Copy name" | not yet | |
+| Settings | open Settings and import from it | import bookmarks from an rclone config (mock only) | as for the import above |
+| Settings | change and save a setting; back up and restore the configuration | not yet; layer 1 journey 7 | |
+| Window | the About and welcome dialogs; credential status; use by keyboard alone | not yet | |
