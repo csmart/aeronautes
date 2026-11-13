@@ -11,11 +11,19 @@
   let {
     browser,
     existing = null,
+    copyOf = null,
     onClose,
+    onDuplicate,
   }: {
     browser: BrowserState;
     existing?: BookmarkDTO | null;
+    // A new bookmark started from another's saved details. Its key is not
+    // copied: the window never holds one. Neither are its CA bundle, which
+    // reads do not return, or its storage URL override, which names the
+    // other account and has no field here to correct it.
+    copyOf?: BookmarkDTO | null;
     onClose: () => void;
+    onDuplicate?: (bookmark: BookmarkDTO) => void;
   } = $props();
 
   // The form must not borrow a replacement prop's bookmark identity.
@@ -37,34 +45,25 @@
   // The modal is mounted fresh per open ({#if} in BrowserScreen), so
   // capturing the prop's initial values is exactly right.
   /* svelte-ignore state_referenced_locally */
-  let displayName = $state(existing?.displayName ?? "");
+  const from = existing ?? copyOf;
   /* svelte-ignore state_referenced_locally */
-  let authUrl = $state(existing?.authUrl ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let username = $state(existing?.username ?? "");
+  let displayName = $state(existing?.displayName ?? (copyOf ? `${copyOf.displayName} copy` : ""));
+  let authUrl = $state(from?.authUrl ?? "");
+  let username = $state(from?.username ?? "");
   let apiKey = $state("");
-  /* svelte-ignore state_referenced_locally */
-  let authVersion = $state(existing?.authVersion ?? 1);
-  /* svelte-ignore state_referenced_locally */
-  let userDomain = $state(existing?.userDomain ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let projectName = $state(existing?.projectName ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let projectDomain = $state(existing?.projectDomain ?? "");
+  let authVersion = $state(from?.authVersion ?? 1);
+  let userDomain = $state(from?.userDomain ?? "");
+  let projectName = $state(from?.projectName ?? "");
+  let projectDomain = $state(from?.projectDomain ?? "");
   // An ID names the user or the project instead of the name and domain
   // (ADR 0113), so the name it replaces is no longer required.
-  /* svelte-ignore state_referenced_locally */
-  let userId = $state(existing?.userId ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let projectId = $state(existing?.projectId ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let region = $state(existing?.region ?? "");
-  /* svelte-ignore state_referenced_locally */
-  let tlsMode = $state(existing?.tlsMode ?? "system");
+  let userId = $state(from?.userId ?? "");
+  let projectId = $state(from?.projectId ?? "");
+  let region = $state(from?.region ?? "");
+  let tlsMode = $state(from?.tlsMode ?? "system");
   // What a segmented upload publishes (ADR 0111); a stored "slo" is the
   // same as the default, so it shows as the default.
-  /* svelte-ignore state_referenced_locally */
-  let largeObjects = $state(existing?.largeObjects === "dlo" ? "dlo" : "");
+  let largeObjects = $state(from?.largeObjects === "dlo" ? "dlo" : "");
   let caPem = $state("");
   // Keystone v3 and TempAuth v1 are the two auth types; the v3 identity
   // fields show only for v3 (ADR 0100).
@@ -181,6 +180,15 @@
     }}
   >
     <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
+    {#if copyOf && !bookmark}
+      <p class="warning" role="status">
+        Copied from {copyOf.displayName}. Enter this account's API key: a key is never copied.{copyOf.tlsMode === "custom_ca"
+          ? " Paste the CA bundle again; it is not copied either."
+          : ""}{copyOf.storageUrlOverride !== ""
+          ? " Its storage URL override is not copied: it names that account's storage."
+          : ""}
+      </p>
+    {/if}
     {#if verifyFailure}
       <p class="callout warning" role="status">
         This bookmark did not verify after import: {verifyFailure}. Verifying it here with its saved
@@ -315,6 +323,17 @@
         {:else}
           <button type="button" class="danger-soft" onclick={() => { if (isCurrent()) confirmingDelete = true; }} disabled={saving || !isCurrent()}>
             Delete…
+          </button>
+        {/if}
+        {#if onDuplicate}
+          <button
+            type="button"
+            class="secondary"
+            title="Start a new bookmark from this one's saved details; its key is not copied"
+            onclick={() => onDuplicate(bookmark)}
+            disabled={saving || !isCurrent()}
+          >
+            Duplicate…
           </button>
         {/if}
       {/if}
