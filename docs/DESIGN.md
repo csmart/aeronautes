@@ -2704,6 +2704,11 @@ Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pu
 In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, checked, edited or kept on screen: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a current fact shows the settings last seen for it, muted and dated, if any were recorded ([ADR 0110](adr/0110-switching-and-container-settings-on-screen.md)); a row without a badge is unchecked, not private; the listing call itself never HEADs a row, and the column reads only the rows kept on screen (§14.2).
 The column's "Check settings" control HEADs every loaded row once, four in flight, with a running count and a stop.
 
+The container list is read when the account is connected, when a job the window started ends, when the operator presses the column's "Refresh", and when the window is focused again more than thirty seconds after the list was last read.
+The read on focus is for changes made elsewhere, by another client or another tool of the operator's, which nothing else would show.
+It applies only to a list that fits one page: a re-read keeps the first page alone, and pages the operator loaded should not vanish because they looked away.
+Rows stay on screen while a re-read is in flight, and the listing stays advisory (§15.3).
+
 ### Logical — default
 
 Shows operator-facing logical storage.

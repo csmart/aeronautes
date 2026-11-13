@@ -190,6 +190,16 @@
       <h2 class="pane-title">Containers</h2>
       {#if browser.account}
         <button class="create" title="Create container" onclick={onCreate}>+</button>
+        <button
+          class="refresh"
+          title="Re-read the container list from the server"
+          aria-label="Refresh containers"
+          aria-busy={browser.containersLoading}
+          disabled={browser.containersLoading}
+          onclick={() => browser.loadContainers()}
+        >
+          ↻
+        </button>
         {#if browser.settingsCheck?.running}
           <button
             class="check"
@@ -241,7 +251,9 @@
       <p class="disconnected" role="status">Connecting to {browser.connectingName}…</p>
     {:else if !browser.account}
       <p class="disconnected">Not connected.</p>
-    {:else if browser.containersLoading}
+    {:else if browser.containersLoading && browser.containers.length === 0}
+      <!-- A re-read keeps the rows it is about to replace on screen; only a
+        list with nothing to show says it is listing. -->
       <p class="disconnected" role="status">Listing…</p>
     {:else if browser.containersError}
       <p class="error callout danger">{browser.containersError}</p>
@@ -339,7 +351,8 @@
     font-weight: var(--weight-semibold);
   }
 
-  .create {
+  .create,
+  .refresh {
     width: 1.6rem;
     height: 1.6rem;
     font: inherit;
@@ -350,6 +363,15 @@
     border: 1px solid var(--color-accent-border);
     border-radius: var(--radius-control);
     cursor: pointer;
+  }
+
+  .refresh {
+    margin-left: var(--space-1);
+  }
+
+  .refresh:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 
   .modes {

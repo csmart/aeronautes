@@ -209,7 +209,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onfocus={() => void browser.refreshContainersOnReturn()} />
 
 <div class="shell">
 {#if enabledCapabilities.length > 0 || unrecognisedCapabilities.length > 0}
