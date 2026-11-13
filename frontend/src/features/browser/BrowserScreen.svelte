@@ -2,7 +2,7 @@
   containers → objects → selection-triggered inspector HEAD — the v0.1
   vertical proof. -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { liveApi, type BookmarkDTO } from "../../lib/api";
   import BookmarkRail from "./BookmarkRail.svelte";
   import BookmarkEditor from "./BookmarkEditor.svelte";
@@ -39,6 +39,17 @@
     && browser.bookmarksError === null && browser.bookmarks.length === 0);
   const welcomeOpen = $derived(firstRun && !welcomeDismissed && !editorOpen);
   let editorExisting = $state<BookmarkDTO | null>(null);
+  let editorCopyOf = $state<BookmarkDTO | null>(null);
+
+  // The editor is mounted afresh for each bookmark it edits, so a copy
+  // closes the editor it was asked from before opening its own.
+  async function duplicateBookmark(bookmark: BookmarkDTO) {
+    editorOpen = false;
+    await tick();
+    editorExisting = null;
+    editorCopyOf = bookmark;
+    editorOpen = true;
+  }
   let createOpen = $state(false);
   let shellInfo = $state("connecting…");
   let enabledCapabilities: string[] = $state([]);
@@ -325,7 +336,16 @@
   />
 {/if}
 {#if editorOpen}
-  <BookmarkEditor {browser} existing={editorExisting} onClose={() => (editorOpen = false)} />
+  <BookmarkEditor
+    {browser}
+    existing={editorExisting}
+    copyOf={editorCopyOf}
+    onDuplicate={duplicateBookmark}
+    onClose={() => {
+      editorOpen = false;
+      editorCopyOf = null;
+    }}
+  />
 {/if}
 {#if createOpen}
   <CreateContainerDialog {browser} onClose={() => (createOpen = false)} />
