@@ -2809,6 +2809,8 @@ The product should teach the model without sounding patronising.
 
 **First run (2026-10-27).** When the bookmark list has been read and is empty, a welcome dialog says what a bookmark is and offers to add the first one; a failed read is not an empty list and shows no welcome, and declining lasts the window. The bookmark editor's Verify checks the typed details against the endpoint without saving them ([ADR 0011](adr/0011-typed-service-surface.md), `BookmarkService.Verify`; the action's scenario contract decision is [ADR 0091](adr/0091-verify-action-contract.md)).
 
+**Bookmarks (2026-11-13).** The welcome dialog and the rail also offer the import of [ADR 0114](adr/0114-importing-bookmarks.md), whose preview lets each bookmark be named; a saved bookmark can be duplicated into a new one that asks for its own key; and a bookmark with no saved key is marked on the rail and opens its editor when chosen ([ADR 0118](adr/0118-duplicating-naming-and-keyless-bookmarks.md)).
+
 ---
 
 ## 55. Frontend security boundary
