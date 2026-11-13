@@ -28,6 +28,13 @@ function checkbox(name: string): HTMLInputElement {
   return document.querySelector<HTMLInputElement>(`input[aria-label="Import ${name}"]`)!;
 }
 
+function rename(name: string, to: string) {
+  const field = document.querySelector<HTMLInputElement>(`input[aria-label="Name for ${name}"]`)!;
+  field.value = to;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
+
 function button(label: string): HTMLButtonElement {
   const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label);
   if (!found) throw new Error("Missing button: " + label);
@@ -66,9 +73,11 @@ describe("import bookmarks dialog", () => {
     expect(checkbox("envy").disabled).toBe(true);
     expect(document.body.textContent).toContain("Not imported: it takes its credentials from the environment.");
 
+    // The row goes under the name in its field (ADR 0118 decision 3).
+    rename("fresh", " Prod AU ");
     button("Import 1 bookmark").click();
     await settle();
-    expect(save).toHaveBeenCalledWith("t-1", [0], true);
+    expect(save).toHaveBeenCalledWith("t-1", [{ index: 0, name: "Prod AU" }], true);
     expect(changed).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain("Imported; verifying…");
 
@@ -96,6 +105,26 @@ describe("import bookmarks dialog", () => {
     flushSync();
     button("Import 2 bookmarks").click();
     await settle();
-    expect(save).toHaveBeenCalledWith("t-1", [0, 1], false);
+    expect(save).toHaveBeenCalledWith("t-1", [{ index: 0, name: "fresh" }, { index: 1, name: "again" }], false);
+  });
+
+  it("does not import a ticked row whose name is empty", async () => {
+    const api = newFakeApi();
+    api.previewImport = async () => preview;
+    const save = vi.fn(async (token: string) => ({ token, done: true, outcomes: [] }));
+    api.saveImport = save;
+    const imports = new ImportState(api, vi.fn());
+    await imports.pick();
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: vi.fn() } }));
+    flushSync();
+
+    rename("fresh", " ");
+    expect(button("Import 1 bookmark").disabled).toBe(true);
+    expect(document.body.textContent).toContain("Give every ticked row a name.");
+    await imports.save();
+    expect(save).not.toHaveBeenCalled();
+    rename("fresh", "fresh again");
+    expect(button("Import 1 bookmark").disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Give every ticked row a name.");
   });
 });

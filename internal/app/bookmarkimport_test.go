@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -89,7 +90,8 @@ func waitForImport(t *testing.T, s *BookmarkImportService, token string) ImportR
 func TestImportPreviewSaveAndVerify(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	if _, err := h.bookmarks.Save(ctx, BookmarkDTO{DisplayName: "Already", AuthURL: h.authURL, Username: "test:tester"}, "testing"); err != nil {
+	already, err := h.bookmarks.Save(ctx, BookmarkDTO{DisplayName: "Already", AuthURL: h.authURL, Username: "test:tester"}, "testing")
+	if err != nil {
 		t.Fatal(err)
 	}
 	s := newImportService(h, importFixture(t, h.authURL))
@@ -116,16 +118,22 @@ func TestImportPreviewSaveAndVerify(t *testing.T) {
 	if !states["good"].HasSecret || states["nokey"].HasSecret {
 		t.Errorf("HasSecret good=%t nokey=%t, want true and false", states["good"].HasSecret, states["nokey"].HasSecret)
 	}
-	if _, err := s.SaveImport(ctx, preview.Token, []int{states["skipped"].Index}, false); err == nil {
+	choose := func(name string) ImportChoiceDTO { return ImportChoiceDTO{Index: states[name].Index, Name: name} }
+	if _, err := s.SaveImport(ctx, preview.Token, []ImportChoiceDTO{choose("skipped")}, false); err == nil {
 		t.Fatal("a skipped row was saved")
 	}
+	if _, err := s.SaveImport(ctx, preview.Token, []ImportChoiceDTO{{Index: states["good"].Index, Name: " "}}, false); err == nil {
+		t.Fatal("a row with no name was saved")
+	}
 
-	// The refused save spent nothing, so the same token saves.
-	result, err := s.SaveImport(ctx, preview.Token, []int{states["good"].Index, states["wrong"].Index, states["nokey"].Index}, true)
+	// The refused saves spent nothing, so the same token saves. The first
+	// row goes under the name the operator gave it (ADR 0118 decision 3).
+	renamed := ImportChoiceDTO{Index: states["good"].Index, Name: "Renamed"}
+	result, err := s.SaveImport(ctx, preview.Token, []ImportChoiceDTO{renamed, choose("wrong"), choose("nokey")}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveImport(ctx, preview.Token, []int{states["good"].Index}, true); !errors.Is(err, errImportTokenSpent) {
+	if _, err := s.SaveImport(ctx, preview.Token, []ImportChoiceDTO{renamed}, true); !errors.Is(err, errImportTokenSpent) {
 		t.Fatalf("a second save with the token = %v, want it refused", err)
 	}
 	result = waitForImport(t, s, result.Token)
@@ -133,7 +141,7 @@ func TestImportPreviewSaveAndVerify(t *testing.T) {
 	for _, o := range result.Outcomes {
 		outcomes[o.Name] = o
 	}
-	if outcomes["good"].Verify != "verified" || outcomes["nokey"].Verify != "no_secret" {
+	if outcomes["Renamed"].Verify != "verified" || outcomes["nokey"].Verify != "no_secret" {
 		t.Fatalf("outcomes = %+v", result.Outcomes)
 	}
 	const refused = "the identity service refused these credentials"
@@ -152,13 +160,21 @@ func TestImportPreviewSaveAndVerify(t *testing.T) {
 	if got := byID[outcomes["wrong"].BookmarkID]; got.VerifyFailure != refused || !got.HasCredential {
 		t.Errorf("the refused bookmark = %+v, want it saved with its key and flagged", got)
 	}
-	if got := byID[outcomes["good"].BookmarkID]; got.VerifyFailure != "" || got.DisplayName != "good" {
-		t.Errorf("the verified bookmark = %+v, want it unflagged and named for its remote", got)
+	if got := byID[outcomes["Renamed"].BookmarkID]; got.VerifyFailure != "" || got.DisplayName != "Renamed" {
+		t.Errorf("the verified bookmark = %+v, want it unflagged and under the name it was given", got)
+	}
+	// Every row matched the bookmark that was already there, and importing
+	// them as second bookmarks left it as it was, key included.
+	if got := byID[already.ID]; !reflect.DeepEqual(got, already) || len(list) != 4 {
+		t.Errorf("the existing bookmark = %+v among %d, want %+v among 4", got, len(list), already)
+	}
+	if key, err := h.bookmarks.store.Credential(ctx, already.ID); err != nil || string(key) != "testing" {
+		t.Errorf("the existing bookmark's key changed: %v", err)
 	}
 	if got := byID[outcomes["nokey"].BookmarkID]; got.HasCredential {
 		t.Error("the keyless account was saved with a credential")
 	}
-	if key, err := h.bookmarks.store.Credential(ctx, outcomes["good"].BookmarkID); err != nil || string(key) != "testing" {
+	if key, err := h.bookmarks.store.Credential(ctx, outcomes["Renamed"].BookmarkID); err != nil || string(key) != "testing" {
 		t.Errorf("the imported key is not in the secret store: %v", err)
 	}
 	for _, file := range []string{h.dbPath, h.dbPath + "-wal"} {
@@ -209,9 +225,9 @@ func TestImportVerifiesTwoAtATime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := make([]int, len(preview.Rows))
-	for i := range all {
-		all[i] = i
+	all := make([]ImportChoiceDTO, len(preview.Rows))
+	for i, row := range preview.Rows {
+		all[i] = ImportChoiceDTO{Index: i, Name: row.Name}
 	}
 	result, err := s.SaveImport(ctx, preview.Token, all, true)
 	if err != nil {

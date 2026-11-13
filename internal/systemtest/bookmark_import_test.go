@@ -42,7 +42,8 @@ func TestImportBookmarksSavesAPreview(t *testing.T) {
 	if err != nil || len(preview.Rows) != 1 || preview.Rows[0].State != "importable" {
 		t.Fatalf("preview = %+v, %v", preview, err)
 	}
-	result, receipt := h.SaveImport(ctx, preview.Token, []int{0}, false)
+	chosen := []app.ImportChoiceDTO{{Index: 0, Name: preview.Rows[0].Name}}
+	result, receipt := h.SaveImport(ctx, preview.Token, chosen, false)
 	if receipt.Err() != nil || len(result.Outcomes) != 1 || result.Outcomes[0].BookmarkID == "" {
 		t.Fatalf("save = %+v, %v", result, receipt.Err())
 	}
@@ -51,7 +52,7 @@ func TestImportBookmarksSavesAPreview(t *testing.T) {
 		t.Fatalf("the imported key is not in the secret store: %v", err)
 	}
 
-	if _, refused := h.SaveImport(ctx, preview.Token, []int{0}, false); refused.Err() == nil {
+	if _, refused := h.SaveImport(ctx, preview.Token, chosen, false); refused.Err() == nil {
 		t.Fatal("a save with a spent token was not refused")
 	} else {
 		refused.CreditRefusal()

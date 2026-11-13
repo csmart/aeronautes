@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,6 +80,13 @@ type ImportPreviewDTO struct {
 	Token    string         `json:"token"`
 	FileName string         `json:"fileName"`
 	Rows     []ImportRowDTO `json:"rows"`
+}
+
+// ImportChoiceDTO is one row the operator ticked, under the name they gave
+// it in the preview (ADR 0118 decision 3).
+type ImportChoiceDTO struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
 }
 
 // ImportOutcomeDTO is what happened to one chosen row. Verify is
@@ -165,7 +173,7 @@ func (s *BookmarkImportService) PreviewImport(ctx context.Context) (ImportPrevie
 // SaveImport saves the chosen rows through the ordinary bookmark save and,
 // when verify is set, verifies them in the background. The preview's token
 // is spent, so a second save with it is refused.
-func (s *BookmarkImportService) SaveImport(ctx context.Context, token string, chosen []int, verify bool) (ImportResultDTO, error) {
+func (s *BookmarkImportService) SaveImport(ctx context.Context, token string, chosen []ImportChoiceDTO, verify bool) (ImportResultDTO, error) {
 	s.mu.Lock()
 	preview := s.preview
 	if preview == nil || preview.token != token {
@@ -174,10 +182,14 @@ func (s *BookmarkImportService) SaveImport(ctx context.Context, token string, ch
 	}
 	// A choice that cannot be imported is refused before the token is
 	// spent, so the operator can correct it without choosing the file again.
-	for _, index := range chosen {
-		if index < 0 || index >= len(preview.sources) || preview.rows[index].State == "skipped" {
+	for _, choice := range chosen {
+		if choice.Index < 0 || choice.Index >= len(preview.sources) || preview.rows[choice.Index].State == "skipped" {
 			s.mu.Unlock()
-			return ImportResultDTO{}, fmt.Errorf("row %d cannot be imported", index)
+			return ImportResultDTO{}, fmt.Errorf("row %d cannot be imported", choice.Index)
+		}
+		if strings.TrimSpace(choice.Name) == "" {
+			s.mu.Unlock()
+			return ImportResultDTO{}, fmt.Errorf("row %d needs a name", choice.Index)
 		}
 	}
 	s.preview = nil
@@ -185,10 +197,12 @@ func (s *BookmarkImportService) SaveImport(ctx context.Context, token string, ch
 
 	run := &importRun{token: token}
 	var toVerify []int
-	for _, index := range chosen {
-		source := preview.sources[index]
-		outcome := ImportOutcomeDTO{Index: index, Name: source.Name, Verify: "not_requested"}
-		saved, err := s.bookmarks.Save(ctx, importDTO(source.Bookmark), source.Secret)
+	for _, choice := range chosen {
+		source := preview.sources[choice.Index]
+		outcome := ImportOutcomeDTO{Index: choice.Index, Name: choice.Name, Verify: "not_requested"}
+		bookmark := importDTO(source.Bookmark)
+		bookmark.DisplayName = choice.Name
+		saved, err := s.bookmarks.Save(ctx, bookmark, source.Secret)
 		switch {
 		case err != nil:
 			outcome.Verify, outcome.Reason = "not_saved", saveFailureReason(err)
