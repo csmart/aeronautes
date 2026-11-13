@@ -168,16 +168,37 @@ describe("container mode tabs", () => {
   it("lists the containers of the mode reached by keyboard", async () => {
     await screen();
     for (const name of hiddenNames) expect(containerRows()).not.toContain(name);
-    for (const name of suspectedNames) expect(containerRows()).toContain(name);
     expect(document.querySelectorAll(".class-chip")).toHaveLength(0);
     tab("Logical").focus();
     press(tab("Logical"), "ArrowRight"); await settle();
     expect(selectedTab()).toBe(tab("All"));
-    for (const name of hiddenNames) expect(containerRows()).toContain(name);
+    for (const name of [...hiddenNames, ...suspectedNames]) expect(containerRows()).toContain(name);
     expect(document.querySelectorAll(".class-chip")).toHaveLength(0);
     press(tab("All"), "ArrowRight"); await settle();
     expect(selectedTab()).toBe(tab("Backstage"));
     expect(document.querySelectorAll(".class-chip").length).toBe(hiddenNames.length + suspectedNames.length);
+  });
+
+  // ADR 0117 decision 1: a container that is only named like a segment
+  // store stays in the Logical list, behind its group's heading.
+  it("keeps the possible backstage group collapsed until its heading is pressed", async () => {
+    await screen();
+    const heading = get<HTMLButtonElement>(".group-toggle");
+    const subdued = () => [...document.querySelectorAll<HTMLElement>(".container-row.subdued .container-name")]
+      .map((name) => name.childNodes[0]?.textContent?.trim() ?? "");
+    expect(heading.textContent).toContain(`Possible backstage · ${suspectedNames.length}`);
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    for (const name of suspectedNames) expect(containerRows()).not.toContain(name);
+    click(heading); await settle();
+    expect(heading.getAttribute("aria-expanded")).toBe("true");
+    expect(subdued().sort()).toEqual([...suspectedNames].sort());
+    click(heading); await settle();
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    for (const name of suspectedNames) expect(containerRows()).not.toContain(name);
+    click(tab("All")); await settle();
+    expect(document.querySelector(".group-toggle")).toBeNull();
+    for (const name of suspectedNames) expect(containerRows()).toContain(name);
+    expect(subdued()).toEqual([]);
   });
 
   it("still activates a tab by pointer", async () => {

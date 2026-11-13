@@ -13,6 +13,11 @@
   let menu: { x: number; y: number; name: string } | null = $state(null);
   let menuFrom: HTMLElement | null = null;
 
+  // Containers that are only named like segment stores stay in the list,
+  // since the name is a guess, but behind one press, so that nobody walks
+  // into them by accident (ADR 0117 decision 1).
+  let possibleBackstageOpen = $state(false);
+
   async function inContainer(name: string, run: () => void) {
     await browser.openContainer(name);
     if (browser.containerName === name) run();
@@ -147,9 +152,10 @@
   {/if}
 {/snippet}
 
-{#snippet containerRow(container: ContainerRowDTO)}
+{#snippet containerRow(container: ContainerRowDTO, subdued: boolean)}
   <button
     class="container-row"
+    class:subdued
     class:selected={browser.containerName === container.name}
     onclick={() => browser.openContainer(container.name)}
     oncontextmenu={(event) => openMenuAt(event, container.name)}
@@ -241,16 +247,25 @@
       <p class="error callout danger">{browser.containersError}</p>
     {:else}
       {#each browser.containerGroups.main as container (container.name)}
-        {@render containerRow(container)}
+        {@render containerRow(container, false)}
       {/each}
 
       {#if browser.containerGroups.suspected.length > 0}
         <h3 class="group-label">
-          Possible backstage · {browser.containerGroups.suspected.length}
+          <button
+            class="group-toggle"
+            aria-expanded={possibleBackstageOpen}
+            onclick={() => (possibleBackstageOpen = !possibleBackstageOpen)}
+          >
+            <span aria-hidden="true">{possibleBackstageOpen ? "▾" : "▸"}</span>
+            Possible backstage · {browser.containerGroups.suspected.length}
+          </button>
         </h3>
-        {#each browser.containerGroups.suspected as container (container.name)}
-          {@render containerRow(container)}
-        {/each}
+        {#if possibleBackstageOpen}
+          {#each browser.containerGroups.suspected as container (container.name)}
+            {@render containerRow(container, true)}
+          {/each}
+        {/if}
       {/if}
 
       {#if browser.containersAtCeiling}
@@ -417,6 +432,10 @@
     border-color: var(--color-selection-border);
   }
 
+  .container-row.subdued .container-name {
+    color: var(--color-text-secondary);
+  }
+
   .container-name {
     font-weight: var(--weight-medium);
     overflow-wrap: anywhere;
@@ -498,6 +517,17 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-faint);
+  }
+
+  .group-toggle {
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
   }
 
   .load-more {
