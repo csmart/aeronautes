@@ -2,6 +2,7 @@
 
 **Status:** Accepted for 0.5.0 (12 November 2026), delivered with this record's series, from finding F33 and the operator's decisions of 12 November: one import for rclone.conf and clouds.yaml, secrets to the secret store as usual, verification after import by default, a failed verification saved and flagged, duplicates skipped by default, and no secret in any error.
 **Scope:** reading another tool's configuration file into bookmarks; the preview, the save and the verification that follows it; the flag a failed verification leaves on a bookmark.
+**Amended by:** [ADR 0118](0118-duplicating-naming-and-keyless-bookmarks.md), for where the import is offered (decision 1) and the name each bookmark is saved under (decision 7).
 **Relies on:** [ADR 0113](0113-keystone-discovery-and-ids.md) for an Identity root URL and for users and projects named by ID, and [ADR 0100](0100-keystone-v3-authentication.md) for what a Keystone bookmark may name.
 
 ## Context
