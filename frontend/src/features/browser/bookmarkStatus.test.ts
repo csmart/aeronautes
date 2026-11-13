@@ -261,7 +261,7 @@ function heldMutation() {
 
 function showRail(state: BrowserState) {
   const component = mount(BookmarkRail, { target: document.body,
-    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn(), onOpenSettings: vi.fn() } });
+    props: { browser: state, onAddBookmark: vi.fn(), onEditBookmark: vi.fn(), onImportBookmarks: vi.fn(), onOpenSettings: vi.fn() } });
   mounted.add(component);
   flushSync();
 }
