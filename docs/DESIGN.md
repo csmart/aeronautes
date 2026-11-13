@@ -1381,6 +1381,8 @@ Show them in a subdued section such as:
 
 with an operator action to classify them.
 
+The section is collapsed when the window opens: its heading and count stay in the list, and the heading opens and closes it ([ADR 0117](adr/0117-possible-backstage-collapsed-and-cautioned.md)).
+
 ### 24.6 Backstage view
 
 Backstage mode explicitly reveals:
@@ -1391,6 +1393,12 @@ Backstage mode explicitly reveals:
 - more dangerous operations.
 
 It should visually feel like entering an advanced operational context.
+
+### 24.7 Caution where a segment store is open
+
+Whenever the open container is Suspected, Declared or Confirmed, a caution stands above its listing, in every mode and however the container was reached, and every delete confirmation opened there repeats it (ADR 0117).
+For a Suspected container it says the container is named like a segment store; otherwise it says the container is one.
+The caution is words only: it adds no confirmation and authorises nothing, and §24.4 still holds.
 
 ---
 
@@ -2702,7 +2710,7 @@ Shows operator-facing logical storage.
 
 Hide Confirmed/Declared segment stores.
 
-Group Suspected stores separately.
+Group Suspected stores separately, collapsed until the operator opens the group (§24.5).
 
 ### All
 
