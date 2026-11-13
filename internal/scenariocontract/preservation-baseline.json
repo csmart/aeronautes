@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "7f18b29b5c1e9d78877194a7c403bccb0362d0ff",
+    "commit": "e8f9453daf9b622f8b4859887bcae5590a40209c",
     "go_version": "go1.27.4",
-    "run_id": "43309249436",
+    "run_id": "43330827589",
     "run_attempt": "1"
   },
-  "contractHash": "0e32c4059d121671",
+  "contractHash": "46a6d3c205f56659",
   "actions": [
     {
       "action": "AppService.About",
@@ -366,6 +366,14 @@
       ]
     },
     {
+      "action": "MutateService.CreateDestinationContainer",
+      "kind": "mutate",
+      "required": [
+        "happy",
+        "refusal"
+      ]
+    },
+    {
       "action": "MutateService.CreateMarker",
       "kind": "mutate",
       "required": [
@@ -454,6 +462,13 @@
     {
       "action": "TransferService.CancelJob",
       "kind": "session",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "TransferService.DestinationContainers",
+      "kind": "read",
       "required": [
         "happy"
       ]
@@ -805,6 +820,14 @@
       "scenario": "refusal"
     },
     {
+      "action": "MutateService.CreateDestinationContainer",
+      "scenario": "happy"
+    },
+    {
+      "action": "MutateService.CreateDestinationContainer",
+      "scenario": "refusal"
+    },
+    {
       "action": "MutateService.DeleteManifest",
       "scenario": "conflict"
     },
@@ -887,6 +910,10 @@
     {
       "action": "MutateService.UpdateTempURLKey",
       "scenario": "refusal"
+    },
+    {
+      "action": "TransferService.DestinationContainers",
+      "scenario": "happy"
     },
     {
       "action": "TransferService.PlanCopy",
@@ -934,10 +961,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-13-bookmark-import-baseline.md",
-    "mainReportSHA256": "f0cc8d03f9910bb80a07c6f3d27b24915a6dfa542276fbee2cb3c8dcf57d8d8d",
-    "mainReceiptSHA256": "dc1850dde4568779edce773cae2ed86a4ed3399b5a5e6c085d66d9663cca014a",
-    "heavyReportSHA256": "3a5f28a6f2e5ae65b77bcefaa39ea41e8b1bc41ae11a287727afe42a93152902",
-    "heavyReceiptSHA256": "0d899da6c25c2e68cbd8ccb8ce6978905afa68dc517fa3276be9be2d02b48f0f"
+    "reference": "docs/experiments/2026-11-13-copy-destination-baseline.md",
+    "mainReportSHA256": "e0e4e0e3e257cc25c7260fbfb1696a43dc6476a919348477b317de798b4a31cc",
+    "mainReceiptSHA256": "84c55296c0a82bc5a3afce94b27af04e10264bd5769d924fcf059108725bd263",
+    "heavyReportSHA256": "1766ba53cbf9791d7a04e282711dd4b59744f9fd1fcb2e5142e354a647ade729",
+    "heavyReceiptSHA256": "71334bdf94cf2655742148e2df1ff1179d871219dd315ccf5466343fec03db50"
   }
 }
