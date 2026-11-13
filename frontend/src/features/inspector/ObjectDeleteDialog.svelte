@@ -95,6 +95,9 @@
             entity tag <span class="type-mono">{op.detail.etag}</span>.
           </p>
         {/if}
+        {#if browser.segmentStoreCaution}
+          <p class="keeps warn">{browser.segmentStoreCaution}</p>
+        {/if}
         <p class="keeps">{versioningSentence(facts)}</p>
         {#if marker}
           <p class="keeps">This is a directory marker: the objects under it stay, and the folder remains implied by them.</p>

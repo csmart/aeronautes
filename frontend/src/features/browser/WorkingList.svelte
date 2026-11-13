@@ -103,6 +103,10 @@
         <span class="type-mono">{browser.backstageFrom}</span> — objects here may be segments of
         larger logical objects; classification never authorizes deleting them.
       </div>
+    {:else if browser.segmentStoreCaution}
+      <!-- However the container was reached (ADR 0117 decision 2); the
+        jump's notice above says more, so it stands alone. -->
+      <div class="backstage-banner">{browser.segmentStoreCaution}</div>
     {/if}
     <nav class="breadcrumb num" aria-label="Path">
       <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>

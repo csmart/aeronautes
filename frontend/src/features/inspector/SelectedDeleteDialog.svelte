@@ -91,6 +91,9 @@
             A prefix is not deleted here.
           </p>
         {/if}
+        {#if browser.segmentStoreCaution}
+          <p class="keeps warn">{browser.segmentStoreCaution}</p>
+        {/if}
         <p class="keeps">{versioningSentence(facts)}</p>
         <p class="keeps">
           An object listed with a size is deleted only if it still matches its listing; one that changed since is left

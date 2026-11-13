@@ -5,6 +5,7 @@
 
 import { isLiteralPlainObject } from "../../lib/objectKind";
 import { messageOf } from "../../lib/messageOf";
+import { segmentStoreCaution } from "./segmentStoreCaution";
 import type {
   AccountDTO,
   AccountEditDTO,
@@ -1882,6 +1883,13 @@ export class BrowserState {
       return this.containerDetailError === null;
     }
     return false;
+  }
+
+  /** The caution for the open container when it is, or may be, a segment
+   * store (ADR 0117), and "" otherwise. Its class is the one its HEAD
+   * reported once that is read, and its row's in the column until then. */
+  get segmentStoreCaution(): string {
+    return segmentStoreCaution(this.containerDetail?.class ?? this.container?.class ?? "normal");
   }
 
   /** The open container's settings fact, only when it belongs to this
