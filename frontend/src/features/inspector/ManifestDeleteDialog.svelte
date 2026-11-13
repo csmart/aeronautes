@@ -150,6 +150,9 @@
           The {op.detail.class.toUpperCase()} manifest you were shown at <span class="type-mono">{op.name}</span> will be
           deleted; what then stands at the name, if anything, follows how this container keeps versions.
         </p>
+        {#if browser.segmentStoreCaution}
+          <p class="keeps warn">{browser.segmentStoreCaution}</p>
+        {/if}
         {#if !withSegments}
           <p class="keeps">
             <strong>{inlineEntries === null

@@ -224,6 +224,9 @@
         </span>
       </label>
     </div>
+    {#if browser.segmentStoreCaution}
+      <p class="warn">{browser.segmentStoreCaution}</p>
+    {/if}
     {/if}
 
     {#if error}

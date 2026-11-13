@@ -437,8 +437,8 @@ import { isLink } from "../browser/browserState.svelte";
       {:else if containerClass === "suspected"}
         <p class="teach">
           Named like a segment store, but nothing confirms it. Treated as
-          possible backstage — shown, never hidden, and never destructively
-          classified from the name alone.
+          possible backstage — listed under that heading rather than hidden,
+          and never destructively classified from the name alone.
         </p>
       {/if}
     </section>
