@@ -60,6 +60,32 @@ func (t TLSConfig) transport(maxConnsPerHost int) (http.RoundTripper, error) {
 	return redirectRefusingTransport{inner: inner}, nil
 }
 
+// repeatedReadTransport sends a read once more when it fails in transit.
+// It carries the session's own requests, the ones made outside the wire
+// library. The library sends a failed GET or HEAD again by itself, and the
+// engine's gateway repeats its reads too, but an object HEAD made here was
+// sent once: a store, or the network in front of it, drops a connection now
+// and then, and one dropped HEAD failed the whole preview of a copy (seen
+// on a real cloud while checking the 0.5.0 candidate). Only a request with
+// no body is repeated, and only when no response came back, so a DELETE or
+// a POST made here is never sent twice (§49).
+type repeatedReadTransport struct {
+	inner http.RoundTripper
+}
+
+func (t repeatedReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.inner.RoundTrip(req)
+	if err == nil || !bodilessRead(req) {
+		return resp, err
+	}
+	return t.inner.RoundTrip(req.Clone(req.Context()))
+}
+
+func bodilessRead(req *http.Request) bool {
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
+		(req.Body == nil || req.Body == http.NoBody)
+}
+
 // ClientConfig keeps native requests and the child gateway on the same
 // trust policy while allowing each to own its connection lifetime.
 func (t TLSConfig) ClientConfig() (*tls.Config, error) {

@@ -2609,6 +2609,12 @@ Use exponential backoff + jitter.
 
 Respect `Retry-After`.
 
+As built (14 November 2026): a read that fails in transit is sent again, and nothing more.
+The wire library sends a failed GET or HEAD up to three more times.
+The session's own requests outside the library (the literal and comparison HEADs and the raw SLO manifest read) send a GET or HEAD with no body once more, and so does the engine's gateway, which also repeats a read the store answered with 502.
+No attempt waits, and no other status is retried.
+A request that changes the store, a DELETE with no body included, is never sent again.
+
 ### Mutations
 
 Do not blindly retry an ambiguous POST/PUT/DELETE if the request may already have been applied.
