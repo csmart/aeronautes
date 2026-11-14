@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { control } from "./control.ts";
 
 const bookmarks = new Map<string, string>();
@@ -114,6 +114,58 @@ export async function expectInside(dialog: Locator): Promise<void> {
     expect(box.x, `left edge of "${name}"`).toBeGreaterThanOrEqual(frame.x);
     expect(box.x + box.width, `right edge of "${name}"`).toBeLessThanOrEqual(frame.x + frame.width);
   }
+}
+
+// openUpload opens the upload dialog with a chunk size small enough that a
+// file of a few MiB is segmented, and with the kind of large object to
+// publish when the journey chooses one.
+export async function openUpload(page: Page, largeObjects?: "slo" | "dlo"): Promise<Locator> {
+  await page.getByRole("button", { name: "Upload…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Upload" });
+  await dialog.getByText("Per-job settings").click();
+  await dialog.getByLabel("Chunk size").fill("1Mi");
+  if (largeObjects) {
+    await dialog.getByLabel("Large objects").selectOption(largeObjects);
+  }
+  return dialog;
+}
+
+export async function openFolder(page: Page, folder: string): Promise<void> {
+  await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) }).dblclick();
+  await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: basename(folder) })).toBeVisible();
+}
+
+export function objectRow(page: Page, name: string): Locator {
+  return page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${name} `) });
+}
+
+export function inspector(page: Page): Locator {
+  return page.getByRole("complementary", { name: "Inspector" });
+}
+
+// armDelete previews a deletion, checks how the option that takes large
+// objects' segments stands without touching it, types the words the dialog
+// then asks for, as the operator reads them there, and starts it.
+export async function armDelete(page: Page, action: string, segments: "ticked" | "not offered" = "not offered"): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Delete" });
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  const confirm = dialog.getByLabel(/to arm/);
+  await expect(confirm).toBeVisible();
+  const option = dialog.getByLabel("Also delete the segments of large objects");
+  if (segments === "ticked") {
+    await expect(option).toBeChecked();
+    await expect(confirm).toHaveAttribute("placeholder", / and segments$/);
+  } else {
+    await expect(option).toHaveCount(0);
+  }
+  await confirm.fill((await confirm.getAttribute("placeholder"))!);
+  await dialog.getByRole("button", { name: action }).click();
+}
+
+// typedDelete starts a deletion that way and waits for its job in the drawer.
+export async function typedDelete(page: Page, action: string, segments: "ticked" | "not offered" = "not offered"): Promise<void> {
+  await armDelete(page, action, segments);
+  await finish(page, page.getByRole("dialog", { name: "Delete" }));
 }
 
 function escapeRegExp(text: string): string {

@@ -20,5 +20,8 @@ export const control = {
   account: (label: string): Promise<{ bookmark?: string }> => call("/account", { label, authUrl: process.env.AERONAUTES_MOCK }),
   container: (label: string, name: string, segmented = false): Promise<{ container: string }> =>
     call("/container", { label, name, segmented }),
+  // What one of the run's own containers holds, as the run's own session
+  // lists it: the read a deletion is checked against.
+  names: async (label: string, container: string): Promise<string[]> => (await call("/names", { label, container })).names,
   teardown: (): Promise<{ failures: number }> => call("/teardown", {}),
 };

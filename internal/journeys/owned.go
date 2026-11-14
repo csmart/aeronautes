@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/textproto"
+	"slices"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -114,12 +115,31 @@ func (o *Owned) editAccount(ctx context.Context, change func(map[string]string))
 }
 
 func (o *Owned) created(container string) bool {
-	for _, name := range o.containers {
-		if name == container {
-			return true
+	return slices.Contains(o.containers, container)
+}
+
+// Names lists what a container this run created, or a sidecar it claimed,
+// holds now, as the run's own session reads it: the independent read a
+// browser journey checks a deletion against. Any other container is
+// refused, so a journey never lists what is not the run's. One that does
+// not exist, as a sidecar no upload has written to yet, holds nothing.
+func (o *Owned) Names(ctx context.Context, container string) ([]string, error) {
+	if !o.created(container) && !slices.Contains(o.sidecars, container) {
+		return nil, fmt.Errorf("container %q: %w", container, ErrNotOwned)
+	}
+	names := []string{}
+	for row, err := range o.session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
+		if swiftcontrol.IsNotFound(err) {
+			return names, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if object, ok := row.(swiftcontrol.ObjectEntry); ok {
+			names = append(names, object.Name)
 		}
 	}
-	return false
+	return names, nil
 }
 
 // Teardown removes what this run created and nothing else: the objects in
@@ -144,10 +164,21 @@ func (o *Owned) Teardown(ctx context.Context) []error {
 }
 
 func (o *Owned) empty(ctx context.Context, container string) []error {
-	if _, err := o.session.ContainerDetail(ctx, container); swiftcontrol.IsNotFound(err) {
+	detail, err := o.session.ContainerDetail(ctx, container)
+	if swiftcontrol.IsNotFound(err) {
 		return nil
 	}
 	var failures []error
+	// Where a journey gave the container a versions or history location, the
+	// store would archive each object deleted here, or refuse the delete
+	// once that archive is gone, so the container stops keeping versions
+	// first.
+	if err == nil && detail.Versioning.Mode != swiftcontrol.VersioningOff {
+		plain := swiftcontrol.ContainerEdit{Versioning: swiftcontrol.ContainerVersioning{Mode: swiftcontrol.VersioningOff}}
+		if _, err := o.session.UpdateContainer(ctx, container, "", plain); err != nil {
+			failures = append(failures, fmt.Errorf("stop keeping versions in %s: %w", container, err))
+		}
+	}
 	for row, err := range o.session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true}) {
 		if err != nil {
 			failures = append(failures, fmt.Errorf("list %s: %w", container, err))

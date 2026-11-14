@@ -186,3 +186,71 @@ func TestTeardownSkipsAContainerAlreadyGone(t *testing.T) {
 		t.Fatalf("teardown reported a container the journey already deleted: %v", failures)
 	}
 }
+
+// Names is the read a browser journey checks a deletion against. It lists
+// what the run created or claimed and refuses anything else unread, so a
+// journey never lists a container that is not the run's.
+func TestNamesListsOnlyTheRunsOwnContainers(t *testing.T) {
+	mock, session := mockSession(t)
+	ctx := context.Background()
+	owned, err := NewOwned(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, err := owned.CreateContainer(ctx, "mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owned.ClaimSidecar(ctx, mine); err != nil {
+		t.Fatal(err)
+	}
+	if names, err := owned.Names(ctx, mine+"_segments"); err != nil || len(names) != 0 {
+		t.Fatalf("names of a sidecar nothing has written to = %v, %v; want none", names, err)
+	}
+	mock.AddContainer(mine+"_segments", "standard")
+	mock.AddContainer("unrelated", "standard")
+	for container, name := range map[string]string{mine: "dir/big", mine + "_segments": "dir/big/0001", "unrelated": "theirs"} {
+		if _, err := session.PutObject(ctx, container, name, strings.NewReader("x"), "text/plain", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for container, want := range map[string]string{mine: "dir/big", mine + "_segments": "dir/big/0001"} {
+		if names, err := owned.Names(ctx, container); err != nil || len(names) != 1 || names[0] != want {
+			t.Fatalf("names of %s = %v, %v; want [%s]", container, names, err, want)
+		}
+	}
+	sent := len(mock.RequestLog())
+	if _, err := owned.Names(ctx, "unrelated"); !errors.Is(err, ErrNotOwned) {
+		t.Fatalf("listing a container the run did not create = %v, want it refused", err)
+	}
+	if len(mock.RequestLog()) != sent {
+		t.Fatal("the refusal still sent a request")
+	}
+}
+
+// A real store archives each object deleted from a container that keeps
+// versions, and refuses the delete once the archive is gone, so teardown
+// stops the container keeping versions before it deletes anything there.
+func TestTeardownStopsKeepingVersionsFirst(t *testing.T) {
+	mock, session := mockSession(t)
+	ctx := context.Background()
+	owned, err := NewOwned(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := owned.CreateContainer(ctx, "live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.PutObject(ctx, live, "a", strings.NewReader("a"), "text/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	mock.EnableVersionArchive(live, "archive", true)
+	if failures := owned.Teardown(ctx); len(failures) != 0 {
+		t.Fatal(failures)
+	}
+	sent := destructive(mock, live)
+	if len(sent) < 2 || !strings.HasPrefix(sent[0], "POST ") || !strings.HasSuffix(sent[0], "/"+live) {
+		t.Fatalf("teardown sent %v, want the container's own edit before any delete", sent)
+	}
+}
