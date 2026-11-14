@@ -1,7 +1,8 @@
 <!-- Destructive-jobs dialog (§31–§33): preview (counts, bytes, the
   manifest disclosure, and the strategy the engine would pick) before a
   typed confirmation unlocks Start. Deletion is Aeronautes-native and
-  manifest-only; the Go side re-validates everything. -->
+  manifest-only unless the operator ticks the option that takes segments
+  too (ADR 0119); the Go side re-validates everything. -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
@@ -29,6 +30,12 @@
   // What the started job deletes, in words, captured at start: the folder a
   // prefix deletion removed is gone from the listing by the time it ends.
   let startedWhat = $state("");
+  // The operator's option that each large object in the scope also loses
+  // its segments (ADR 0119). It starts unticked, every new preview clears
+  // it, and it is not part of the previewed request, whose counts are the
+  // same either way. startedSegments is what the started job was asked.
+  let withSegments = $state(false);
+  let startedSegments = $state(false);
   // The started job as the drawer's poll last saw it, so the dialog says when
   // it is done instead of leaving the operator to guess.
   const startedJob = $derived(startedJobId ? browser.jobs.list.find((job) => job.id === startedJobId) ?? null : null);
@@ -50,16 +57,31 @@
   const preview = $derived(prepared && isCurrent(prepared.intent) ? prepared.plan : null);
   const canPreview = $derived(!closed && !previewing && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName && (mode !== "prefix" || hasPrefix));
-  const armWord = $derived(prepared ? armingText(prepared.intent.request) : "");
+  // Segments are offered, beside a preview that counted a row that may be a
+  // manifest, when the container keeps no versions: a kept version still
+  // uses its segments, and the Go side refuses the option there.
+  const offerSegments = $derived(whySegmentsStay(facts) === null);
+  const armWord = $derived(prepared ? armingText(prepared.intent.request, withSegments) : "");
   const canStart = $derived(!!prepared && !!preview && !previewing && !starting
     && facts !== undefined
     && confirmText === armWord);
 
+  // Why segments cannot be taken in this container, null when they can, and
+  // "" while its versioning facts are still being read.
+  function whySegmentsStay(f: ContainerSettingsDTO | null | undefined): string | null {
+    if (f === undefined) return "";
+    if (f === null) return "whether this container keeps versions could not be read.";
+    return f.versioningMode === "off" ? null : "this container keeps versions, and a kept version still uses its segments.";
+  }
+
   // What the operator types to arm the deletion, the same text the Go side
   // requires (ADR 0095 decision 7): a prefix is armed by its scope, so the
-  // typing shows which prefix was read, and a container by its name.
-  function armingText(req: DeleteRequestDTO): string {
-    return req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
+  // typing shows which prefix was read, and a container by its name. A
+  // deletion that takes segments is armed by other words, so the words for
+  // one never start the other (ADR 0119 decision 2).
+  function armingText(req: DeleteRequestDTO, segments: boolean): string {
+    const scope = req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
+    return segments ? `${scope} and segments` : scope;
   }
 
   function request(): DeleteRequestDTO {
@@ -83,6 +105,7 @@
     generation++;
     prepared = null;
     confirmText = "";
+    withSegments = false;
     previewing = false;
     startedJobId = null;
     error = null;
@@ -169,8 +192,8 @@
     const current = prepared;
     if (starting || previewing || !current || !isCurrent(current.intent)
       || facts === undefined
-      || confirmText !== armingText(current.intent.request)) return;
-    const req = { ...current.intent.request, confirm: confirmText };
+      || confirmText !== armingText(current.intent.request, withSegments)) return;
+    const req = { ...current.intent.request, confirm: confirmText, segments: withSegments };
     prepared = null;
     confirmText = "";
     starting = true;
@@ -179,6 +202,7 @@
       const jobId = await browser.startDelete(req);
       if (isCurrent(current.intent)) {
         startedJobId = jobId;
+        startedSegments = req.segments;
         startedWhat = req.mode === "prefix" ? `prefix ${req.container}/${req.prefix}`
           : req.mode === "empty" ? `the contents of container ${req.container}` : `container ${req.container}`;
       }
@@ -210,7 +234,9 @@
           drawer.
         {:else if startedJob?.state === "complete"}
           Deleted <span class="type-mono">{startedWhat}</span>: {startedJob.counters.objectsDeleted}
-          {startedJob.counters.objectsDeleted === 1 ? "object" : "objects"}.
+          {startedJob.counters.objectsDeleted === 1 ? "object" : "objects"}{startedSegments
+            ? ", the segments of large objects among them"
+            : ""}.
         {:else}
           The deletion of <span class="type-mono">{startedWhat}</span> ended {startedJob?.state}; the jobs drawer says
           what was left and why.
@@ -218,10 +244,15 @@
       </p>
       {#if startedEnded && segmentsContainer}
         <p class="warn" role="status">
-          <span class="type-mono">{segmentsContainer.name}</span> still exists, with
-          {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed; this
-          deletion removed nothing from it. If it held segments of large objects deleted here, they are still there
-          and still count against quota.
+          {#if startedSegments}
+            <span class="type-mono">{segmentsContainer.name}</span> still exists. The job's records list each
+            segment deleted from it; whatever is left there still counts against quota.
+          {:else}
+            <span class="type-mono">{segmentsContainer.name}</span> still exists, with
+            {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed; this
+            deletion removed nothing from it. If it held segments of large objects deleted here, they are still there
+            and still count against quota.
+          {/if}
         </p>
       {/if}
     {:else}
@@ -263,7 +294,10 @@
         A container named <span class="type-mono">{segmentsContainer.name}</span> exists, with
         {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed. It is
         named like the place where this application and rclone keep the segments of large objects uploaded to
-        <span class="type-mono">{openedOn}</span>. A deletion here removes nothing from it.
+        <span class="type-mono">{openedOn}</span>.
+        {withSegments
+          ? "With the option below ticked, this deletion also deletes the segments of its large objects, wherever they are kept."
+          : "A deletion here removes nothing from it."}
       </p>
     {/if}
     {/if}
@@ -307,16 +341,38 @@
           <p class="warn">{archiveSentence}</p>
         {/if}
         {#if preview.possibleManifests > 0}
-          <p class="warn">
-            {preview.possibleManifests} possible manifest{preview.possibleManifests === 1
-              ? ""
-              : "s"} in scope. Deletion is manifest-only: their segments (if any) stay behind as
-            recoverable orphans rather than risking another object's data.
-          </p>
+          {#if !withSegments}
+            <p class="warn">
+              {preview.possibleManifests} possible manifest{preview.possibleManifests === 1
+                ? ""
+                : "s"} in scope. Deletion is manifest-only: their segments (if any) stay behind as
+              recoverable orphans rather than risking another object's data.
+            </p>
+          {/if}
+          {#if offerSegments}
+            <label class="option">
+              <input type="checkbox" bind:checked={withSegments} onchange={() => (confirmText = "")} />
+              <span>Also delete the segments of large objects</span>
+            </label>
+            {#if withSegments}
+              <p class="warn" role="status">
+                Each large object's segments are deleted after it: the ones a static manifest lists, or everything
+                under the prefix a dynamic manifest names. Nothing here can show that another object does not use
+                the same segments; one that does will lose its data. How many segments there are is not known until
+                each large object is read. Every segment is compared then deleted like any other object and listed
+                in the job. Segments that cannot be bounded safely are kept, as when a dynamic manifest's prefix is
+                wider than what is being deleted here, and the job then ends partial and says why.
+              </p>
+            {/if}
+          {:else if whySegmentsStay(facts)}
+            <p class="keeps">Their segments cannot be deleted with them here: {whySegmentsStay(facts)}</p>
+          {/if}
         {/if}
         <label class="confirm">
           <span>
-            Type {mode === "prefix" ? "the container and prefix" : "the container name"}
+            Type {mode === "prefix" ? "the container and prefix" : "the container name"}{withSegments
+              ? ", then “and segments”,"
+              : ""}
             <span class="type-mono">{armWord}</span> to arm:
           </span>
           <input class="type-mono" bind:value={confirmText} placeholder={armWord} />
@@ -408,10 +464,15 @@
     font-size: var(--text-sm);
   }
 
-  .mode {
+  .mode,
+  .option {
     display: flex;
     gap: var(--space-2);
     align-items: baseline;
+  }
+
+  .option {
+    font-size: var(--text-sm);
   }
 
   .error {

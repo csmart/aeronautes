@@ -145,16 +145,18 @@ test.describe.serial("transfer", () => {
     await page.getByRole("alertdialog", { name: "Delete object" }).getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
 
+    // The folder still holds the segmented file. Ticking the option deletes
+    // its segments after its manifest, and the words to type name the option.
     await page.getByRole("button", { name: "Delete prefix…" }).click();
-    await typedDelete(page, "Delete prefix");
+    await typedDelete(page, "Delete prefix", true);
     await openContainer(page, info.project.name, container);
     await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(0);
 
-    // The prefix deletion removed the segmented file's manifest and left its
-    // segments in the container named after this one. The dialog says a
-    // container of that name exists, and once the open container is deleted
-    // it stays to offer the way there. This run knows that container holds
-    // only its own upload's segments, so it deletes it afterwards.
+    // The segments were in the container named after this one, which still
+    // exists. The dialog says a container of that name exists, and once the
+    // open container is deleted it stays to offer the way there. This run
+    // knows that container was only its own upload's, so it deletes it
+    // afterwards.
     const segments = `${container}_segments`;
     await page.getByRole("button", { name: "Empty or delete container…" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete" });
@@ -167,8 +169,17 @@ test.describe.serial("transfer", () => {
     await dialog.getByRole("button", { name: "Open that container" }).click();
     await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: segments })).toBeVisible();
 
+    // The deletion's preview lists that container afresh and counts what it
+    // holds: nothing, because the prefix deletion took the upload's
+    // segments. A listing can lag the deletes on a real store, so the
+    // preview is asked again within a bound; a listing still loading in the
+    // window would say nothing either way.
     await page.getByRole("button", { name: "Empty or delete container…" }).click();
     await dialog.getByRole("radio", { name: /^Delete container/ }).check();
+    await expect(async () => {
+      await dialog.getByRole("button", { name: "Preview" }).click();
+      await expect(dialog.getByText(/^0 objects · /)).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 60_000 });
     await typedDelete(page, "Delete container");
     await connect(page, info.project.name);
     await page.getByRole("tab", { name: "All" }).click();
@@ -199,18 +210,22 @@ function inspector(page: Page) {
   return page.getByRole("complementary", { name: "Inspector" });
 }
 
-// armDelete previews a deletion, types the word the dialog asks for, as the
-// operator reads it there, and starts it.
-async function armDelete(page: Page, action: string) {
+// armDelete previews a deletion, ticks the option that takes large objects'
+// segments when asked to, types the words the dialog then asks for, as the
+// operator reads them there, and starts it.
+async function armDelete(page: Page, action: string, segments = false) {
   const dialog = page.getByRole("dialog", { name: "Delete" });
   await dialog.getByRole("button", { name: "Preview" }).click();
+  if (segments) {
+    await dialog.getByLabel("Also delete the segments of large objects").check();
+  }
   const confirm = dialog.getByLabel(/to arm/);
   await confirm.fill((await confirm.getAttribute("placeholder"))!);
   await dialog.getByRole("button", { name: action }).click();
 }
 
 // typedDelete starts a deletion that way and waits for its job in the drawer.
-async function typedDelete(page: Page, action: string) {
-  await armDelete(page, action);
+async function typedDelete(page: Page, action: string, segments = false) {
+  await armDelete(page, action, segments);
   await finish(page, page.getByRole("dialog", { name: "Delete" }));
 }

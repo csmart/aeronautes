@@ -589,6 +589,86 @@ it("Delete names a container named for the open one's segments and offers it onc
   expect(open).toHaveBeenCalledExactlyOnceWith("media_segments");
 });
 
+// ADR 0119: deleting each large object's segments with it is the operator's
+// explicit choice for one job. The option is offered only where the preview
+// counted a possible manifest and the container keeps no versions, starts
+// unticked, is cleared by a new preview, and changes the words to type, so
+// the words for one kind of deletion never start the other.
+it("Delete takes segments only when the option is ticked and its own words are typed", async () => {
+  const facts = (versioningMode: string) => async () => ({ versioningMode, versioningArchive: "archive" }) as ContainerSettingsDTO;
+  const manifests = { ...deletePlan, possibleManifests: 2 };
+  const option = (f: Fixture) => f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]');
+  const confirm = (f: Fixture) => f.root.querySelector<HTMLInputElement>(".confirm input")!;
+
+  const none = show("delete", facts("off"));
+  none.preview(); await none.resolve();
+  expect(option(none)).toBeNull();
+
+  const versioned = show("delete", facts("history_location"));
+  versioned.preview(); versioned.deletes[0].resolve(manifests); await settle();
+  expect(option(versioned)).toBeNull();
+  expect(versioned.root.textContent).toContain("Their segments cannot be deleted with them here: this container keeps versions");
+
+  const f = show("delete", facts("off"));
+  f.preview(); f.deletes[0].resolve(manifests); await settle();
+  expect(option(f)!.checked).toBe(false);
+  expect(confirm(f).placeholder).toBe("media/selected/");
+  expect(f.root.textContent).toContain("Deletion is manifest-only");
+
+  // Ticking changes the words, clears what was typed and says what goes.
+  f.arm();
+  option(f)!.click(); flushSync();
+  expect(confirm(f).value).toBe("");
+  expect(confirm(f).placeholder).toBe("media/selected/ and segments");
+  expect(f.root.textContent).toContain("one that does will lose its data");
+  expect(f.root.textContent).not.toContain("Deletion is manifest-only");
+  f.arm();
+  expect(f.startButton().disabled).toBe(true);
+  clickEvenIfDisabled(f.startButton());
+  expect(f.api.startDelete).not.toHaveBeenCalled();
+
+  // A new preview clears the tick.
+  f.preview(); f.deletes[1].resolve(manifests); await settle();
+  expect(option(f)!.checked).toBe(false);
+  expect(confirm(f).placeholder).toBe("media/selected/");
+
+  option(f)!.click(); flushSync();
+  input(confirm(f), "media/selected/ and segments");
+  f.startButton().click(); flushSync();
+  expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith({
+    ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media/selected/ and segments", segments: true,
+  });
+  expect(vi.mocked(f.api.previewDelete).mock.calls[0][0].segments).toBe(false);
+});
+
+// After a job that took segments the notice no longer says the deletion
+// removed nothing from the segments container, or quotes a count from
+// before the job.
+it("Delete says the job's records list what it deleted from the segments container", async () => {
+  const row = (name: string, count: number, bytes: number) => ({ name, count, bytes, class: "normal", settings: null });
+  const f = show("delete", async () => ({ versioningMode: "off", versioningArchive: "" }) as ContainerSettingsDTO, (_api, browser) => {
+    browser.containers = [row("media", 4, 4_000_000), row("media_segments", 3, 3_000_000)];
+  });
+  f.preview(); f.deletes[0].resolve({ ...deletePlan, possibleManifests: 1 }); await settle();
+  expect(f.root.textContent).toContain("A deletion here removes nothing from it.");
+  f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]')!.click(); flushSync();
+  expect(f.root.textContent).not.toContain("A deletion here removes nothing from it.");
+  expect(f.root.textContent).toContain("this deletion also deletes the segments of its large objects");
+  input(f.root.querySelector<HTMLInputElement>(".confirm input")!, "media/selected/ and segments");
+  f.startButton().click(); flushSync();
+  f.startReply.resolve("deleting-job"); await settle();
+  f.browser.jobs.list = [{ id: "deleting-job", type: "delete_prefix", state: "complete", source: "media/selected/", destination: "(deleted)",
+    sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
+    recoveryRecords: 0, pause: "", counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 } }];
+  flushSync();
+  const text = (f.root.textContent ?? "").replace(/\s+/g, " ");
+  expect(text).toContain("4 objects, the segments of large objects among them.");
+  expect(text).toContain("media_segments still exists. The job's records list each segment deleted from it");
+  expect(text).not.toContain("removed nothing from it");
+  expect(text).not.toContain("3 objects");
+});
+
 it("Delete says nothing of segments when no container is named for them", () => {
   const f = show("delete");
   expect(f.root.textContent).not.toContain("_segments");
