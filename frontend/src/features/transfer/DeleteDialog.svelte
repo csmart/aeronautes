@@ -7,7 +7,7 @@
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
-  import { formatBytes } from "../../lib/format";
+  import { formatBytes, formatCount } from "../../lib/format";
   import { archiveOwnersSentence, versioningSentence } from "../inspector/versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
@@ -101,9 +101,31 @@
   // container is no longer open, for example because this dialog's own job
   // deleted it, there is nothing left for the dialog to act on.
   const openedOn = untrack(() => browser.containerName);
+
+  // This application and rclone keep the segments of the large objects
+  // uploaded to a container in a second container named after it. A
+  // deletion here removes manifests only and leaves segments, where they
+  // still count against quota, so when a container of that name exists the
+  // dialog says so and, once its job is done, offers the way to it (0.5.0
+  // test run). The name is all that is known: what is in that container,
+  // and whether another large object still uses it, is not, so the dialog
+  // does not say those are this container's segments or advise deleting it.
+  const segmentsContainer = $derived(browser.containers.find((row) => row.name === `${openedOn}_segments`) ?? null);
+
   $effect(() => {
-    if (browser.containerName !== openedOn) untrack(close);
+    if (browser.containerName === openedOn) return;
+    // A job that deleted the container has left it, and the dialog stays
+    // only to say what that job did not delete.
+    untrack(() => {
+      if (!(startedJobId !== null && segmentsContainer)) close();
+    });
   });
+
+  function openSegmentsContainer() {
+    const name = segmentsContainer?.name;
+    close();
+    if (name) void browser.openContainer(name);
+  }
 
   // The container's versioning facts drive the consent sentence that says what
   // a delete leaves at the name, the same pattern the manifest dialog uses.
@@ -193,6 +215,14 @@
           what was left and why.
         {/if}
       </p>
+      {#if startedEnded && segmentsContainer}
+        <p class="warn" role="status">
+          <span class="type-mono">{segmentsContainer.name}</span> still exists, with
+          {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed; this
+          deletion removed nothing from it. If it held segments of large objects deleted here, they are still there
+          and still count against quota.
+        </p>
+      {/if}
     {:else}
     <div class="modes" role="radiogroup" aria-label="Scope">
       {#if hasPrefix}
@@ -226,6 +256,14 @@
     </div>
     {#if browser.segmentStoreCaution}
       <p class="warn">{browser.segmentStoreCaution}</p>
+    {/if}
+    {#if segmentsContainer}
+      <p class="warn">
+        A container named <span class="type-mono">{segmentsContainer.name}</span> exists, with
+        {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed. It is
+        named like the place where this application and rclone keep the segments of large objects uploaded to
+        <span class="type-mono">{openedOn}</span>. A deletion here removes nothing from it.
+      </p>
     {/if}
     {/if}
 
@@ -295,6 +333,9 @@
             if (jobId) void browser.jobs.reveal(jobId);
           }}>Show in jobs</button
         >
+        {#if startedEnded && segmentsContainer}
+          <button onclick={openSegmentsContainer} title={`Open ${segmentsContainer.name}`}>Open that container</button>
+        {/if}
         <button class="primary" onclick={close}>Close</button>
       {:else}
         <!-- The highlight marks the next step: Preview until a preview is

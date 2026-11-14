@@ -2050,6 +2050,11 @@ Execution may use:
 
 Both are **manifest-only by construction** (§28.6a) and MUST NOT follow DLO/SLO segments into other containers.
 Automatic segment reclamation is unavailable under ADR 0020; explicit force cleanup is a separate action.
+Because a deletion leaves segments, where they still count against quota, the dialog points to where they usually are (0.5.0 test run, 14 November 2026).
+This application and rclone keep the segments of large objects uploaded to `<container>` in a container named `<container>_segments`; when a container of that name exists, the dialog names it with its listed count and size before the deletion and says the deletion removes nothing from it.
+Once its job has ended it says that container still exists and offers to open it, and after a container deletion it stays open to do so.
+The name is all the dialog knows: it does not say those objects are this container's segments, since other large objects may still use them, and it does not advise deleting that container.
+A later release adds the choice to delete the segments of the large objects in scope with them, under its own record.
 rclone is not an Empty Container engine: `Purge` deletes the objects and container, losing its configuration and identity, while `Remove` follows referenced large-object segments (K-DEL-001, ADR 0004).
 The acceptance test compares pre/post container HEAD configuration, not merely the existence of a same-named container.
 
