@@ -207,6 +207,42 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 		t.Errorf("audit: %d starts %d completes", starts, completes)
 	}
 }
+
+// A store whose replicas lag can still answer for a container a moment
+// after accepting its DELETE. The job looks again within a bound and reports
+// the container deleted; one that answers throughout that bound is partial
+// and says why.
+func TestDeleteContainerLooksAgainForALaggingStore(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		lag           int
+		state, reason string
+	}{
+		{"answers twice more", 2, "complete", ""},
+		{"answers throughout", 1000, "partial", "container still answers after DELETE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, service, bookmark := deleteHarness(t)
+			h.mock.AddContainer("media", "standard")
+			seedObject(h.mock, "media", "one.txt", "1", nil)
+			h.mock.LagDeletedContainers(tc.lag)
+			jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
+				BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "media",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			job := awaitTerminal(t, h, jobID)
+			if job.State != tc.state || job.Error != tc.reason {
+				t.Fatalf("job ended %q with %q, want %q with %q", job.State, job.Error, tc.state, tc.reason)
+			}
+			if job.Counters.ObjectsDeleted != 1 {
+				t.Fatalf("objects deleted = %d, want 1", job.Counters.ObjectsDeleted)
+			}
+		})
+	}
+}
+
 func TestCopyJobOwnershipRoundTrip(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
