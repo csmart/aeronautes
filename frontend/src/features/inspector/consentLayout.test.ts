@@ -46,9 +46,9 @@ function type(element: HTMLInputElement, value: string) {
 const ownership: SegmentOwnershipDTO =
   { class: "dlo", target: LONG_TARGET, proven: false, segments: 3, inlineEntries: 0, reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "", namespace: LONG_TARGET } };
 
-// The dialog opens through the browser state (ADR 0094 decision 5), and the
-// ownership check behind the with-segments option is asked only once that
-// option is taken, so a case that needs it takes it here.
+// The dialog opens through the browser state (ADR 0094 decision 5) with the
+// with-segments option ticked (ADR 0120 decision 3), which asks the
+// ownership check; a case about the manifest-only deletion unticks it.
 async function dialog(segments = true) {
   v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   const api = newFakeApi();
@@ -65,8 +65,9 @@ async function dialog(segments = true) {
   const component = mount(ManifestDeleteDialog, { target: root, props: { browser, onClose: done } });
   mounted.add(component); flushSync(); await settle();
   if (segments) {
-    click(root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
     check.resolve(ownership); await settle();
+  } else {
+    click(root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
   }
   return { api, browser, root, done, check };
 }

@@ -295,9 +295,8 @@ async function manifest() {
     class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0,
   });
   expect(f.browser.openManifestDelete()).toBe(true);
+  // The with-segments option is ticked to start with (ADR 0120 decision 3).
   mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } }));
-  await settle();
-  click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
   await settle();
   return f;
 }

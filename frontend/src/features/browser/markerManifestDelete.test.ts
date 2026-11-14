@@ -181,23 +181,56 @@ describe("the manifest delete dialog", () => {
     expect(f.fake.deleteManifest).toHaveBeenCalledOnce();
   });
 
-  it("never asks the ownership check on the manifest-only path", async () => {
-    const f = await manifestDialog();
-    f.fake.checkSegmentOwnership = vi.fn();
+  // ADR 0120 decision 3: the segments option starts ticked where the
+  // container keeps no versions, and asks its ownership check then.
+  // Unticked, the deletion is the manifest-only one and no other.
+  it("starts with the segments option ticked and deletes the manifest only once it is unticked", async () => {
+    const f = await state("external-dlo");
+    f.fake.checkSegmentOwnership = vi.fn(f.fake.checkSegmentOwnership);
+    f.fake.deleteManifestWithSegments = vi.fn();
     f.fake.deleteManifest = vi.fn(async () => applied);
-    // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14), so the
-    // segment option is offered; left unticked, the manifest-only path must
-    // still never ask the ownership check.
+    const done = vi.fn();
+    expect(f.browser.openManifestDelete()).toBe(true);
+    const detail = f.browser.objectDelete!.detail;
+    mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: done } }));
+    flushSync(); await settle();
+    const option = f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(option.checked).toBe(true);
+    expect(f.fake.checkSegmentOwnership).toHaveBeenCalledOnce();
+    expect(labels(f.root)).toContain("Delete manifest + segments");
+    expect(button("Delete manifest + segments", f.root).disabled).toBe(true);
+    click(option); await settle();
     click(button("Delete manifest only", f.root)); await settle();
+    expect(f.fake.deleteManifestWithSegments).not.toHaveBeenCalled();
+    expect(f.fake.deleteManifest).toHaveBeenCalledExactlyOnceWith(detail.scope, "fixtures", "external-dlo", detail.contentFingerprint);
+    expect(done).toHaveBeenCalledOnce();
+  });
+
+  // ADR 0120 decision 4: a kept version still names its segments, so the
+  // option is not offered where the container keeps versions, or where that
+  // could not be read, and the dialog says which.
+  it.each([
+    ["keeps history", { versioningMode: "history_location", versioningArchive: "archive" } as ContainerSettingsDTO, "this container keeps versions, and a kept version still uses its segments"],
+    ["keeps versions", { versioningMode: "versions_location", versioningArchive: "archive" } as ContainerSettingsDTO, "this container keeps versions, and a kept version still uses its segments"],
+    ["cannot be read", null, "whether this container keeps versions could not be read"],
+  ])("does not offer the segments option where the container %s", async (_case, facts, reason) => {
+    const f = await state("external-dlo");
+    vi.spyOn(f.browser, "containerFacts").mockResolvedValue(facts);
+    f.fake.checkSegmentOwnership = vi.fn();
+    expect(f.browser.openManifestDelete()).toBe(true);
+    mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } }));
+    flushSync(); await settle();
+    expect(f.root.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(f.root.textContent).toContain(`Its segments cannot be deleted with it here: ${reason}`);
     expect(f.fake.checkSegmentOwnership).not.toHaveBeenCalled();
-    expect(f.fake.deleteManifest).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "external-dlo", f.detail.contentFingerprint);
-    expect(f.done).toHaveBeenCalledOnce();
+    expect(button("Delete manifest only", f.root).disabled).toBe(false);
   });
 
   it("shows an observed successor instead of a plain success", async () => {
     const f = await manifestDialog();
     const successor: ObjectDetailDTO = { ...f.detail, class: "plain", manifest: "", contentLength: 17, etag: "00000000000000000000000000000017", contentFingerprint: "other" };
     f.fake.deleteManifest = vi.fn(async () => ({ ...applied, objectAfter: successor }));
+    click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
     click(button("Delete manifest only", f.root)); await settle();
     expect(f.root.textContent).toContain("Something stands at the name now");
     expect(f.root.textContent).toContain("plain object");
