@@ -551,6 +551,49 @@ it("Delete keeps its started job through a scope change and closes when its cont
   expect(f.onClose).toHaveBeenCalled();
 });
 
+// A deletion removes manifests and leaves the segments of large objects,
+// which this application and rclone keep in a second container named after
+// the first. When a container of that name exists the dialog says so, and
+// when its job has deleted the open container it stays to say that one is
+// still there and to offer the way to it (0.5.0 test run). The name is all
+// that is known, so the dialog neither calls its objects this container's
+// segments nor says to delete it.
+it("Delete names a container named for the open one's segments and offers it once its job is done", async () => {
+  const row = (name: string, count: number, bytes: number) => ({ name, count, bytes, class: "normal", settings: null });
+  const f = show("delete", undefined, (_api, browser) => {
+    browser.containers = [row("media", 4, 4_000_000), row("media_segments", 3, 3_000_000)];
+  });
+  const open = vi.spyOn(f.browser, "openContainer").mockResolvedValue();
+  const text = () => (f.root.textContent ?? "").replace(/\s+/g, " ");
+  expect(text()).toContain("A container named media_segments exists, with 3 objects and 3.00 MB as listed.");
+  expect(text()).toContain("A deletion here removes nothing from it.");
+  expect(text()).not.toMatch(/delete that container|free the space/);
+
+  f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
+  f.preview(); await f.resolve(); f.arm();
+  f.startButton().click(); flushSync();
+  f.startReply.resolve("deleting-job"); await settle();
+  expect(f.button("Open that container")).toBeUndefined();
+  // The job completes and the browser leaves the deleted container.
+  f.browser.jobs.list = [{ id: "deleting-job", type: "delete_container", state: "complete", source: "media/", destination: "(deleted)",
+    sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
+    recoveryRecords: 0, pause: "", counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 } }];
+  f.browser.containerName = null; flushSync();
+  expect(f.onClose).not.toHaveBeenCalled();
+  expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion complete");
+  expect(text()).toContain("media_segments still exists, with 3 objects and 3.00 MB as listed; this deletion removed nothing from it.");
+
+  f.button("Open that container").click(); flushSync();
+  expect(f.onClose).toHaveBeenCalledTimes(1);
+  expect(open).toHaveBeenCalledExactlyOnceWith("media_segments");
+});
+
+it("Delete says nothing of segments when no container is named for them", () => {
+  const f = show("delete");
+  expect(f.root.textContent).not.toContain("_segments");
+});
+
 // A folder selected at the container's top is what the dialog offers to
 // delete, by default, and the confirmation names it (ADR 0095 decision 7).
 it("Delete offers the folder selected at the container's top", async () => {
