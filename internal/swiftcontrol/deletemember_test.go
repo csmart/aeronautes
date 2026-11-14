@@ -81,6 +81,37 @@ func TestDeleteMemberTakesALaterBaselineWhereTheRowCannotSay(t *testing.T) {
 	}
 }
 
+// ADR 0119 decision 5: a segment's baseline is what its manifest recorded,
+// a size of zero included. An empty object with the recorded tag is deleted
+// after one comparison; a manifest standing at a name the manifest recorded
+// as an empty plain object is a conflict, where a listing's zero-byte row
+// would have adopted it as a later baseline and deleted it.
+func TestDeleteMemberComparesARecordedZeroAsRecorded(t *testing.T) {
+	s := newFixtureSession(t)
+	ctx := context.Background()
+	empty := listedMember(t, s, "fixtures", "empty-object")
+	if empty.Bytes != 0 || empty.ETag == "" {
+		t.Fatalf("the fixture row is not an empty object with a tag: %+v", empty)
+	}
+	empty.Recorded = true
+	result, err := s.DeleteMember(ctx, "fixtures", empty)
+	if err != nil || result.Outcome != UpdateApplied {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if b := result.Baseline; b == nil || b.Class != ClassPlain || b.ContentLength != 0 || etagValue(b.ETag) != empty.ETag {
+		t.Fatalf("the baseline is not the recorded facts: %+v", result.Baseline)
+	}
+	manifest := MemberRow{Name: "external-dlo", Bytes: 0, ETag: empty.ETag, Recorded: true}
+	result, err = s.DeleteMember(ctx, "fixtures", manifest)
+	var conflict *IdentityConflictError
+	if !errors.As(err, &conflict) || (result != nil && result.Requested) {
+		t.Fatalf("result = %+v, %v; want a conflict with nothing requested", result, err)
+	}
+	if _, err := s.ObjectDetail(ctx, "fixtures", "external-dlo"); err != nil {
+		t.Fatalf("the manifest was deleted: %v", err)
+	}
+}
+
 // An ordinary row keeps its listing baseline whatever the comparison finds:
 // a manifest now at the name is a change of class, a conflict with both
 // identities, never a replacement baseline.
