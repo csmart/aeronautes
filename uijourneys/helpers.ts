@@ -44,7 +44,9 @@ export async function connect(page: Page, target: string): Promise<string> {
   } else {
     await tile.click();
   }
-  await expect(page.getByRole("heading", { name: "Containers" })).toBeVisible();
+  // The tile is pressed only once its account has connected; the column's
+  // heading is on screen either way.
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
   return name;
 }
 
