@@ -59,6 +59,9 @@ type prefixSweep struct {
 	owner    *jobOwner
 	// claimedSegments are the containers already claimed for namespace sweeps.
 	claimedSegments map[string]bool
+	// inflight counts the members handed to the workers and not yet settled,
+	// so the listing goroutine can wait for them (ADR 0119 decision 4).
+	inflight sync.WaitGroup
 	// nested marks the sweep of one dynamic large object's namespace inside a
 	// job's own sweep: the job's sweep counts its members and publishes them.
 	nested bool
@@ -140,6 +143,7 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 			defer wg.Done()
 			for m := range queue {
 				r.member(ctx, background, m)
+				r.inflight.Done()
 			}
 		}()
 	}
@@ -190,9 +194,11 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 // ones not yet handed over as not attempted and reports itself.
 func (r *prefixSweep) enqueue(ctx, background context.Context, queue chan<- sweepMember, members []sweepMember) (cancelled bool) {
 	for i, m := range members {
+		r.inflight.Add(1)
 		select {
 		case queue <- m:
 		case <-ctx.Done():
+			r.inflight.Done()
 			for _, rest := range members[i:] {
 				r.notAttempted(background, rest)
 			}

@@ -89,7 +89,16 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			// are rows of the scope and the sweep deletes them as it deletes
 			// every other row. Both end in a slash, or the scope is the whole
 			// container, so this compares whole path parts.
-			return false, false
+			//
+			// A dynamic manifest's length and entity tag are made from its
+			// segments, so one compared while this job's workers delete those
+			// rows would be refused as changed by the job's own doing. The
+			// members in flight settle first, and the manifest is then deleted
+			// here, by the ordinary member protocol, while nothing else of
+			// this sweep is running.
+			r.inflight.Wait()
+			r.member(ctx, background, m)
+			return true, false
 		}
 		if segContainer == r.container && strings.HasPrefix(r.prefix, namespace) {
 			// Strictly wider than the scope: sweeping it would delete names
