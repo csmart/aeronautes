@@ -17,10 +17,11 @@ import (
 // is here is how a sweep applies them to a row at its turn, and when it
 // leaves a large object's segments alone.
 
-// refuseSegmentsWhereVersionsAreKept refuses the option for a container that
-// keeps versions, or whose versioning cannot be read: an earlier version, or
-// the copy the store keeps of what is deleted, still names the segments
-// (ADR 0119 decision 3).
+// refuseSegmentsWhereVersionsAreKept refuses to delete segments with their
+// objects in a container that keeps versions, or whose versioning cannot be
+// read: an earlier version, or the copy the store keeps of what is deleted,
+// still names the segments. The bulk option and the one-object deletion
+// both ask it (ADR 0119 decision 3, ADR 0120 decision 4).
 func refuseSegmentsWhereVersionsAreKept(ctx context.Context, session *swiftcontrol.Session, container string) error {
 	detail, err := session.ContainerDetail(ctx, container)
 	if err != nil {

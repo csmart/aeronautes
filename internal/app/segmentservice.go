@@ -369,6 +369,12 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	if err != nil {
 		return "", err
 	}
+	// The store keeps a deleted manifest as a version that still names these
+	// segments, so this route refuses where the bulk option does, before any
+	// read of the manifest and before any job row (ADR 0120 decision 4).
+	if err := refuseSegmentsWhereVersionsAreKept(ctx, session, req.Container); err != nil {
+		return "", err
+	}
 	resource := req.Container + "/" + req.Name
 	// The startup read confirms the class and that the manifest still exists;
 	// the scope it acts on, though, is the reviewed graph the request carries,
