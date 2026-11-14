@@ -2063,6 +2063,8 @@ Do **not** delete/recreate the container as an optimisation.
 ### Delete Container
 
 Empty contents first if explicitly requested (same native engines as Empty Container), then issue a native Swift container DELETE.
+The job then checks that the container no longer answers, with the bounded retries the prefix postcondition uses (five reads, 300 ms apart, §15.3): a store's replicas can lag a DELETE it has accepted, and a job that asked once reported a deleted container as left standing (seen on a real cloud, 14 November 2026).
+A container that still answers after that bound leaves the job partial, saying so.
 
 `rclone purge` is not used here either (ADR 0004): purge's per-object `Remove` follows manifests and bulk-deletes referenced segments, and a manifest inside the doomed container can reference segments in **other** containers — a sidecar or shared store — that surviving manifests still use. Destroying the container does not make its manifests' segments fair game.
 

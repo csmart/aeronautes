@@ -134,6 +134,12 @@ type Server struct {
 	// requests answer 500: the fixture for a versioning re-read that fails
 	// at a replacement's fixed point (ADR 0102 decision 2).
 	containerHEADFailRemaining int
+	// deletedContainerLag, when > 0, makes a container that was deleted go
+	// on answering that many HEADs, as a store whose replicas lag its
+	// DELETE does (seen on a real cloud, 0.5.0 candidate); lingering holds
+	// what each deleted container still has to answer.
+	deletedContainerLag int
+	lingering           map[string]int
 	// objectHEADFailSkip is how many object HEADs still pass untouched
 	// before objectHEADFailRemaining starts to apply. A fixture that must
 	// let one read through and fail the next cannot say so with a plain
@@ -664,6 +670,14 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	c, ok := s.containers[name]
+	if !ok && r.Method == http.MethodHead && s.lingering[name] > 0 {
+		s.lingering[name]--
+		s.mu.Unlock()
+		w.Header().Set("X-Container-Object-Count", "0")
+		w.Header().Set("X-Container-Bytes-Used", "0")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if !ok {
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusNotFound)
@@ -1256,6 +1270,12 @@ func (s *Server) deleteContainer(w http.ResponseWriter, name string) {
 		return
 	}
 	delete(s.containers, name)
+	if s.deletedContainerLag > 0 {
+		if s.lingering == nil {
+			s.lingering = map[string]int{}
+		}
+		s.lingering[name] = s.deletedContainerLag
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1337,6 +1357,14 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 func (s *Server) FailNextListings(n int) {
 	s.mu.Lock()
 	s.listingFailRemaining = n
+	s.mu.Unlock()
+}
+
+// LagDeletedContainers makes each container deleted from now on go on
+// answering its next n HEADs, as a store whose replicas lag the DELETE.
+func (s *Server) LagDeletedContainers(n int) {
+	s.mu.Lock()
+	s.deletedContainerLag = n
 	s.mu.Unlock()
 }
 

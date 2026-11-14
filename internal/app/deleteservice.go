@@ -324,7 +324,7 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 			// container; anything less leaves it standing (decision 6).
 			if err := session.DeleteContainer(background, req.Container); err != nil {
 				state, reason = jobs.StatePartial, "container delete: "+err.Error()
-			} else if _, err := session.ContainerDetail(background, req.Container); !swiftcontrol.IsNotFound(err) {
+			} else if !deletion.VerifyContainerGone(background, session, req.Container) {
 				state, reason = jobs.StatePartial, "container still answers after DELETE"
 			}
 		}
