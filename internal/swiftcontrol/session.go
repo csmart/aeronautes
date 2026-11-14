@@ -172,7 +172,7 @@ func New(cfg Config) (*Session, error) {
 		admitRequest:  cfg.AdmitRequest,
 		connectionCap: cfg.MaxConnsPerHost,
 		raw: &http.Client{
-			Transport: transport,
+			Transport: repeatedReadTransport{inner: transport},
 			Timeout:   10 * time.Minute,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return errors.New("redirect refused: native Swift calls never follow one (the token must not travel)")
