@@ -225,6 +225,49 @@
     font-weight: 600;
   }
 
+  .rows label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  /* The name takes the row's width, so a long one can be read and edited. */
+  input.name {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-weight: 600;
+    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+
+  footer button,
+  .outcomes button {
+    padding: var(--space-1) var(--space-3);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  footer button.primary {
+    color: var(--color-text-invert);
+    background: var(--color-accent);
+    border-color: var(--color-accent-strong);
+    font-weight: var(--weight-medium);
+  }
+
+  footer button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
   .kind,
   .detail,
   .reason,
