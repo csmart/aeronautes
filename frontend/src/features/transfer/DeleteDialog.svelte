@@ -69,6 +69,7 @@
       prefix: mode === "prefix" ? targetPrefix : "",
       mode: mode as DeleteRequestDTO["mode"],
       confirm: "",
+      segments: false,
     };
   }
 

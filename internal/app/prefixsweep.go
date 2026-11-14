@@ -19,14 +19,25 @@ const (
 	sweepPasses  = 3
 )
 
-// sweepMember is one listed row handed to the per-name protocol with the
-// facts it was listed with (ADR 0095 decision 1).
+// sweepMember is one row handed to the per-name protocol with the facts it
+// was listed with (ADR 0095 decision 1). It names its container because a
+// large object's segments, which a sweep that takes segments also deletes,
+// usually lie in another one (ADR 0119 decision 6).
 type sweepMember struct {
-	name  string
-	bytes int64
-	etag  string
-	slo   bool
+	container string
+	name      string
+	bytes     int64
+	etag      string
+	slo       bool
+	// recorded marks a static large object's segment, whose size and entity
+	// tag are what its manifest recorded and so are its baseline as given.
+	recorded bool
 }
+
+// key is a member's ledger identity, qualified by its container so that a
+// job spanning the scope's container and a segment container keeps every
+// member distinct (ADR 0095 decision 8).
+func (m sweepMember) key() string { return m.container + "/" + m.name }
 
 // prefixSweep runs a deletion job's listing passes over one scope: every
 // object row listed is admitted to the job's item ledger a page at a time,
@@ -41,10 +52,24 @@ type prefixSweep struct {
 	container  string
 	prefix     string
 	session    *swiftcontrol.Session
+	// segments is the operator's option that each large object in the scope
+	// loses its segments after its manifest, and owner the job's claims, which
+	// a dynamic large object's namespace is added to (ADR 0119).
+	segments bool
+	owner    *jobOwner
+	// claimedSegments are the containers already claimed for namespace sweeps.
+	claimedSegments map[string]bool
+	// nested marks the sweep of one dynamic large object's namespace inside a
+	// job's own sweep: the job's sweep counts its members and publishes them.
+	nested bool
 
 	mu    sync.Mutex
 	lost  string
 	tally sweepCounts
+	// leftCount and leftFirst are the large objects whose segments this sweep
+	// did not delete, or not all of them, and why the first was.
+	leftCount int64
+	leftFirst string
 }
 
 // sweepCounts is what the sweep knew when it ended: the members admitted,
@@ -141,12 +166,17 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 		}
 		admittedNew += int64(len(fresh))
 		for i, m := range fresh {
-			select {
-			case queue <- m:
-			case <-ctx.Done():
+			handled, cancelled := false, false
+			if r.segments && (m.slo || m.bytes == 0) {
+				handled, cancelled = r.largeObject(ctx, background, queue, m)
+			}
+			if !handled && !cancelled {
+				cancelled = r.enqueue(ctx, background, queue, fresh[i:i+1])
+			}
+			if cancelled {
 				// Members admitted and never issued are settled here as not
 				// attempted; the listing is not consumed further.
-				for _, rest := range fresh[i:] {
+				for _, rest := range fresh[i+1:] {
 					r.notAttempted(background, rest)
 				}
 				return admittedNew, true, nil
@@ -156,11 +186,21 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 	return admittedNew, false, nil
 }
 
-// key is a member's ledger identity, qualified by its container so a segment
-// job spanning the manifest's container and the segment container keeps every
-// member distinct (ADR 0095 decision 8); for the single-container bulk sweep
-// it is simply the container and the object.
-func (r *prefixSweep) key(name string) string { return r.container + "/" + name }
+// enqueue hands members to the workers in order. A cancellation settles the
+// ones not yet handed over as not attempted and reports itself.
+func (r *prefixSweep) enqueue(ctx, background context.Context, queue chan<- sweepMember, members []sweepMember) (cancelled bool) {
+	for i, m := range members {
+		select {
+		case queue <- m:
+		case <-ctx.Done():
+			for _, rest := range members[i:] {
+				r.notAttempted(background, rest)
+			}
+			return true
+		}
+	}
+	return false
+}
 
 // admitPage records one listing page's object rows the job does not yet
 // hold, once and fail-closed: a page the ledger cannot record ends the sweep
@@ -169,15 +209,32 @@ func (r *prefixSweep) key(name string) string { return r.container + "/" + name 
 // them; they are counted for the pass and never requested again.
 func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.ListingEntry) (fresh []sweepMember, readErr error, latched bool) {
 	rows := make([]sweepMember, 0, len(entries))
-	keys := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			rows = append(rows, sweepMember{name: object.Name, bytes: object.Bytes, etag: object.ETag, slo: object.SLOListed})
-			keys = append(keys, r.key(object.Name))
+			rows = append(rows, sweepMember{container: r.container, name: object.Name, bytes: object.Bytes, etag: object.ETag, slo: object.SLOListed})
 		}
 	}
+	fresh, heldAgain, readErr, latched := r.admitRows(ctx, rows)
+	if readErr != nil || latched {
+		return nil, readErr, latched
+	}
+	r.mu.Lock()
+	r.tally.heldAgain += heldAgain
+	r.mu.Unlock()
+	return fresh, nil, false
+}
+
+// admitRows records the rows the job does not yet hold and reports them, with
+// how many it held already. Every admission of a job goes through here, on
+// the goroutine that reads the listing, so no key is admitted twice: the
+// ledger refuses a repeated key, and a refused write stops the whole job
+// (ADR 0119 decision 6). The rows must not repeat a key among themselves.
+func (r *prefixSweep) admitRows(ctx context.Context, rows []sweepMember) (fresh []sweepMember, heldAgain int64, readErr error, latched bool) {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, row.key())
+	}
 	fresh = rows[:0]
-	var heldAgain int64
 	for start := 0; start < len(rows); start += 1000 {
 		end := min(start+1000, len(rows))
 		// HeldKeys is a read: a failure here sent nothing and does not latch
@@ -185,10 +242,10 @@ func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.List
 		// turns into failed or partial, never a false unavailable status.
 		held, err := r.s.jobs.HeldKeys(ctx, r.jobID, keys[start:end])
 		if err != nil {
-			return nil, fmt.Errorf("the members the job holds could not be read, so no more were requested: %w", err), false
+			return nil, 0, fmt.Errorf("the members the job holds could not be read, so no more were requested: %w", err), false
 		}
 		for _, row := range rows[start:end] {
-			if held[r.key(row.name)] {
+			if held[row.key()] {
 				heldAgain++
 			} else {
 				fresh = append(fresh, row)
@@ -198,8 +255,8 @@ func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.List
 	intents := make([]jobs.ItemIntent, 0, len(fresh))
 	for _, m := range fresh {
 		intents = append(intents, jobs.ItemIntent{
-			ItemIdentity: jobs.ItemIdentity{Key: r.key(m.name), Source: jobs.ItemLocation{
-				Kind: jobs.ItemSwift, BookmarkID: r.bookmarkID, Container: r.container, Object: m.name}},
+			ItemIdentity: jobs.ItemIdentity{Key: m.key(), Source: jobs.ItemLocation{
+				Kind: jobs.ItemSwift, BookmarkID: r.bookmarkID, Container: m.container, Object: m.name}},
 			Planned: true, Admitted: true, ListedBytes: m.bytes, ListedETag: m.etag, ListedSLO: m.slo,
 		})
 	}
@@ -209,17 +266,16 @@ func (r *prefixSweep) admitPage(ctx context.Context, entries []swiftcontrol.List
 		// the caller leaves the job open with that genuine status.
 		if err := r.s.jobs.AdmitItems(ctx, r.jobID, intents[start:end]); err != nil {
 			r.latch("the members could not be recorded, so no more were requested: " + err.Error())
-			return nil, nil, true
+			return nil, 0, nil, true
 		}
 	}
 	r.mu.Lock()
 	r.tally.admitted += int64(len(fresh))
-	r.tally.heldAgain += heldAgain
 	r.mu.Unlock()
 	if len(fresh) > 0 {
 		r.publishCounters(ctx)
 	}
-	return fresh, nil, false
+	return fresh, heldAgain, nil, false
 }
 
 // member runs one listed row whole: the issued mark before its final HEAD,
@@ -236,23 +292,28 @@ func (r *prefixSweep) member(ctx, background context.Context, m sweepMember) {
 		r.notAttempted(background, m)
 		return
 	}
-	if err := r.s.jobs.MarkIssued(background, r.jobID, r.key(m.name)); err != nil {
+	if err := r.s.jobs.MarkIssued(background, r.jobID, m.key()); err != nil {
 		r.latch(fmt.Sprintf("the issued mark for %q could not be written, so it and every later member were not attempted: %v", m.name, err))
 		return
 	}
-	result, err := r.session.DeleteMember(background, r.container, swiftcontrol.MemberRow{Name: m.name, Bytes: m.bytes, ETag: m.etag, SLOListed: m.slo})
+	result, err := r.session.DeleteMember(background, m.container, swiftcontrol.MemberRow{Name: m.name, Bytes: m.bytes, ETag: m.etag, SLOListed: m.slo, Recorded: m.recorded})
 	observation, successor, baseline := selectedMemberOutcome(result, err)
-	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, r.key(m.name), observation, successor, baseline); recErr != nil {
+	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, m.key(), observation, successor, baseline); recErr != nil {
 		r.latch(fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was issued: %v", m.name, recErr))
 		return
 	}
+	r.settled(background, observation)
+}
+
+// settled counts one member's outcome and publishes the job's counters.
+func (r *prefixSweep) settled(ctx context.Context, observation jobs.ItemObservation) {
 	r.mu.Lock()
 	r.tally.settled++
 	if observation.Result == jobs.ItemDeleted {
 		r.tally.deleted++
 	}
 	r.mu.Unlock()
-	r.publishCounters(background)
+	r.publishCounters(ctx)
 }
 
 // notAttempted settles a member a cancellation leaves unissued; a record
@@ -262,12 +323,17 @@ func (r *prefixSweep) notAttempted(ctx context.Context, m sweepMember) {
 	if r.lostReason() != "" {
 		return
 	}
-	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, r.key(m.name), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, m.key(), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
 		applog.Errorf("job %s: member %q not attempted but unrecorded: %v", r.jobID, m.name, err)
 	}
 }
 
 func (r *prefixSweep) publishCounters(ctx context.Context) {
+	if r.nested {
+		// The job's own sweep adds a namespace's counts to its own when the
+		// namespace is done; two publishers would overwrite each other.
+		return
+	}
 	r.mu.Lock()
 	counters := jobs.Counters{ObjectsPlanned: r.tally.admitted, ObjectsCopied: r.tally.settled, ObjectsDeleted: r.tally.deleted}
 	r.mu.Unlock()

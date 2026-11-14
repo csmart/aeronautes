@@ -686,8 +686,8 @@ export interface DeletePreviewDTO {
 
     /**
      * PossibleManifests counts SLO-listed and zero-byte rows: deletion
-     * is manifest-only, so their segments (if any) will remain as
-     * recoverable orphans unless separately owned and cleaned.
+     * is manifest-only unless the request takes segments, so their
+     * segments (if any) will otherwise remain as recoverable orphans.
      */
     "possibleManifests": number;
 
@@ -730,6 +730,14 @@ export interface DeleteRequestDTO {
      * §28.2); checked at Start, not Preview.
      */
     "confirm": string;
+
+    /**
+     * Segments asks that each large object in the scope lose its segments
+     * too, after its manifest (ADR 0119). It is the operator's explicit force
+     * for this one job: the confirmation names it, and without it the
+     * deletion is manifest-only as before.
+     */
+    "segments": boolean;
 }
 
 /**
