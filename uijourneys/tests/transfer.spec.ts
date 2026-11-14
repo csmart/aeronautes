@@ -1,7 +1,7 @@
 import { test, type Page } from "@playwright/test";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
-import { connect, digestOf, expect, finish, localFolder, openContainer, ownContainer, writeFiles } from "../helpers.ts";
+import { connect, digestOf, expect, expectInside, finish, localFolder, openContainer, ownContainer, writeFiles } from "../helpers.ts";
 
 // One container per target carries a folder through upload, replacement,
 // download, edits and deletion, so each step starts from what the one
@@ -140,11 +140,29 @@ test.describe.serial("transfer", () => {
     await openContainer(page, info.project.name, container);
     await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(0);
 
+    // The prefix deletion removed the segmented file's manifest and left its
+    // segments in the container named after this one. The dialog says a
+    // container of that name exists, and once the open container is deleted
+    // it stays to offer the way there. This run knows that container holds
+    // only its own upload's segments, so it deletes it afterwards.
+    const segments = `${container}_segments`;
     await page.getByRole("button", { name: "Empty or delete container…" }).click();
-    await page.getByRole("dialog", { name: "Delete" }).getByRole("radio", { name: /^Delete container/ }).check();
+    const dialog = page.getByRole("dialog", { name: "Delete" });
+    await expect(dialog.getByText(`A container named ${segments} exists`)).toBeVisible();
+    await dialog.getByRole("radio", { name: /^Delete container/ }).check();
+    await armDelete(page, "Delete container");
+    await expect(dialog.getByRole("heading", { name: "Deletion complete" })).toBeVisible({ timeout: 8 * 60 * 1000 });
+    await expect(dialog.getByText(`${segments} still exists`)).toBeVisible();
+    await expectInside(dialog);
+    await dialog.getByRole("button", { name: "Open that container" }).click();
+    await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: segments })).toBeVisible();
+
+    await page.getByRole("button", { name: "Empty or delete container…" }).click();
+    await dialog.getByRole("radio", { name: /^Delete container/ }).check();
     await typedDelete(page, "Delete container");
     await connect(page, info.project.name);
-    await expect(page.getByRole("button", { name: new RegExp(`^${container} `) })).toHaveCount(0);
+    await page.getByRole("tab", { name: "All" }).click();
+    await expect(page.getByRole("button", { name: new RegExp(`^${container}`) })).toHaveCount(0);
   });
 });
 
@@ -171,13 +189,18 @@ function inspector(page: Page) {
   return page.getByRole("complementary", { name: "Inspector" });
 }
 
-// typedDelete previews a deletion, types the word the dialog asks for, as
-// the operator reads it there, and waits for the job.
-async function typedDelete(page: Page, action: string) {
+// armDelete previews a deletion, types the word the dialog asks for, as the
+// operator reads it there, and starts it.
+async function armDelete(page: Page, action: string) {
   const dialog = page.getByRole("dialog", { name: "Delete" });
   await dialog.getByRole("button", { name: "Preview" }).click();
   const confirm = dialog.getByLabel(/to arm/);
   await confirm.fill((await confirm.getAttribute("placeholder"))!);
   await dialog.getByRole("button", { name: action }).click();
-  await finish(page, dialog);
+}
+
+// typedDelete starts a deletion that way and waits for its job in the drawer.
+async function typedDelete(page: Page, action: string) {
+  await armDelete(page, action);
+  await finish(page, page.getByRole("dialog", { name: "Delete" }));
 }
