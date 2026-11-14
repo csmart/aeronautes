@@ -180,6 +180,7 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AuthURL   string `json:"authUrl"`
 		Name      string `json:"name"`
 		Segmented bool   `json:"segmented"`
+		Container string `json:"container"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -202,6 +203,8 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply, err = c.account(ctx, request.Label, request.AuthURL)
 	case "/container":
 		reply, err = c.container(ctx, request.Label, request.Name, request.Segmented)
+	case "/names":
+		reply, err = c.names(ctx, request.Label, request.Container)
 	case "/teardown":
 		reply = c.teardown(ctx)
 	default:
@@ -308,6 +311,22 @@ func (c *journeyControl) container(ctx context.Context, label, name string, segm
 		}
 	}
 	return map[string]string{"container": created}, nil
+}
+
+// names lists what one of the run's own containers holds, read by the run's
+// own session and not by the application under test.
+func (c *journeyControl) names(ctx context.Context, label, container string) (any, error) {
+	c.mu.Lock()
+	owned := c.accounts[label].owned
+	c.mu.Unlock()
+	if owned == nil {
+		return nil, fmt.Errorf("no account %q is open", label)
+	}
+	names, err := owned.Names(ctx, container)
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]string{"names": names}, nil
 }
 
 // teardown removes what the run created on every account it opened and

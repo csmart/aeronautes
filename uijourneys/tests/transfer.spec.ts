@@ -1,7 +1,10 @@
-import { test, type Page } from "@playwright/test";
+import { test } from "@playwright/test";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
-import { connect, digestOf, expect, expectInside, finish, localFolder, openContainer, ownContainer, writeFiles } from "../helpers.ts";
+import {
+  armDelete, connect, digestOf, expect, expectInside, finish, inspector, localFolder, objectRow, openContainer, openFolder, openUpload,
+  ownContainer, typedDelete, writeFiles,
+} from "../helpers.ts";
 
 // One container per target carries a folder through upload, replacement,
 // download, edits and deletion, so each step starts from what the one
@@ -145,10 +148,11 @@ test.describe.serial("transfer", () => {
     await page.getByRole("alertdialog", { name: "Delete object" }).getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
 
-    // The folder still holds the segmented file. Ticking the option deletes
-    // its segments after its manifest, and the words to type name the option.
+    // The folder still holds the segmented file. The option that deletes its
+    // segments after its manifest starts ticked (ADR 0120), and the words to
+    // type name it.
     await page.getByRole("button", { name: "Delete prefix…" }).click();
-    await typedDelete(page, "Delete prefix", true);
+    await typedDelete(page, "Delete prefix", "ticked");
     await openContainer(page, info.project.name, container);
     await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(0);
 
@@ -186,46 +190,3 @@ test.describe.serial("transfer", () => {
     await expect(page.getByRole("button", { name: new RegExp(`^${container}`) })).toHaveCount(0);
   });
 });
-
-// openUpload opens the upload dialog with a chunk size small enough that
-// the largest file is segmented.
-async function openUpload(page: Page) {
-  await page.getByRole("button", { name: "Upload…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Upload" });
-  await dialog.getByText("Per-job settings").click();
-  await dialog.getByLabel("Chunk size").fill("1Mi");
-  return dialog;
-}
-
-async function openFolder(page: Page, folder: string) {
-  await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) }).dblclick();
-  await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: basename(folder) })).toBeVisible();
-}
-
-function objectRow(page: Page, name: string) {
-  return page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${name} `) });
-}
-
-function inspector(page: Page) {
-  return page.getByRole("complementary", { name: "Inspector" });
-}
-
-// armDelete previews a deletion, ticks the option that takes large objects'
-// segments when asked to, types the words the dialog then asks for, as the
-// operator reads them there, and starts it.
-async function armDelete(page: Page, action: string, segments = false) {
-  const dialog = page.getByRole("dialog", { name: "Delete" });
-  await dialog.getByRole("button", { name: "Preview" }).click();
-  if (segments) {
-    await dialog.getByLabel("Also delete the segments of large objects").check();
-  }
-  const confirm = dialog.getByLabel(/to arm/);
-  await confirm.fill((await confirm.getAttribute("placeholder"))!);
-  await dialog.getByRole("button", { name: action }).click();
-}
-
-// typedDelete starts a deletion that way and waits for its job in the drawer.
-async function typedDelete(page: Page, action: string, segments = false) {
-  await armDelete(page, action, segments);
-  await finish(page, page.getByRole("dialog", { name: "Delete" }));
-}
