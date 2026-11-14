@@ -191,6 +191,41 @@ func TestSegmentJobRefusesWithoutForce(t *testing.T) {
 	}
 }
 
+// ADR 0120 decision 4: where the container keeps versions, a kept version
+// still names the segments, so the one-object deletion with segments is
+// refused as the bulk option is, in every mode and where the mode cannot be
+// read, with no job row and nothing deleted.
+func TestSegmentJobIsRefusedWhereVersionsAreKept(t *testing.T) {
+	for name, tc := range map[string]struct {
+		arrange func(*swifttest.Server)
+		want    string
+	}{
+		"versions location": {func(m *swifttest.Server) { m.EnableVersionArchive("media", "archive", false) }, "keeps versions"},
+		"history location":  {func(m *swifttest.Server) { m.EnableVersionArchive("media", "archive", true) }, "keeps versions"},
+		"object versioning": {func(m *swifttest.Server) { m.EnableModernVersioning("media") }, "keeps versions"},
+		"unreadable":        {func(m *swifttest.Server) { m.FailNextContainerHEADs(1) }, "could not be read"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, service, bookmark := deleteHarness(t)
+			seedSLO(h, "media", "big.slo", "parts", map[string]string{"job/aa/000001": "0123456789"})
+			reviewed := reviewOf(t, service, bookmark, "media", "big.slo")
+			tc.arrange(h.mock)
+			jobID, err := service.DeleteManifestWithSegments(context.Background(), SegmentsDeleteRequestDTO{
+				BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("job %q, err %v; want a refusal saying %q", jobID, err, tc.want)
+			}
+			if rows := jobCount(t, h); rows != 0 {
+				t.Fatalf("the refusal left %d job rows", rows)
+			}
+			if !segmentReadable(t, h, bookmark, "media", "big.slo") || !segmentReadable(t, h, bookmark, "parts", "job/aa/000001") {
+				t.Fatal("something was deleted")
+			}
+		})
+	}
+}
+
 // ADR 0095 decision 8: a static manifest whose graph is swapped for one of
 // equal assembled identity between the review and the execution is refused,
 // the job failed, nothing deleted and its segments untouched.
