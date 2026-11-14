@@ -165,6 +165,12 @@ type MemberRow struct {
 	Bytes     int64
 	ETag      string
 	SLOListed bool
+	// Recorded says the size and entity tag are what a static manifest
+	// recorded for a whole segment, not a listing row. They are then the
+	// baseline whatever the size: a listing's zero bytes cannot say what the
+	// row holds, but a manifest's record of an empty segment says it is a
+	// plain object of no bytes with that tag (ADR 0119 decision 5).
+	Recorded bool
 }
 
 // DeleteMember deletes ONE member of a selected set by the verified per-name
@@ -190,7 +196,7 @@ func (s *Session) DeleteMember(ctx context.Context, container string, row Member
 	}
 	target := targetListedPlain
 	var baseline *ObjectDetail
-	if row.Bytes != 0 && !row.SLOListed {
+	if row.Recorded || (row.Bytes != 0 && !row.SLOListed) {
 		baseline = &ObjectDetail{Class: ClassPlain, ContentLength: row.Bytes, ETag: row.ETag}
 	} else {
 		head, err := s.ObjectDetail(ctx, container, row.Name)
