@@ -188,7 +188,23 @@
       save(true);
     }}
   >
-    <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
+    <!-- Duplicate sits beside the title: it starts another bookmark and
+      is not one of the ways to finish this one, and a sixth button did
+      not fit the footer's row. -->
+    <div class="title-row">
+      <h2 class="title">{bookmark ? "Edit bookmark" : "Add bookmark"}</h2>
+      {#if bookmark && onDuplicate}
+        <button
+          type="button"
+          class="secondary"
+          title="Start a new bookmark from this one's saved details; its key is not copied"
+          onclick={() => onDuplicate(bookmark)}
+          disabled={saving || !isCurrent()}
+        >
+          Duplicate…
+        </button>
+      {/if}
+    </div>
     {#if copyOf && !bookmark}
       <p class="warning" role="status">
         Copied from {copyOf.displayName}. Enter this account's API key: a key is never copied.{copyOf.tlsMode === "custom_ca"
@@ -338,17 +354,6 @@
             Delete…
           </button>
         {/if}
-        {#if onDuplicate}
-          <button
-            type="button"
-            class="secondary"
-            title="Start a new bookmark from this one's saved details; its key is not copied"
-            onclick={() => onDuplicate(bookmark)}
-            disabled={saving || !isCurrent()}
-          >
-            Duplicate…
-          </button>
-        {/if}
       {/if}
       <span class="spacer"></span>
       <button type="button" class="secondary" onclick={close} disabled={saving}>
@@ -412,6 +417,13 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-raised);
+  }
+
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
   }
 
   .title {
@@ -506,7 +518,8 @@
     gap: var(--space-2);
   }
 
-  .actions button {
+  .actions button,
+  .title-row button {
     padding: var(--space-1) var(--space-3);
     font: inherit;
     font-size: var(--text-sm);

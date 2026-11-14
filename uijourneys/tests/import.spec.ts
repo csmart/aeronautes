@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { control } from "../control.ts";
-import { connect, expect, localFolder } from "../helpers.ts";
+import { connect, expect, expectInside, localFolder } from "../helpers.ts";
 
 // ADR 0114 through the window: an rclone.conf with one account the mock
 // accepts and one whose key it refuses. Driven against the mock only, whose
@@ -62,9 +62,11 @@ test("import from the rail, name a bookmark and give a keyless one its key", asy
   await dialog.getByLabel("Import journey source").check();
   await dialog.getByLabel("Import journey keyless").check();
   await dialog.getByLabel("Name for journey source").fill("journey named");
+  await expectInside(dialog);
   await dialog.getByRole("button", { name: "Import 2 bookmarks" }).click();
   await expect(dialog.getByText("Imported and verified.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Enter key for journey keyless" })).toBeVisible();
+  await expectInside(dialog);
   await dialog.locator("footer").getByRole("button", { name: "Close" }).click();
 
   await expect(rail.getByRole("button", { name: "journey named", exact: true })).toBeVisible();

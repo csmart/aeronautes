@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { connect, expect } from "../helpers.ts";
+import { connect, expect, expectInside } from "../helpers.ts";
 
 // The bookmark editor is driven only against the mock, with its fixed test
 // key; a real cloud's bookmark is made in Go so no password reaches the page
@@ -23,8 +23,10 @@ test("duplicate a bookmark and connect with the copy", async ({ page }, info) =>
   test.skip(info.project.name !== "mock", "the editor is driven against the mock only");
   await connect(page, "mock");
   await page.getByRole("button", { name: "Edit journey mock" }).click();
+  await expectInside(page.getByRole("form", { name: "Edit bookmark" }));
   await page.getByRole("button", { name: "Duplicate…" }).click();
   await expect(page.getByText("Copied from journey mock.")).toBeVisible();
+  await expectInside(page.getByRole("form", { name: "Add bookmark" }));
   await expect(page.getByLabel("Display name")).toHaveValue("journey mock copy");
   await expect(page.getByLabel("Auth URL")).toHaveValue(process.env.AERONAUTES_MOCK!);
   await expect(page.getByLabel("Username")).toHaveValue("test:tester");
