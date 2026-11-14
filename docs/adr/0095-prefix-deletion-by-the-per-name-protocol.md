@@ -5,6 +5,7 @@ The bulk deletion runs the verified per-name sweep and the manifest-with-segment
 This record itself returns no capability: the actions stayed under "Bulk delete" with the `bulk-delete` token until the operator's word, which ADR 0052 decision 14 records, and that token no longer exists.
 Amended on 11 November 2026, during the 0.5.0 test run: a prefix deletion is armed by typing its scope, the container name, a slash and the prefix, because typing the container name alone did not show that the operator had read which prefix goes (decision 7).
 Amended again the same day: the prefix the deletion dialog offers is the selected prefix row when exactly one row is selected and it is a prefix, and otherwise the prefix being browsed, because the operator selected a folder and was offered only its container (decision 7).
+Amended on 14 November 2026 by [ADR 0119](0119-a-bulk-deletion-may-take-segments.md): when the operator ticks the option and types its words, a bulk deletion deletes each large object's segments after its manifest by decision 8's rules; without the option decision 1 stands and a manifest's segments stay.
 **Scope:** `DeleteService.StartDelete` in its three modes, a prefix, a container's contents and a container, `DeleteService.PreviewDelete`, and `DeleteService.DeleteManifestWithSegments`, whose two branches run the same sweeps.
 Benchmark, which writes objects and sweeps them away, follows this record and is not decided here; Mirror is not admitted and is not a step closer.
 

@@ -1,6 +1,6 @@
 # ADR 0119 — a bulk deletion deletes each large object's segments when the operator asks
 
-**Status:** Proposed on 14 November 2026 for 0.5.0, from finding F56 of the final candidate's test run and the operator's decisions of the same day: first that an explicit option to delete the segments of the large objects in scope be built, then that it be built before the tag.
+**Status:** Accepted on 14 November 2026 for 0.5.0 and delivered with this record's series, from finding F56 of the final candidate's test run and the operator's decisions of the same day: first that an explicit option to delete the segments of the large objects in scope be built, then that it be built before the tag.
 Tier 1 under DESIGN §65.12.
 **Scope:** `DeleteService.StartDelete` in its three modes, a prefix, a container's contents and a container, and the dialog that starts them.
 The selected-set deletion, the single-object dialogs, Copy, Mirror and the upload's reclamation ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) are not changed.

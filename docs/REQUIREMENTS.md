@@ -71,9 +71,10 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-XFER-014** — The rclone boundary is absolute: rclone MUST NOT execute any destructive or
   overwriting operation (`sync` delete phase, `purge`, `delete`, or any write to an existing live
   name) on **any** scope. rclone writes only planned-new or uniquely-staged names; all destruction
-  is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a),
-  the single exception to **manifest-only** being K-SEG-005's acknowledged upload reclamation, which is
-  equally Aeronautes-native and leaves the rclone prohibition above untouched. (§28.6, §36, ADR 0004)
+  is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a).
+  Segments go only by the operator's explicit force action (K-SEG-003), the single exception to that
+  being K-SEG-005's acknowledged upload reclamation, which is equally Aeronautes-native and leaves the
+  rclone prohibition above untouched. (§28.6, §36, ADR 0004, ADR 0119)
 - **K-XFER-015** — `--server-side-across-configs` MUST NEVER be enabled for two independently
   authenticated bookmarks. (§30)
 - **K-SEG-004** — Automatic segment deletion requires `ExclusiveOwnershipProof` over the exact objects through the destructive effect, excluding other references and relevant concurrent writers.
@@ -112,7 +113,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-SEG-002** — A legitimate container that merely *looks* like a segment store (e.g. `photos_segments`)
   MUST NOT be hidden or destructively classified from its name alone. (§58, §60 Phase 2 gate)
 - **K-SEG-003** — Automatic SLO segment deletion requires exclusive authority through deletion for every referenced segment, including nested and ranged segments.
-  The current workflow provides no automatic path; manifest plus segments is a separate Backstage force action with sharing risk disclosed.
+  The current workflow provides no automatic path; manifest plus segments is an explicit force action with the sharing risk disclosed and a typed confirmation.
+  It is offered for one object from Backstage (ADR 0095 decision 8), and for the large objects of a prefix or container deletion as that deletion's option, which starts unticked, is typed by name and is refused where the container keeps versions (ADR 0119).
+  The bulk option deletes only what each manifest names when its turn comes, a static entry compared with the size and entity tag its manifest recorded and a dynamic namespace bounded as ADR 0044 bounds it, and leaves the segments of a large object it cannot bound.
   `?multipart-manifest=delete` deletes shared segments too. (§34, ADR 0020)
 - **K-DEL-001** — Empty Container MUST preserve the container and its configuration, and MUST NOT use
   `rclone purge` at a container root (stock rclone deletes the container). (§33)
