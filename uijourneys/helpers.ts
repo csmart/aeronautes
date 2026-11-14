@@ -101,6 +101,21 @@ export function digestOf(path: string): string {
   return sha256(readFileSync(path));
 }
 
+// expectInside checks that every button and text field of a dialog lies
+// within the dialog's own width. A row of buttons too wide for its dialog
+// pushes some of them out past its edge, where they still work and so pass
+// every other check (found by hand in the 0.5.0 test run).
+export async function expectInside(dialog: Locator): Promise<void> {
+  const frame = (await dialog.boundingBox())!;
+  for (const control of await dialog.locator("button, input, select, textarea").all()) {
+    if (!(await control.isVisible())) continue;
+    const box = (await control.boundingBox())!;
+    const name = (await control.getAttribute("aria-label")) ?? (await control.innerText().catch(() => "")) ?? "";
+    expect(box.x, `left edge of "${name}"`).toBeGreaterThanOrEqual(frame.x);
+    expect(box.x + box.width, `right edge of "${name}"`).toBeLessThanOrEqual(frame.x + frame.width);
+  }
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
