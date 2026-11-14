@@ -50,7 +50,10 @@ It does not measure performance.
 ## Layer 2: UI journeys in a browser
 
 - Run locally: `make uijourneys [CLOUDS=/path/to/clouds.yaml]`. Without `CLOUDS` it runs against the mock only.
-- It needs Node, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
+- It needs Go, Node with npm, python3, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
+  The build it makes runs in a browser, so it needs no C compiler and none of the desktop's GTK or WebKitGTK packages.
+  When a build step fails, for want of one of these or otherwise, the run says so and names the `build.log` in its private directory.
+- Arguments go to Playwright: `make uijourneys ARGS="--project=mock tests/slash.spec.ts"` runs one journey on the mock, and `ARGS=--headed` shows the browser, which needs a display.
 - `scripts/uijourneys.sh` builds the application with the tags `server` and `uijourney`, starts it and the mock on 127.0.0.1 with `HOME` and the XDG directories in a fresh directory, and runs the Playwright suite in `uijourneys/` against it.
 - The `uijourney` build is the shipped application with only its native seams replaced: the pickers and the two confirmations answer what the suite scripted over a token-guarded control listener, and an unscripted pick or answer fails; the secret store is session-only.
 - Real-cloud bookmarks are made in Go from clouds.yaml, so no password reaches the page; the bookmark editor is driven only against the mock.

@@ -7,6 +7,10 @@
 # Everything that could name a provider, a host or an account goes to one
 # private directory under the user cache directory; the output names only
 # each journey, its outcome and that directory.
+#
+# Arguments are passed to Playwright, so one journey can be run, or watched:
+#   scripts/uijourneys.sh --project=mock tests/slash.spec.ts
+#   scripts/uijourneys.sh --headed
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,14 +27,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The build's output can name paths and hosts, so it goes to the private
+# directory. A step that fails there would otherwise end the run with nothing
+# said, so the run says that it failed and where its output is.
+build_failed() {
+	echo "the build failed; see $private/build.log"
+	exit 1
+}
+
 echo "building the frontend and the UI journey build"
 {
-	npm --prefix frontend ci --no-audit --no-fund
-	npm --prefix frontend run build
-	go build -tags server,uijourney -o "$private/aeronautes-uijourney" .
-	go build -o "$private/mockswift" ./cmd/mockswift
-	go test -tags uijourney -run 'TestJourneyControl|TestServeOptions' -count=1 .
-} >"$private/build.log" 2>&1
+	npm --prefix frontend ci --no-audit --no-fund &&
+		npm --prefix frontend run build &&
+		go build -tags server,uijourney -o "$private/aeronautes-uijourney" . &&
+		go build -o "$private/mockswift" ./cmd/mockswift &&
+		go test -tags server,uijourney -run 'TestJourneyControl|TestServeOptions' -count=1 .
+} >"$private/build.log" 2>&1 || build_failed
 
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 mock_port=$(free_port)
@@ -54,11 +66,11 @@ ui=${startup#*ui=}; ui=${ui%% *}
 controller=${startup#*control=}; controller=${controller%% *}
 token=${startup#*token=}
 
-npm --prefix uijourneys ci --no-audit --no-fund >>"$private/build.log" 2>&1
+npm --prefix uijourneys ci --no-audit --no-fund >>"$private/build.log" 2>&1 || build_failed
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
-uijourneys/node_modules/.bin/playwright install chromium >>"$private/build.log" 2>&1
+uijourneys/node_modules/.bin/playwright install chromium >>"$private/build.log" 2>&1 || build_failed
 
 AERONAUTES_UI="http://$ui" AERONAUTES_CONTROL="http://$controller" AERONAUTES_CONTROL_TOKEN="$token" \
 	AERONAUTES_MOCK="http://127.0.0.1:$mock_port/auth/v1.0" AERONAUTES_CLOUDS="${CLOUDS:+1}" \
 	AERONAUTES_PRIVATE="$private" \
-	uijourneys/node_modules/.bin/playwright test --config uijourneys/playwright.config.ts
+	uijourneys/node_modules/.bin/playwright test --config uijourneys/playwright.config.ts "$@"
