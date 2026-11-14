@@ -101,6 +101,6 @@ journeys:
 	ORACLE_CLOUDS="$(CLOUDS)" JOURNEY_REPEAT="$(REPEAT)" go test -tags realcloud -run 'Test$(ONLY).*Journey' -count=1 -timeout 2h -v ./internal/journeys/
 
 ## uijourneys: the same journeys through the real frontend in a browser (ADR 0112), local only; CLOUDS adds the two real clouds to the mock
-# make uijourneys [CLOUDS=~/code/clouds.yaml]
+# make uijourneys [CLOUDS=~/code/clouds.yaml] [ARGS="--project=mock tests/slash.spec.ts"]
 uijourneys:
-	CLOUDS="$(CLOUDS)" ./scripts/uijourneys.sh
+	CLOUDS="$(CLOUDS)" ./scripts/uijourneys.sh $(ARGS)
