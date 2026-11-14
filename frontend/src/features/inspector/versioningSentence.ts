@@ -20,6 +20,16 @@ export function versioningSentence(f: ContainerSettingsDTO | null | undefined): 
   }
 }
 
+/** Why a deletion here cannot take a large object's segments with it: the
+ * container keeps versions, and a kept version still names its segments
+ * (ADR 0119 decision 3, ADR 0120 decision 4). null when it can, and "" while
+ * the container's facts are still being read. */
+export function whySegmentsStay(f: ContainerSettingsDTO | null | undefined): string | null {
+  if (f === undefined) return "";
+  if (f === null) return "whether this container keeps versions could not be read.";
+  return f.versioningMode === "off" ? null : "this container keeps versions, and a kept version still uses its segments.";
+}
+
 /** Whose earlier versions a bulk deletion of this container destroys, from the
  * preview's scan of the account's containers (ADR 0102 decision 3): the owners
  * it found, that the scan could not cover the account, or both. "" when no

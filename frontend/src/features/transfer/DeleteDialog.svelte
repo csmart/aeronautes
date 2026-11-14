@@ -1,15 +1,16 @@
 <!-- Destructive-jobs dialog (§31–§33): preview (counts, bytes, the
   manifest disclosure, and the strategy the engine would pick) before a
   typed confirmation unlocks Start. Deletion is Aeronautes-native and
-  manifest-only unless the operator ticks the option that takes segments
-  too (ADR 0119); the Go side re-validates everything. -->
+  manifest-only unless the option that takes segments too is ticked, as it
+  is to start with (ADR 0119, ADR 0120); the Go side re-validates
+  everything. -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
-  import { archiveOwnersSentence, versioningSentence } from "../inspector/versioningSentence";
+  import { archiveOwnersSentence, versioningSentence, whySegmentsStay } from "../inspector/versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -30,11 +31,13 @@
   // What the started job deletes, in words, captured at start: the folder a
   // prefix deletion removed is gone from the listing by the time it ends.
   let startedWhat = $state("");
-  // The operator's option that each large object in the scope also loses
-  // its segments (ADR 0119). It starts unticked, every new preview clears
-  // it, and it is not part of the previewed request, whose counts are the
-  // same either way. startedSegments is what the started job was asked.
-  let withSegments = $state(false);
+  // What the operator chose for the option that each large object in the
+  // scope also loses its segments (ADR 0119), null until they choose: the
+  // option then stands at its starting value. Every new preview forgets the
+  // choice, and the option is not part of the previewed request, whose
+  // counts are the same either way. startedSegments is what the started job
+  // was asked.
+  let segmentsChosen: boolean | null = $state(null);
   let startedSegments = $state(false);
   // The started job as the drawer's poll last saw it, so the dialog says when
   // it is done instead of leaving the operator to guess.
@@ -60,19 +63,17 @@
   // Segments are offered, beside a preview that counted a row that may be a
   // manifest, when the container keeps no versions: a kept version still
   // uses its segments, and the Go side refuses the option there.
-  const offerSegments = $derived(whySegmentsStay(facts) === null);
+  const offerSegments = $derived(!!preview && preview.possibleManifests > 0 && whySegmentsStay(facts) === null);
+  // An archived version and the object it came from can name the same
+  // segments, so in a container that is, or may be, another's archive the
+  // option starts unticked (ADR 0120 decision 2).
+  const mayBeArchive = $derived(!!preview && ((preview.archiveOf ?? []).length > 0 || !!preview.archiveUnestablished));
+  // Ticked to start with, by the operator's decision (ADR 0120 decision 1).
+  const withSegments = $derived(offerSegments && (segmentsChosen ?? !mayBeArchive));
   const armWord = $derived(prepared ? armingText(prepared.intent.request, withSegments) : "");
   const canStart = $derived(!!prepared && !!preview && !previewing && !starting
     && facts !== undefined
     && confirmText === armWord);
-
-  // Why segments cannot be taken in this container, null when they can, and
-  // "" while its versioning facts are still being read.
-  function whySegmentsStay(f: ContainerSettingsDTO | null | undefined): string | null {
-    if (f === undefined) return "";
-    if (f === null) return "whether this container keeps versions could not be read.";
-    return f.versioningMode === "off" ? null : "this container keeps versions, and a kept version still uses its segments.";
-  }
 
   // What the operator types to arm the deletion, the same text the Go side
   // requires (ADR 0095 decision 7): a prefix is armed by its scope, so the
@@ -105,7 +106,7 @@
     generation++;
     prepared = null;
     confirmText = "";
-    withSegments = false;
+    segmentsChosen = null;
     previewing = false;
     startedJobId = null;
     error = null;
@@ -295,9 +296,11 @@
         {formatCount(segmentsContainer.count)} objects and {formatBytes(segmentsContainer.bytes)} as listed. It is
         named like the place where this application and rclone keep the segments of large objects uploaded to
         <span class="type-mono">{openedOn}</span>.
-        {withSegments
-          ? "With the option below ticked, this deletion also deletes the segments of its large objects, wherever they are kept."
-          : "A deletion here removes nothing from it."}
+        {#if preview}
+          {withSegments
+            ? "With the option below ticked, this deletion also deletes the segments of its large objects, wherever they are kept."
+            : "A deletion here removes nothing from it."}
+        {/if}
       </p>
     {/if}
     {/if}
@@ -351,9 +354,22 @@
           {/if}
           {#if offerSegments}
             <label class="option">
-              <input type="checkbox" bind:checked={withSegments} onchange={() => (confirmText = "")} />
+              <input
+                type="checkbox"
+                checked={withSegments}
+                onchange={(e) => {
+                  segmentsChosen = e.currentTarget.checked;
+                  confirmText = "";
+                }}
+              />
               <span>Also delete the segments of large objects</span>
             </label>
+            {#if mayBeArchive}
+              <p class="keeps">
+                It starts unticked here: an archived version and the object it came from can use the same segments,
+                and deleting them would break that object.
+              </p>
+            {/if}
             {#if withSegments}
               <p class="warn" role="status">
                 Each large object's segments are deleted after it: the ones a static manifest lists, or everything

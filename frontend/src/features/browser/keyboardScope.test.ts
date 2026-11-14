@@ -75,6 +75,11 @@ async function screen() {
   expect(selected()).toBeNull();
   return { root, component };
 }
+// The segments option starts ticked (ADR 0120 decision 3). These cases are
+// about the manifest-only deletion, which the operator reaches by unticking.
+async function untick(dialog: Element) {
+  click(dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
+}
 async function manifest() {
   const f = await screen();
   const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
@@ -246,6 +251,7 @@ describe("production modal ownership", () => {
   it("routes body Escape to the active busy dialog", async () => {
     const f = await manifest();
     const reply = deferred<Awaited<ReturnType<Api["deleteManifest"]>>>(); api.deleteManifest = vi.fn(() => reply.promise);
+    await untick(f.dialog);
     click(button("Delete manifest only", f.dialog)); await settle();
     press(document.body, "Escape"); await settle();
     expect(document.contains(f.dialog)).toBe(false);
@@ -265,6 +271,7 @@ describe("production modal ownership", () => {
   it.each(["success", "failure"])("Escape while deletion is busy retires the old %s and preserves a reopened dialog", async (outcome) => {
     const f = await manifest(); const before = selected();
     const reply = deferred<Awaited<ReturnType<Api["deleteManifest"]>>>(); api.deleteManifest = vi.fn(() => reply.promise);
+    await untick(f.dialog);
     click(button("Delete manifest only", f.dialog)); await settle();
     // The third argument is what the dialog was SHOWN, so it is compared with
     // the detail the fake served for this object rather than with a literal: a
@@ -280,6 +287,7 @@ describe("production modal ownership", () => {
     press(window, "Escape"); await settle();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     f.reopen(); await settle(); const replacement = get('[role="alertdialog"]');
+    await untick(replacement);
     if (outcome === "success") reply.resolve(applied);
     else reply.reject(new Error("retired deletion failure"));
     await settle();

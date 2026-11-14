@@ -566,11 +566,14 @@ it("Delete names a container named for the open one's segments and offers it onc
   const open = vi.spyOn(f.browser, "openContainer").mockResolvedValue();
   const text = () => (f.root.textContent ?? "").replace(/\s+/g, " ");
   expect(text()).toContain("A container named media_segments exists, with 3 objects and 3.00 MB as listed.");
-  expect(text()).toContain("A deletion here removes nothing from it.");
+  // What a deletion takes from it is not known until a preview has counted
+  // the large objects, so nothing is said of it before then.
+  expect(text()).not.toContain("removes nothing from it");
   expect(text()).not.toMatch(/delete that container|free the space/);
 
   f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
   f.preview(); await f.resolve(); f.arm();
+  expect(text()).toContain("A deletion here removes nothing from it.");
   f.startButton().click(); flushSync();
   f.startReply.resolve("deleting-job"); await settle();
   expect(f.button("Open that container")).toBeUndefined();
@@ -589,12 +592,12 @@ it("Delete names a container named for the open one's segments and offers it onc
   expect(open).toHaveBeenCalledExactlyOnceWith("media_segments");
 });
 
-// ADR 0119: deleting each large object's segments with it is the operator's
-// explicit choice for one job. The option is offered only where the preview
-// counted a possible manifest and the container keeps no versions, starts
-// unticked, is cleared by a new preview, and changes the words to type, so
-// the words for one kind of deletion never start the other.
-it("Delete takes segments only when the option is ticked and its own words are typed", async () => {
+// ADR 0119 and ADR 0120: deleting each large object's segments with it is
+// the operator's choice for one job. The option is offered only where the
+// preview counted a possible manifest and the container keeps no versions,
+// starts ticked, returns to ticked with a new preview, and changes the words
+// to type, so the words for one kind of deletion never start the other.
+it("Delete takes segments unless the option is unticked, and each choice has its own words", async () => {
   const facts = (versioningMode: string) => async () => ({ versioningMode, versioningArchive: "archive" }) as ContainerSettingsDTO;
   const manifests = { ...deletePlan, possibleManifests: 2 };
   const option = (f: Fixture) => f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]');
@@ -603,6 +606,8 @@ it("Delete takes segments only when the option is ticked and its own words are t
   const none = show("delete", facts("off"));
   none.preview(); await none.resolve();
   expect(option(none)).toBeNull();
+  // With no large object in scope nothing is asked for under another name.
+  expect(confirm(none).placeholder).toBe("media/selected/");
 
   const versioned = show("delete", facts("history_location"));
   versioned.preview(); versioned.deletes[0].resolve(manifests); await settle();
@@ -611,34 +616,60 @@ it("Delete takes segments only when the option is ticked and its own words are t
 
   const f = show("delete", facts("off"));
   f.preview(); f.deletes[0].resolve(manifests); await settle();
-  expect(option(f)!.checked).toBe(false);
-  expect(confirm(f).placeholder).toBe("media/selected/");
-  expect(f.root.textContent).toContain("Deletion is manifest-only");
-
-  // Ticking changes the words, clears what was typed and says what goes.
-  f.arm();
-  option(f)!.click(); flushSync();
-  expect(confirm(f).value).toBe("");
+  expect(option(f)!.checked).toBe(true);
   expect(confirm(f).placeholder).toBe("media/selected/ and segments");
   expect(f.root.textContent).toContain("one that does will lose its data");
   expect(f.root.textContent).not.toContain("Deletion is manifest-only");
+  // The plain words do not arm a deletion that takes segments.
   f.arm();
   expect(f.startButton().disabled).toBe(true);
   clickEvenIfDisabled(f.startButton());
   expect(f.api.startDelete).not.toHaveBeenCalled();
 
-  // A new preview clears the tick.
-  f.preview(); f.deletes[1].resolve(manifests); await settle();
-  expect(option(f)!.checked).toBe(false);
-  expect(confirm(f).placeholder).toBe("media/selected/");
-
+  // Unticking changes the words, clears what was typed and says what stays.
   option(f)!.click(); flushSync();
+  expect(confirm(f).value).toBe("");
+  expect(confirm(f).placeholder).toBe("media/selected/");
+  expect(f.root.textContent).toContain("Deletion is manifest-only");
+
+  // A new preview returns the option to its starting value.
+  f.preview(); f.deletes[1].resolve(manifests); await settle();
+  expect(option(f)!.checked).toBe(true);
   input(confirm(f), "media/selected/ and segments");
   f.startButton().click(); flushSync();
   expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith({
     ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media/selected/ and segments", segments: true,
   });
   expect(vi.mocked(f.api.previewDelete).mock.calls[0][0].segments).toBe(false);
+
+  // Unticked, the job is asked for the manifests alone, by the plain words.
+  const plain = show("delete", facts("off"));
+  plain.preview(); plain.deletes[0].resolve(manifests); await settle();
+  option(plain)!.click(); flushSync();
+  plain.arm();
+  plain.startButton().click(); flushSync();
+  expect(plain.api.startDelete).toHaveBeenCalledExactlyOnceWith({
+    ...vi.mocked(plain.api.previewDelete).mock.calls[0][0], confirm: "media/selected/", segments: false,
+  });
+});
+
+// ADR 0120 decision 2: an archived version and the object it came from can
+// name the same segments, so where the preview names a container that keeps
+// its versions here, or could not establish that none does, the option is
+// offered unticked, says why, and is the operator's to tick.
+it.each([
+  ["names an owner", { archiveOf: ["photos"] }],
+  ["could not cover the account", { archiveUnestablished: "the account holds more containers than the scan reads" }],
+])("Delete starts the segments option unticked when the preview %s", async (_case, archive) => {
+  const f = show("delete", async () => ({ versioningMode: "off", versioningArchive: "" }) as ContainerSettingsDTO);
+  f.preview(); f.deletes[0].resolve({ ...deletePlan, possibleManifests: 1, ...archive }); await settle();
+  const option = f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]')!;
+  const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
+  expect(option.checked).toBe(false);
+  expect(confirm.placeholder).toBe("media/selected/");
+  expect(f.root.textContent).toContain("It starts unticked here");
+  option.click(); flushSync();
+  expect(confirm.placeholder).toBe("media/selected/ and segments");
 });
 
 // After a job that took segments the notice no longer says the deletion
@@ -650,10 +681,12 @@ it("Delete says the job's records list what it deleted from the segments contain
     browser.containers = [row("media", 4, 4_000_000), row("media_segments", 3, 3_000_000)];
   });
   f.preview(); f.deletes[0].resolve({ ...deletePlan, possibleManifests: 1 }); await settle();
-  expect(f.root.textContent).toContain("A deletion here removes nothing from it.");
-  f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]')!.click(); flushSync();
-  expect(f.root.textContent).not.toContain("A deletion here removes nothing from it.");
+  const option = f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]')!;
   expect(f.root.textContent).toContain("this deletion also deletes the segments of its large objects");
+  option.click(); flushSync();
+  expect(f.root.textContent).toContain("A deletion here removes nothing from it.");
+  option.click(); flushSync();
+  expect(f.root.textContent).not.toContain("A deletion here removes nothing from it.");
   input(f.root.querySelector<HTMLInputElement>(".confirm input")!, "media/selected/ and segments");
   f.startButton().click(); flushSync();
   f.startReply.resolve("deleting-job"); await settle();

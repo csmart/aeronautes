@@ -4,8 +4,10 @@
   survives and where, waits for the container's versioning facts before it can
   be confirmed, and shows what the verifying read observed afterwards instead
   of a plain success. The with-segments option is the force-gated Backstage
-  override bulk deletion offers; its ownership check is asked only when that
-  option is taken, never for the manifest-only path. -->
+  override bulk deletion offers. It is ticked to start with where the
+  container keeps no versions and is not offered where it does (ADR 0120);
+  its ownership check is asked only while that option is taken, never for
+  the manifest-only path. -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount, onDestroy, untrack } from "svelte";
@@ -13,7 +15,7 @@
   import type { ContainerSettingsDTO, ObjectDetailDTO, SegmentOwnershipDTO } from "../../lib/api";
   import { v1Offers } from "../../lib/v1.svelte";
   import { formatBytes } from "../../lib/format";
-  import { versioningSentence } from "./versioningSentence";
+  import { versioningSentence, whySegmentsStay } from "./versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
   const confirmId = $props.id();
@@ -32,7 +34,15 @@
   // undefined while the container's facts are being read, null when they
   // cannot be read. Confirmation waits for either answer.
   let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
-  let withSegments = $state(false);
+  // A kept version still names its segments, so the option is offered only
+  // once the container is known to keep none, and the Go side refuses it
+  // otherwise (ADR 0120 decision 4).
+  const whyKept = $derived(whySegmentsStay(facts));
+  const offerSegments = $derived(v1Offers.bulkDelete && whyKept === null);
+  // What the operator chose for the option, null until they choose; until
+  // then it is ticked, by the operator's decision (ADR 0120 decision 3).
+  let segmentsChosen: boolean | null = $state(null);
+  const withSegments = $derived(offerSegments && (segmentsChosen ?? true));
   // undefined until the with-segments option asks; null when the check could
   // not answer, which keeps that option disarmed.
   let ownership = $state<SegmentOwnershipDTO | null | undefined>(undefined);
@@ -183,9 +193,14 @@
           its last look, and a manifest of the same kind found afterwards leaves the outcome unverified.
         </p>
 
-        {#if v1Offers.bulkDelete}
+        {#if offerSegments}
           <label class="segments-opt">
-            <input type="checkbox" bind:checked={withSegments} disabled={segmentsBusy || !current} />
+            <input
+              type="checkbox"
+              checked={withSegments}
+              onchange={(e) => (segmentsChosen = e.currentTarget.checked)}
+              disabled={segmentsBusy || !current}
+            />
             <span>
               Also delete the segments
               {#if ownership}
@@ -213,6 +228,8 @@
               disabled={segmentsBusy || !current}
             />
           {/if}
+        {:else if v1Offers.bulkDelete && whyKept}
+          <p class="keeps">Its segments cannot be deleted with it here: {whyKept}</p>
         {/if}
       {/if}
       {#if op.error}

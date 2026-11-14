@@ -191,19 +191,17 @@ it("retains the inline-SLO destruction disclosure on the manifest-only path", as
   await settle();
   const dialog = document.querySelector('[role="alertdialog"][aria-label="Delete manifest"]');
   expect(dialog).not.toBeNull();
-  // The disclosure comes from the manifest the inspector already read, not
-  // from the ownership check: the manifest-only path never asks it until the
-  // operator opts into deleting the segments (ADR 0094 decision 5).
-  expect(api.checkSegmentOwnership).not.toHaveBeenCalled();
+  // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14), so the
+  // segment-deletion option is offered, and it starts ticked (ADR 0120
+  // decision 3), which asks its ownership check once.
+  const option = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null;
+  expect(option?.checked).toBe(true);
+  expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
+  // Unticked, the deletion is manifest-only and says what that destroys.
+  option!.click(); await settle();
   expect(button("Delete manifest only").disabled).toBe(false);
   expect(dialog?.textContent).toContain("1 inline data entry");
   expect(dialog?.textContent).toContain("will be destroyed");
-  // Bulk delete returned on 1 November 2026 (ADR 0052 decision 14), so the
-  // segment-deletion option — and its ownership check — are offered here now
-  // rather than withheld behind the switch; ticking it asks the check once.
-  const option = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null;
-  expect(option).not.toBeNull();
-  option!.click(); await settle();
   expect(api.checkSegmentOwnership).toHaveBeenCalledOnce();
 });
 
@@ -231,6 +229,8 @@ it("never reports zero inline entries when nothing could answer", async () => {
   await settle();
   const dialog = document.querySelector('[role="alertdialog"][aria-label="Delete manifest"]');
   expect(dialog).not.toBeNull();
+  // The manifest-only deletion, reached by unticking the segments option.
+  dialog!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); await settle();
   expect(dialog?.textContent).toContain("unknown here");
   expect(dialog?.textContent).toContain("destroyed with it");
   expect(dialog?.textContent).not.toContain("Every referenced segment object survives");

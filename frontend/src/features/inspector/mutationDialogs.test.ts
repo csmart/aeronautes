@@ -66,11 +66,16 @@ async function manifest() {
   const request = { bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: false, confirm: "", reviewed: { class: "", fingerprint: "", length: 0, etag: "" } };
   return { ...f, check, done, component, request };
 }
-// The ownership check is asked only when the with-segments option is taken.
+// The with-segments option is ticked once the dialog has read that the
+// container keeps no versions, and the ownership check is asked then (ADR
+// 0120 decision 3); the operator types the name.
 async function arm(f: Awaited<ReturnType<typeof manifest>>) {
-  click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
   f.check.resolve(ownership); await settle();
   input(f.root.querySelector<HTMLInputElement>(".force-confirm")!, "external-dlo");
+}
+// The manifest-only deletion is the operator's own choice: they untick it.
+async function untick(root: HTMLElement) {
+  click(root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
 }
 async function changeView(browser: BrowserState, change: string) {
   if (change === "selection") browser.select(browser.entries.findIndex((row) => row.name === "empty-object"));
@@ -87,7 +92,6 @@ async function changeView(browser: BrowserState, change: string) {
 describe("manifest dialog intent", () => {
   it("uses the captured bookmark, container and name for ownership and one forced submission", async () => {
     const f = await manifest();
-    expect(f.api.checkSegmentOwnership).not.toHaveBeenCalled();
     const reply = deferred<string>();
     f.api.deleteManifestWithSegments = vi.fn(() => reply.promise);
     await arm(f);
@@ -121,7 +125,6 @@ describe("manifest dialog intent", () => {
 
   it.each(["close", "unmount"])("%s retires a pending ownership reply", async (ending) => {
     const f = await manifest();
-    click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
     expect(f.api.checkSegmentOwnership).toHaveBeenCalledOnce();
     if (ending === "close") click(button(f.root, "Cancel"));
     else { await unmount(f.component); mounted.delete(f.component); }
@@ -134,7 +137,7 @@ describe("manifest dialog intent", () => {
     const f = await manifest();
     f.api.deleteManifest = vi.fn().mockRejectedValue(new Error("current failure"));
     f.api.deleteManifestWithSegments = vi.fn().mockRejectedValue(new Error("current failure"));
-    if (mode === "segments") await arm(f);
+    if (mode === "segments") await arm(f); else await untick(f.root);
     const submit = button(f.root, mode === "plain" ? "Delete manifest only" : "Delete manifest + segments");
     click(submit); await settle();
     expect(f.root.textContent).toContain("current failure"); expect(submit.disabled).toBe(false);
@@ -157,7 +160,7 @@ describe("manifest dialog intent", () => {
     const mutate = vi.fn(() => reply.promise);
     f.api.deleteManifestWithSegments = mutate;
     f.api.deleteManifest = vi.fn(async () => { await mutate(); return applied; });
-    if (mode === "segments") await arm(f);
+    if (mode === "segments") await arm(f); else await untick(f.root);
     const submit = button(f.root, mode === "plain" ? "Delete manifest only" : "Delete manifest + segments");
     click(submit); click(submit); expect(mutate).toHaveBeenCalledOnce();
     click(button(f.root, "Cancel"));
@@ -349,7 +352,7 @@ describe("mutation follow-up ownership", () => {
     const f = await manifest(); const reply = deferred<void>();
     f.api.deleteManifest = vi.fn(async () => { await reply.promise; return applied; });
     f.api.deleteManifestWithSegments = vi.fn(async () => { await reply.promise; return segmentJobId; });
-    if (kind === "segments") await arm(f);
+    if (kind === "segments") await arm(f); else await untick(f.root);
     click(button(f.root, kind === "plain" ? "Delete manifest only" : "Delete manifest + segments"));
     click(button(f.root, "Cancel")); await settle();
     const done = vi.fn(); const selection = f.browser.detailIdentity;
@@ -357,6 +360,7 @@ describe("mutation follow-up ownership", () => {
     mounted.add(mount(ManifestDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: done } }));
     flushSync(); reply.resolve(); await settle();
     expect(done).not.toHaveBeenCalled(); expect(f.browser.detailIdentity).toBe(selection);
+    await untick(f.root);
     expect(button(f.root, "Delete manifest only").disabled).toBe(false);
   });
 
