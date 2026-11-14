@@ -117,10 +117,53 @@ it("shows exact source and destination scope, distinguishing spaces from root", 
   expect(source?.textContent).toContain('" source container "');
   expect(source?.textContent).toContain('" source prefix /"');
   expect(destination?.textContent).toContain('"  destination  "');
+  // The source is a folder, so the destination path starts as its name.
+  expect(destination?.textContent).toContain('" source prefix /"');
+  input("folder path/ (optional)", "");
   expect(destination?.textContent).toContain('"" (container root)');
   input("folder path/ (optional)", "   ");
   expect(destination?.textContent).toContain('"   "');
   expect(destination?.textContent).not.toContain("container root");
+});
+
+// Copying a folder copies the folder: the destination path starts as the
+// folder's own name, written exactly as it is, and what is in the field when
+// the copy is previewed is what is sent. Anything that is not a folder
+// starts at the destination's top (0.5.0 test run).
+it.each([
+  ["a folder being browsed", "2026/", "photos/2026/", null],
+  ["a folder at the container's top", "photos/", "photos/", null],
+  ["a folder row selected at the top", "normal/", "", "normal/"],
+  ['the folder named "/"', "/", "/", null],
+  ["a whole container", "", "", null],
+  ["an object selected in a folder", "", "normal/", "normal/hello.txt"],
+])("starts the destination path of %s as %j", async (_what, expected, prefix, selected) => {
+  const api = newFakeApi();
+  const plan = vi.spyOn(api, "planCopy");
+  const browser = new BrowserState(api);
+  const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "https://example.test/auth", username: "fixture:user",
+    storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "test-only");
+  await browser.connect(bookmark.id);
+  await browser.openContainer("fixtures");
+  if (prefix !== "") await browser.goTo(prefix);
+  if (selected !== null) browser.select(browser.entries.findIndex((row) => row.name === selected));
+  dialog = mount(TransferDialog, { target: document.body, props: { browser, onClose: vi.fn() } });
+  flushSync();
+  const field = document.querySelector<HTMLInputElement>('input[aria-label="Destination prefix"]')!;
+  expect(field.value).toBe(expected);
+
+  input("container", "elsewhere");
+  button("Preview").click();
+  await vi.waitFor(() => expect(plan).toHaveBeenCalledOnce());
+  expect(plan.mock.calls[0][0]).toMatchObject({ destContainer: "elsewhere", destPrefix: expected });
+});
+
+it("copies a folder's contents alone when the destination path is cleared", async () => {
+  const f = show();
+  input("folder path/ (optional)", "");
+  button("Preview").click();
+  await vi.waitFor(() => expect(f.plan).toHaveBeenCalledOnce());
+  expect(f.plan.mock.calls[0][0]).toMatchObject({ sourcePrefix: " source prefix /", destPrefix: "" });
 });
 
 it("keeps scope markup as literal text", () => {

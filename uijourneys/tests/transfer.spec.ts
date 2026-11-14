@@ -52,7 +52,17 @@ test.describe.serial("transfer", () => {
     await objectRow(page, segmented).click();
     await expect(inspector(page).getByText(inspectorKind[published], { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Up one level" }).click();
-    await expect(page.getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) })).toBeVisible();
+    const folderRow = page.getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) });
+    await expect(folderRow).toBeVisible();
+
+    // A folder copies as a folder: for the store's own folder row the copy
+    // dialog starts the destination path as the folder's name. Nothing is
+    // sent; the dialog is closed unsent.
+    await folderRow.click();
+    await page.getByRole("button", { name: "Copy folder…" }).click();
+    const copy = page.getByRole("dialog", { name: "Transfer" });
+    await expect(copy.getByLabel("Destination prefix")).toHaveValue(`${basename(folder)}/`);
+    await copy.getByRole("button", { name: "Close" }).first().click();
   });
 
   test("upload it again and confirm the overwrite", async ({ page }, info) => {
