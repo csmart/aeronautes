@@ -2054,7 +2054,14 @@ Because a deletion leaves segments, where they still count against quota, the di
 This application and rclone keep the segments of large objects uploaded to `<container>` in a container named `<container>_segments`; when a container of that name exists, the dialog names it with its listed count and size before the deletion and says the deletion removes nothing from it.
 Once its job has ended it says that container still exists and offers to open it, and after a container deletion it stays open to do so.
 The name is all the dialog knows: it does not say those objects are this container's segments, since other large objects may still use them, and it does not advise deleting that container.
-A later release adds the choice to delete the segments of the large objects in scope with them, under its own record.
+
+**Segments with their objects, when asked (14 November 2026).**
+A prefix deletion, an empty and a container deletion offer "Also delete the segments of large objects" under the preview ([ADR 0119](adr/0119-a-bulk-deletion-may-take-segments.md)).
+It is the explicit force action of §34 and §35 for a scope: it starts unticked, the words to type become the scope followed by ` and segments`, which the backend checks before it admits the job, and it is not offered, and is refused, where the container keeps versions.
+With it, each large object the sweep meets has its graph read at its turn, its manifest deleted first by the reviewed-manifest protocol bound to that graph, and its segments deleted only once that deletion is recorded: a static manifest's whole entries, each compared with the size and entity tag the manifest recorded, or a dynamic manifest's namespace after a complete listing shows no name outside it.
+A large object whose segments those rules cannot bound loses its manifest only, as without the option, and the job records why and ends partial.
+Segments are members of the same job, each requested once, and the container is deleted only when every member, segments included, was deleted.
+Nothing here proves a segment is not shared: the dialog says that an object elsewhere that uses one loses its data.
 rclone is not an Empty Container engine: `Purge` deletes the objects and container, losing its configuration and identity, while `Remove` follows referenced large-object segments (K-DEL-001, ADR 0004).
 The acceptance test compares pre/post container HEAD configuration, not merely the existence of a same-named container.
 
@@ -2079,6 +2086,7 @@ Offer:
 - **Manifest only** — the normal, default action (delete just the manifest object);
 - **Manifest + segments** — an explicit force action with sharing risk disclosed.
   Automatic segment deletion is unavailable because the current workflow cannot establish `ExclusiveOwnershipProof` through deletion (§28.6(b), ADR 0020).
+  The force is offered for one object from Backstage, and for every large object of a prefix or container deletion as that deletion's own option (§33, ADR 0119).
 
 **Implementation note (2026-08-30, review wave):** the shipped code does NOT send `?multipart-manifest=delete` — it would follow whatever manifest occupies the live name at execution time (a proof/delete TOCTOU), so segment deletion is manifest-only DELETE plus native deletion of exactly the proven identities, with a pre-delete manifest re-HEAD that refuses on identity change. The server-native fast path stays desirable once a live exclusivity binding exists (§65.10); until then correctness beats speed. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
 
@@ -2095,7 +2103,7 @@ Normal option:
 Automatic manifest plus segment-prefix cleanup is unavailable under ADR 0020.
 An app-created unique prefix and an ownership row do not exclude outside references or concurrent writers.
 This applies to app-created and external DLOs alike.
-Purging an exact prefix requires the separate explicit Backstage force action with sharing risk disclosed; its remaining P11/P15 gates are not waived.
+Purging an exact prefix requires the separate explicit force action with sharing risk disclosed, from Backstage for one object or as a bulk deletion's option (§33, ADR 0119); its remaining P11/P15 gates are not waived.
 
 A DLO prefix observed from one manifest does **not** prove that no other manifest references it.
 
