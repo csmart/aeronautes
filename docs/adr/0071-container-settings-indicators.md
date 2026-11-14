@@ -26,13 +26,13 @@ K-CON-001 makes a HEAD authoritative at the moment it was made and says nothing 
    The container editor keeps its own check of the value being typed, because the acknowledgement must react before any save; the badges and banners never re-parse a header in the frontend.
 
 2. Three sources, none of them the listing.
-   A settings fact comes from the selection HEAD the inspector already makes, from the detail a successful container edit returns, or from a check the operator starts over the loaded rows (point 5).
+   A settings fact comes from the selection HEAD the inspector already makes, from the detail a successful container edit returns, or from a scan the operator starts over the loaded rows (point 5).
    Listing a page never HEADs a row; §14.2 stands as written.
 
 3. Retention.
    Facts are held in memory per connection generation, keyed by container name, and discarded when the generation changes; a row whose container has no fact under the current generation shows nothing.
    A badge is a positive observation.
-   The absence of a badge means unchecked, never private, and the design makes no claim for an unchecked row.
+   The absence of a badge means not read, never private, and the design makes no claim for a row that has not been read.
 
 4. Presentation.
    A row shows badges after its name in every container mode: `public` in the danger colour for world read, `public + listing` when object names are listable too, `referrer` in the warning colour for referrer grants, `shared write` in the warning colour, and `web`, `versioned`, `quota` and `cors` in the neutral chip style the §24 class chip uses.
@@ -42,16 +42,17 @@ K-CON-001 makes a HEAD authoritative at the moment it was made and says nothing 
    All three come from the one derived fact.
 
 5. Checking the loaded rows on request.
-   The container column offers "Check settings".
+   The container column offers "Scan".
+   It was labelled "Check settings" until 14 November 2026, when the operator renamed it because it reads and does not validate; the words below follow the window as it is now.
    The frontend walks the loaded rows in listing order and asks for each one through the existing `InspectorService.Container` read, the same HEAD selection makes, with at most 4 requests in flight; each reply carries the derived facts under its scope's generation.
    No bridge action is added: a new action is required-set drift under [ADR 0069](0069-preserve-covered-scenario-cells.md) and would need that decision's admission route, which this indicator does not justify when the existing read already returns everything the derivation needs (amended 23 September 2026; the 22 September contract named a batched `ContainerSettings` action).
-   The header shows "checked n of m" while it runs; the operator can stop it, and it stops itself when the scope changes.
-   A HEAD that fails marks that row unchecked with the error in its tooltip and does not stop the sweep.
-   The bound is the rows the operator has loaded, at most 5,000 per page, and nothing is checked that was not listed.
+   The header shows "scanned n of m" while it runs; the operator can stop it, and it stops itself when the scope changes.
+   A HEAD that fails marks that row "not read" with the error in its tooltip and does not stop the sweep.
+   The bound is the rows the operator has loaded, at most 5,000 per page, and nothing is read that was not listed.
 
 6. Freshness.
    Selecting a container refreshes its fact through the inspector HEAD it already makes; a saved edit replaces the fact; nothing refreshes on a timer.
-   When the selection HEAD fails, the open container has no fact: the row stays unchecked with the error in its tooltip, and the working list header shows a neutral notice that the container's settings could not be checked, so the absence of a banner is never silent for the open container.
+   When the selection HEAD fails, the open container has no fact: the row is marked "not read" with the error in its tooltip, and the working list header shows a neutral notice that the container's settings could not be read, so the absence of a banner is never silent for the open container.
    The tooltip's observation time is how the operator judges age.
 
 7. Capability gate.
@@ -65,16 +66,16 @@ The check costs one HEAD per loaded row, one bridge call each, only when the ope
 
 ## Consequences
 
-An operator browsing an account sees a world-readable container marked in the row the moment it has been selected or checked, and the banner follows every successful fact for the open container; a failed selection HEAD leaves the container open with the could-not-check notice instead.
-A container that has never been selected or checked carries no mark, and the column says so only through the check's count, so the design gives no false comfort about the rest of the listing.
-Facts are as fresh as the HEAD that produced them; a container made public by someone else after that HEAD shows the old fact until it is selected or checked again.
+An operator browsing an account sees a world-readable container marked in the row the moment it has been selected or scanned, and the banner follows every successful fact for the open container; a failed selection HEAD leaves the container open with the could-not-read notice instead.
+A container that has never been selected or scanned carries no mark, and the column says so only through the scan's count, so the design gives no false comfort about the rest of the listing.
+Facts are as fresh as the HEAD that produced them; a container made public by someone else after that HEAD shows the old fact until it is selected or scanned again.
 
 ## Maintained proof
 
 - Derivation tests over the ACL forms: `.r:*` (world read), `.r:*,.rlistings` (world read and listing), ` .r:* , .rlistings ` with spaces (the same), `.r:.example.com` and `.r:*.example.com` (referrer grant, no world read), `.r:-.example.com` (no badge at all), `.r:-.example.com,.r:*` (world read only), `.r:*x` and a bare `.r:` (no badge), `account:user` (no badge; a write ACL of the same form is shared write), and empty; static web from either web listing or web index metadata; each versioning mode; byte and object quotas; CORS presence.
-- Frontend tests: a badge per fact and none for an unobserved row; the banner for a world-readable open container and its listing variant; the could-not-check notice when the selection HEAD fails; badges gone after a generation change; the check's count, stop and scope-change stop; a failed HEAD in the check leaves the row unchecked.
+- Frontend tests: a badge per fact and none for an unobserved row; the banner for a world-readable open container and its listing variant; the could-not-read notice when the selection HEAD fails; badges gone after a generation change; the scan's count, stop and scope-change stop; a failed HEAD in the scan leaves the row marked "not read".
 - System tests on both fixtures: seed one container per setting; list the account and prove from the fixture's request log that no container was HEADed; select one and see its badges and banner; run the check and see every seeded badge; switch account and see none; save a world-read ACL with the acknowledgement and see the badge from the returned detail.
-- Compiled mutants must be caught: a predicate that accepts `.r:*x` or a bare `.r:`; a referrer badge for a `.r:-` denial; a cache that survives a generation change; a check that HEADs names outside the loaded rows or continues after stop; a banner keyed to a stale container name; a failed selection HEAD that shows no notice.
+- Compiled mutants must be caught: a predicate that accepts `.r:*x` or a bare `.r:`; a referrer badge for a `.r:-` denial; a cache that survives a generation change; a scan that HEADs names outside the loaded rows or continues after stop; a banner keyed to a stale container name; a failed selection HEAD that shows no notice.
 
 ## Open points for the operator
 

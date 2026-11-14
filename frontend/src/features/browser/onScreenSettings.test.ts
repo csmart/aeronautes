@@ -120,7 +120,7 @@ it("reads a row once, does not repeat a failure, and waits for a check", async (
   await f.answer(0);
   f.replies[1].reply.reject(new Error("HEAD refused"));
   await settle();
-  expect(f.row("fails").textContent).toContain("unchecked");
+  expect(f.row("fails").textContent).toContain("not read");
   for (const name of ["once", "fails"]) {
     f.show(name, false);
     f.show(name);

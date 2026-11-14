@@ -89,13 +89,13 @@ describe("container settings badges", () => {
   it("checks every loaded row on request, counts as it goes, and leaves a failed HEAD unchecked with its reason", async () => {
     await connectFixture();
     fakeContainerDetailFailures.add(".file-segments");
-    click(get('[title="HEAD every loaded container once to show its access and feature settings"]'));
+    click(get('[aria-label="Scan containers"]'));
     await settle();
-    expect(get(".check-status").textContent).toContain("checked 6 of 6");
+    expect(get(".check-status").textContent).toContain("scanned 6 of 6");
     expect(badges("fixtures")).toEqual(["public + listing"]);
     expect(badges("photos_segments")).toEqual(["shared write"]);
     const unchecked = get(".setting-badge.muted", row(".file-segments"));
-    expect(unchecked.textContent).toBe("unchecked");
+    expect(unchecked.textContent).toBe("not read");
     expect(unchecked.title).toContain("HEAD of .file-segments refused by the fixture");
     // A denial is never a badge.
     expect(badges("photos_segments")).not.toContain("referrer");
@@ -106,7 +106,7 @@ describe("container settings badges", () => {
     fakeContainerDetailFailures.add("fixtures");
     click(row("fixtures")); await settle();
     expect(document.querySelector(".public-banner")).toBeNull();
-    expect(get(".settings-notice").textContent).toContain("could not be checked: HEAD of fixtures refused by the fixture");
+    expect(get(".settings-notice").textContent).toContain("could not be read: HEAD of fixtures refused by the fixture");
     expect(badges("fixtures")).toEqual([]);
   }, 20_000);
 
@@ -124,10 +124,10 @@ describe("container settings badges", () => {
     expect(document.querySelector(".public-banner")).toBeNull();
     // ADR 0075: the detail body is refused with the fact, not shown beside it.
     expect(get(".settings-notice").textContent).toContain("does not match this connection");
-    click(get('[title="HEAD every loaded container once to show its access and feature settings"]'));
+    click(get('[aria-label="Scan containers"]'));
     await settle();
-    // The only mark is the muted "unchecked" with the reason; no fact badge.
-    expect(badges("fixtures")).toEqual(["unchecked"]);
+    // The only mark is the muted "not read" with the reason; no fact badge.
+    expect(badges("fixtures")).toEqual(["not read"]);
     expect(get(".setting-badge.muted", row("fixtures")).title).toContain("connection generation");
   }, 20_000);
 

@@ -94,7 +94,7 @@
       </div>
     {:else if browser.containerName && browser.containerDetailError}
       <div class="settings-notice" role="status">
-        Settings of <span class="type-mono">{browser.containerName}</span> could not be checked: {browser.containerDetailError}
+        Settings of <span class="type-mono">{browser.containerName}</span> could not be read: {browser.containerDetailError}
       </div>
     {/if}
     {#if browser.backstageFrom}
