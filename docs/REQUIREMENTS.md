@@ -114,7 +114,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   MUST NOT be hidden or destructively classified from its name alone. (§58, §60 Phase 2 gate)
 - **K-SEG-003** — Automatic SLO segment deletion requires exclusive authority through deletion for every referenced segment, including nested and ranged segments.
   The current workflow provides no automatic path; manifest plus segments is an explicit force action with the sharing risk disclosed and a typed confirmation.
-  It is offered for one object from Backstage (ADR 0095 decision 8), and for the large objects of a prefix or container deletion as that deletion's option, which starts unticked, is typed by name and is refused where the container keeps versions (ADR 0119).
+  It is offered for one object from Backstage (ADR 0095 decision 8), and for the large objects of a prefix or container deletion as that deletion's option (ADR 0119).
+  By the operator's decision of 15 November 2026 each starts ticked, except the bulk option in a container that is or may be another container's archive; each is typed by name, and each is refused where the container keeps versions, because a kept version still names its segments (ADR 0120).
   The bulk option deletes only what each manifest names when its turn comes, a static entry compared with the size and entity tag its manifest recorded and a dynamic namespace bounded as ADR 0044 bounds it, and leaves the segments of a large object it cannot bound.
   `?multipart-manifest=delete` deletes shared segments too. (§34, ADR 0020)
 - **K-DEL-001** — Empty Container MUST preserve the container and its configuration, and MUST NOT use
