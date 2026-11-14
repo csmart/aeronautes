@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -290,9 +291,12 @@ func TestSweepWithSegmentsLeavesSegmentsWhenTheManifestIsNotDeleted(t *testing.T
 		manifestGone bool
 	}{
 		"the graph changed after it was read": {func(h *harness) {
-			var swapped atomic.Bool
-			h.mock.AfterRequest = func(method, path string) {
-				if method == "GET" && strings.Contains(path, "/media/scope/big.slo") && swapped.CompareAndSwap(false, true) {
+			// The first GET of the manifest names its segments; the second is
+			// the manifest protocol's own read, and the swap lands before the
+			// store serves it.
+			var reads atomic.Int32
+			h.mock.BeforeRequest = func(method, path string) {
+				if method == "GET" && strings.HasSuffix(path, "/media/scope/big.slo") && reads.Add(1) == 2 {
 					putSLO(h, "media", "scope/big.slo", "media_segments", "other/keep=unrelated!")
 				}
 			}
@@ -308,7 +312,7 @@ func TestSweepWithSegmentsLeavesSegmentsWhenTheManifestIsNotDeleted(t *testing.T
 				t.Fatal(err)
 			}
 			job := awaitTerminal(t, h, jobID)
-			h.mock.AfterRequest = nil
+			h.mock.BeforeRequest = nil
 			if job.State != tc.state {
 				t.Fatalf("job = %+v, want %s", job, tc.state)
 			}
@@ -373,20 +377,65 @@ func TestSweepWithSegmentsRequestsASharedSegmentOnce(t *testing.T) {
 	if err != nil || totals.Admitted != 10 || totals.Deleted != 10 {
 		t.Fatalf("totals = %+v, %v; want each of the ten objects admitted and deleted once", totals, err)
 	}
+}
 
-	// A dynamic large object whose namespace is the scope itself: its
-	// segments are the scope's rows, deleted once as such, and nothing is left.
-	seedObject(h.mock, "same", "dyn/0001", "seg", nil)
+// ADR 0119 decision 4: a dynamic large object whose namespace is the scope
+// itself has its segments deleted as the scope's rows, each once, with no
+// second sweep and nothing recorded as left. Its identity is made from those
+// rows, so deleting them while the manifest is being compared would make the
+// job refuse its own manifest as changed; the sweep lets the members in
+// flight settle before it handles such a manifest. The store here holds each
+// segment's DELETE until the manifest's baseline has been read, and the
+// manifest's comparison until the segments are gone, each for a bounded
+// time: a sweep that did not wait would compare the manifest across its own
+// deletions and leave it.
+func TestSweepWithSegmentsSettlesItsOwnDeletionsBeforeAManifestMadeOfThem(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	segments := []string{"dyn/0001", "dyn/0002", "dyn/0003"}
+	for _, segment := range segments {
+		seedObject(h.mock, "same", segment, "seg", nil)
+	}
 	h.mock.PutObject("same", "dyn/c.dlo", swifttest.Object{Manifest: "same/dyn"})
-	jobID, err = service.StartDelete(ctx, withSegments(bookmark, "same", "dyn/", ModePrefix))
+	var manifestHeads, segmentsGone atomic.Int32
+	hold := func(until func() bool) {
+		for range 100 {
+			if until() {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	h.mock.BeforeRequest = func(method, path string) {
+		switch {
+		case method == "HEAD" && strings.HasSuffix(path, "/same/dyn/c.dlo"):
+			// The first HEAD classifies the row, the second is its baseline
+			// and the third its comparison.
+			if manifestHeads.Add(1) == 3 {
+				hold(func() bool { return segmentsGone.Load() == int32(len(segments)) })
+			}
+		case method == "DELETE" && strings.Contains(path, "/same/dyn/000"):
+			hold(func() bool { return manifestHeads.Load() >= 2 })
+		}
+	}
+	h.mock.AfterRequest = func(method, path string) {
+		if method == "DELETE" && strings.Contains(path, "/same/dyn/000") {
+			segmentsGone.Add(1)
+		}
+	}
+	jobID, err := service.StartDelete(ctx, withSegments(bookmark, "same", "dyn/", ModePrefix))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job := awaitTerminal(t, h, jobID); job.State != "complete" || job.Counters.ObjectsDeleted != 2 {
+	job := awaitTerminal(t, h, jobID)
+	h.mock.BeforeRequest, h.mock.AfterRequest = nil, nil
+	if job.State != "complete" || job.Counters.ObjectsDeleted != 4 {
 		t.Fatalf("job = %+v", job)
 	}
-	if deletesOf(h, "same", "dyn/0001") != 1 || deletesOf(h, "same", "dyn/c.dlo") != 1 {
-		t.Fatal("the scope's rows were not each requested once")
+	for _, name := range append(segments, "dyn/c.dlo") {
+		if deletes := deletesOf(h, "same", name); deletes != 1 {
+			t.Fatalf("same/%s: %d DELETEs, want one", name, deletes)
+		}
 	}
 	if left := leftEvents(t, h, bookmark); len(left) != 0 {
 		t.Fatalf("segments reported left: %v", left)
@@ -436,17 +485,18 @@ func TestSweepWithSegmentsKeepsTheContainerWhenASegmentWasNotDeleted(t *testing.
 	}
 }
 
-// ADR 0119 decision 6 with ADR 0095 decision 3: a cancellation after a
-// manifest's deletion lands between members, so its segments are settled as
-// not attempted and the job is partial.
+// ADR 0119 decision 6 with ADR 0095 decision 3: a cancellation lands between
+// members. The job is cancelled while the store holds the manifest's DELETE,
+// so the manifest, already issued, finishes whole, and its segments are
+// settled as not attempted; the job is partial.
 func TestSweepWithSegmentsCancelledAfterTheManifest(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	putSLO(h, "media", "scope/big.slo", "media_segments", "scope/big.slo/0001=0123456789", "scope/big.slo/0002=abcdefghij")
 	ready := make(chan string, 1)
 	var cancelled atomic.Bool
-	h.mock.AfterRequest = func(method, path string) {
-		if method == "DELETE" && strings.Contains(path, "/media/scope/big.slo") && cancelled.CompareAndSwap(false, true) {
+	h.mock.BeforeRequest = func(method, path string) {
+		if method == "DELETE" && strings.HasSuffix(path, "/media/scope/big.slo") && cancelled.CompareAndSwap(false, true) {
 			if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
 				t.Error(err)
 			}
@@ -458,11 +508,14 @@ func TestSweepWithSegmentsCancelledAfterTheManifest(t *testing.T) {
 	}
 	ready <- jobID
 	job := awaitTerminal(t, h, jobID)
-	h.mock.AfterRequest = nil
+	h.mock.BeforeRequest = nil
 	if job.State != "partial" {
 		t.Fatalf("job = %+v", job)
 	}
 	items := itemsOf(t, h, jobID)
+	if manifest := items["media/scope/big.slo"]; manifest.Execution == nil || manifest.Execution.Result != jobs.ItemDeleted {
+		t.Fatalf("manifest item = %+v, want it finished whole and deleted", manifest)
+	}
 	for _, segment := range []string{"scope/big.slo/0001", "scope/big.slo/0002"} {
 		if item := items["media_segments/"+segment]; item.Execution == nil || item.Execution.Result != jobs.ItemNotAttempted {
 			t.Fatalf("segment %s: item = %+v, want not attempted", segment, item)
