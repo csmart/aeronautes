@@ -4000,6 +4000,14 @@ regression test in the same commit):
    scratch-area refusal does not apply; a member whose destination name is itself a member is
    refused before any job row or listing, which also refuses a destination equal to the source
    folder, and a member named exactly the source prefix is refused by name rather than skipped.
+   Amended 14 November 2026 (operator, 0.5.0 test run): the copy dialog starts a folder's
+   destination path as the folder's own name, so a folder copies as a folder, as a folder
+   upload does ([ADR 0103](adr/0103-directory-upload.md)). The path started empty, which put
+   the folder's contents at the top of the destination without its name. The path is still
+   the operator's to change, and an empty one copies the contents alone. Only the dialog's
+   starting value changed: the request, the plan and the rules above are as they were, so a
+   folder at a container's top copied to that container under its own name is refused as
+   equal to its source.
 10. **Mirror deletes only fresh members** (H-06) — each delete chunk re-checks
     source absence immediately before deletion; any successful delete followed by
     failure/cancel yields Partial with exact accounting.

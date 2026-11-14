@@ -6,6 +6,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { CopyPlanDTO, CopyRequestDTO, DestinationMissingDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
+  import { parentPrefix } from "../../lib/listing";
   import { v1Offers } from "../../lib/v1.svelte";
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
@@ -21,7 +22,19 @@
   // svelte-ignore state_referenced_locally
   let jobSettings = $state(newJobSettings(browser.settings.document?.defaultProfile ?? "auto"));
   let destContainer = $state("");
-  let destPrefix = $state("");
+  // Copying a folder copies the folder: the destination path starts as the
+  // folder's own name, so the objects keep that name in front of them, as a
+  // folder upload does (ADR 0103). It was empty, which put the folder's
+  // contents at the top of the destination and dropped its name (0.5.0 test
+  // run). Clearing the field still copies the contents alone.
+  // svelte-ignore state_referenced_locally
+  let destPrefix = $state(ownFolderName(browser.transferSource.kind === "folder" ? browser.transferSource.prefix : ""));
+
+  // The folder's own name is what follows its parent prefix, kept exactly
+  // as it is written: "a/b/" is "b/", and the folder named "/" is "/".
+  function ownFolderName(prefix: string): string {
+    return prefix.slice(parentPrefix(prefix).length);
+  }
   // The destination account's container names, offered as the operator
   // types; they only suggest, and any name can still be typed (ADR 0115).
   const uid = $props.id();
