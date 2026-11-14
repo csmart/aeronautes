@@ -5,9 +5,9 @@ import { fakeContainerDetailFailures, fakeContainerSeeds, newFakeApi } from "./f
 import BrowserScreen from "./BrowserScreen.svelte";
 
 // ADR 0071: a container's settings are facts one HEAD reported. They appear
-// as row badges once the container has been selected, checked or edited,
+// as row badges once the container has been selected, scanned or edited,
 // never from listing; a world-readable open container gets a banner; a
-// failed HEAD leaves the row unchecked with the reason; and facts do not
+// failed HEAD leaves the row marked not read with the reason; and facts do not
 // outlive the connection generation they were observed under.
 
 const api = vi.hoisted(() => ({} as Api));
@@ -68,7 +68,7 @@ async function connectFixture() {
 }
 
 describe("container settings badges", () => {
-  it("shows nothing for an unchecked row and the facts once the container is selected", async () => {
+  it("shows nothing for a row that has not been read and the facts once the container is selected", async () => {
     await connectFixture();
     expect(badges("fixtures")).toEqual([]);
     expect(document.querySelector(".public-banner")).toBeNull();
@@ -86,7 +86,7 @@ describe("container settings badges", () => {
     expect(badges("fixtures")).toEqual(["public + listing"]);
   }, 20_000);
 
-  it("checks every loaded row on request, counts as it goes, and leaves a failed HEAD unchecked with its reason", async () => {
+  it("scans every loaded row on request, counts as it goes, and marks a failed HEAD not read with its reason", async () => {
     await connectFixture();
     fakeContainerDetailFailures.add(".file-segments");
     click(get('[aria-label="Scan containers"]'));
@@ -101,7 +101,26 @@ describe("container settings badges", () => {
     expect(badges("photos_segments")).not.toContain("referrer");
   }, 20_000);
 
-  it("shows why the open container could not be checked instead of staying silent", async () => {
+  it("stops a scan when asked, counts no further and offers the scan again", async () => {
+    await connectFixture();
+    // Every read is held, so the scan is still going when it is stopped.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const detail = api.containerDetail;
+    api.containerDetail = async (...args) => { await held; return detail(...args); };
+    click(get('[aria-label="Scan containers"]')); await settle();
+    expect(get(".check-status").textContent?.trim()).toBe("scanned 0 of 6…");
+    click(get('[aria-label="Stop the scan"]')); await settle();
+    expect(get(".check-status").textContent?.trim()).toBe("scanned 0 of 6 (stopped)");
+    // Replies that arrive after the stop are not counted or shown.
+    release(); await settle();
+    expect(get(".check-status").textContent?.trim()).toBe("scanned 0 of 6 (stopped)");
+    expect(badges("fixtures")).toEqual([]);
+    expect(document.querySelector('[aria-label="Stop the scan"]')).toBeNull();
+    expect(get('[aria-label="Scan containers"]')).not.toBeNull();
+  }, 20_000);
+
+  it("shows why the open container's settings could not be read instead of staying silent", async () => {
     await connectFixture();
     fakeContainerDetailFailures.add("fixtures");
     click(row("fixtures")); await settle();

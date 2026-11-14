@@ -52,6 +52,24 @@ test("refresh the container list after a change made elsewhere", async ({ page }
   await refreshUntilListed(page, row);
 });
 
+// The column's Scan reads every loaded container's settings, one request
+// each. In the All view every loaded container has a row, so the count the
+// scan reaches is compared with the rows, and no row may be left marked as
+// not read.
+test("scan every container in the All view", async ({ page }, info) => {
+  await ownContainer(info.project.name, "ui-scan");
+  await connect(page, info.project.name);
+  await page.getByRole("tab", { name: "All" }).click();
+  const rows = page.getByRole("tabpanel").getByRole("button", { name: / objects$/ });
+  await expect(rows.first()).toBeVisible();
+  await page.getByRole("button", { name: "Scan containers" }).click();
+  const done = page.getByRole("status").filter({ hasText: /^\s*scanned (\d+) of \1\s*$/ });
+  await expect(done).toBeVisible({ timeout: 2 * 60 * 1000 });
+  const scanned = Number(/scanned (\d+)/.exec((await done.textContent())!)![1]);
+  expect(scanned, "the scan counted every listed container").toBe(await rows.count());
+  await expect(page.getByText("not read", { exact: true })).toHaveCount(0);
+});
+
 // A store's container listing can lag a create, so what the create should
 // have listed is looked for across refreshes.
 async function refreshUntilListed(page: Page, listed: Locator) {
