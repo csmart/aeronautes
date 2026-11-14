@@ -2051,13 +2051,18 @@ Execution may use:
 Both are **manifest-only by construction** (§28.6a) and MUST NOT follow DLO/SLO segments into other containers.
 Automatic segment reclamation is unavailable under ADR 0020; explicit force cleanup is a separate action.
 Because a deletion leaves segments, where they still count against quota, the dialog points to where they usually are (0.5.0 test run, 14 November 2026).
-This application and rclone keep the segments of large objects uploaded to `<container>` in a container named `<container>_segments`; when a container of that name exists, the dialog names it with its listed count and size before the deletion and says the deletion removes nothing from it.
+This application and rclone keep the segments of large objects uploaded to `<container>` in a container named `<container>_segments`; when a container of that name exists, the dialog names it with its listed count and size before the deletion and, once a preview has counted the large objects in scope, says whether the deletion takes anything from it.
 Once its job has ended it says that container still exists and offers to open it, and after a container deletion it stays open to do so.
 The name is all the dialog knows: it does not say those objects are this container's segments, since other large objects may still use them, and it does not advise deleting that container.
 
 **Segments with their objects, when asked (14 November 2026).**
 A prefix deletion, an empty and a container deletion offer "Also delete the segments of large objects" under the preview ([ADR 0119](adr/0119-a-bulk-deletion-may-take-segments.md)).
-It is the explicit force action of §34 and §35 for a scope: it starts unticked, the words to type become the scope followed by ` and segments`, which the backend checks before it admits the job, and it is not offered, and is refused, where the container keeps versions.
+It is the explicit force action of §34 and §35 for a scope: with it the words to type are the scope followed by ` and segments`, which the backend checks before it admits the job, and it is not offered, and is refused, where the container keeps versions.
+By the operator's decision of 15 November 2026 it starts ticked ([ADR 0120](adr/0120-segments-go-by-default-and-versions-keep-them.md)), so the words name the segments from the start and unticking returns them to the plain scope.
+It starts unticked in a container that is, or may be, another container's archive, because an archived version and the object it came from can name the same segments.
+The one-object deletion's option starts ticked on the same decision and is refused in the same containers: under a history location the store keeps a deleted manifest in the archive as a manifest, which can be read only while its segments exist.
+A container that keeps versions is deleted without its segments, and its archive is another container, deleted by a deletion of its own, which takes the archived versions and, with the option, their segments.
+A dynamic manifest's length and entity tag are made from its segments, so with the option the sweep lets the members it has in flight settle before every dynamic manifest and reads it again after they have: another manifest of the same job can name the same segments, as the published and the staged manifest of one upload do in a history archive.
 With it, each large object the sweep meets has its graph read at its turn, its manifest deleted first by the reviewed-manifest protocol bound to that graph, and its segments deleted only once that deletion is recorded: a static manifest's whole entries, each compared with the size and entity tag the manifest recorded, or a dynamic manifest's namespace after a complete listing shows no name outside it.
 A large object whose segments those rules cannot bound loses its manifest only, as without the option, and the job records why and ends partial.
 Segments are members of the same job, each requested once, and the container is deleted only when every member, segments included, was deleted.
@@ -2086,7 +2091,7 @@ Offer:
 - **Manifest only** — the normal, default action (delete just the manifest object);
 - **Manifest + segments** — an explicit force action with sharing risk disclosed.
   Automatic segment deletion is unavailable because the current workflow cannot establish `ExclusiveOwnershipProof` through deletion (§28.6(b), ADR 0020).
-  The force is offered for one object from Backstage, and for every large object of a prefix or container deletion as that deletion's own option (§33, ADR 0119).
+  The force is offered for one object from Backstage, and for every large object of a prefix or container deletion as that deletion's own option (§33, ADR 0119); each starts ticked and neither is offered where the container keeps versions (ADR 0120).
 
 **Implementation note (2026-08-30, review wave):** the shipped code does NOT send `?multipart-manifest=delete` — it would follow whatever manifest occupies the live name at execution time (a proof/delete TOCTOU), so segment deletion is manifest-only DELETE plus native deletion of exactly the proven identities, with a pre-delete manifest re-HEAD that refuses on identity change. The server-native fast path stays desirable once a live exclusivity binding exists (§65.10); until then correctness beats speed. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
 
