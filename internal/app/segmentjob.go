@@ -68,21 +68,13 @@ func (j *segmentJob) run(ctx context.Context) {
 	// Phase 1: the manifest member, bound to the reviewed graph. Its baseline
 	// is the identity the operator reviewed, so a conflict keeps the expected
 	// and observed identities (ADR 0095 decision 8).
-	if err := j.s.jobs.MarkIssued(background, j.jobID, j.manifestKey()); err != nil {
-		j.lost(background, fmt.Sprintf("the manifest's issued mark could not be written: %v", err))
-		return
-	}
-	result, err := j.session.DeleteReviewedManifest(background, j.container, j.name, toReviewedManifest(j.reviewed))
-	observation, successor, _ := selectedMemberOutcome(result, err)
-	manifestBaseline := &jobs.MemberBaseline{Class: j.reviewed.Class, Length: j.reviewed.Length, ETag: j.reviewed.ETag}
-	if observation.Result == jobs.ItemNotAttempted {
-		manifestBaseline = nil
-	}
-	if recErr := j.s.jobs.RecordDeletion(background, j.jobID, j.manifestKey(), observation, successor, manifestBaseline); recErr != nil {
-		// Boundary one: the manifest's own outcome could not be recorded after
-		// its DELETE. Only the issued mark survives, the manifest is unresolved
-		// on reopen, and no segment is attempted (ADR 0095 decision 8).
-		j.lost(background, fmt.Sprintf("the manifest's outcome could not be recorded after its request: %v", recErr))
+	observation, lost := j.s.deleteReviewedMember(background, j.session, j.jobID, j.container, j.name, j.reviewed)
+	if lost != "" {
+		// Boundary one, when it is the outcome that was lost: the manifest's
+		// own outcome could not be recorded after its DELETE. Only the issued
+		// mark survives, the manifest is unresolved on reopen, and no segment
+		// is attempted (ADR 0095 decision 8).
+		j.lost(background, lost)
 		return
 	}
 	if observation.Result != jobs.ItemDeleted {

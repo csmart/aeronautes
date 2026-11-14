@@ -4,8 +4,10 @@
 /**
  * DeleteService is the destructive-jobs surface (ADR 0011, §31–§33):
  * preview → typed confirmation → native execution as a §46 job. All
- * engines are Aeronautes-native and manifest-only; the confirmation is
- * validated in Go against the exact scope, never trusted from the UI.
+ * engines are Aeronautes-native and manifest-only, unless the request is
+ * the operator's explicit force that takes segments too (ADR 0119); the
+ * confirmation is validated in Go against the exact scope, never trusted
+ * from the UI.
  * @module
  */
 

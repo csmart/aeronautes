@@ -13,12 +13,13 @@ import (
 )
 
 // The §34/§35 segment-cleanup half of DeleteService: manifest-only stays
-// the default everywhere. Manifest+segments ALWAYS requires the
-// deliberate Backstage flow (force + typed confirmation) — ownership
-// evidence is advisory context in the dialog and never auto-authorizes
-// destruction, because no live reverse-reference scan exists yet to
-// prove exclusivity (review R-02). The honest §34 warning stands:
-// sharing cannot be disproved from one manifest.
+// the default everywhere. Manifest+segments ALWAYS requires a deliberate
+// force with a typed confirmation, here for one object from Backstage
+// and in sweepsegments.go as a bulk deletion's option (ADR 0119) —
+// ownership evidence is advisory context in the dialog and never
+// auto-authorizes destruction, because no live reverse-reference scan
+// exists yet to prove exclusivity (review R-02). The honest §34 warning
+// stands: sharing cannot be disproved from one manifest.
 
 // SegmentsDeleteRequestDTO names one manifest and the operator's intent.
 type SegmentsDeleteRequestDTO struct {

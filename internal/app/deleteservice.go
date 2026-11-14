@@ -16,8 +16,10 @@ import (
 
 // DeleteService is the destructive-jobs surface (ADR 0011, §31–§33):
 // preview → typed confirmation → native execution as a §46 job. All
-// engines are Aeronautes-native and manifest-only; the confirmation is
-// validated in Go against the exact scope, never trusted from the UI.
+// engines are Aeronautes-native and manifest-only, unless the request is
+// the operator's explicit force that takes segments too (ADR 0119); the
+// confirmation is validated in Go against the exact scope, never trusted
+// from the UI.
 type DeleteService struct {
 	connections *Connections
 	jobs        *jobs.Store
@@ -55,6 +57,11 @@ type DeleteRequestDTO struct {
 	// Confirm must equal deleteConfirmation's text (typed confirmation,
 	// §28.2); checked at Start, not Preview.
 	Confirm string `json:"confirm"`
+	// Segments asks that each large object in the scope lose its segments
+	// too, after its manifest (ADR 0119). It is the operator's explicit force
+	// for this one job: the confirmation names it, and without it the
+	// deletion is manifest-only as before.
+	Segments bool `json:"segments"`
 }
 
 // DeletePreviewDTO is the §32 optional count/preview step.
@@ -62,8 +69,8 @@ type DeletePreviewDTO struct {
 	Objects int64 `json:"objects"`
 	Bytes   int64 `json:"bytes"`
 	// PossibleManifests counts SLO-listed and zero-byte rows: deletion
-	// is manifest-only, so their segments (if any) will remain as
-	// recoverable orphans unless separately owned and cleaned.
+	// is manifest-only unless the request takes segments, so their
+	// segments (if any) will otherwise remain as recoverable orphans.
 	PossibleManifests int64 `json:"possibleManifests"`
 	// LaterBaselineRows is how many rows take a HEAD of their own before
 	// their comparison, the zero-byte and SLO-listed ones, and RequestCost
@@ -109,12 +116,18 @@ func (s *DeleteService) validate(req DeleteRequestDTO) error {
 // deleteConfirmation is what the operator types to arm a deletion (ADR 0095
 // decision 7). For a prefix it is the scope as the dialog shows it, because
 // typing only the container name would not show which prefix the operator
-// read; for the container modes the container is the whole scope.
+// read; for the container modes the container is the whole scope. A deletion
+// that takes segments is armed by other words than one that does not, so a
+// confirmation typed for either never starts the other (ADR 0119 decision 2).
 func deleteConfirmation(req DeleteRequestDTO) string {
+	scope := req.Container
 	if req.Mode == ModePrefix {
-		return req.Container + "/" + req.Prefix
+		scope = req.Container + "/" + req.Prefix
 	}
-	return req.Container
+	if req.Segments {
+		return scope + " and segments"
+	}
+	return scope
 }
 
 // PreviewDelete counts the scope (a full listing pass — §28.3's honest
@@ -209,6 +222,11 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	if _, err := session.FetchCapabilities(ctx); err != nil {
 		return "", err
 	}
+	if req.Segments {
+		if err := refuseSegmentsWhereVersionsAreKept(ctx, session, req.Container); err != nil {
+			return "", err
+		}
+	}
 	// A sweep deletes every row it lists, and another job's stage is ordinary
 	// rows, so the sweep claims what it will list and is refused while a
 	// transfer is staging inside it (ADR 0105 decision 3).
@@ -224,8 +242,8 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 		// §32/§45: the strategy and the postcondition are the job's effective
 		// configuration, never a silent shortcut. They are part of the row
 		// from its creation, so a destructive job cannot exist without them.
-		Settings: fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d}`,
-			sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers),
+		Settings: fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d,"segments":%t}`,
+			sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers, req.Segments),
 	})
 	if err != nil {
 		return "", err
@@ -234,7 +252,7 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	s.runner.record(ctx, req.BookmarkID, "delete."+string(req.Mode)+".start",
 		req.Container+"/"+req.Prefix, "job "+job.ID, audit.ResultApplied)
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runSweepJob(runCtx, job.ID, req, session)
+		s.runSweepJob(runCtx, job.ID, req, session, owner)
 	}, func(background context.Context) {
 		// Cancelled before it ran: nothing was listed, admitted or issued.
 		s.finishSweep(background, job.ID, req, jobs.StateCancelled, "", 0)
@@ -246,7 +264,7 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 // the terminal state from the members and the postcondition, then the mode's
 // own step (ADR 0095 decisions 5 and 6). A lost record leaves the job open
 // with its status unavailable, as the selected set's does.
-func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session) {
+func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session, owner *jobOwner) {
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
@@ -268,7 +286,8 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		}
 		before = detail
 	}
-	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: req.BookmarkID, container: req.Container, prefix: req.Prefix, session: session}
+	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: req.BookmarkID, container: req.Container, prefix: req.Prefix, session: session,
+		segments: req.Segments, owner: owner}
 	sweep.run(ctx)
 	lost := sweep.lostReason()
 	if lost == "" {
@@ -285,6 +304,17 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		return
 	}
 	state, reason := s.sweepEnd(background, jobID, req, session, sweep)
+	// A job asked for segments that left some has not done all it was asked,
+	// so it is partial and, in the delete-container mode, leaves the
+	// container standing (ADR 0119 decision 7).
+	if left := sweep.segmentsLeft(); left != "" && (state == jobs.StateComplete || state == jobs.StatePartial) {
+		state = jobs.StatePartial
+		if reason == "" {
+			reason = left
+		} else {
+			reason += "; " + left
+		}
+	}
 	// Emptying a container compares its configuration before and after
 	// whenever the sweep reached a terminal with an effect, complete or
 	// partial, so a change an external writer made during a partial sweep is

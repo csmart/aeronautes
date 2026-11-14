@@ -548,7 +548,7 @@ describe("refreshing the open listing", () => {
       await s.openContainer("fixtures");
       const objects = vi.spyOn(api, "objects");
       const containers = vi.spyOn(api, "containers");
-      await s.startDelete({ bookmarkId: s.connectedBookmarkId!, container: "fixtures", prefix: "", mode: mode as DeleteRequestDTO["mode"], confirm: "fixtures" });
+      await s.startDelete({ bookmarkId: s.connectedBookmarkId!, container: "fixtures", prefix: "", mode: mode as DeleteRequestDTO["mode"], confirm: "fixtures", segments: false });
       const read = api.job.bind(api);
       vi.spyOn(api, "job").mockImplementation(async (id, bookmark) => {
         const job = await read(id, bookmark);
