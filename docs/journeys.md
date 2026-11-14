@@ -80,7 +80,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Containers | the list read again when the window is focused | not journeyed: a browser cannot show what the desktop window does; test plan step 19k | |
 | Containers | create a container | find a container named like a segment store behind its heading | its row is listed |
 | Containers | the closed "Possible backstage" group and the segment-store caution | find a container named like a segment store behind its heading | the row is absent until the group is opened; the caution is read above the listing and in the delete dialog |
-| Containers | the All and Backstage modes; load more containers; "Check settings" and the settings badges | not yet | |
+| Containers | the All and Backstage modes; load more containers; "Scan" and the settings badges | not yet | |
 | Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
 | Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
 | Listing | load more objects; the filter; "Find in container"; "Count objects"; marker folders | not yet | |

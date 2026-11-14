@@ -40,7 +40,7 @@ it("shows remembered settings muted and never as the banner", async () => {
   const badge = () => column.querySelector<HTMLElement>(".container-row .setting-badge");
   expect(badge()?.textContent).toBe("public");
   expect(badge()?.classList.contains("muted")).toBe(true);
-  expect(badge()?.title).toContain("last seen 2026-11-01T00:00:00Z, not checked under this connection");
+  expect(badge()?.title).toContain("last seen 2026-11-01T00:00:00Z, not read under this connection");
 
   browser.containerName = "seen";
   const list = document.createElement("div");

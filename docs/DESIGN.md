@@ -2701,8 +2701,10 @@ Choose the SQLite driver with the six-target build matrix (§61.0) in mind: a pu
 
 ## 52. UI detail: container modes
 
-In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, checked, edited or kept on screen: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a current fact shows the settings last seen for it, muted and dated, if any were recorded ([ADR 0110](adr/0110-switching-and-container-settings-on-screen.md)); a row without a badge is unchecked, not private; the listing call itself never HEADs a row, and the column reads only the rows kept on screen (§14.2).
-The column's "Check settings" control HEADs every loaded row once, four in flight, with a running count and a stop.
+In every mode a row also carries the settings badges of [ADR 0071](adr/0071-container-settings-indicators.md) once its container has been selected, scanned, edited or kept on screen: `public` (with `+ listing`), `referrer`, `shared write`, `web`, `versioned`, `quota`, `cors`, each a fact one HEAD reported, with the exact header and the observation time in the tooltip; a row without a current fact shows the settings last seen for it, muted and dated, if any were recorded ([ADR 0110](adr/0110-switching-and-container-settings-on-screen.md)); a row without a badge has not been read, which is not the same as private; the listing call itself never HEADs a row, and the column reads only the rows kept on screen (§14.2).
+The column's "Scan" control HEADs every loaded row once, four in flight, with a running count and a stop.
+It was labelled "Check settings" until 14 November 2026: a scan only reads, and "check" suggested it validates something.
+The column's three actions, create, "Refresh" and "Scan", are icon buttons named by their hover text, because the words do not fit beside the column's title.
 
 The container list is read when the account is connected, when a job the window started ends, when the operator presses the column's "Refresh", and when the window is focused again more than thirty seconds after the list was last read.
 The read on focus is for changes made elsewhere, by another client or another tool of the operator's, which nothing else would show.

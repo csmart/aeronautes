@@ -127,7 +127,7 @@
        Remembered settings from an earlier connection are muted and say so
        (ADR 0110 decision 4). -->
   {@const observed = remembered
-    ? `last seen ${settings.observedAt}, not checked under this connection`
+    ? `last seen ${settings.observedAt}, not read under this connection`
     : `observed ${settings.observedAt}`}
   {#if settings.publicRead}
     {@render badge(settings.publicListing ? "public + listing" : "public", remembered ? "muted" : "danger", `read ACL ${settings.readAcl} · ${observed}`)}
@@ -174,7 +174,7 @@
           {@render settingsBadges(container.lastSeen, true)}
         {/if}
         {#if browser.settingsErrors[container.name]}
-          <span class="setting-badge muted" title={`settings could not be checked: ${browser.settingsErrors[container.name]}`}>unchecked</span>
+          <span class="setting-badge muted" title={`settings could not be read: ${browser.settingsErrors[container.name]}`}>not read</span>
         {/if}
       {/if}
     </span>
@@ -189,40 +189,49 @@
     <div class="title-row">
       <h2 class="pane-title">Containers</h2>
       {#if browser.account}
-        <button class="create" title="Create container" onclick={onCreate}>+</button>
-        <button
-          class="refresh"
-          title="Re-read the container list from the server"
-          aria-label="Refresh containers"
-          aria-busy={browser.containersLoading}
-          disabled={browser.containersLoading}
-          onclick={() => browser.loadContainers()}
-        >
-          ↻
-        </button>
-        {#if browser.settingsCheck?.running}
+        <!-- Three small actions, each named by its hover text: the words
+          did not fit the column's width beside its title. -->
+        <div class="tools">
+          <button class="tool" title="Create container" onclick={onCreate}>+</button>
           <button
-            class="check"
-            title="Stop checking settings"
-            onclick={() => browser.stopSettingsCheck()}
+            class="tool"
+            title="Refresh: re-read the container list from the server"
+            aria-label="Refresh containers"
+            aria-busy={browser.containersLoading}
+            disabled={browser.containersLoading}
+            onclick={() => browser.loadContainers()}
           >
-            Stop
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M13.25 8A5.25 5.25 0 1 1 11.71 4.29M11.71 1.79V4.29H9.21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
           </button>
-        {:else}
-          <button
-            class="check"
-            title="HEAD every loaded container once to show its access and feature settings"
-            disabled={browser.account === null || browser.containers.length === 0}
-            onclick={() => browser.checkSettings()}
-          >
-            Check settings
-          </button>
-        {/if}
+          {#if browser.settingsCheck?.running}
+            <button class="tool" title="Stop the scan" aria-label="Stop the scan" onclick={() => browser.stopSettingsCheck()}>
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
+              </svg>
+            </button>
+          {:else}
+            <button
+              class="tool"
+              title="Scan: read every loaded container's access and feature settings, one request each"
+              aria-label="Scan containers"
+              disabled={browser.account === null || browser.containers.length === 0}
+              onclick={() => browser.checkSettings()}
+            >
+              <!-- A tag: what a scan adds to each row. -->
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path d="M2.5 2.5h5l6 6-5 5-6-6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <circle cx="5.4" cy="5.4" r="1" fill="currentColor" />
+              </svg>
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
     {#if browser.settingsCheck}
       <p class="check-status" role="status">
-        checked {browser.settingsCheck.checked} of {browser.settingsCheck.total}{browser.settingsCheck.running ? "…" : browser.settingsCheck.stopped ? " (stopped)" : ""}
+        scanned {browser.settingsCheck.checked} of {browser.settingsCheck.total}{browser.settingsCheck.running ? "…" : browser.settingsCheck.stopped ? " (stopped)" : ""}
       </p>
     {/if}
     <div class="modes" role="tablist" aria-label="Container mode">
@@ -351,10 +360,17 @@
     font-weight: var(--weight-semibold);
   }
 
-  .create,
-  .refresh {
+  .tools {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .tool {
+    display: grid;
+    place-items: center;
     width: 1.6rem;
     height: 1.6rem;
+    padding: 0;
     font: inherit;
     font-size: var(--text-lg);
     line-height: 1;
@@ -363,15 +379,6 @@
     border: 1px solid var(--color-accent-border);
     border-radius: var(--radius-control);
     cursor: pointer;
-  }
-
-  .refresh {
-    margin-left: var(--space-1);
-  }
-
-  .refresh:disabled {
-    cursor: default;
-    opacity: 0.5;
   }
 
   .modes {
@@ -508,19 +515,7 @@
     border-style: dashed;
   }
 
-  .check {
-    margin-left: var(--space-1);
-    padding: 0 var(--space-2);
-    font: inherit;
-    font-size: var(--text-xs);
-    color: var(--color-accent-strong);
-    background: none;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-control);
-    cursor: pointer;
-  }
-
-  .check:disabled {
+  .tool:disabled {
     cursor: default;
     opacity: 0.5;
   }
