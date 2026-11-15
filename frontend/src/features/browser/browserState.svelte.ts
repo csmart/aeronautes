@@ -282,6 +282,9 @@ export class BrowserState {
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
+  // The copy or download held at its warning, because the selection leaves
+  // folders out (ADR 0108 decision 1); null when no warning is open.
+  transferWarning: "copy" | "download" | null = $state(null);
   // Local transfer dialog (§27.5); null = closed.
   #localTransfer: "upload" | "download" | null = $state(null);
   #localTransferRevision = $state(0);
@@ -597,6 +600,7 @@ export class BrowserState {
     this.filter = "";
     this.select(-1);
     this.transferOpen = false;
+    this.transferWarning = null;
     this.localTransfer = null;
     this.deleteOpen = null;
     this.objectDelete = null;
@@ -948,6 +952,22 @@ export class BrowserState {
     if (entry?.kind === "object") return { kind: "object", prefix: this.prefix, members: [entry.name], excludedFolders: 0 };
     if (entry?.kind === "prefix") return { kind: "folder", prefix: entry.name, members: [], excludedFolders: 0 };
     return { kind: this.prefix === "" ? "container" : "folder", prefix: this.prefix, members: [], excludedFolders: 0 };
+  }
+
+  /** Copy or Download for what is selected. A multi-selection that holds a
+   * folder row leaves that folder out, so the operator reads a warning
+   * before either dialog opens (ADR 0108 decision 1). */
+  requestTransfer(action: "copy" | "download") {
+    if (this.transferSource.excludedFolders > 0) this.transferWarning = action;
+    else this.openTransfer(action);
+  }
+
+  /** Opens the copy or the download dialog itself: no warning was needed,
+   * or the operator read it and went on. */
+  openTransfer(action: "copy" | "download") {
+    this.transferWarning = null;
+    if (action === "copy") this.transferOpen = true;
+    else this.localTransfer = "download";
   }
 
   /** The selected row's prefix when exactly one row is selected and it is a

@@ -14,6 +14,7 @@
   import JobsDrawer from "../jobs/JobsDrawer.svelte";
   import TransferDialog from "../transfer/TransferDialog.svelte";
   import LocalTransferDialog from "../transfer/LocalTransferDialog.svelte";
+  import SelectionFolderWarning from "../transfer/SelectionFolderWarning.svelte";
   import AboutDialog from "./AboutDialog.svelte";
   import SettingsDialog from "../settings/SettingsDialog.svelte";
   import ImportBookmarksDialog from "../settings/ImportBookmarksDialog.svelte";
@@ -360,6 +361,10 @@
 {/if}
 {#if createOpen}
   <CreateContainerDialog {browser} onClose={() => (createOpen = false)} />
+{/if}
+
+{#if browser.transferWarning}
+  <SelectionFolderWarning {browser} onClose={() => (browser.transferWarning = null)} />
 {/if}
 
 {#if v1Offers.copy && browser.transferOpen}
