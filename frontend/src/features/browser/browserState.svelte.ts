@@ -293,8 +293,11 @@ export class BrowserState {
     if (value !== this.#localTransfer) this.#localTransferRevision++;
     this.#localTransfer = value;
   }
-  // Destructive-jobs dialog (§31–§33).
-  deleteOpen = $state(false);
+  // Destructive-jobs dialog (§31–§33): the one job it was opened for, a
+  // prefix, a container's contents or a container, or null when closed.
+  // Each is its own action, so the dialog never offers a choice of job (ADR
+  // 0121).
+  deleteOpen: "prefix" | "empty" | "delete_container" | null = $state(null);
   /** The single-object delete the operator opened (ADR 0092), owned here so its
    * result outlives the listing refresh that follows its success; the dialog
    * renders it and never the live inspector detail. */
@@ -595,7 +598,7 @@ export class BrowserState {
     this.select(-1);
     this.transferOpen = false;
     this.localTransfer = null;
-    this.deleteOpen = false;
+    this.deleteOpen = null;
     this.objectDelete = null;
     this.selectedDelete = null;
     this.findOpen = false;

@@ -116,7 +116,7 @@ describe("the delete confirmations' caution", () => {
       return show(SelectedDeleteDialog, f.root, { browser: f.browser, onClose: vi.fn() });
     }],
     ["prefix and container", async (f) => {
-      f.browser.deleteOpen = true;
+      f.browser.deleteOpen = "empty";
       return show(DeleteDialog, f.root, { browser: f.browser, onClose: vi.fn() });
     }],
   ];

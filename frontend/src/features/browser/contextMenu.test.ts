@@ -93,6 +93,9 @@ describe("row context menu", () => {
     expect(folders.length).toBeGreaterThan(0);
     rightClick(rowElement(folders[0].i));
     expect(menuLabels()).toContain("Delete prefix…");
+    // A folder's menu never offers the container's own deletions (ADR 0121).
+    expect(menuLabels()).not.toContain("Empty container…");
+    expect(menuLabels()).not.toContain("Delete container…");
     document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
     flushSync();
 
@@ -125,6 +128,46 @@ describe("row context menu", () => {
   });
 });
 
+// ADR 0121 decision 2: each bulk deletion is its own action. The toolbar
+// offers the prefix's inside a folder or for the one folder selected alone,
+// and the container's two wherever there is no single prefix to name, so a
+// prefix deletion is never one click from a container's.
+describe("where the bulk deletions are offered", () => {
+  const offered = () => [...document.querySelectorAll<HTMLButtonElement>(".deletions button")]
+    .map((b) => b.textContent?.trim() ?? "").filter((label) => /prefix|container/.test(label));
+  const press = (label: string) => {
+    [...document.querySelectorAll<HTMLButtonElement>(".deletions button")].find((b) => b.textContent?.trim() === label)!.click();
+    flushSync();
+  };
+  const container = ["Empty container…", "Delete container…"];
+
+  it("offers the container's two at its top unless exactly one folder is selected", async () => {
+    const { browser, objects } = await list();
+    const folder = browser.visibleEntries.findIndex((row) => row.kind === "prefix");
+    expect(offered()).toEqual(container);
+    browser.select(folder); flushSync();
+    expect(offered()).toEqual(["Delete prefix…"]);
+    browser.toggleRow(objects[0].i); flushSync();
+    expect(browser.chosenRows.length).toBe(2);
+    expect(offered()).toEqual(container);
+    browser.select(objects[0].i); flushSync();
+    expect(offered()).toEqual(container);
+  });
+
+  it("offers the prefix's alone inside a folder, and each action opens its own job", async () => {
+    const { browser } = await list();
+    press("Empty container…");
+    expect(browser.deleteOpen).toBe("empty");
+    press("Delete container…");
+    expect(browser.deleteOpen).toBe("delete_container");
+    const folder = browser.visibleEntries.find((row) => row.kind === "prefix")!;
+    await browser.goTo(folder.name); await settle();
+    expect(offered()).toEqual(["Delete prefix…"]);
+    press("Delete prefix…");
+    expect(browser.deleteOpen).toBe("prefix");
+  });
+});
+
 describe("container row context menu", () => {
   it("opens the container and then the chosen action", async () => {
     const api = newFakeApi();
@@ -139,11 +182,27 @@ describe("container row context menu", () => {
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     flushSync();
     expect(menuLabels()).toEqual(expect.arrayContaining(["Open", "Copy container…", "Copy name"]));
+    // The container's two deletions are separate entries (ADR 0121).
+    expect(menuLabels()).toEqual(expect.arrayContaining(["Empty container…", "Delete container…"]));
+    expect(menuLabels()).not.toContain("Empty or delete container…");
     expect(browser.containerName).toBeNull();
 
     [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent?.trim() === "Copy container…")!.click();
     await settle();
     expect(browser.containerName).toBe("fixtures");
     expect(browser.transferOpen).toBe(true);
+
+    // With a folder open, the container's menu still offers both, and each
+    // opens the dialog on its own job.
+    const folder = browser.visibleEntries.find((entry) => entry.kind === "prefix")!;
+    await browser.goTo(folder.name); await settle();
+    for (const [label, job] of [["Empty container…", "empty"], ["Delete container…", "delete_container"]] as const) {
+      browser.deleteOpen = null;
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+      flushSync();
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent?.trim() === label)!.click();
+      await settle();
+      expect(browser.deleteOpen).toBe(job);
+    }
   });
 });

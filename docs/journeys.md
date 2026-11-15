@@ -109,14 +109,15 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Jobs | follow a job to its end and read its details | the upload and download journeys, and the prefix and container deletes of the delete journey (an object delete is not a job) | the job's state is "complete" |
 | Jobs | pause, resume and cancel a job; per-object records; history and "Recent changes" | not yet | |
 | Delete | an object, confirmed with a button | delete an object, the prefix and the container | its row is gone |
-| Delete | a prefix and a container, each with a typed confirmation | delete an object, the prefix and the container | the listing is empty, and the container is gone after connecting again |
+| Delete | a prefix and a container, each from its own action and with its own typed words | delete an object, the prefix and the container | each dialog is headed by its one job; the listing is empty, and the container is gone after connecting again |
 | Delete | a container named like the open one's segments container is named before a deletion and offered after it | delete an object, the prefix and the container | the notice is read in the dialog, its button opens that container, and neither container is listed once the run has deleted that one too |
 | Delete | a prefix with the segments of its large objects, the option left ticked and its words typed | delete an object, the prefix and the container | a fresh preview of the segments container, once the dialog has led there, counts no objects |
 | Delete | one large object with its segments, the option left ticked and its name typed | delete a static and a dynamic large object, each with its segments | the run's own session lists the other object's segments and none of the deleted one's |
 | Delete | a container with the segments of its large objects, the option left ticked | delete the container with the segments of its large object | the run's own session lists no segment, and the container is gone after connecting again |
 | Delete | an object and a large object where the container keeps history, with no segments option offered | a history location keeps what is deleted, and every segment (Swift cloud only) | the run's own session finds each in the archive with its deletion marker, and every segment still listed |
 | Delete | a container that keeps history, then its archive with the option ticked | a history location keeps what is deleted, and every segment; deleting the archive takes the versions and their segments (Swift cloud only) | the archive holds what the container held and every segment is still listed; then neither container is listed and no segment is |
-| Delete | the segments option unticked by hand, or in another container's archive; empty a container and keep it; a selection; a marker | not yet; layer 1 journey 5 | |
+| Delete | "Empty container…" from a container's menu | find a container named like a segment store behind its heading | the dialog opens with the caution; nothing is sent |
+| Delete | the segments option unticked by hand, or in another container's archive; emptying a container carried through; a selection; a marker | not yet; layer 1 journey 5 | |
 | Menus | a container row's menu | open a copy from a container's context menu; find a container named like a segment store behind its heading | the chosen entry opens its dialog |
 | Menus | an object's and a folder's menu; "Copy name" | not yet | |
 | Settings | open Settings and import from it | import bookmarks from an rclone config (mock only) | as for the import above |

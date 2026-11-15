@@ -84,6 +84,9 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   });
   browser.bookmarks = [bookmark("source"), bookmark("destination")];
   if (factsLoader) browser.containerFacts = factsLoader;
+  // The delete dialog is opened for one job (ADR 0121): the prefix being
+  // browsed, unless a case opens it for one of the container's two.
+  browser.deleteOpen = "prefix";
   adjust?.(api, browser);
   const root = document.createElement("div");
   document.body.append(root);
@@ -101,8 +104,9 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   const preview = () => { previewButton().click(); flushSync(); };
   const arm = () => {
     const confirm = root.querySelector<HTMLInputElement>(".confirm input");
-    const prefixMode = root.querySelector<HTMLInputElement>('input[value="prefix"]')?.checked;
-    if (confirm) input(confirm, prefixMode ? `${browser.containerName}/${browser.prefix}` : browser.containerName ?? "");
+    const words = browser.deleteOpen === "prefix" ? `${browser.containerName}/${browser.prefix}`
+      : browser.deleteOpen === "delete_container" ? `delete ${browser.containerName}` : browser.containerName ?? "";
+    if (confirm) input(confirm, words);
   };
   const resolve = async (index = 0, label = "current") => {
     if (kind === "copy") copies[index].resolve({ ...copyPlan, dataPath: label });
@@ -377,31 +381,32 @@ it.each(["pending", "ready"])("Copy mode change and return requires a new previe
   expect(f.startButton().disabled).toBe(false);
 });
 
-it.each(["empty", "delete_container"])("Delete requires new confirmation after changing to %s and back", async (mode) => {
-  const f = show("delete"); f.preview(); await f.resolve(); f.arm();
-  f.root.querySelector<HTMLInputElement>(`input[value="${mode}"]`)!.click(); flushSync();
-  f.root.querySelector<HTMLInputElement>('input[value="prefix"]')!.click(); flushSync();
-  f.preview(); await f.resolve(1);
-  expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.value).toBe("");
-  expect(f.startButton().disabled).toBe(true);
-  f.arm(); expect(f.startButton().disabled).toBe(false);
-});
-
-it("Delete ignores a prefix preview after changing to delete the container", async () => {
-  const f = show("delete"); f.preview();
-  f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
-  await f.resolve(); f.arm();
-  expect(f.button("Delete container").disabled).toBe(true);
-  expect(f.root.querySelector(".preview")).toBeNull();
-});
-
-it.each(["empty", "delete_container"])("Delete ignores a pending preview after changing to %s and back", async (mode) => {
-  const f = show("delete"); f.preview();
-  f.root.querySelector<HTMLInputElement>(`input[value="${mode}"]`)!.click(); flushSync();
-  f.root.querySelector<HTMLInputElement>('input[value="prefix"]')!.click(); flushSync();
-  await f.resolve(); f.arm();
-  expect(f.startButton().disabled).toBe(true);
-  expect(f.root.querySelector(".preview")).toBeNull();
+// ADR 0121: the dialog is opened for one job and offers no choice of job. Its
+// heading and its button name the job, and each job has its own words, so the
+// name that arms an emptying never arms the container's deletion, nor that
+// deletion's words an emptying.
+it.each([
+  ["prefix", "Delete prefix", "media/selected/", ["media", "delete media"]],
+  ["empty", "Empty container", "media", ["delete media", "media/selected/"]],
+  ["delete_container", "Delete container", "delete media", ["media", "media/selected/"]],
+] as const)("Delete opened for %s names that job, offers no other and asks for its own words", async (job, heading, words, others) => {
+  const f = show("delete", undefined, (_api, browser) => { browser.deleteOpen = job; });
+  expect(f.root.querySelector("h2")?.textContent?.trim()).toBe(heading);
+  expect(f.root.querySelector('input[type="radio"]')).toBeNull();
+  f.preview();
+  expect(vi.mocked(f.api.previewDelete).mock.calls[0][0]).toMatchObject({ mode: job, prefix: job === "prefix" ? "selected/" : "" });
+  await f.resolve();
+  const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
+  expect(confirm.placeholder).toBe(words);
+  for (const other of others) {
+    input(confirm, other);
+    expect(f.startButton().disabled).toBe(true);
+  }
+  input(confirm, words);
+  expect(f.startButton().disabled).toBe(false);
+  expect(f.startButton().textContent?.trim()).toBe(heading);
+  f.startButton().click(); flushSync();
+  expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ mode: job, confirm: words }));
 });
 
 // "media" alone is the container name, which does not arm a prefix.
@@ -525,16 +530,15 @@ it.each(["copy", "delete"] as const)("%s highlights Preview, then the start", as
 // account; the dialog that started it closes instead of offering a new
 // deletion of a container that is gone (0.5.0 test run).
 it("Delete keeps its started job through a scope change and closes when its container is left", async () => {
-  const f = show("delete");
-  f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
+  const f = show("delete", undefined, (_api, browser) => { browser.deleteOpen = "delete_container"; });
   f.preview(); await f.resolve(); f.arm();
   f.startButton().click(); flushSync();
   f.startReply.resolve("deleting-job"); await settle();
   expect(f.root.textContent).toContain("Job deleting-job started");
-  // A started dialog only reports the job: no choice reads as an offer to
-  // delete more (0.5.0 test run).
+  // A started dialog only reports the job: what it says of the scope before
+  // a start would read as an offer to delete more (0.5.0 test run).
   expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion started");
-  expect(f.root.querySelector('[role="radiogroup"]')).toBeNull();
+  expect(f.root.querySelector(".scope")).toBeNull();
   expect(f.root.textContent).toContain("Deleting container media.");
   // When the drawer's poll sees the job complete, the dialog says it is done.
   f.browser.jobs.list = [{ id: "deleting-job", type: "delete_container", state: "complete", source: "media/", destination: "(deleted)",
@@ -562,6 +566,7 @@ it("Delete names a container named for the open one's segments and offers it onc
   const row = (name: string, count: number, bytes: number) => ({ name, count, bytes, class: "normal", settings: null });
   const f = show("delete", undefined, (_api, browser) => {
     browser.containers = [row("media", 4, 4_000_000), row("media_segments", 3, 3_000_000)];
+    browser.deleteOpen = "delete_container";
   });
   const open = vi.spyOn(f.browser, "openContainer").mockResolvedValue();
   const text = () => (f.root.textContent ?? "").replace(/\s+/g, " ");
@@ -571,7 +576,6 @@ it("Delete names a container named for the open one's segments and offers it onc
   expect(text()).not.toContain("removes nothing from it");
   expect(text()).not.toMatch(/delete that container|free the space/);
 
-  f.root.querySelector<HTMLInputElement>('input[value="delete_container"]')!.click(); flushSync();
   f.preview(); await f.resolve(); f.arm();
   expect(text()).toContain("A deletion here removes nothing from it.");
   f.startButton().click(); flushSync();
@@ -707,17 +711,16 @@ it("Delete says nothing of segments when no container is named for them", () => 
   expect(f.root.textContent).not.toContain("_segments");
 });
 
-// A folder selected at the container's top is what the dialog offers to
-// delete, by default, and the confirmation names it (ADR 0095 decision 7).
-it("Delete offers the folder selected at the container's top", async () => {
+// A folder selected at the container's top is what the prefix deletion
+// acts on, and the confirmation names it (ADR 0095 decision 7).
+it("Delete prefix acts on the folder selected at the container's top", async () => {
   const f = show("delete", undefined, (_api, browser) => {
     browser.prefix = "";
     browser.entries = [{ kind: "prefix", name: "files/", bytes: 0, etag: "", lastModified: "", contentType: "", sloListed: false }];
     browser.select(0);
   });
-  expect(f.root.querySelector<HTMLInputElement>('input[value="prefix"]')?.checked).toBe(true);
-  expect(f.root.textContent).toMatch(/Delete prefix\s*media\/files\//);
-  expect(f.root.querySelector('input[value="empty"]')).not.toBeNull();
+  expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Delete prefix");
+  expect(f.root.textContent).toMatch(/Everything under\s*media\/files\//);
   f.preview();
   expect(vi.mocked(f.api.previewDelete).mock.calls[0][0]).toMatchObject({ mode: "prefix", prefix: "files/" });
   await f.resolve();

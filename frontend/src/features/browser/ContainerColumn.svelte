@@ -30,7 +30,10 @@
     if (v1Offers.copy) items.push({ label: "Copy container…", run: () => void inContainer(name, () => (browser.transferOpen = true)) });
     items.push({ label: "Copy name", run: () => void browser.copyText(name) });
     if (v1Offers.bulkDelete) {
-      items.push({ label: "Empty or delete container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = true)) });
+      // Two actions, never one that chooses between them inside its dialog:
+      // deleting also destroys the container's settings (ADR 0121).
+      items.push({ label: "Empty container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "empty")) });
+      items.push({ label: "Delete container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "delete_container")) });
     }
     return items;
   }
