@@ -34,27 +34,27 @@
   const rowDelete = $derived(singleRowDelete(browser));
   // Copy and Download act on what is selected and say so (ADR 0108): the
   // selected objects, the selected object or folder, or else the folder or
-  // container being browsed. A selection of folder rows alone names no
-  // objects, so its transfers are disabled rather than widened to the folder.
+  // container being browsed. A selection's folder rows are left out, so a
+  // selection holding one opens a warning before either dialog, and stays
+  // enabled so that the warning can be read.
   const source = $derived(browser.transferSource);
   const sourceWord = $derived(source.kind === "selected" ? "selected" : source.kind);
-  const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
+  const leavesFolders = $derived(source.excludedFolders > 0);
 
   // The row menu offers the toolbar's own actions for what is selected,
   // under the same conditions, so the two can never disagree.
   let menu: { x: number; y: number; entry: ListingRowDTO } | null = $state(null);
 
   function menuItems(entry: ListingRowDTO): MenuItem[] {
-    // The toolbar's own refusals: nothing to act in, a segment listing, or
-    // a selection that names no objects.
+    // The toolbar's own refusals: nothing to act in, or a segment listing.
     const noScope = browser.containerName === null || browser.backstageFrom !== null;
     const items: MenuItem[] = [];
     if (entry.kind === "prefix") items.push({ label: "Open", run: () => browser.activate(entry) });
     if (v1Offers.download) {
-      items.push({ label: `Download ${sourceWord}…`, disabled: noScope || noMembers, run: () => (browser.localTransfer = "download") });
+      items.push({ label: `Download ${sourceWord}…`, disabled: noScope, run: () => browser.requestTransfer("download") });
     }
     if (v1Offers.copy) {
-      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope || noMembers, run: () => (browser.transferOpen = true) });
+      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope, run: () => browser.requestTransfer("copy") });
     }
     items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
     if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
@@ -166,9 +166,9 @@
       {#if v1Offers.download}
         <button
           class="find"
-          title={noMembers ? "Select objects to download; selected folders are not downloaded" : "Download it to a local directory"}
-          disabled={browser.containerName === null || browser.backstageFrom !== null || noMembers}
-          onclick={() => (browser.localTransfer = "download")}
+          title={leavesFolders ? "Selected folders are not downloaded; a warning says so before anything opens" : "Download it to a local directory"}
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => browser.requestTransfer("download")}
         >
           Download {sourceWord}…
         </button>
@@ -176,9 +176,9 @@
       {#if v1Offers.copy}
         <button
           class="find"
-          title={noMembers ? "Select objects to copy; selected folders are not copied" : "Copy it to another account, container or folder"}
-          disabled={browser.containerName === null || browser.backstageFrom !== null || noMembers}
-          onclick={() => (browser.transferOpen = true)}
+          title={leavesFolders ? "Selected folders are not copied; a warning says so before anything opens" : "Copy it to another account, container or folder"}
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => browser.requestTransfer("copy")}
         >
           Copy {sourceWord}…
         </button>

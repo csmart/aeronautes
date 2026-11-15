@@ -105,6 +105,8 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Download | one object, a folder or a selection | not yet; layer 1 journey 3 | |
 | Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
 | Copy | a folder's copy starts under the folder's own name | upload a folder with a segmented file and browse it | for the store's own folder row, the copy dialog's destination path starts as the folder's name; nothing is sent |
+| Copy | a selection of a file and a folder is warned that the folder is left out, before the copy dialog opens | a selection holding a folder is warned before a copy | the warning names the folder and says it and everything in it will not be copied; after Cancel no copy dialog is open, and nothing is sent |
+| Copy | going on from that warning with the objects only; the warning before a download, and for folders selected alone | not yet; the frontend's own tests cover them | |
 | Copy | run a copy, within an account or across two; create the destination container; replace existing objects | not yet; layer 1 journey 2 runs the copies | |
 | Jobs | follow a job to its end and read its details | the upload and download journeys, and the prefix and container deletes of the delete journey (an object delete is not a job) | the job's state is "complete" |
 | Jobs | pause, resume and cancel a job; per-object records; history and "Recent changes" | not yet | |

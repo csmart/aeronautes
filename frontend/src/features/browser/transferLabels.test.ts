@@ -58,22 +58,14 @@ it.each([
   expect(browser.transferSource.members).toEqual(members);
 });
 
-// Folder rows in a selection are not members; a selection of folder rows
-// alone names no objects, and since no members means the whole folder, its
-// transfers are disabled rather than widened.
-it("leaves folder rows out of a selection and disables a selection of folders alone", () => {
-  const mixed = browserAt("files/");
-  mixed.browser.select(0);
-  mixed.browser.toggleRow(1);
-  expect(mixed.browser.transferSource).toMatchObject({ kind: "selected", members: ["files/a"], excludedFolders: 1 });
-
-  const folders = browserAt("files/");
-  folders.browser.entries = [row("prefix", "files/sub/"), row("prefix", "files/other/"), row("object", "files/a")];
-  folders.browser.select(0);
-  folders.browser.toggleRow(1);
-  const buttons = transferButtons(folders.browser);
-  expect(buttons.copy.disabled).toBe(true);
-  expect(buttons.download.disabled).toBe(true);
+// Folder rows in a selection are not members. What the window says about the
+// folders left out, before either dialog opens, is in
+// selectionFolderWarning.test.ts.
+it("leaves folder rows out of a selection's members", () => {
+  const { browser } = browserAt("files/");
+  browser.select(0);
+  browser.toggleRow(1);
+  expect(browser.transferSource).toMatchObject({ kind: "selected", members: ["files/a"], excludedFolders: 1 });
 });
 
 // The copy dialog names the selected objects and sends exactly them.
