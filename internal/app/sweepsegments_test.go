@@ -409,13 +409,13 @@ func TestSweepWithSegmentsSettlesItsOwnDeletionsBeforeAManifestMadeOfThem(t *tes
 	h.mock.BeforeRequest = func(method, path string) {
 		switch {
 		case method == "HEAD" && strings.HasSuffix(path, "/same/dyn/c.dlo"):
-			// The first HEAD classifies the row, the second is its baseline
-			// and the third its comparison.
-			if manifestHeads.Add(1) == 3 {
+			// The first HEAD classifies the row and the second reads it
+			// again; the third is its baseline and the fourth its comparison.
+			if manifestHeads.Add(1) == 4 {
 				hold(func() bool { return segmentsGone.Load() == int32(len(segments)) })
 			}
 		case method == "DELETE" && strings.Contains(path, "/same/dyn/000"):
-			hold(func() bool { return manifestHeads.Load() >= 2 })
+			hold(func() bool { return manifestHeads.Load() >= 3 })
 		}
 	}
 	h.mock.AfterRequest = func(method, path string) {
@@ -435,6 +435,67 @@ func TestSweepWithSegmentsSettlesItsOwnDeletionsBeforeAManifestMadeOfThem(t *tes
 	for _, name := range append(segments, "dyn/c.dlo") {
 		if deletes := deletesOf(h, "same", name); deletes != 1 {
 			t.Fatalf("same/%s: %d DELETEs, want one", name, deletes)
+		}
+	}
+	if left := leftEvents(t, h, bookmark); len(left) != 0 {
+		t.Fatalf("segments reported left: %v", left)
+	}
+}
+
+// ADR 0120 decision 6: a dynamic manifest outside whose scope the segments
+// lie waits for the members in flight too. Here a static and a dynamic
+// manifest name the same segments, as the published and the staged manifest
+// of one upload do in a history archive. The job deletes the static one and
+// queues its segments, and the dynamic one's identity is made from them. The
+// store holds each segment's DELETE until the dynamic manifest has been read
+// twice, and its comparison until the segments are gone, each for a bounded
+// time: a sweep that did not wait, or did not read the manifest again once
+// it had, would fix its identity with its segments standing, compare it with
+// them gone, and leave it as changed.
+func TestSweepWithSegmentsSettlesBeforeADynamicManifestThatSharesSegments(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	ctx := context.Background()
+	putSLO(h, "archive", "a.slo", "parts", "up/0001=0123456789", "up/0002=abcdefghij", "up/0003=klmnopqrst")
+	h.mock.PutObject("archive", "b.dlo", swifttest.Object{Manifest: "parts/up/"})
+	segments := []string{"up/0001", "up/0002", "up/0003"}
+	var manifestHeads, segmentsGone atomic.Int32
+	hold := func(until func() bool) {
+		for range 100 {
+			if until() {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	h.mock.BeforeRequest = func(method, path string) {
+		switch {
+		case method == "HEAD" && strings.HasSuffix(path, "/archive/b.dlo"):
+			// The first HEAD classifies the row and the second reads it
+			// again; the third is its comparison.
+			if manifestHeads.Add(1) == 3 {
+				hold(func() bool { return segmentsGone.Load() == int32(len(segments)) })
+			}
+		case method == "DELETE" && strings.Contains(path, "/parts/up/000"):
+			hold(func() bool { return manifestHeads.Load() >= 2 })
+		}
+	}
+	h.mock.AfterRequest = func(method, path string) {
+		if method == "DELETE" && strings.Contains(path, "/parts/up/000") {
+			segmentsGone.Add(1)
+		}
+	}
+	jobID, err := service.StartDelete(ctx, withSegments(bookmark, "archive", "", ModeEmpty))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	h.mock.BeforeRequest, h.mock.AfterRequest = nil, nil
+	if job.State != "complete" || job.Counters.ObjectsDeleted != 5 {
+		t.Fatalf("job = %+v", job)
+	}
+	for _, object := range [][2]string{{"archive", "a.slo"}, {"archive", "b.dlo"}, {"parts", "up/0001"}, {"parts", "up/0002"}, {"parts", "up/0003"}} {
+		if deletes := deletesOf(h, object[0], object[1]); deletes != 1 {
+			t.Fatalf("%s/%s: %d DELETEs, want one", object[0], object[1], deletes)
 		}
 	}
 	if left := leftEvents(t, h, bookmark); len(left) != 0 {
