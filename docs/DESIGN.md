@@ -2030,6 +2030,9 @@ Partial failure must retain exact failed object names where practical.
 ## 33. Empty container versus delete container
 
 These are different operations.
+They are separate actions in the window, as the prefix deletion is: each opens the dialog on its one job, with no choice of job inside it ([ADR 0121](adr/0121-emptying-and-deleting-a-container-are-separate-actions.md)).
+The toolbar offers the prefix's inside a folder or for the one folder selected alone, and the container's two wherever there is no single prefix to name; a container's menu offers its two from anywhere.
+Emptying is armed by the container's name and deleting by `delete ` and the name, so the words for one never start the other; a prefix is armed by its scope (§32).
 
 ### Empty Container
 
@@ -2057,7 +2060,7 @@ The name is all the dialog knows: it does not say those objects are this contain
 
 **Segments with their objects, when asked (14 November 2026).**
 A prefix deletion, an empty and a container deletion offer "Also delete the segments of large objects" under the preview ([ADR 0119](adr/0119-a-bulk-deletion-may-take-segments.md)).
-It is the explicit force action of §34 and §35 for a scope: with it the words to type are the scope followed by ` and segments`, which the backend checks before it admits the job, and it is not offered, and is refused, where the container keeps versions.
+It is the explicit force action of §34 and §35 for a scope: with it the words to type are the job's own words followed by ` and segments`, so `media/scope/ and segments` for a prefix, `media and segments` to empty a container and `delete media and segments` to delete it, which the backend checks before it admits the job, and it is not offered, and is refused, where the container keeps versions.
 By the operator's decision of 15 November 2026 it starts ticked ([ADR 0120](adr/0120-segments-go-by-default-and-versions-keep-them.md)), so the words name the segments from the start and unticking returns them to the plain scope.
 It starts unticked in a container that is, or may be, another container's archive, because an archived version and the object it came from can name the same segments.
 The one-object deletion's option starts ticked on the same decision and is refused in the same containers: under a history location the store keeps a deleted manifest in the archive as a manifest, which can be read only while its segments exist.
