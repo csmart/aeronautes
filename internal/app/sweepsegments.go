@@ -78,6 +78,19 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			}
 		}
 	case swiftcontrol.ClassDLO:
+		// A dynamic manifest's length and entity tag are made from its
+		// segments, so one read or compared while this job's workers delete
+		// them would be refused as changed by the job's own doing. Its
+		// segments can be rows of the scope, or the entries of a static
+		// manifest this job has already deleted. The members in flight
+		// settle first, and the manifest is read again as it then stands,
+		// while nothing else of this sweep is running (ADR 0119 decision 4,
+		// ADR 0120 decision 6).
+		r.inflight.Wait()
+		detail, err = r.session.ObjectDetail(ctx, m.container, m.name)
+		if err != nil || detail.FollowedSymlink || detail.SymlinkTarget != "" || detail.Class != swiftcontrol.ClassDLO {
+			return false, false
+		}
 		var segPrefix string
 		var ok bool
 		segContainer, segPrefix, ok = swiftcontrol.DynamicSegments(detail.Manifest)
@@ -89,15 +102,9 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			// The namespace is the scope or lies inside it, so its segments
 			// are rows of the scope and the sweep deletes them as it deletes
 			// every other row. Both end in a slash, or the scope is the whole
-			// container, so this compares whole path parts.
-			//
-			// A dynamic manifest's length and entity tag are made from its
-			// segments, so one compared while this job's workers delete those
-			// rows would be refused as changed by the job's own doing. The
-			// members in flight settle first, and the manifest is then deleted
-			// here, by the ordinary member protocol, while nothing else of
-			// this sweep is running.
-			r.inflight.Wait()
+			// container, so this compares whole path parts. The manifest is
+			// deleted here, by the ordinary member protocol, before the
+			// workers are handed anything more.
 			r.member(ctx, background, m)
 			return true, false
 		}
