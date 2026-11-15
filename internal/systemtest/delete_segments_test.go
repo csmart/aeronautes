@@ -37,7 +37,7 @@ func sweepWithSegments(t *testing.T, h *Harness) {
 
 	before := h.SnapshotNamespace(h.Primary)
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: h.Primary.BookmarkID, Container: c, Mode: app.ModeDeleteContainer, Segments: true, Confirm: c + " and segments",
+		BookmarkID: h.Primary.BookmarkID, Container: c, Mode: app.ModeDeleteContainer, Segments: true, Confirm: "delete " + c + " and segments",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())

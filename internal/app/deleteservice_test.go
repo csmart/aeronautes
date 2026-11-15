@@ -88,6 +88,21 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `does not match "media/scope/"`) {
 		t.Errorf("the container name armed a prefix deletion: %v", err)
 	}
+	// Deleting a container has words of its own, so the name that arms an
+	// emptying never deletes the container, and the deletion's words never
+	// start an emptying (ADR 0121 decision 3).
+	_, err = service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "media",
+	})
+	if err == nil || !strings.Contains(err.Error(), `does not match "delete media"`) {
+		t.Errorf("the container name armed a container deletion: %v", err)
+	}
+	_, err = service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "delete media",
+	})
+	if err == nil || !strings.Contains(err.Error(), `does not match "media"`) {
+		t.Errorf("the deletion's words armed an emptying: %v", err)
+	}
 	// Prefix mode without a prefix refuses.
 	if _, err := service.StartDelete(ctx, DeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Confirm: "media",
@@ -97,6 +112,11 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	list, _ := h.jobsSvc.List(ctx, "", false, 10)
 	if len(list) != 0 {
 		t.Errorf("refused starts created jobs: %+v", list)
+	}
+	if after, err := service.PreviewDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty}); err != nil || after.Objects == 0 {
+		t.Errorf("a refused start deleted something: the container now holds %+v, %v", after, err)
+	} else if before, err := service.PreviewDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix}); err != nil || before.Objects != preview.Objects {
+		t.Errorf("a refused start deleted something: the prefix now holds %+v, %v, and held %d objects", before, err, preview.Objects)
 	}
 }
 
@@ -175,7 +195,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 
 	// Delete the (now empty) container entirely.
 	jobID, err = service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "media",
+		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +247,7 @@ func TestDeleteContainerLooksAgainForALaggingStore(t *testing.T) {
 			seedObject(h.mock, "media", "one.txt", "1", nil)
 			h.mock.LagDeletedContainers(tc.lag)
 			jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
-				BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "media",
+				BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
 			})
 			if err != nil {
 				t.Fatal(err)

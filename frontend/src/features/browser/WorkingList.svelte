@@ -65,7 +65,7 @@
     // folder is the one row selected; otherwise the dialog would act on the
     // folder being browsed or the container, under a label naming this row.
     if (v1Offers.bulkDelete && entry.kind === "prefix" && browser.selectedPrefix === entry.name) {
-      items.push({ label: "Delete prefix…", danger: true, disabled: noScope, run: () => (browser.deleteOpen = true) });
+      items.push({ label: "Delete prefix…", danger: true, disabled: noScope, run: () => (browser.deleteOpen = "prefix") });
     }
     return items;
   }
@@ -220,14 +220,38 @@
         </button>
       {/if}
       {#if v1Offers.bulkDelete}
-        <button
-          class="find danger"
-          title="Delete everything under this prefix, or empty or delete the container; not only the selected objects"
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => (browser.deleteOpen = true)}
-        >
-          {browser.prefix === "" && browser.selectedPrefix === "" ? "Empty or delete container…" : "Delete prefix…"}
-        </button>
+        <!-- Each deletion is its own action (ADR 0121). Inside a folder only
+          the folder's is offered, so a container's deletion is never one
+          click from a prefix's; the container's two are at its top and in
+          its menu. -->
+        {@const noContainer = browser.containerName === null || browser.backstageFrom !== null}
+        {#if browser.prefix === "" && browser.selectedPrefix === ""}
+          <button
+            class="find danger"
+            title="Delete everything in this container; the container and its settings stay"
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "empty")}
+          >
+            Empty container…
+          </button>
+          <button
+            class="find danger"
+            title="Delete everything in this container, then the container itself with its settings"
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "delete_container")}
+          >
+            Delete container…
+          </button>
+        {:else}
+          <button
+            class="find danger"
+            title="Delete everything under this prefix; not only the selected objects"
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "prefix")}
+          >
+            Delete prefix…
+          </button>
+        {/if}
       {/if}
       </span>
     </div>

@@ -515,7 +515,7 @@ func TestPrefixSweepFailsWhenScopeNonEmptyWithNoRequest(t *testing.T) {
 			}
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "delete sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +828,7 @@ func TestDeleteContainerEmptyCancelledIsCancelled(t *testing.T) {
 			}
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "empty-c", Mode: ModeDeleteContainer, Confirm: "empty-c"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "empty-c", Mode: ModeDeleteContainer, Confirm: "delete empty-c"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -964,7 +964,7 @@ func TestDeleteContainerSurvivesAPartialSweep(t *testing.T) {
 	seedObject(h.mock, "sweep", "a.txt", "alpha", nil)
 	seedObject(h.mock, "sweep", "b.txt", "bravo", nil)
 	h.mock.DropNextObjectDELETE() // one member's reply is lost, so the sweep is partial
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "delete sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1101,7 +1101,7 @@ func TestPrefixSweepHeldWorkerFinishesWholeWhenAnotherRecordIsLost(t *testing.T)
 			waitForLatch()
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "sweep"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Mode: ModeDeleteContainer, Confirm: "delete sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}

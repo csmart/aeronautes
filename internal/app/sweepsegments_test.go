@@ -150,13 +150,23 @@ func TestSweepWithSegmentsIsArmedByItsOwnWords(t *testing.T) {
 	for name, req := range map[string]DeleteRequestDTO{
 		"the plain words with the option": {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Segments: true, Confirm: "media/scope/"},
 		"the option's words without it":   {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/ and segments"},
-		"a container with the option":     {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "media"},
+		"a container with the option":     {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "delete media"},
+		// ADR 0121 decision 3 holds with the option too: the words that empty
+		// a container never delete it, nor the deletion's words empty it.
+		"an emptying's words for a deletion": {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "media and segments"},
+		"a deletion's words for an emptying": {BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Segments: true, Confirm: "delete media and segments"},
 	} {
 		if jobID, err := service.StartDelete(ctx, req); err == nil || !strings.Contains(err.Error(), "does not match") {
 			t.Fatalf("%s: job %q, err %v; want the confirmation refused", name, jobID, err)
 		}
 	}
-	if jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "media and segments"}); err != nil {
+	if rows := jobCount(t, h); rows != 0 {
+		t.Fatalf("the refusals left %d job rows", rows)
+	}
+	if !stillReadable(t, h, "media", "scope/big.slo") || !stillReadable(t, h, "media_segments", "scope/big.slo/0001") {
+		t.Fatal("a refused start deleted something")
+	}
+	if jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "delete media and segments"}); err != nil {
 		t.Fatalf("a container armed with its own words: %v", err)
 	} else if job := awaitTerminal(t, h, jobID); job.State != "complete" {
 		t.Fatalf("job = %+v", job)

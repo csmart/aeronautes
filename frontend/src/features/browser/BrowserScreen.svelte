@@ -376,7 +376,7 @@
 {/if}
 
 {#if v1Offers.bulkDelete && browser.deleteOpen}
-  <DeleteDialog {browser} onClose={() => (browser.deleteOpen = false)} />
+  <DeleteDialog {browser} onClose={() => (browser.deleteOpen = null)} />
 {/if}
 {#if browser.objectDelete && ((browser.objectDelete.kind === "object" && v1Offers.objectDelete) || (browser.objectDelete.kind === "marker" && v1Offers.markerDelete))}
   <ObjectDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />

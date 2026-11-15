@@ -78,7 +78,7 @@ function expectDisconnected(state: BrowserState) {
     container: null, containerDetail: null, backstage: null, prefix: '', filter: '', entries: [], marker: '',
     entriesLoading: false, entriesError: null, selected: -1, identity: null, object: null, prefixDetail: null,
     slo: null, dlo: null, detailLoading: false, detailError: null,
-    transfer: false, local: null, deletion: false, findOpen: false, findRunning: false, findStatus: null,
+    transfer: false, local: null, deletion: null, findOpen: false, findRunning: false, findStatus: null,
   });
 }
 async function populate(state: BrowserState) {
@@ -88,7 +88,7 @@ async function populate(state: BrowserState) {
   state.entriesError = 'old list error'; state.detailError = 'old detail error';
   state.entriesLoading = true; state.detailLoading = true; state.backstageFrom = 'old manifest';
   state.filter = 'external'; state.prefix = 'old/';
-  state.transferOpen = true; state.localTransfer = 'download'; state.deleteOpen = true; state.findOpen = true;
+  state.transferOpen = true; state.localTransfer = 'download'; state.deleteOpen = 'empty'; state.findOpen = true;
   state.findRunning = true;
   state.findStatus = { scanned: 1, matches: [{ name: 'old/match', bytes: 1 }], done: false, truncated: false, error: '', objectsPerSecond: 1, scope: { bookmarkId: 'bm-1', generation: 1 } };
 }

@@ -101,11 +101,11 @@ func TestLargeObjectsUnderAHistoryLocationSwift(t *testing.T) {
 	}
 
 	rec = h.StartDelete(ctx, app.DeleteRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: c, Mode: app.ModeDeleteContainer,
-		Segments: true, Confirm: c + " and segments"})
+		Segments: true, Confirm: "delete " + c + " and segments"})
 	if rec.Err() == nil || !strings.Contains(rec.Err().Error(), "keeps versions") {
 		t.Fatalf("the container with segments: job %q, err %v; want it refused because versions are kept", rec.JobID(), rec.Err())
 	}
-	rec = h.StartDelete(ctx, app.DeleteRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: c, Mode: app.ModeDeleteContainer, Confirm: c})
+	rec = h.StartDelete(ctx, app.DeleteRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: c, Mode: app.ModeDeleteContainer, Confirm: "delete " + c})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
 	}
@@ -124,7 +124,7 @@ func TestLargeObjectsUnderAHistoryLocationSwift(t *testing.T) {
 	}
 
 	rec = h.StartDelete(ctx, app.DeleteRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: archive, Mode: app.ModeDeleteContainer,
-		Segments: true, Confirm: archive + " and segments"})
+		Segments: true, Confirm: "delete " + archive + " and segments"})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
 	}

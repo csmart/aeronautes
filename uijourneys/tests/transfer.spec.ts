@@ -162,10 +162,9 @@ test.describe.serial("transfer", () => {
     // knows that container was only its own upload's, so it deletes it
     // afterwards.
     const segments = `${container}_segments`;
-    await page.getByRole("button", { name: "Empty or delete container…" }).click();
+    await page.getByRole("button", { name: "Delete container…" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete" });
     await expect(dialog.getByText(`A container named ${segments} exists`)).toBeVisible();
-    await dialog.getByRole("radio", { name: /^Delete container/ }).check();
     await armDelete(page, "Delete container");
     await expect(dialog.getByRole("heading", { name: "Deletion complete" })).toBeVisible({ timeout: 8 * 60 * 1000 });
     await expect(dialog.getByText(`${segments} still exists`)).toBeVisible();
@@ -178,8 +177,7 @@ test.describe.serial("transfer", () => {
     // segments. A listing can lag the deletes on a real store, so the
     // preview is asked again within a bound; a listing still loading in the
     // window would say nothing either way.
-    await page.getByRole("button", { name: "Empty or delete container…" }).click();
-    await dialog.getByRole("radio", { name: /^Delete container/ }).check();
+    await page.getByRole("button", { name: "Delete container…" }).click();
     await expect(async () => {
       await dialog.getByRole("button", { name: "Preview" }).click();
       await expect(dialog.getByText(/^0 objects · /)).toBeVisible({ timeout: 5000 });

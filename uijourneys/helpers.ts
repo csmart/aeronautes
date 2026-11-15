@@ -151,6 +151,8 @@ export async function armDelete(page: Page, action: string, segments: "ticked" |
   await dialog.getByRole("button", { name: "Preview" }).click();
   const confirm = dialog.getByLabel(/to arm/);
   await expect(confirm).toBeVisible();
+  // The dialog is opened on one job, the action's, and its button names it.
+  await expect(dialog.getByRole("heading", { name: action, exact: true })).toBeVisible();
   const option = dialog.getByLabel("Also delete the segments of large objects");
   if (segments === "ticked") {
     await expect(option).toBeChecked();

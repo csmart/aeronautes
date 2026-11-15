@@ -116,18 +116,24 @@ func (s *DeleteService) validate(req DeleteRequestDTO) error {
 // deleteConfirmation is what the operator types to arm a deletion (ADR 0095
 // decision 7). For a prefix it is the scope as the dialog shows it, because
 // typing only the container name would not show which prefix the operator
-// read; for the container modes the container is the whole scope. A deletion
-// that takes segments is armed by other words than one that does not, so a
-// confirmation typed for either never starts the other (ADR 0119 decision 2).
+// read. Emptying a container is armed by its name. Deleting it destroys the
+// container and its settings as well, so it has words of its own, and the
+// name that arms an emptying never deletes the container (ADR 0121 decision
+// 3). A deletion that takes segments is armed by other words than one that
+// does not, so a confirmation typed for either never starts the other (ADR
+// 0119 decision 2).
 func deleteConfirmation(req DeleteRequestDTO) string {
-	scope := req.Container
-	if req.Mode == ModePrefix {
-		scope = req.Container + "/" + req.Prefix
+	words := req.Container
+	switch req.Mode {
+	case ModePrefix:
+		words = req.Container + "/" + req.Prefix
+	case ModeDeleteContainer:
+		words = "delete " + req.Container
 	}
 	if req.Segments {
-		return scope + " and segments"
+		return words + " and segments"
 	}
-	return scope
+	return words
 }
 
 // PreviewDelete counts the scope (a full listing pass — §28.3's honest

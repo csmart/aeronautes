@@ -196,7 +196,7 @@ describe("the Delete key", () => {
   it("offers the selected object's own deletion in the working list", async () => {
     await screen([], false);
     const toolbar = button("Delete object…", document.querySelector<HTMLElement>(".deletions")!);
-    expect(labels(document.querySelector<HTMLElement>(".deletions")!)).toContain("Empty or delete container…");
+    expect(labels(document.querySelector<HTMLElement>(".deletions")!)).toContain("Delete container…");
     click(toolbar); await settle();
     expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
     expect(api.deleteObject).not.toHaveBeenCalled();

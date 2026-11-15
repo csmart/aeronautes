@@ -1,6 +1,8 @@
 <!-- Destructive-jobs dialog (§31–§33): preview (counts, bytes, the
   manifest disclosure, and the strategy the engine would pick) before a
-  typed confirmation unlocks Start. Deletion is Aeronautes-native and
+  typed confirmation unlocks Start. It is opened for one job, a prefix, a
+  container's contents or a container, and offers no choice between them
+  (ADR 0121). Deletion is Aeronautes-native and
   manifest-only unless the option that takes segments too is ticked, as it
   is to start with (ADR 0119, ADR 0120); the Go side re-validates
   everything. -->
@@ -21,8 +23,14 @@
   // The values are the generated enum's own, so a mode the bridge renames
   // fails to compile here instead of being sent as a name it no longer knows.
   type Mode = Exclude<`${DeleteRequestDTO["mode"]}`, "">;
-  // svelte-ignore state_referenced_locally
-  let mode: Mode = $state(hasPrefix ? "prefix" : "empty");
+  // The job the action that opened this dialog named. It never changes
+  // while the dialog is open: another job is another action.
+  const mode: Mode = untrack(() => browser.deleteOpen ?? "empty");
+  const jobs: Record<Mode, { heading: string; words: string }> = {
+    prefix: { heading: "Delete prefix", words: "the container and prefix" },
+    empty: { heading: "Empty container", words: "the container name" },
+    delete_container: { heading: "Delete container", words: "“delete” and the container name" },
+  };
   let confirmText = $state("");
   let previewing = $state(false);
   let starting = $state(false);
@@ -77,12 +85,15 @@
 
   // What the operator types to arm the deletion, the same text the Go side
   // requires (ADR 0095 decision 7): a prefix is armed by its scope, so the
-  // typing shows which prefix was read, and a container by its name. A
-  // deletion that takes segments is armed by other words, so the words for
-  // one never start the other (ADR 0119 decision 2).
+  // typing shows which prefix was read, and an emptying by the container's
+  // name. Deleting the container has words of its own, so the name alone
+  // never destroys the container and its settings (ADR 0121 decision 3). A
+  // deletion that takes segments is armed by other words again, so the words
+  // for one never start the other (ADR 0119 decision 2).
   function armingText(req: DeleteRequestDTO, segments: boolean): string {
-    const scope = req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
-    return segments ? `${scope} and segments` : scope;
+    const words = req.mode === "prefix" ? `${req.container}/${req.prefix}`
+      : req.mode === "delete_container" ? `delete ${req.container}` : req.container;
+    return segments ? `${words} and segments` : words;
   }
 
   function request(): DeleteRequestDTO {
@@ -220,7 +231,7 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Delete" tabindex="-1" use:trapFocus={close}>
     <header>
       <h2>
-        {!startedJobId ? "Destructive operation" : !startedEnded ? "Deletion started"
+        {!startedJobId ? jobs[mode].heading : !startedEnded ? "Deletion started"
           : startedJob?.state === "complete" ? "Deletion complete" : "Deletion ended"}
       </h2>
       <button class="close" onclick={close} aria-label="Close">✕</button>
@@ -257,36 +268,18 @@
         </p>
       {/if}
     {:else}
-    <div class="modes" role="radiogroup" aria-label="Scope">
-      {#if hasPrefix}
-        <label class="mode">
-          <input type="radio" name="delete-scope" value="prefix" bind:group={mode} onchange={invalidate} />
-          <span>
-            Delete prefix <span class="type-mono">{browser.containerName}/{targetPrefix}</span>
-          </span>
-        </label>
+    <p class="scope">
+      {#if mode === "prefix"}
+        Everything under <span class="type-mono">{browser.containerName}/{targetPrefix}</span> goes; the rest of the
+        container stays.
+      {:else if mode === "empty"}
+        The contents of <span class="type-mono">{browser.containerName}</span> go; the container and all its
+        configuration stay.
+      {:else}
+        <span class="type-mono">{browser.containerName}</span> is emptied, then the container itself is deleted, with
+        all its configuration.
       {/if}
-      <label class="mode">
-        <input type="radio" name="delete-scope" value="empty" bind:group={mode} onchange={invalidate} />
-        <span>
-          Empty container <span class="type-mono">{browser.containerName}</span> — contents go,
-          the container and all its configuration stay
-        </span>
-      </label>
-      <label class="mode">
-        <input
-          type="radio"
-          name="delete-scope"
-          value="delete_container"
-          bind:group={mode}
-          onchange={invalidate}
-        />
-        <span>
-          Delete container <span class="type-mono">{browser.containerName}</span> — empty it,
-          then delete the container itself
-        </span>
-      </label>
-    </div>
+    </p>
     {#if browser.segmentStoreCaution}
       <p class="warn">{browser.segmentStoreCaution}</p>
     {/if}
@@ -313,8 +306,7 @@
       <!-- The start button stays disabled until both steps are done, and
         nothing else on the page says why. -->
       <p class="next-step">
-        Preview first: it counts what will go, then asks you to type
-        {mode === "prefix" ? "the container and prefix" : "the container name"} to arm the deletion.
+        Preview first: it counts what will go, then asks you to type {jobs[mode].words} to arm the deletion.
       </p>
     {/if}
 
@@ -386,9 +378,7 @@
         {/if}
         <label class="confirm">
           <span>
-            Type {mode === "prefix" ? "the container and prefix" : "the container name"}{withSegments
-              ? ", then “and segments”,"
-              : ""}
+            Type {jobs[mode].words}{withSegments ? ", then “and segments”," : ""}
             <span class="type-mono">{armWord}</span> to arm:
           </span>
           <input class="type-mono" bind:value={confirmText} placeholder={armWord} />
@@ -421,11 +411,7 @@
           onclick={start}
           disabled={!canStart}
         >
-          {mode === "prefix"
-            ? "Delete prefix"
-            : mode === "empty"
-              ? "Empty container"
-              : "Delete container"}
+          {jobs[mode].heading}
         </button>
       {/if}
     </footer>
@@ -473,14 +459,12 @@
     cursor: pointer;
   }
 
-  .modes {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+  .scope {
+    margin: 0;
     font-size: var(--text-sm);
+    overflow-wrap: anywhere;
   }
 
-  .mode,
   .option {
     display: flex;
     gap: var(--space-2);

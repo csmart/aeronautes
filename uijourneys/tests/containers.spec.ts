@@ -35,7 +35,7 @@ test("find a container named like a segment store behind its heading", async ({ 
   await expect(page.getByText(caution)).toBeVisible();
 
   await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Empty or delete container…" }).click();
+  await page.getByRole("menuitem", { name: "Empty container…" }).click();
   const dialog = page.getByRole("dialog", { name: "Delete" });
   await expect(dialog.getByText(caution)).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).click();

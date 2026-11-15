@@ -79,7 +79,7 @@ func deleteJourney(w *world, a *account, round int) {
 	}
 	w.ended("empty", w.await(a, id), "complete")
 	w.remaining(a, c)
-	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Mode: app.ModeDeleteContainer, Confirm: c})
+	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Mode: app.ModeDeleteContainer, Confirm: "delete " + c})
 	if err != nil {
 		t.Fatalf("delete the container: %s", failure(err))
 	}

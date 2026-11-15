@@ -66,9 +66,8 @@ test.describe.serial("segments without versioning", () => {
     await segmentsAdded(target, sidecar, [], segmentsOfLarge);
 
     await openContainer(page, target, container);
-    await page.getByRole("button", { name: "Empty or delete container…" }).click();
+    await page.getByRole("button", { name: "Delete container…" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete" });
-    await dialog.getByRole("radio", { name: /^Delete container/ }).check();
     await armDelete(page, "Delete container", "ticked");
     await expect(dialog.getByRole("heading", { name: "Deletion complete" })).toBeVisible({ timeout: 8 * 60 * 1000 });
     await expect.poll(() => control.names(target, sidecar), lag).toEqual([]);
@@ -142,9 +141,8 @@ test.describe.serial("segments where versions are kept", () => {
     // Deleting the container is not offered the option either. What it held
     // goes to the archive, the container goes, and every segment stays.
     await openContainer(page, target, live);
-    await page.getByRole("button", { name: "Empty or delete container…" }).click();
+    await page.getByRole("button", { name: "Delete container…" }).click();
     const bulk = page.getByRole("dialog", { name: "Delete" });
-    await bulk.getByRole("radio", { name: /^Delete container/ }).check();
     await bulk.getByRole("button", { name: "Preview" }).click();
     await expect(bulk.getByText("Their segments cannot be deleted with them here: this container keeps versions")).toBeVisible();
     await armDelete(page, "Delete container");
@@ -162,8 +160,7 @@ test.describe.serial("segments where versions are kept", () => {
     // container is named after the archive, so the job is followed in the
     // drawer.
     await openContainer(page, target, archive);
-    await page.getByRole("button", { name: "Empty or delete container…" }).click();
-    await page.getByRole("dialog", { name: "Delete" }).getByRole("radio", { name: /^Delete container/ }).check();
+    await page.getByRole("button", { name: "Delete container…" }).click();
     await typedDelete(page, "Delete container", "ticked");
     await expect.poll(() => control.names(target, `${live}_segments`), lag).toEqual([]);
     await expectNotListed(page, target, archive);
