@@ -29,7 +29,8 @@ The role limit is additional authority control; a local token without these rest
 | Remote and resource | Allowed requests | Limit |
 | --- | --- | --- |
 | Source account | `GET`, `HEAD` | Fixed upstream account; no mutation methods |
-| Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters |
+| Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters; a read may name an empty path segment, which a write may not |
+| Upload destination | `PUT`, `DELETE` | An upload's `Copy` writes each file at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept |
 | Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage |
 | Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
 | Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
@@ -37,7 +38,7 @@ The role limit is additional authority control; a local token without these rest
 | Anonymous capability request | `GET` on the exact library-derived `/info` path | No upstream token; this class comes from the wire-library contract and was not emitted in the run below |
 | Everything else | Refused locally | `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
 
-Staged DLO `PUT` requests must keep `X-Object-Manifest` inside the invocation's matching sidecar prefix.
+DLO `PUT` requests, staged or at an upload's own name, must keep `X-Object-Manifest` inside the sidecar container, under the manifest object's own name.
 Bulk-delete validation decodes each name once according to Swift's wire format, refuses malformed encoding and container-only entries, and applies explicit byte and name-count limits before any upstream request.
 The response passes through unchanged because bulk middleware can report per-name failures inside HTTP 200.
 The bulk body is limited to 4 MiB and 10,000 names, with two body buffers per gateway.
