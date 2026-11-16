@@ -46,6 +46,12 @@ func (u *uploadRun) makeStatic(ctx context.Context, dst *swiftcontrol.Session, c
 	if err != nil {
 		return stays("the file could not be read again for its segments' digests", err)
 	}
+	// The engine's manifest carried the file's modification time, and what
+	// is written over it carries the same.
+	mtime, modified, err := modTimeHeader(item.Path)
+	if err != nil {
+		return stays("the file's modification time could not be read", err)
+	}
 	entries := make([]swiftcontrol.StaticSegment, len(chunks))
 	for i, c := range chunks {
 		entries[i] = swiftcontrol.StaticSegment{Container: segments.Container, Name: fmt.Sprintf("%s%08d", segments.Prefix, i), ETag: c.md5, Bytes: c.size}
@@ -53,7 +59,7 @@ func (u *uploadRun) makeStatic(ctx context.Context, dst *swiftcontrol.Session, c
 	contentType := engineContentType(item.Name)
 	// No content tag is declared: the file's MD5 would bind the manifest's
 	// JSON body, not the segments it names (ADR 0111 decision 4).
-	if _, err := dst.PutStaticManifest(ctx, container, item.Name, entries, contentType, nil); err != nil {
+	if _, err := dst.PutStaticManifest(ctx, container, item.Name, entries, contentType, map[string]string{mtime: modified}); err != nil {
 		return stays("the store did not accept the static manifest", err)
 	}
 	if u.static.known {
@@ -65,7 +71,7 @@ func (u *uploadRun) makeStatic(ctx context.Context, dst *swiftcontrol.Session, c
 		// The store took a static manifest it does not give back, so nothing
 		// could later read which segments this object uses. The dynamic
 		// manifest names them by their prefix instead.
-		dynamic := map[string]string{"X-Object-Manifest": segments.Container + "/" + segments.Prefix}
+		dynamic := map[string]string{"X-Object-Manifest": segments.Container + "/" + segments.Prefix, mtime: modified}
 		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), contentType, dynamic); err != nil {
 			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "static-manifest",
 				fmt.Errorf("the store does not return static manifests and the dynamic manifest could not be put back, so the name holds a static manifest: %w", err))

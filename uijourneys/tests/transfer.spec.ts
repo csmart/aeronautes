@@ -104,9 +104,11 @@ test.describe.serial("transfer", () => {
     await openFolder(page, folder);
     await objectRow(page, "file00.bin").click();
     await page.getByRole("button", { name: "Edit metadata" }).click();
+    // An uploaded object already carries one key, its file's modification
+    // time, so the key added is the last row.
     await page.getByRole("button", { name: "+ add key" }).click();
-    await page.getByLabel("metadata key").fill("journey");
-    await page.getByLabel("metadata value").fill("round-2");
+    await page.getByLabel("metadata key").last().fill("journey");
+    await page.getByLabel("metadata value").last().fill("round-2");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("button", { name: "Edit metadata" })).toBeVisible();
 
@@ -117,6 +119,7 @@ test.describe.serial("transfer", () => {
     const metadata = inspector(page).locator("section", { has: page.getByRole("heading", { name: "User metadata" }) });
     await expect(metadata).toContainText("Journey");
     await expect(metadata).toContainText("round-2");
+    await expect(metadata).toContainText("Mtime");
   });
 
   test("make the container public and private again", async ({ page }, info) => {
