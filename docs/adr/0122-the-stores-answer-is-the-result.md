@@ -59,11 +59,26 @@ The operator ran rclone alone against the same store and saw what it does: each 
    A file larger than the chunk size is uploaded in segments by the engine, which writes a dynamic manifest at the file's name; where the job is to publish static large objects ([ADR 0111](0111-segmented-uploads-as-static-large-objects.md)), the application then writes the static manifest over it, one request naming the same segments, and the object stays dynamic if the store refuses that.
    A name the engine cannot carry is sent by the application as one PUT that declares the file's digest.
    Neither route sends a create-only condition, and neither reads the destination before or after its write to learn whether it changed.
+   **What a file's outcome is** (added with the upload step, 16 November 2026).
+   The engine says which files it wrote, one line for each, and that line is the file's outcome: measured on the pinned engine, a file it was given and did not write gets no such line, even when the engine ends without an error.
+   A file the engine reports an error for failed with that error; a file it says nothing about is unknown when the engine itself failed, and was not written when it did not.
+   The application asks the store nothing about a name around its write.
+   The engine looks each name up once before it writes it, as it does when used alone, to know whether it is replacing an object and which segments that object has; that is the engine's own request, and it decides nothing about whether the file is written.
+   **Whether the store returns static manifests** is still learned once for a connection ([ADR 0111](0111-segmented-uploads-as-static-large-objects.md) decision 9), now by reading the first static manifest back at its own name, with no check manifest at a name of the job's own.
+   A store that does not return it gets the dynamic manifest put back at that name, and dynamic large objects from then on.
+   The store checks a static manifest against the segments it names, by the size and digest of each of the file's chunks: a manifest it refuses fails that file, and the object stays the dynamic one the engine wrote.
    **A replaced large object's own segments.**
    When the engine writes over a large object it removes that object's old segments itself, as it does when used alone: it reads the old manifest before its write and deletes the segments it named after it.
-   Those requests are the engine's, they are for the predecessor's own segments, and they are not a check for another writer; the engine can delete only inside the destination's own segments container, so segments kept elsewhere stay.
+   Those requests are the engine's, they are for the predecessor's own segments, and they are not a check for another writer; the engine can delete only where it can write, under the destination folder in the container and in its segments container, so segments kept anywhere else stay.
    The application's own reclamation after a verified replacement ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) goes with the verifying read it waited for.
    A name the application sends itself replaces the manifest and leaves the old segments where they are, and the acknowledgement says which of the two will happen.
+   **Where the engine may not remove them** (added with the upload step, 16 November 2026).
+   Measured on the pinned engine: writing over a large object in a container with a history location keeps the old segments, and in a container with a versions location removes them, although the store's archived version still names them.
+   So an upload decides once, at its start, from one read of the container: where it keeps versions of either kind, where the operator's setting keeps replaced segments, and where that setting cannot be read, the engine's deletes are refused and the old segments stay.
+   The acknowledgement states which of these holds, and an upload that replaces nothing by its preview is started on the same decision.
+   The cost is that the engine's own removal of the segments of an upload that failed is refused with the rest, so those stay as well, as decision 8 already allows.
+   **What a running upload holds.**
+   An upload claims the folder it writes under, in the container and in its segments container, in place of a stage root ([ADR 0105](0105-concurrent-jobs.md) decision 3): a deletion of ours that would sweep there, or that names an object there, is refused while the upload is alive, and an upload into a folder a sweep of ours holds is refused.
 4. **A copy writes each object at its name**, on the same terms.
    The engine reads the source and writes the destination; a name it cannot carry is read and written by the application in one pass.
    No object is stamped, and no stamp is read: the preview compares the two listings.
@@ -80,6 +95,7 @@ The operator ran rclone alone against the same store and saw what it does: each 
    This holds for one object, a marker, a manifest, a selection, a prefix and a container alike.
 7. **What a job records for each name** is what was sent and what the store or the engine answered: done, failed with the reason, unknown, or not attempted.
    The records of what a name held before and after, and of what was staged and published, are no longer made.
+   Until the removal step a transfer's item keeps its two records, and for an upload the second states the answer that was taken, not a read of the name.
 8. **An interrupted job leaves what it had written.**
    Each object the store accepted is whole and at its name.
    A file that was being uploaded in segments can leave segments with no manifest, as the engine leaves them when it is stopped; the job's record names the segment paths the engine reported, and nothing is removed automatically.
