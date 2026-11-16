@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -232,9 +233,9 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 		}
 	}
 	for _, name := range names {
-		// The engine says where it puts a file's segments and which files
-		// it wrote, by the name each was listed under; an upload takes its
-		// word for both (ADR 0122 decision 7).
+		// The engine says where it puts an object's segments and which
+		// objects it wrote, by the name each was listed under; an upload
+		// and a copy take its word for both (ADR 0122 decision 7).
 		e.said = func(level, msg string) {
 			if onEvent != nil {
 				onEvent(rclone.Event{Level: level, Object: name, Msg: msg})
@@ -243,7 +244,7 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 		if err := e.transfer(ctx, src+"/"+name, dst+"/"+name); err != nil {
 			return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
 		}
-		if localPath(src) && !localPath(dst) {
+		if !localPath(dst) {
 			e.said("info", "Copied (new)")
 		}
 	}
@@ -409,8 +410,15 @@ func TestPlanAndStartCopyAcrossBookmarks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Meta["Shoot"] != "wedding" || d.Meta["Aeronautes-Fingerprint"] == "" {
-		t.Errorf("meta = %v", d.Meta)
+	// The source's metadata and the modification time the engine records,
+	// which the metadata request repeats for a source that states none,
+	// and no stamp of the application's own.
+	source, err := h.transfer.connections.sessions[srcBookmark].session.ObjectDetail(ctx, "media", "one.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"Shoot": "wedding", "Mtime": strconv.FormatInt(source.LastModified.Unix(), 10)}; !reflect.DeepEqual(d.Meta, want) {
+		t.Errorf("meta = %v, want %v", d.Meta, want)
 	}
 
 	// Audit: a start and a terminal event.
@@ -506,7 +514,7 @@ func TestCancelCopyJob(t *testing.T) {
 	}
 	job := awaitTerminal(t, h, jobID)
 	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len("will not arrive")), ObjectsFailed: 1}
-	if job.State != "partial" || job.Counters != want || job.Error != "execution failed (example: stuck.txt: engine child cancelled); context canceled" {
+	if job.State != "partial" || job.Counters != want || job.Error != "execution failed (example: stuck.txt: the engine stopped without reporting this object: engine child cancelled); context canceled" {
 		t.Fatalf("job = %+v", job)
 	}
 	// Cancelling a finished job is refused.
@@ -854,7 +862,9 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 	seedObject(h.mock, "media", "big.bin", strings.Repeat("b", 4000), nil)
 	dstMock.AddContainer("backup", "standard")
 
-	// A completed transfer still cannot prove uncertain residue absent.
+	// Where the engine put a large object's segments is kept as the engine
+	// reported it, and nothing else is: a copy stages nothing and commits
+	// nothing (ADR 0122 decisions 4 and 8).
 	jobID, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
 		SourceBookmarkID: srcBookmark, SourceContainer: "media",
 		DestBookmarkID: dstBookmark, DestContainer: "backup",
@@ -865,8 +875,10 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
 		t.Fatalf("job = %+v", job)
 	}
-	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 4 {
-		t.Fatalf("completed job lost recovery records: %+v, %v", pending, err)
+	pending, err := h.transfer.jobs.RecoveryPending(ctx)
+	if err != nil || len(pending) != 1 || pending[0].Kind != jobs.RecoveryCaptured ||
+		pending[0].Container != "backup_segments" || !strings.HasPrefix(pending[0].Prefix, "big.bin/") {
+		t.Fatalf("recovery records = %+v, %v; want the one segment path the engine reported", pending, err)
 	}
 }
 
@@ -1093,17 +1105,6 @@ func TestOverlappingScopesRefused(t *testing.T) {
 		DestBookmarkID: twin.ID, DestContainer: "media", DestPrefix: "a/z/",
 	}); err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Errorf("dual-bookmark same-account overlap = %v, want refusal", err)
-	}
-
-	// A source folder that holds the copy's working area is refused: the
-	// job's scratch objects are not planned names.
-	for _, source := range []string{".aeronautes/", ".aeronautes/stage/"} {
-		if _, err := h.transfer.PlanCopy(ctx, CopyRequestDTO{
-			SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: source,
-			DestBookmarkID: bookmark, DestContainer: "media",
-		}); err == nil || !strings.Contains(err.Error(), "working area") {
-			t.Errorf("PlanCopy %q to the top = %v, want a working-area refusal", source, err)
-		}
 	}
 
 	// A copy up into the source's parent plans, and Mirror still refuses it.

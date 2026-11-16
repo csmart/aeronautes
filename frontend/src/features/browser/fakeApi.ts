@@ -806,7 +806,7 @@ export function newFakeApi(): Api {
         nativeRouted: 1,
         destOnlyBytes: 7_000_000,
       },
-      dataPath: "eligible copies pass through this workstation: source download and destination upload",
+      dataPath: "copies pass through this workstation: each object is read from the source and written at its name in the destination",
       overwriteBytes: 512,
       versionedDestination: req.destContainer === "versioned",
       largeObjectsAsDlo: true,

@@ -160,9 +160,10 @@ func copyItemRecordsRun(t *testing.T, h *Harness, count int) {
 		t.Errorf("identity probe audit differs: %+v", saved.Audit)
 	}
 	assertCopyItemRecords(t, h, id, src, dst, count, len(body), selected, saved)
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Job.RecoveryRecords != 1 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) {
-		t.Errorf("identity probe recovery differs: %+v", saved)
+	// No object here is large enough for the engine to report a segment
+	// path, which is the only recovery record a copy makes.
+	if len(saved.Rows) != 0 || saved.Job.RecoveryRecords != 0 || saved.Status != (app.RecoveryStatusDTO{}) {
+		t.Errorf("a copy of plain objects left recovery facts: %+v", saved)
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("finished identity probe still accepts cancellation")
@@ -178,6 +179,22 @@ func copyItemRecordsRun(t *testing.T, h *Harness, count int) {
 	}
 	if len(srcTrace.traffic.writeSnapshot()) != 0 {
 		t.Errorf("identity probe wrote source: %v", srcTrace.traffic.writeSnapshot())
+	}
+	// The one object that was copied was written at its own name and
+	// nowhere else: no stage name, no publishing write and no delete (ADR
+	// 0122 decision 4). The engine may send its one PUT again within its
+	// retry budget, so the names are exact and the count is not.
+	storage, err := url.Parse(h.Secondary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, write := range dstTrace.writeSnapshot() {
+		if write != "PUT "+storage.Path+"/"+dst+"/scope/z-engine.bin" {
+			t.Errorf("the copy wrote something other than the object at its name: %q", write)
+		}
+	}
+	if len(dstTrace.writeSnapshot()) == 0 {
+		t.Error("the copied object's write never reached the destination")
 	}
 	var namedInPublicSummary []string
 	for name := range selected {

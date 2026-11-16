@@ -151,9 +151,6 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 	if len(saved.Audit) != 1 || saved.Audit[0].BookmarkID != h.Primary.BookmarkID || saved.Audit[0].Operation != "transfer.copy."+saved.Job.State || saved.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" {
 		t.Errorf("terminal audit lost authority or result: %+v", saved.Audit)
 	}
-	if len(saved.Rows) != 1 || saved.Rows[0].BookmarkID != h.Secondary.BookmarkID || saved.Rows[0].Container != dst || saved.Rows[0].Prefix != "scope/.aeronautes/stage/"+id+"/" {
-		t.Errorf("recovery record lost: %+v", saved.Rows)
-	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(beforeA, afterA)
 	allowed := []string{dst + "/scope/a\ncontrol", dst + "/" + tc.object}
@@ -187,9 +184,8 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 			t.Errorf("valid Unicode identity or native outcome was not retained: %+v", item)
 		}
 	}
-	wantRecovery := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRecovery) || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) || saved.Job.RecoveryRecords != 1 {
-		t.Errorf("exact recovery record differs: %+v", saved)
+	if len(saved.Rows) != 0 || saved.Status != (app.RecoveryStatusDTO{}) || saved.Job.RecoveryRecords != 0 {
+		t.Errorf("a copy of plain objects left recovery records: %+v", saved)
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("completed Copy still accepts cancellation")
@@ -205,8 +201,9 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 				t.Errorf("valid-name copy changed content: name=%q got=%+v want=%+v", name, got, want)
 			}
 		}
-		if hits.Load() != 2 {
-			t.Errorf("valid-name source planning and verification hits=%d", hits.Load())
+		// One listing pass: nothing is listed again after the copy.
+		if hits.Load() != 1 {
+			t.Errorf("the source listing was read %d times, want once", hits.Load())
 		}
 	} else {
 		if !strings.Contains(saved.Job.Error, "listing row requires valid Unicode and unambiguous identity fields") {

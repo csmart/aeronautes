@@ -19,6 +19,11 @@ import (
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
 
+// copyRecordFault copies three plain objects while one of the job's item
+// records cannot be written. The application sends a name the engine cannot
+// carry itself, one at a time, and stops after the record it could not keep;
+// the engine is given its names together, so it has written all of them
+// before any outcome is recorded.
 func copyRecordFault(t *testing.T, h *Harness, mode string) {
 	t.Helper()
 	src := h.Container(h.Primary, "record-fault-src")
@@ -27,10 +32,10 @@ func copyRecordFault(t *testing.T, h *Harness, mode string) {
 	aliases := h.Container(h.Secondary, "record-fault-aliases")
 	first := "a\nnative"
 	second := "b\nnative"
-	if mode == "admission" || mode == "staged_execution" {
+	if mode == "admission" || mode == "engine_execution" {
 		first = "a-engine"
 	}
-	if mode == "staged_execution" {
+	if mode == "engine_execution" {
 		second = "b-engine"
 	}
 	for _, key := range []string{first, second, "z-engine"} {
@@ -81,22 +86,21 @@ func copyRecordFault(t *testing.T, h *Harness, mode string) {
 	if barrier != nil {
 		event, err := barrier.Wait(t.Context())
 		if err != nil || event.StatusCode != http.StatusCreated {
-			t.Fatalf("native PUT response boundary: %+v %v", event, err)
+			t.Fatalf("the first PUT's response boundary: %+v %v", event, err)
 		}
 		witness := h.SnapshotNamespace(h.Secondary)
 		object := witness.Containers[dst].Objects["scope/"+first]
 		if object.Digest != fmt.Sprintf("%x", sha256.Sum256([]byte("copy bytes"))) || object.Size != 10 {
-			t.Fatalf("native effect not independently observed before SQL refusal: %+v", object)
+			t.Fatalf("the first write was not independently observed before the SQL refusal: %+v", object)
 		}
-		if mode == "staged_execution" {
+		if mode == "engine_execution" {
 			page, err := h.jobStore.ReadItems(t.Context(), id, 0, 100)
 			if err != nil || len(page.Items) != 3 {
 				t.Fatalf("engine batch lacks acknowledged admissions: %+v %v", page, err)
 			}
 			for _, item := range page.Items {
-				if !item.Admitted || item.Execution != nil || item.Staging == nil ||
-					witness.Containers[dst].Objects[item.Staging.Object].Size != 10 {
-					t.Fatalf("engine-started name lost its admission or staging before the fault: %+v", item)
+				if !item.Admitted || item.Execution != nil || item.Staging != nil {
+					t.Fatalf("a name the engine was given lost its admission, or has an outcome before the engine answered: %+v", item)
 				}
 			}
 		}
@@ -121,63 +125,63 @@ func copyRecordFault(t *testing.T, h *Harness, mode string) {
 func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst string, beforeA, beforeB *oracle.AccountSnapshot, srcTrace, dstTrace *uploadDeleteTrace) {
 	t.Helper()
 	saved := copyCompletionRead(t, h.database, id)
-	wantState := "failed"
-	wantTotals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Problems: 1}
-	wantCounters := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 20}
-	var allowed []string
-	wantWrites := 0
-	if mode != "admission" {
+	// written are the names the destination holds afterwards, and outcomes
+	// each recorded item's first record, in name order; a nil outcome is an
+	// admitted name with no record.
+	copied := &jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}
+	var (
+		wantState    string
+		wantTotals   jobs.ItemTotals
+		wantCounters jobs.Counters
+		written      []string
+		outcomes     []*jobs.ItemObservation
+		verified     int
+	)
+	switch mode {
+	case "admission":
+		// The second name could not be admitted, so the first, which was
+		// waiting for the engine, was never sent.
+		wantState = "failed"
+		wantTotals = jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Problems: 1}
+		wantCounters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 20}
+		outcomes = []*jobs.ItemObservation{{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted,
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIncomplete}}}
+	case "execution":
+		// The application wrote the first name and could not record it, and
+		// sent nothing after that.
 		wantState = "partial"
-		wantTotals.Problems, wantTotals.Unresolved = 0, 1
-		wantCounters = jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 10, ObjectsCopied: 1, BytesCopied: 10, NativeRouted: 1}
-		allowed = []string{dst + "/scope/" + first}
-		wantWrites = 1
-	}
-	if mode == "staged_execution" {
-		wantTotals.Items, wantTotals.Planned, wantTotals.Admitted, wantTotals.Unresolved = 3, 3, 3, 3
-		wantCounters.ObjectsPlanned, wantCounters.BytesPlanned, wantCounters.NativeRouted = 3, 30, 0
-		allowed = append(allowed, dst+"/scope/.aeronautes/stage/"+id+"/batch/b-engine", dst+"/scope/.aeronautes/stage/"+id+"/batch/z-engine")
-		wantWrites = 5
-	}
-	if mode == "verification" {
-		wantTotals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Unverified: 2}
-		wantCounters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 30, ObjectsCopied: 3, BytesCopied: 30, NativeRouted: 2, ObjectsVerified: 2}
-		allowed = append(allowed, dst+"/scope/b\nnative", dst+"/scope/z-engine")
-		wantWrites = 5
+		wantTotals = jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Unresolved: 1}
+		wantCounters = jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 10, ObjectsCopied: 1, BytesCopied: 10, NativeRouted: 1, ObjectsVerified: 1}
+		written, outcomes = []string{first}, []*jobs.ItemObservation{nil}
+	case "engine_execution":
+		// The engine had all three names and wrote them. The first record
+		// could not be kept, so none of the three has one: the rest have
+		// nowhere to go.
+		wantState = "partial"
+		wantTotals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Unresolved: 3}
+		wantCounters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 30, ObjectsCopied: 1, BytesCopied: 10, ObjectsVerified: 1}
+		written, outcomes = []string{first, "b-engine", "z-engine"}, []*jobs.ItemObservation{nil, nil, nil}
+	case "verification":
+		// The second name was written and its first record kept; its second
+		// record could not be, and the third name was never reached.
+		wantState = "partial"
+		wantTotals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Unverified: 1}
+		wantCounters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 20, ObjectsCopied: 2, BytesCopied: 20, NativeRouted: 2, ObjectsVerified: 2}
+		written, outcomes, verified = []string{first, "b\nnative"}, []*jobs.ItemObservation{copied, copied}, 1
 	}
 	if saved.Job.State != wantState || saved.Job.Counters != wantCounters || saved.Job.FinishedAt == "" ||
-		!saved.ItemsCaptured || saved.ItemTotals != wantTotals || int64(len(saved.Items)) != wantTotals.Items || saved.Items[0].Key != first {
+		!saved.ItemsCaptured || saved.ItemTotals != wantTotals || len(saved.Items) != len(outcomes) || saved.Items[0].Key != first {
 		t.Fatalf("record refusal lost acknowledged facts or reported effects: %+v want=%s %+v %+v", saved, wantState, wantCounters, wantTotals)
 	}
-	item := saved.Items[0]
-	if item.Source.Object != "scope/"+first || item.Destination.Object != "scope/"+first || !item.Admitted || (mode != "verification" && item.Verification != nil) {
-		t.Fatalf("record refusal fabricated or changed identity: %+v", item)
-	}
-	if mode == "admission" {
-		if item.Staging == nil || item.Staging.Object != "scope/.aeronautes/stage/"+id+"/batch/"+first || item.Execution == nil ||
-			item.Execution.Result != jobs.ItemNotAttempted || item.Execution.Effect != jobs.EffectNotAttempted || item.Execution.Diagnostic.Code != jobs.CodeIncomplete {
-			t.Fatalf("failed admission lost the acknowledged unstarted batch: %+v", item)
+	for i, item := range saved.Items {
+		if item.Source.Object != "scope/"+item.Key || item.Destination.Object != "scope/"+item.Key || !item.Admitted || item.Staging != nil {
+			t.Fatalf("record refusal fabricated or changed an identity, or recorded a stage name: %+v", item)
 		}
-	} else if mode == "execution" && (item.Staging != nil || item.Execution != nil) {
-		t.Fatalf("refused post-effect observation was invented: %+v", item)
-	}
-	if mode == "staged_execution" {
-		for i, key := range []string{first, "b-engine", "z-engine"} {
-			item := saved.Items[i]
-			if item.Key != key || item.Execution != nil || item.Verification != nil || !item.Admitted || item.Staging == nil ||
-				item.Staging.Object != "scope/.aeronautes/stage/"+id+"/batch/"+key {
-				t.Fatalf("stopped staged commit lost intent or invented final facts: %+v", item)
-			}
+		if (item.Execution == nil) != (outcomes[i] == nil) || (item.Execution != nil && item.Execution.ItemObservation != *outcomes[i]) {
+			t.Fatalf("record refusal invented or lost an outcome: %+v want=%+v", item, outcomes[i])
 		}
-	}
-	if mode == "verification" {
-		for i, key := range []string{first, "b\nnative", "z-engine"} {
-			item := saved.Items[i]
-			if item.Key != key || !item.Admitted || item.Execution == nil ||
-				item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}) ||
-				(i == 0 && (item.Verification == nil || item.Verification.Result != jobs.ItemVerified)) || (i > 0 && item.Verification != nil) {
-				t.Fatalf("verification refusal lost earlier facts or invented later verification: %+v", item)
-			}
+		if (item.Verification != nil) != (i < verified) {
+			t.Fatalf("record refusal invented or lost a second record: %+v", item)
 		}
 	}
 	wantSummary := fmt.Sprintf("job %s · item outcomes: 0 failed names, 0 conflicts, 0 refusals, %d unresolved, %d unverified, %d with problems", id, wantTotals.Unresolved, wantTotals.Unverified, wantTotals.Problems)
@@ -185,10 +189,8 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 		saved.Audit[0].BookmarkID != h.Primary.BookmarkID || saved.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" {
 		t.Fatalf("record refusal audit lost facets or source authority: %+v", saved.Audit)
 	}
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging,
-		Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) {
-		t.Fatalf("record refusal changed retained recovery facts: %+v", saved.Rows)
+	if len(saved.Rows) != 0 {
+		t.Fatalf("a copy of plain objects left recovery records: %+v", saved.Rows)
 	}
 	if visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id); err == nil || visible != nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("record refusal exposed stale job status: %+v %v", visible, err)
@@ -208,34 +210,33 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 	if rerun, err := h.Transfer.RerunJob(t.Context(), id); err == nil || rerun != "" || requests != srcTrace.requestCount()+dstTrace.requestCount() {
 		t.Fatalf("unavailable records allowed a rerun or connection traffic: %q %v", rerun, err)
 	}
+	// Each written name was written at that name and nothing else was
+	// touched. The application sends its own PUT once; the engine may send
+	// one again within its retry budget, so only its names are exact.
+	storage, err := url.Parse(h.Secondary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var allowed []string
+	wantWrites := map[string]bool{}
+	for _, key := range written {
+		allowed = append(allowed, dst+"/scope/"+key)
+		wantWrites["PUT "+storage.Path+"/"+dst+"/scope/"+key] = true
+	}
+	gotWrites := map[string]bool{}
+	for _, write := range dstTrace.writeSnapshot() {
+		gotWrites[write] = true
+	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(beforeA, afterA)
-	if changed := collateral(beforeB, afterB, allowed); len(changed) != 0 || len(srcTrace.writeSnapshot()) != 0 || len(dstTrace.writeSnapshot()) != wantWrites {
+	if changed := collateral(beforeB, afterB, allowed); len(changed) != 0 || len(srcTrace.writeSnapshot()) != 0 || !reflect.DeepEqual(gotWrites, wantWrites) ||
+		(mode != "engine_execution" && len(dstTrace.writeSnapshot()) != len(written)) {
 		t.Fatalf("record failure crossed a dependent effect: collateral=%v source=%v destination=%v", changed, srcTrace.writeSnapshot(), dstTrace.writeSnapshot())
 	}
-	if mode != "admission" {
-		object := afterB.Containers[dst].Objects["scope/"+first]
+	for _, key := range written {
+		object := afterB.Containers[dst].Objects["scope/"+key]
 		if object.Size != 10 || object.Digest != fmt.Sprintf("%x", sha256.Sum256([]byte("copy bytes"))) || object.Class != "plain" {
-			t.Fatalf("record refusal lost independently witnessed bytes: %+v", object)
-		}
-	}
-	if mode == "staged_execution" {
-		for _, key := range []string{"b-engine", "z-engine"} {
-			if _, exists := afterB.Containers[dst].Objects["scope/"+key]; exists {
-				t.Fatalf("later live commit crossed the recording fault: %q", key)
-			}
-			object := afterB.Containers[dst].Objects["scope/.aeronautes/stage/"+id+"/batch/"+key]
-			if object.Size != 10 || object.Digest != fmt.Sprintf("%x", sha256.Sum256([]byte("copy bytes"))) {
-				t.Fatalf("unobserved engine-started bytes were not retained: %+v", object)
-			}
-		}
-	}
-	if mode == "verification" {
-		for _, key := range []string{first, "b\nnative", "z-engine"} {
-			object := afterB.Containers[dst].Objects["scope/"+key]
-			if object.Size != 10 || object.Digest != fmt.Sprintf("%x", sha256.Sum256([]byte("copy bytes"))) {
-				t.Fatalf("verification refusal lost independently readable copied bytes: %+v", object)
-			}
+			t.Fatalf("a written name does not hold the source's bytes: %q %+v", key, object)
 		}
 	}
 	if err := h.database.WriteTx(t.Context(), func(tx *sql.Tx) error {
@@ -257,13 +258,13 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 }
 
 func TestCopyRecordRefusalMock(t *testing.T) {
-	for _, mode := range []string{"admission", "execution", "staged_execution", "verification"} {
+	for _, mode := range []string{"admission", "execution", "engine_execution", "verification"} {
 		t.Run(mode, func(t *testing.T) { copyRecordFault(t, findMockHarness(t), mode) })
 	}
 }
 
 func TestCopyRecordRefusalRealSwift(t *testing.T) {
-	for _, mode := range []string{"admission", "execution", "staged_execution", "verification"} {
+	for _, mode := range []string{"admission", "execution", "engine_execution", "verification"} {
 		t.Run(mode, func(t *testing.T) { copyRecordFault(t, New(t), mode) })
 	}
 }

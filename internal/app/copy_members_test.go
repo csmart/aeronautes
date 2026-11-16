@@ -155,7 +155,6 @@ func TestCopyMembersRefusals(t *testing.T) {
 		"the folder":   {[]string{"files/"}, `"files/" is the folder's own marker`},
 		"repeated":     {[]string{"files/a1", "files/a1"}, "named twice"},
 		"outside":      {[]string{"other/a1"}, "not inside"},
-		"staging":      {[]string{"files/.aeronautes/stage/j/x"}, "staging area"},
 		"over ceiling": {over, "selection ceiling"},
 	} {
 		req := CopyRequestDTO{

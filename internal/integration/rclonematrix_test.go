@@ -38,7 +38,9 @@ func TestRcloneMatrix(t *testing.T) {
 
 	runner, err := rclone.NewRunner(rclone.Options{
 		Binary: binary, AllowVersionMismatch: true,
-		ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2,
+		// The product points the engine at the names themselves (ADR 0122
+		// decisions 3 and 4), so that is what a candidate is measured at.
+		ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,19 +79,19 @@ func TestRcloneMatrix(t *testing.T) {
 	result, err := runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-matrix/batch", listable, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/encoding", listable, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	report("encoding.exit", "%d (errors reported: %d)", result.ExitCode, len(result.Errors))
 
 	arrived := map[string]bool{}
-	for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: ".aeronautes/stage/it-matrix/batch/"}) {
+	for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "encoding/"}) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-			arrived[strings.TrimPrefix(object.Name, ".aeronautes/stage/it-matrix/batch/")] = true
+			arrived[strings.TrimPrefix(object.Name, "encoding/")] = true
 		}
 	}
 	var exact, missing []string
@@ -125,11 +127,11 @@ func TestRcloneMatrix(t *testing.T) {
 	result, err = runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-matrixbig/batch", []string{"matrix-big.bin"}, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/large", []string{"matrix-big.bin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := h.Session2().ObjectDetail(ctx, dst, ".aeronautes/stage/it-matrixbig/batch/matrix-big.bin")
+	d, err := h.Session2().ObjectDetail(ctx, dst, "large/matrix-big.bin")
 	if err != nil {
 		report("large.result", "MISSING after copy (exit %d)", result.ExitCode)
 	} else {

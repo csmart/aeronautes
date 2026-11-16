@@ -20,7 +20,7 @@ import (
 )
 
 func TestCopyItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
-	for _, fault := range []string{"key", "source", "destination", "container", "bytes", "staging"} {
+	for _, fault := range []string{"key", "source", "destination", "container", "bytes"} {
 		t.Run(fault, func(t *testing.T) {
 			h := newHarness(t)
 			store := h.transfer.jobs
@@ -29,7 +29,7 @@ func TestCopyItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := CopyRequestDTO{SourceBookmarkID: "source", SourceContainer: "c", SourcePrefix: "scope/", DestBookmarkID: "dest", DestContainer: "c", DestPrefix: "scope/"}
-			admission := transfercopy.Admission{Item: plan.Item{Name: "name", SourceBytes: 10, Verdict: plan.VerdictNew, Route: plan.RouteRclone}, StagingObject: "stage/name"}
+			admission := transfercopy.Admission{Item: plan.Item{Name: "name", SourceBytes: 10, Verdict: plan.VerdictNew, Route: plan.RouteRclone}}
 			switch fault {
 			case "key":
 				admission.Item.Name = "invalid\xff"
@@ -41,8 +41,6 @@ func TestCopyItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 				req.SourceContainer = ""
 			case "bytes":
 				admission.Item.SourceBytes = -1
-			case "staging":
-				admission.StagingObject = "invalid\xff"
 			}
 			if err := h.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 				_, err := tx.Exec(`CREATE TRIGGER reject_any_admission BEFORE INSERT ON job_items BEGIN SELECT RAISE(ABORT,'fixture must not write'); END`)
@@ -50,7 +48,7 @@ func TestCopyItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			err = h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil, swiftcontrol.ContainerVersioning{}).Admit(admission)
+			err = h.transfer.copyItemRecorder(t.Context(), job.ID, req).Admit(admission)
 			if err == nil || store.Available() != nil {
 				t.Fatalf("invalid representation reached persistence or was accepted: %v latch=%v", err, store.Available())
 			}
@@ -103,7 +101,7 @@ func TestCopyItemDiagnosticsExcludeProviderText(t *testing.T) {
 			}
 			job := awaitTerminal(t, h, id)
 			page, err := h.transfer.jobs.ReadItems(t.Context(), id, 0, 100)
-			if err != nil || len(page.Items) != 1 || job.Counters.ObjectsFailed != 1 || page.Items[0].Execution == nil || page.Items[0].Verification == nil ||
+			if err != nil || len(page.Items) != 1 || job.Counters.ObjectsFailed != 1 || page.Items[0].Execution == nil || page.Items[0].Verification != nil ||
 				page.Items[0].Execution.Diagnostic != want || page.Items[0].Execution.Effect != jobs.EffectUnresolved || page.Items[0].Execution.Result != jobs.ItemFailed {
 				t.Fatalf("actual Copy inferred diagnostics from arbitrary text or lost typed facts: job=%+v rows=%+v %v", job, page, err)
 			}
@@ -139,7 +137,7 @@ func TestCopyItemRecordingCost(t *testing.T) {
 		}
 	}
 	req := CopyRequestDTO{SourceBookmarkID: "source", SourceContainer: "source", DestBookmarkID: "dest", DestContainer: "dest"}
-	recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil, swiftcontrol.ContainerVersioning{})
+	recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req)
 	const count = 201
 	started := time.Now()
 	for i := range count {
@@ -177,74 +175,6 @@ func TestCopyItemRecordingCost(t *testing.T) {
 	t.Logf("copy_record_cost=%s", encoded)
 }
 
-type copyComparisonEngine struct {
-	transfercopy.Engine
-	after func()
-}
-
-func (e copyComparisonEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	result, err := e.Engine.Copy(ctx, src, dst, names, onEvent)
-	if err == nil {
-		e.after()
-	}
-	return result, err
-}
-
-func TestCopyRecordsNamesFirstSeenDuringVerification(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	source := h.transfer.connections.ActiveBookmarkID()
-	dest, destination := secondCluster(t, h)
-	h.mock.AddContainer("media", "standard")
-	destination.AddContainer("backup", "standard")
-	seedObject(h.mock, "media", "z-copy", "copy bytes", nil)
-	seedObject(destination, "backup", "a-appeared", "same bytes", nil)
-	h.installEngine(nil)
-	original := h.transfer.engineFactory
-	h.transfer.setEngineFactory(func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error) {
-		engine, err := original(source, opts)
-		if err != nil {
-			return nil, err
-		}
-		return copyComparisonEngine{Engine: engine, after: func() {
-			seedObject(h.mock, "media", "a-appeared", "same bytes", nil)
-			seedObject(h.mock, "media", "b-appeared", "new bytes", nil)
-		}}, nil
-	})
-	id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, id)
-	page, err := h.transfer.jobs.ReadItems(t.Context(), id, 0, 100)
-	if err != nil || job.State != "partial" || job.Counters != (jobs.Counters{ObjectsPlanned: 1, BytesPlanned: 10, ObjectsCopied: 1, BytesCopied: 10, ObjectsVerified: 2, ObjectsFailed: 1}) || len(page.Items) != 3 {
-		t.Fatalf("fresh comparison changed execution totals: job=%+v page=%+v %v", job, page, err)
-	}
-	seen := map[string]bool{}
-	for _, item := range page.Items {
-		seen[item.Key] = true
-		if item.Source.Object != item.Key || item.Destination.Object != item.Key || item.Source.BookmarkID != source || item.Destination.BookmarkID != dest || item.Verification == nil {
-			t.Fatalf("fresh comparison lost captured identity: %+v", item)
-		}
-		if item.Key == "z-copy" {
-			if !item.Planned || !item.Admitted || item.Execution == nil || item.Execution.Result != jobs.ItemCopied || item.Verification.Result != jobs.ItemVerified {
-				t.Fatalf("fresh comparison lost original execution: %+v", item)
-			}
-			continue
-		}
-		want := jobs.ItemVerified
-		if item.Key == "b-appeared" {
-			want = jobs.ItemFailed
-		}
-		if item.Planned || item.Admitted || item.Execution != nil || item.Staging != nil || item.Verification.Result != want {
-			t.Fatalf("comparison-only name gained invented execution: %+v", item)
-		}
-	}
-	if !reflect.DeepEqual(seen, map[string]bool{"a-appeared": true, "b-appeared": true, "z-copy": true}) {
-		t.Fatalf("comparison lost newly visible names: %v", seen)
-	}
-}
-
 func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 	for _, verdict := range []plan.Verdict{plan.VerdictNew, plan.VerdictUnknown, plan.VerdictChanged, plan.VerdictSame, "comparison_only"} {
 		t.Run(string(verdict), func(t *testing.T) {
@@ -255,7 +185,7 @@ func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := CopyRequestDTO{SourceBookmarkID: "source", SourceContainer: "source-c", SourcePrefix: "source/", DestBookmarkID: "dest", DestContainer: "dest-c", DestPrefix: "dest/"}
-			recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req, nil, swiftcontrol.ContainerVersioning{})
+			recorder := h.transfer.copyItemRecorder(t.Context(), job.ID, req)
 			keys := []string{"", "a\nname", "zero\x00name", "snow☃", "replacement�", "a%2Fb"}
 			for _, key := range keys {
 				if verdict != "comparison_only" {

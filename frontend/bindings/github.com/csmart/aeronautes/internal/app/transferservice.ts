@@ -22,8 +22,10 @@ import * as local$0 from "../transfer/local/models.js";
 import * as $models from "./models.js";
 
 /**
- * CancelJob requests graceful cancellation. Child cleanup remains
- * best-effort, so subsequent reconciliation retains uncertain residue.
+ * CancelJob requests graceful cancellation. The engine's own cleanup of what
+ * it was writing is best-effort, so a cancelled large transfer can leave
+ * segments, which the job's record names and nothing removes (ADR 0122
+ * decision 8).
  */
 export function CancelJob(jobID: string): $CancellablePromise<void> {
     return $Call.ByID(900975859, jobID);

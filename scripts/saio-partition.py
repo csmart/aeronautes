@@ -18,7 +18,6 @@ SYSTEM = "github.com/csmart/aeronautes/internal/systemtest"
 # seconds. A heavy test must earn no scenario credit, because join() refuses a
 # heavy report with any.
 HEAVY = (
-    "TestCopySegmentChangeDetectionRealSwift",
     "TestUploadItemRecordsRealSwift",
     "TestDownloadRecordsRealSwift",
     "TestUploadRecoveryRealSwift",
@@ -32,7 +31,6 @@ HEAVY = (
     "TestLocalCompletionRealSwift",
     "TestCopyUnchangedRecordsRealSwift",
     "TestDownloadNameEncodingRealSwift",
-    "TestCopyStagedContentRealSwift",
 )
 ARTIFACTS = (
     "all-packages.txt", "test-list.jsonl", "plan.json", "expected-packages.txt",

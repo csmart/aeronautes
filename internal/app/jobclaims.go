@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
 // errScopeClaimed refuses a start whose scope overlaps what another job of
@@ -21,40 +19,24 @@ type scopeClaim struct {
 	// sweep is a deletion sweep's claim on what it lists; otherwise the claim
 	// is a transfer's, on where it writes.
 	sweep bool
-	// staged marks a transfer that writes under a stage root, as a copy
-	// does: only the job's own directory under that root is its own. An
-	// upload writes at its names and claims its destination folder whole.
-	staged bool
 	// account is the account identifier the session had resolved when the
 	// claim was taken, compared by the copy overlap guard's rule
 	// (distinctAccounts), so one that could not be read fails closed.
 	account   string
 	container string
-	// path is the stage root, "<destination prefix>.aeronautes/stage/", the
-	// folder an upload writes under, or the prefix a sweep lists ("" for a
-	// whole container).
+	// path is the folder a transfer writes under, or the prefix a sweep
+	// lists ("" for a whole container).
 	path string
 }
 
-// destinationClaims are an upload's two claims: the folder it writes under
-// in the destination container and the same path in that container's
-// segments container, where the engine puts a large object's segments
-// (ADR 0122 decision 3).
+// destinationClaims are the two claims of an upload or a copy: the folder it
+// writes under in the destination container and the same path in that
+// container's segments container, where the engine puts a large object's
+// segments (ADR 0122 decisions 3 and 4).
 func destinationClaims(account, container, destPrefix string) []scopeClaim {
 	return []scopeClaim{
 		{account: account, container: container, path: destPrefix},
 		{account: account, container: container + "_segments", path: destPrefix},
-	}
-}
-
-// stageClaims are a transfer's two claims: its stage root in the destination
-// container and in that container's segments container, where the engine puts
-// a large object's staged segments under the same path.
-func stageClaims(account, container, destPrefix string) []scopeClaim {
-	root := destPrefix + rclone.StageNamespace
-	return []scopeClaim{
-		{staged: true, account: account, container: container, path: root},
-		{staged: true, account: account, container: container + "_segments", path: root},
 	}
 }
 
@@ -80,7 +62,7 @@ func (o *jobOwner) holder() string {
 	return "job " + o.jobID
 }
 
-// claim records what this job stages into or sweeps, or refuses it when it
+// claim records what this job writes into or sweeps, or refuses it when it
 // overlaps a claim of the other kind that another job holds. The check and the
 // record are one step under the runner's lock, so two starts that conflict
 // cannot both win, and the claim leaves with the owner, after the job's whole
@@ -112,8 +94,8 @@ func (o *jobOwner) claim(claims ...scopeClaim) error {
 }
 
 // refuseStagedName refuses a deletion of named objects when one of its names
-// lies under what a transfer holds: a stage root, or the folder an upload is
-// writing under. Such a deletion asks at its start and holds no claim of its
+// lies under the folder a transfer is writing into. Such a deletion asks at
+// its start and holds no claim of its
 // own: its names are fixed before it runs, so it cannot reach a transfer
 // that begins later.
 func (r *jobRunner) refuseStagedName(account, container, name string) error {
@@ -133,9 +115,7 @@ func (r *jobRunner) refuseStagedName(account, container, name string) error {
 // stagedByLiveJob reports the live job that is writing where an object name
 // lies. A sweep that takes segments asks it for each segment: an ordinary
 // live object can name segments a job is still writing, and those are kept
-// (ADR 0105 decision 3). For a staged transfer the job's own directory, not
-// the stage root, is compared, because a large object an earlier build
-// uploaded keeps its segments under the stage root of the job that made it.
+// (ADR 0105 decision 3).
 func (r *jobRunner) stagedByLiveJob(account, container, name string) (string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -144,11 +124,7 @@ func (r *jobRunner) stagedByLiveJob(account, container, name string) (string, bo
 			continue
 		}
 		for _, held := range owner.claims {
-			own := held.path
-			if held.staged {
-				own += owner.jobID + "/"
-			}
-			if !held.sweep && held.container == container && !distinctAccounts(account, held.account) && strings.HasPrefix(name, own) {
+			if !held.sweep && held.container == container && !distinctAccounts(account, held.account) && strings.HasPrefix(name, held.path) {
 				return owner.holder(), true
 			}
 		}

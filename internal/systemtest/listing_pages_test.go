@@ -303,7 +303,7 @@ func listingCopy(t *testing.T, h *Harness, mode string) {
 		t.Fatalf("listing pages changed the selected Copy plan: %+v", job)
 	}
 	if job.State != "complete" || job.Counters.ObjectsCopied != 3 || job.Counters.BytesCopied != 12 || job.Counters.ObjectsVerified != 3 || job.Counters.ObjectsFailed != 0 {
-		t.Fatalf("listing pages truncated Copy or fresh verification: %+v", job)
+		t.Fatalf("listing pages truncated the copy: %+v", job)
 	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(beforeA, afterA)
@@ -317,16 +317,17 @@ func listingCopy(t *testing.T, h *Harness, mode string) {
 		}
 	}
 	h.AssertNoCollateral(beforeB, afterB, allowed...)
-	// Execution and verification must both observe the source tail;
-	// successful writes alone do not prove that verification reached it.
+	// A copy lists its source once: each object's outcome is what the engine
+	// or the store answered, so no second pass reads the listing again (ADR
+	// 0122 decision 4).
 	terminalReads := 0
 	for _, call := range sourceTrace.snapshot() {
 		if call.prefix == "scope/" && call.delimiter == "" && call.marker == names[2] {
 			terminalReads++
 		}
 	}
-	if mode != "mixed-normal" && terminalReads < 2 {
-		t.Fatalf("source tail reached only %d times across planning and fresh verification", terminalReads)
+	if mode != "mixed-normal" && terminalReads != 1 {
+		t.Fatalf("the source listing's tail was read %d times, want once", terminalReads)
 	}
 	receipt.CreditHappy()
 }

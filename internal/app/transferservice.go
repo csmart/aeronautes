@@ -236,7 +236,7 @@ func missingMembers(req CopyRequestDTO, found int) int {
 
 // validateMembers refuses a selection that cannot be what the operator chose
 // (ADR 0108 decision 2): each member is a full name inside the scope's
-// prefix, not the folder itself, named once, and outside every staging area.
+// prefix, not the folder itself, and named once.
 func validateMembers(prefix string, members []string) error {
 	seen := make(map[string]struct{}, len(members))
 	for _, name := range members {
@@ -250,8 +250,6 @@ func validateMembers(prefix string, members []string) error {
 			return fmt.Errorf("selected object %q is the folder's own marker; select it from the folder above to copy or download it", name)
 		case !strings.HasPrefix(name, prefix):
 			return fmt.Errorf("selected object %q is not inside %q", name, prefix)
-		case rclone.InStageNamespace(name):
-			return fmt.Errorf("selected object %q is inside a staging area", name)
 		}
 		if _, repeated := seen[name]; repeated {
 			return fmt.Errorf("selected object %q is named twice", name)
@@ -399,16 +397,6 @@ func (s *TransferService) resolve(ctx context.Context, req CopyRequestDTO) (src,
 			}
 		}
 	}
-	// The job's scratch objects go under the destination prefix and are not
-	// planned names, so a source scope holding that area could have a source
-	// object replaced by one (DESIGN §65.9 item 9). A copy of members reads
-	// only its members, none of which can be in a staging area, so for it the
-	// scratch area is never read (ADR 0108 decision 4).
-	if scratch := req.DestPrefix + rclone.StageNamespace; sharesNamespace(req, src, dst) && len(req.Members) == 0 && strings.HasPrefix(scratch, req.SourcePrefix) {
-		return nil, nil, false, fmt.Errorf(
-			"the source folder %q holds this copy's working area %q; copy a folder outside it, or to another container",
-			req.SourcePrefix, scratch)
-	}
 	detail, err := dst.ContainerDetail(ctx, req.DestContainer)
 	if swiftcontrol.IsNotFound(err) {
 		missing := DestinationMissingDTO{BookmarkID: req.DestBookmarkID, Generation: dstEntry.generation, Container: req.DestContainer}
@@ -466,7 +454,7 @@ func (s *TransferService) PlanCopy(ctx context.Context, req CopyRequestDTO) (*Co
 		Summary:              summary,
 		VersionedDestination: versioned,
 		LargeObjectsAsDLO:    largeConservative,
-		DataPath:             "eligible copies pass through this workstation: source download and destination upload",
+		DataPath:             "copies pass through this workstation: each object is read from the source and written at its name in the destination",
 		OverwriteBytes:       overwriteBytes,
 		MissingMembers:       missingMembers(req, found),
 	}, nil
@@ -519,7 +507,7 @@ func (s *TransferService) setRecommendationSource(f func(bookmarkID string) *Tra
 // with the job's effective options. Remotes resolve PER SPAWN: each
 // child gets tokens refreshed against expiry first (§26.2 — the child
 // cannot re-authenticate itself).
-func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session) (transfercopy.Engine, TransferSettingsDTO, map[string]string, error) {
+func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session, keepsSegments bool) (transfercopy.Engine, TransferSettingsDTO, map[string]string, error) {
 	source := func(spawnCtx context.Context) ([]rclone.Remote, error) {
 		srcRemote, err := s.connections.EngineRemote(spawnCtx, src, "aeronautes_src")
 		if err != nil {
@@ -566,8 +554,19 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	}
 	options := effective.options()
 	// Source sizes and digests describe stored bytes, so Copy must not
-	// decode content while staging it through the child.
+	// decode content as it passes through the child.
 	options.NoGzipEncoding = true
+	// The engine writes each object at its name (ADR 0122 decision 4), and
+	// removes a replaced large object's old segments only where
+	// keepsReplaced allowed it.
+	options.LiveDestination = true
+	options.KeepReplacedSegments = keepsSegments
+	// The engine's one size check after it writes an object in segments
+	// reads the dynamic manifest's size through a listing that can lag the
+	// last segment (F35). A copy learns which objects are that large only
+	// as it runs, so the check is off for the job; each object and segment
+	// is still checked against the store's entity tag as it is written.
+	options.IgnoreSize = true
 	if s.engineFactory != nil {
 		engine, err := s.engineFactory(source, options)
 		return engine, effective, origins, err
@@ -602,26 +601,35 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", err
 	}
-	// A copy stages under its destination prefix; no sweep of ours may run
-	// over that while this job is alive (ADR 0105 decision 3).
-	if err := owner.claim(stageClaims(swiftcontrol.AccountIdentity(dst.StorageURL()), req.DestContainer, req.DestPrefix)...); err != nil {
+	// A copy writes under its destination folder; no sweep of ours may run
+	// over that while this job is alive (ADR 0105 decision 3, ADR 0122
+	// decision 4).
+	if err := owner.claim(destinationClaims(swiftcontrol.AccountIdentity(dst.StorageURL()), req.DestContainer, req.DestPrefix)...); err != nil {
 		return "", err
 	}
-	// An acknowledged copy raises the one native confirmation before anything
-	// is created, naming both accounts and capturing the baseline the
-	// fixed-point comparison rests on. An unacknowledged copy skips it and
-	// refuses every overwrite in the executor, exactly as it does today.
-	var acknowledged map[string]jobs.ItemBaseline
-	var authorised swiftcontrol.ContainerVersioning
+	// One read of the destination's versioning decides whether the engine
+	// may remove a replaced large object's old segments, for the whole job;
+	// a read that fails keeps them.
+	observed, versioningErr := s.readVersioning(ctx, req.DestBookmarkID, req.DestContainer)
+	keepsSegments, segments := true, ""
+	if versioningErr == nil {
+		keepsSegments, segments = s.keepsReplaced(ctx, req.DestContainer, req.DestPrefix, observed)
+	}
+	// A copy that may replace raises the one native confirmation before
+	// anything is written, naming both accounts. One that may not refuses
+	// every name the destination already holds differently.
 	if req.AcknowledgeOverwrite {
-		acknowledged, authorised, err = s.confirmCopyOverwrite(ctx, req, src, dst)
-		if err != nil {
+		if err := s.confirmCopyOverwrite(ctx, req, src, dst, observed, versioningErr, segments); err != nil {
 			return "", err
 		}
 	}
-	engine, effective, origins, err := s.buildEngine(ctx, req, src, dst)
+	engine, effective, origins, err := s.buildEngine(ctx, req, src, dst, keepsSegments)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
+	}
+	chunkBytes, known := engineChunkBytes(effective.ChunkSize)
+	if !known {
+		return "", fmt.Errorf("transfer engine: the chunk size %q is not a size", effective.ChunkSize)
 	}
 
 	job, err := s.jobs.Create(ctx, jobs.Job{
@@ -652,7 +660,7 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 		return "", fmt.Errorf("start audit unavailable: %w", err)
 	}
 	owner.launch(job.ID, req.SourceBookmarkID, func(runCtx context.Context) {
-		s.runCopy(runCtx, job.ID, req, src, dst, engine, acknowledged, authorised)
+		s.runCopy(runCtx, job.ID, req, src, dst, engine, chunkBytes)
 	}, func(background context.Context) {
 		s.finishCopy(background, job.ID, req, job.Counters, jobs.StateCancelled, "")
 	})
@@ -660,132 +668,120 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 }
 
 // confirmCopyOverwrite raises the one native confirmation that authorises
-// replacing live destinations, naming BOTH accounts — the one the bytes come
-// from and the one they land in (ADR 0073, ADR 0081 decision 2). It HEADs each
-// candidate to capture the baseline ADR 0085 compares at the fixed point,
-// refuses unless the answer is yes about exactly this plan, and re-checks both
-// accounts' generations either side of the dialog so an answer given about one
-// pair of accounts cannot authorise a write under another.
+// replacing what the destination holds, naming BOTH accounts — the one the
+// bytes come from and the one they land in (ADR 0073, ADR 0122 decision 2).
 //
-// It returns the baselines it captured, keyed by name, for the recorder to
-// store once each item row exists. An empty map with no error means there was
-// nothing live to replace, so the copy proceeds with every name conditional.
-func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequestDTO,
-	src, dst *swiftcontrol.Session) (map[string]jobs.ItemBaseline, swiftcontrol.ContainerVersioning, error) {
-	// Changed and Unknown are the join's two "a destination exists" verdicts;
-	// New has no destination and Same needs no replacement. The plan is advisory
-	// — the executor re-reads at the fixed point — so this pass only names the
-	// candidates to ask about.
-	var candidates []string
+// It asks about the names the two listings show as different and, of the
+// pairs the listings cannot compare, those the store does not describe as the
+// same: the copy makes the same two reads for such a pair and decides the
+// same way. Nothing to replace asks nothing. Both accounts' generations are
+// checked either side of the dialog, so an answer given about one pair of
+// accounts cannot authorise a write under another.
+func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session,
+	observed swiftcontrol.ContainerVersioning, versioningErr error, segments string) error {
+	type candidate struct {
+		name    string
+		unknown bool
+	}
+	var candidates []candidate
 	if _, err := plan.Copy(ctx,
 		sourceObjects(ctx, req, src, dst, nil),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
 			if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
-				candidates = append(candidates, item.Name)
+				candidates = append(candidates, candidate{name: item.Name, unknown: item.Verdict == plan.VerdictUnknown})
 			}
 			return nil
 		}); err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
-	// HEAD each candidate to capture what the operator is about to be shown. A
-	// name the plan called a candidate but that no longer identifies anything is
-	// left out of both the baseline set and the question: it was not shown, so
-	// it carries no acknowledgement, and the executor refuses it at the fixed
-	// point as an unacknowledged overwrite rather than replacing it blind.
-	baselines := map[string]jobs.ItemBaseline{}
 	var names []string
-	for _, name := range candidates {
-		detail, err := dst.ObjectDetail(ctx, req.DestContainer, req.DestPrefix+name)
-		if err != nil {
-			if swiftcontrol.IsNotFound(err) {
+	for _, c := range candidates {
+		if c.unknown {
+			replaces, err := replacesUnknown(ctx, req, src, dst, c.name)
+			if err != nil {
+				return err
+			}
+			if !replaces {
 				continue
 			}
-			return nil, swiftcontrol.ContainerVersioning{}, fmt.Errorf("reading %s before asking to replace it: %w", name, err)
 		}
-		baseline, ok := copyShownFrom(detail)
-		if !ok {
-			continue
-		}
-		baselines[name] = baseline
-		names = append(names, name)
+		names = append(names, c.name)
 	}
 	if len(names) == 0 {
-		return map[string]jobs.ItemBaseline{}, swiftcontrol.ContainerVersioning{}, nil
+		return nil
 	}
 	if s.overwrites == nil {
-		return nil, swiftcontrol.ContainerVersioning{}, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+		return errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
 	}
-	observed, err := s.readVersioning(ctx, req.DestBookmarkID, req.DestContainer)
-	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+	if versioningErr != nil {
+		return versioningErr
 	}
 	versioning, err := versioningStatement(observed)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
-	// Both generations are observed either side of the dialog: an answer given
-	// about one account's credentials must not authorise a write once either
-	// account's credentials have rotated under it.
 	srcBefore, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	dstBefore, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	question, err := copyOverwriteQuestion(
 		s.connections.displayName(ctx, req.SourceBookmarkID), accountSuffix(src.StorageURL()),
 		s.connections.displayName(ctx, req.DestBookmarkID), accountSuffix(dst.StorageURL()),
-		req.DestContainer, req.DestPrefix, versioning, names)
+		req.DestContainer, req.DestPrefix, versioning, segments, names)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	if !yes {
-		return nil, swiftcontrol.ContainerVersioning{}, errors.New("the replacement was not confirmed; nothing was written")
+		return errors.New("the replacement was not confirmed; nothing was written")
 	}
 	srcAfter, err := s.connections.sessionEntryFor(ctx, req.SourceBookmarkID)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	dstAfter, err := s.connections.sessionEntryFor(ctx, req.DestBookmarkID)
 	if err != nil {
-		return nil, swiftcontrol.ContainerVersioning{}, err
+		return err
 	}
 	if srcAfter.generation != srcBefore.generation || dstAfter.generation != dstBefore.generation {
-		return nil, swiftcontrol.ContainerVersioning{}, errors.New("an account's credentials changed while you were answering; start again")
+		return errors.New("an account's credentials changed while you were answering; start again")
 	}
-	return baselines, observed, nil
+	return nil
 }
 
-// copyShownFrom reads a destination HEAD into the baseline the fixed-point
-// comparison needs, or reports that it identifies nothing. It mirrors the
-// executor's own reading (internal/transfer/copy), so the baseline captured
-// here and the fresh observation compared there describe an object the same
-// way: a HEAD with no entity tag or no stated length is not an identity.
-func copyShownFrom(detail *swiftcontrol.ObjectDetail) (jobs.ItemBaseline, bool) {
-	tag := strings.Trim(detail.ETag, `"`)
-	if tag == "" {
-		return jobs.ItemBaseline{}, false
+// replacesUnknown reads both sides of a pair the listings cannot compare, an
+// empty row or a large object, and reports whether a copy would replace the
+// destination: it would not when the name is no longer there, which is a
+// first copy, nor when the store describes the two as the same.
+func replacesUnknown(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session, name string) (bool, error) {
+	there, err := dst.ObjectDetail(ctx, req.DestContainer, req.DestPrefix+name)
+	if swiftcontrol.IsNotFound(err) {
+		return false, nil
 	}
-	if _, stated := detail.RawHeaders["Content-Length"]; !stated {
-		return jobs.ItemBaseline{}, false
+	if err != nil {
+		return false, fmt.Errorf("reading %s before asking to replace it: %w", name, err)
 	}
-	return jobs.ItemBaseline{Class: string(detail.Class), Length: detail.ContentLength, ETag: tag}, true
+	from, err := src.ObjectDetail(ctx, req.SourceContainer, req.SourcePrefix+name)
+	if err != nil {
+		return false, fmt.Errorf("reading the source of %s before asking to replace it: %w", name, err)
+	}
+	return !transfercopy.SameByStore(from, there), nil
 }
 
 // copyOverwriteQuestion composes the two-account confirmation. It refuses to
-// compose a statement missing either account, the container, its versioning or
-// the names, so no caller can raise a question that authorises nothing. Copy
-// keeps the replaced objects' segments (ADR 0087 decision 6), so the question
-// says so rather than offering a removal it will not perform.
+// compose a statement missing either account, the container, its versioning,
+// what happens to a replaced large object's old segments, or the names, so no
+// caller can raise a question that authorises nothing.
 func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
-	container, prefix, versioning string, names []string) (OverwriteConfirmation, error) {
+	container, prefix, versioning, segments string, names []string) (OverwriteConfirmation, error) {
 	switch {
 	case srcAccount == "":
 		return OverwriteConfirmation{}, errors.New("the source account could not be identified, so an overwrite is refused")
@@ -795,6 +791,8 @@ func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
 		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
 	case versioning == "":
 		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
+	case segments == "":
+		return OverwriteConfirmation{}, errors.New("what happens to a replaced large object's old segments could not be stated, so an overwrite is refused")
 	case len(names) == 0:
 		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
 	}
@@ -802,7 +800,7 @@ func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
 		Bookmark: titleText(dstLabel, 80), Account: titleText(dstAccount, 80),
 		SourceBookmark: titleText(srcLabel, 80), SourceAccount: titleText(srcAccount, 80),
 		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
-		Fragments: "the replaced objects' segments are kept, not removed: they are on the destination account, which was not enumerated",
+		Fragments: segments,
 	}, nil
 }
 
@@ -857,32 +855,18 @@ func (s *TransferService) finishCopy(ctx context.Context, jobID string, req Copy
 	}
 }
 
-// errCollisionSetChanged refuses an acknowledged copy whose executable collision
-// set no longer matches the one the operator confirmed (ADR 0087 decision 4).
-var errCollisionSetChanged = errors.New("the set of destinations to replace changed after it was confirmed; nothing was replaced, confirm the copy again")
-
-// runCopy is the job goroutine: Planning → Running (single-pass plan
-// streamed straight into the executor — the plan is advisory either way,
-// §15.3, so the planned counters grow live rather than costing a second
-// full listing pass) → Verifying → terminal, with reconciliation on
-// every exit path.
+// runCopy is the job goroutine: Planning → Running, with the plan streamed
+// straight into the executor (the plan is advisory, §15.3, so the planned
+// counters grow live and cost no second listing pass) → Verifying →
+// terminal. Each object's outcome is what the engine or the store answered
+// for it (ADR 0122 decision 4), so nothing is listed or read again afterwards.
 func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyRequestDTO,
-	src, dst *swiftcontrol.Session, engine transfercopy.Engine, acknowledged map[string]jobs.ItemBaseline,
-	authorised swiftcontrol.ContainerVersioning) {
+	src, dst *swiftcontrol.Session, engine transfercopy.Engine, chunkBytes int64) {
 
-	background := context.WithoutCancel(ctx) // store/reconcile writes survive cancel
+	background := context.WithoutCancel(ctx) // store writes survive cancel
 	counters := jobs.Counters{}
 	var countersMu sync.Mutex
-	var executor *transfercopy.Executor
 	finish := func(state jobs.State, message string) {
-		if executor != nil {
-			if err := executor.Close(); err != nil {
-				message = joinNotes(message, "refusal record closure: "+err.Error())
-				if state == jobs.StateComplete {
-					state = jobs.StatePartial
-				}
-			}
-		}
 		countersMu.Lock()
 		snapshot := counters
 		countersMu.Unlock()
@@ -919,14 +903,14 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		}
 	}
 
-	var err error
-	executor, err = transfercopy.New(transfercopy.Config{
+	executor, err := transfercopy.New(transfercopy.Config{
 		Source: src, Dest: dst, Engine: engine,
 		SrcSpec: "aeronautes_src:" + req.SourceContainer, DstSpec: "aeronautes_dst:" + req.DestContainer,
 		SrcContainer: req.SourceContainer, DstContainer: req.DestContainer,
 		SrcPrefix: req.SourcePrefix, DstPrefix: req.DestPrefix,
-		JobID:    jobID,
-		Recorder: s.copyItemRecorder(background, jobID, req, acknowledged, authorised),
+		Replace:    req.AcknowledgeOverwrite,
+		ChunkBytes: chunkBytes,
+		Recorder:   s.copyItemRecorder(background, jobID, req),
 		OnItem: func(outcome transfercopy.ItemOutcome) {
 			countersMu.Lock()
 			switch outcome.Outcome {
@@ -950,95 +934,26 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		finish(jobs.StateFailed, err.Error())
 		return
 	}
-	defer func() {
-		if err := executor.Close(); err != nil {
-			applog.Warnf("job %s close refusal record: %v", jobID, err)
-		}
-	}()
-	// Persist creation intent before writes so an interrupted transfer
-	// retains visible recovery facts. This does not grant cleanup authority.
-	if err := s.jobs.RecoveryAdd(background, jobs.RecoveryRecord{
-		JobID: jobID, BookmarkID: req.DestBookmarkID, Kind: jobs.RecoveryStaging,
-		Container: req.DestContainer, Prefix: executor.StagingPrefix(),
-	}); err != nil {
-		finish(jobs.StateFailed, "recovery store unavailable before first write: "+err.Error())
-		return
-	}
 	if !admit(jobs.StateRunning) {
 		return
 	}
 
-	planned := func(item plan.Item) error {
-		countersMu.Lock()
-		switch item.Verdict {
-		case plan.VerdictNew, plan.VerdictChanged, plan.VerdictUnknown:
-			counters.ObjectsPlanned++
-			counters.BytesPlanned += item.SourceBytes
-		}
-		countersMu.Unlock()
-		return executor.Handle(ctx, item)
-	}
-
-	// An acknowledged copy prepares ONE authoritative plan and executes that same
-	// plan (ADR 0087 decision 4). A single enumeration spools the plan to disk and
-	// collects its collision set; the whole start is refused, before any item is
-	// dispatched, if that set differs from what the operator confirmed — a name
-	// added, or a confirmed one now gone or without a source. The spooled plan is
-	// then replayed through the executor, so a member whose source disappears
-	// after the reading is attempted and recorded rather than dropped by a second
-	// enumeration, and each name still takes its own fixed-point comparison and
-	// conditional creation. Spooling keeps the admitted plan without holding the
-	// namespace in memory (K-PERF-001); the collision set is bounded by what the
-	// operator was shown. The listing error, a cancellation included, flows to the
-	// terminal handling below so it keeps its kind. An unacknowledged copy streams,
-	// with no set to hold and nothing to compare.
-	var planErr error
-	// How many members the execution listing met; a copy of the whole scope
-	// leaves it unused.
+	// How many members the listing met; a copy of the whole scope leaves it
+	// unused.
 	found := 0
-	if req.AcknowledgeOverwrite {
-		spool := &copyPlanSpool{}
-		defer func() {
-			if err := spool.close(); err != nil {
-				applog.Warnf("job %s close copy plan spool: %v", jobID, err)
+	_, planErr := plan.Copy(ctx,
+		sourceObjects(ctx, req, src, dst, &found),
+		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
+		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
+			countersMu.Lock()
+			switch item.Verdict {
+			case plan.VerdictNew, plan.VerdictChanged, plan.VerdictUnknown:
+				counters.ObjectsPlanned++
+				counters.BytesPlanned += item.SourceBytes
 			}
-		}()
-		seen := map[string]struct{}{}
-		_, planErr = plan.Copy(ctx,
-			sourceObjects(ctx, req, src, dst, &found),
-			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
-			req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
-				// A destination-only name is ignored by the executor, so spooling
-				// it would only grow the spool without changing execution.
-				if item.Verdict == plan.VerdictDestOnly {
-					return nil
-				}
-				if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
-					// A collision the operator did not confirm means the set changed
-					// since the confirmation. Refuse at once, before the newly
-					// collided names are retained, so the tracking map stays bounded
-					// by the confirmed set rather than the namespace (K-PERF-001).
-					if _, ok := acknowledged[item.Name]; !ok {
-						return errCollisionSetChanged
-					}
-					seen[item.Name] = struct{}{}
-				}
-				return spool.add(item)
-			})
-		// A confirmed collision never seen is gone or has no source: the set
-		// shrank, so the whole start is still refused.
-		if planErr == nil && !sameCollisionSet(acknowledged, seen) {
-			planErr = errCollisionSetChanged
-		}
-		if planErr == nil {
-			planErr = spool.replay(planned)
-		}
-	} else {
-		_, planErr = plan.Copy(ctx,
-			sourceObjects(ctx, req, src, dst, &found),
-			dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
-			req.SourcePrefix, req.DestPrefix, planned)
-	}
+			countersMu.Unlock()
+			return executor.Handle(ctx, item)
+		})
 	executor.Stop(planErr)
 	report, finishErr := executor.Finish(ctx)
 	planErr = finishErr
@@ -1049,31 +964,17 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.Overwrites = report.Overwrites
 	counters.OverwritesRefused = report.OverwritesRefused
 	counters.NativeRouted = report.NativeRouted
+	counters.ObjectsVerified = report.Verified
 	countersMu.Unlock()
 
 	// These records preserve creation provenance, not deletion authority.
-	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CommittedPrefixes)
-
-	// A completed transfer cannot prove uncertain residue absent.
-	// Keep its recovery facts even when reconciliation reports no error.
-	if reconcile, err := executor.Reconcile(background, report); err != nil {
-		planErr = errors.Join(planErr, fmt.Errorf("reconciliation: %w", err))
-	} else {
-		if len(reconcile.Notes) != 0 {
-			applog.Infof("job %s reconcile kept records: %s", jobID, strings.Join(reconcile.Notes, "; "))
-		}
-	}
+	s.recordOwnership(background, req.DestBookmarkID, jobID, report.CapturedPrefixes)
 
 	if planErr != nil {
 		if len(report.Failures) > 0 {
 			finish(jobs.StatePartial, fmt.Sprintf("execution failed (example: %s: %s); %s", report.Failures[0].Name, report.Failures[0].Err, planErr.Error()))
 		} else if report.Copied > 0 {
 			finish(jobs.StatePartial, planErr.Error())
-		} else if n := len(report.Conflicts); n > 0 {
-			// A name that was refused for a conflict is an outcome the run
-			// holds beside the cancellation, so the job is partial even
-			// when nothing was copied (ADR 0025).
-			finish(jobs.StatePartial, fmt.Sprintf("%d conflicts (destination changed externally); %s", n, planErr.Error()))
 		} else if errors.Is(planErr, context.Canceled) {
 			message := ""
 			if report.OverwritesRefused > 0 {
@@ -1086,6 +987,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		return
 	}
 
+	// The job passes through its verifying state, which the item ledger
+	// keeps until the removal step of ADR 0122; every record was written
+	// as its answer arrived.
 	if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
 		message := "verification state could not be saved: " + err.Error()
 		if len(report.Failures) > 0 {
@@ -1094,33 +998,13 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 		finish(jobs.StatePartial, message)
 		return
 	}
-	verify, err := executor.Verify(background,
-		selectedRows(src.Objects(background, req.SourceContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.SourcePrefix}), req.Members, nil),
-		dst.Objects(background, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}))
-	countersMu.Lock()
-	counters.ObjectsVerified = verify.Verified
-	countersMu.Unlock()
-	if err != nil {
-		state := jobs.StateFailed
-		if report.Copied > 0 || len(report.Failures) > 0 || len(verify.Failures) > 0 {
-			state = jobs.StatePartial
-		}
-		finish(state, "verification: "+err.Error())
-		return
-	}
 
 	missing := missingMembers(req, found)
 	switch {
-	case len(report.Failures) > 0 || len(verify.Failures) > 0 || len(report.Conflicts) > 0 || missing > 0:
+	case len(report.Failures) > 0 || missing > 0:
 		parts := []string{}
 		if n := len(report.Failures); n > 0 {
 			parts = append(parts, fmt.Sprintf("execution failed (example: %s: %s)", report.Failures[0].Name, report.Failures[0].Err))
-		}
-		if n := len(verify.Failures); n > 0 {
-			parts = append(parts, fmt.Sprintf("verification failed (example: %s)", verify.Failures[0].Name))
-		}
-		if n := len(report.Conflicts); n > 0 {
-			parts = append(parts, fmt.Sprintf("%d conflicts (destination changed externally)", n))
 		}
 		if missing > 0 {
 			parts = append(parts, fmt.Sprintf("%d of the selected objects were no longer at the source", missing))
@@ -1131,9 +1015,9 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	}
 }
 
-// recoveryRecorder persists executor recovery facts durably. Errors
-// return to the executor, which fails closed: no commit crosses a
-// boundary whose facts could not be persisted (§65.9 item 5).
+// recoveryRecorder keeps where the engine put an object's segments, as the
+// executor reports it. An error returns to the executor, which stops the run:
+// a copy that could leave segments nobody can name does not go on.
 func (s *TransferService) recoveryRecorder(ctx context.Context, jobID, bookmarkID string) func(kind, container, prefix, object string) error {
 	return func(kind, container, prefix, object string) error {
 		err := s.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{
@@ -1158,8 +1042,10 @@ func terminalAuditResult(state jobs.State) audit.Result {
 	}
 }
 
-// CancelJob requests graceful cancellation. Child cleanup remains
-// best-effort, so subsequent reconciliation retains uncertain residue.
+// CancelJob requests graceful cancellation. The engine's own cleanup of what
+// it was writing is best-effort, so a cancelled large transfer can leave
+// segments, which the job's record names and nothing removes (ADR 0122
+// decision 8).
 func (s *TransferService) CancelJob(ctx context.Context, jobID string) error {
 	cancel, ok := s.runner.cancel(jobID)
 	if !ok {

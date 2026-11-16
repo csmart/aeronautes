@@ -390,8 +390,6 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 			state = "verifying"
 		}
 		query = fmt.Sprintf(`CREATE TRIGGER refuse_copy_completion BEFORE UPDATE OF state ON jobs WHEN NEW.state='%s' BEGIN SELECT RAISE(ABORT,'fixture admission refusal'); END`, state)
-	case "recovery":
-		query = `CREATE TRIGGER refuse_copy_completion BEFORE INSERT ON job_recovery BEGIN SELECT RAISE(ABORT,'fixture recovery refusal'); END`
 	case "retention":
 		if err := h.database.WriteTx(t.Context(), func(tx *sql.Tx) error {
 			_, err := tx.Exec(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO audit_events(at,operation,resource,summary,result) SELECT '2026-09-08T00:00:00Z','fixture.keep','owned','retained','applied' FROM n`)
@@ -439,7 +437,7 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 	} else if visibleErr != nil || !reflect.DeepEqual(visible, state.Job) {
 		t.Errorf("copy visible/durable result differs: %+v %v %+v", visible, visibleErr, state)
 	}
-	admitted := fault != "start_audit" && fault != "planning" && fault != "running" && fault != "recovery"
+	admitted := fault != "start_audit" && fault != "planning" && fault != "running"
 	wantState := "complete"
 	if !admitted {
 		wantState = "failed"
@@ -456,21 +454,19 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 			wantCounters.BytesPlanned += 17
 			wantCounters.OverwritesRefused = 1
 		}
-		if verifyingRefused {
-			wantCounters.ObjectsVerified = 0
-		}
 		if fault == "verifying_failed" {
 			wantCounters.ObjectsCopied = 1
 			wantCounters.BytesCopied = 10
 			wantCounters.ObjectsFailed = 1
+			wantCounters.ObjectsVerified = 1
 		}
 	}
+	// Each object's two records were written as its answer arrived (ADR 0122
+	// decision 7), so a job state that cannot be saved afterwards leaves no
+	// object unverified: the job is partial and says why.
 	wantTotals := jobs.ItemTotals{Items: wantCounters.ObjectsPlanned, Planned: wantCounters.ObjectsPlanned,
 		Admitted: wantCounters.ObjectsPlanned - wantCounters.OverwritesRefused, Failed: wantCounters.ObjectsFailed,
 		Refused: wantCounters.OverwritesRefused, Problems: wantCounters.ObjectsFailed + wantCounters.OverwritesRefused}
-	if verifyingRefused {
-		wantTotals.Unverified = wantCounters.ObjectsCopied
-	}
 	if !state.ItemsCaptured || state.ItemTotals != wantTotals || int64(len(state.Items)) != wantTotals.Items {
 		t.Fatalf("Copy completion lost recorded outcomes: captured=%v totals=%+v rows=%d want=%+v", state.ItemsCaptured, state.ItemTotals, len(state.Items), wantTotals)
 	}
@@ -488,8 +484,8 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 		if refused {
 			summary += " · 1 overwrite refused"
 		}
-		summary += fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, %d refusals, 0 unresolved, %d unverified, %d with problems",
-			wantTotals.Failed, wantTotals.Refused, wantTotals.Unverified, wantTotals.Problems)
+		summary += fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, %d refusals, 0 unresolved, 0 unverified, %d with problems",
+			wantTotals.Failed, wantTotals.Refused, wantTotals.Problems)
 		if len(state.Audit) != 1 || state.Audit[0].Operation != "transfer.copy."+wantState || state.Audit[0].Result != result || state.Audit[0].Summary != summary || state.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" || state.Audit[0].BookmarkID != h.Primary.BookmarkID {
 			t.Errorf("copy audit differs: %+v", state.Audit)
 		}
@@ -541,12 +537,10 @@ func copyCompletionRun(t *testing.T, h *Harness, fault string) {
 	if (!admitted || !newNames) && len(dstTrace.writeSnapshot()) != 0 {
 		t.Errorf("unadmitted copy writes: %v", dstTrace.writeSnapshot())
 	}
-	var wantRows []jobs.RecoveryRecord
-	if fault != "planning" && fault != "start_audit" && fault != "recovery" {
-		wantRows = []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
-	}
-	if !reflect.DeepEqual(state.Rows, wantRows) || state.Job.RecoveryRecords != int64(len(wantRows)) {
-		t.Errorf("copy recovery identities differ: got=%+v want=%+v", state, wantRows)
+	// No object here is large enough for the engine to report a segment
+	// path, which is the only recovery record a copy makes.
+	if len(state.Rows) != 0 || state.Job.RecoveryRecords != 0 {
+		t.Errorf("a copy of plain objects left recovery records: %+v", state)
 	}
 	encoded, err := json.Marshal(state)
 	if err != nil {
@@ -806,7 +800,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 }
 
 func copyCompletionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, fault := range []string{"control", "mixed", "refused", "counters", "error", "terminal", "audit", "retention", "start_audit", "planning", "running", "verifying", "verifying_failed", "recovery"} {
+	for _, fault := range []string{"control", "mixed", "refused", "counters", "error", "terminal", "audit", "retention", "start_audit", "planning", "running", "verifying", "verifying_failed"} {
 		t.Run(fault, func(t *testing.T) { copyCompletionRun(t, makeHarness(t), fault) })
 	}
 	for _, fault := range []string{"control", "state", "audit", "unavailable"} {
