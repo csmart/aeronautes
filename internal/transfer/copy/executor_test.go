@@ -1,7 +1,6 @@
 package copy
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -10,8 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"slices"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,147 +27,12 @@ type world struct {
 }
 
 func newWorld(t *testing.T) *world {
-	return newWorldWithResponseBarrier(t, nil)
-}
-
-func newWorldWithResponseBarrier(t *testing.T, barrier *swifttest.HTTPResponseBarrier) *world {
-	t.Helper()
-	w := &world{}
-	build := func(mock *swifttest.Server, barrier *swifttest.HTTPResponseBarrier) *swiftcontrol.Session {
-		var handler http.Handler = mock
-		if barrier != nil {
-			handler = barrier.Wrap(mock)
-		}
-		srv := httptest.NewServer(handler)
-		t.Cleanup(srv.Close)
-		if barrier != nil {
-			t.Cleanup(barrier.Close)
-		}
-		session, err := swiftcontrol.New(swiftcontrol.Config{
-			AuthURL: srv.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := session.Authenticate(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		return session
-	}
-	w.srcMock = swifttest.New("test:tester", "testing")
-	w.dstMock = swifttest.New("test:tester", "testing")
-	w.src = build(w.srcMock, nil)
-	w.dst = build(w.dstMock, barrier)
-	w.srcMock.AddContainer("media", "standard")
-	w.dstMock.AddContainer("backup", "standard")
-	return w
-}
-
-func seed(mock *swifttest.Server, container, name string, data []byte, meta map[string]string) {
-	sum := md5.Sum(data)
-	mock.PutObject(container, name, swifttest.Object{
-		Bytes: int64(len(data)), ETag: hex.EncodeToString(sum[:]),
-		ContentType: "text/plain", Meta: meta, Data: data,
-	})
-}
-
-// fakeEngine mimics the measured rclone behaviours: it drops custom
-// metadata, segments anything over chunk into a generated prefix under
-// the auto _segments sidecar (destination DLO), and can silently skip
-// names while still "succeeding" — the §14.3 worst finding.
-type fakeEngine struct {
-	w     *world
-	chunk int64
-	drops map[string]bool
-	// interruptAfter stops a Copy batch after N objects (simulating
-	// SIGINT mid-batch); -1 disables.
-	interruptAfter int
-}
-
-func parseSpec(spec string) (container, prefix string) {
-	path := spec[strings.Index(spec, ":")+1:]
-	if slash := strings.Index(path, "/"); slash >= 0 {
-		return path[:slash], path[slash+1:] + "/"
-	}
-	return path, ""
-}
-
-func (f *fakeEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	srcC, srcP := parseSpec(src)
-	dstC, dstP := parseSpec(dst)
-	result := &rclone.Result{}
-	done := 0
-	for _, name := range names {
-		if f.interruptAfter >= 0 && done >= f.interruptAfter {
-			result.ExitCode = 1
-			return result, nil
-		}
-		if f.drops[name] {
-			continue // silent, exit 0: the measured trap
-		}
-		if err := f.one(ctx, srcC, srcP+name, dstC, dstP+name, result); err != nil {
-			return result, err
-		}
-		done++
-	}
-	return result, nil
-}
-
-func (f *fakeEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	srcC, srcRest := parseSpec(src)
-	dstC, dstRest := parseSpec(dst)
-	result := &rclone.Result{}
-	err := f.one(ctx, srcC, strings.TrimSuffix(srcRest, "/"), dstC, strings.TrimSuffix(dstRest, "/"), result)
-	return result, err
-}
-
-var fakeUploadN = 0
-
-func (f *fakeEngine) one(ctx context.Context, srcC, srcName, dstC, dstName string, result *rclone.Result) error {
-	body, _, err := f.w.src.OpenObject(ctx, srcC, srcName)
-	if err != nil {
-		return err
-	}
-	defer body.Close()
-	var data bytes.Buffer
-	if _, err := data.ReadFrom(body); err != nil {
-		return err
-	}
-	mtime := map[string]string{"Mtime": "1756400000.000000000"}
-	if f.chunk > 0 && int64(data.Len()) > f.chunk {
-		fakeUploadN++
-		// PutObject creates the sidecar if missing (AddContainer would
-		// clobber pre-seeded segments).
-		segContainer := dstC + "_segments"
-		prefix := fmt.Sprintf("%s/2026-08-29-%022d/", dstName, fakeUploadN)
-		raw := data.Bytes()
-		for i := 0; int64(i)*f.chunk < int64(len(raw)); i++ {
-			end := min(int64(i+1)*f.chunk, int64(len(raw)))
-			segment := raw[int64(i)*f.chunk : end]
-			sum := md5.Sum(segment)
-			f.w.dstMock.PutObject(segContainer, fmt.Sprintf("%s%08d", prefix, i), swifttest.Object{
-				Bytes: int64(len(segment)), ETag: hex.EncodeToString(sum[:]), Data: segment,
-			})
-		}
-		result.SegmentPrefixes = append(result.SegmentPrefixes, rclone.SegmentPrefix{Container: segContainer, Prefix: prefix})
-		// The pinned engine percent-encodes the header, as Swift expects.
-		manifest := (&url.URL{Path: segContainer + "/" + prefix}).EscapedPath()
-		if _, err := f.w.dst.PutObject(ctx, dstC, dstName, strings.NewReader(""), "application/octet-stream",
-			map[string]string{"X-Object-Manifest": manifest, "X-Object-Meta-Mtime": mtime["Mtime"]}); err != nil {
-			return err
-		}
-		return nil
-	}
-	_, err = f.w.dst.PutObject(ctx, dstC, dstName, &data, "text/plain",
-		map[string]string{"X-Object-Meta-Mtime": mtime["Mtime"]})
-	return err
+	return newWorldWrappingDest(t, func(h http.Handler) http.Handler { return h })
 }
 
 // newWorldWrappingDest puts a handler of the caller's choosing in front of the
-// DESTINATION mock, so a case can act between the requests this executor makes
-// without reaching inside it. It is deliberately separate from the barrier
-// variant above rather than folded into it: that variant's cleanup order is part
-// of how a held reply is released, and this does not need it.
+// DESTINATION mock, so a case can see or change the requests this executor
+// makes without reaching inside it.
 func newWorldWrappingDest(t *testing.T, wrap func(http.Handler) http.Handler) *world {
 	t.Helper()
 	w := &world{}
@@ -200,22 +64,139 @@ func authenticateMock(t *testing.T, srv *httptest.Server) *swiftcontrol.Session 
 	return session
 }
 
-func newExecutor(t *testing.T, w *world, engine Engine) *Executor {
+func md5hex(s string) string {
+	sum := md5.Sum([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func seed(mock *swifttest.Server, container, name string, data []byte, meta map[string]string) {
+	mock.PutObject(container, name, swifttest.Object{
+		Bytes: int64(len(data)), ETag: md5hex(string(data)),
+		ContentType: "text/plain", Meta: meta, Data: data,
+	})
+}
+
+// lineEngine stands in for the pinned engine as it was measured copying
+// store to store (docs/rclone.md). It writes each listed name under the
+// destination path it is given, with the content type and a modification
+// time and no other header; it writes an object larger than chunk in
+// segments behind a dynamic manifest and says where; it prints one line for
+// each object it wrote; and a listed name that is not at the source gets no
+// line and no error. It writes into the destination mock directly, so that
+// mock's request log holds only what the application itself sent.
+type lineEngine struct {
+	w     *world
+	chunk int64
+	// refuse makes the engine report this error for a name and write nothing.
+	refuse map[string]string
+	// exit is the child's exit code.
+	exit int
+	// quiet stops it reporting where it puts segments.
+	quiet bool
+	// gone are listed names that are no longer at the source when it runs.
+	gone map[string]bool
+	// during runs once the batch is written, before the child returns.
+	during func()
+	// calls are the source and destination paths and the names of each run.
+	calls []string
+}
+
+func parseSpec(spec string) (container, prefix string) {
+	path := spec[strings.Index(spec, ":")+1:]
+	if slash := strings.Index(path, "/"); slash >= 0 {
+		return path[:slash], path[slash+1:] + "/"
+	}
+	return path, ""
+}
+
+func (f *lineEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	f.calls = append(f.calls, src+" -> "+dst+" "+strings.Join(names, ","))
+	srcC, srcP := parseSpec(src)
+	dstC, dstP := parseSpec(dst)
+	result := &rclone.Result{ExitCode: f.exit}
+	for _, name := range names {
+		if msg := f.refuse[name]; msg != "" {
+			onEvent(rclone.Event{Level: "error", Object: name, Msg: msg})
+			result.Errors = append(result.Errors, msg)
+			continue
+		}
+		if f.gone[name] {
+			continue // measured: no line, and the child still exits 0
+		}
+		body, source, err := f.w.src.OpenObject(ctx, srcC, srcP+name)
+		if err != nil {
+			return result, err
+		}
+		data, err := io.ReadAll(body)
+		if err := errors.Join(err, body.Close()); err != nil {
+			return result, err
+		}
+		// The source's own modification time when it states one, else the
+		// time the source was last changed.
+		mtime := map[string]string{"Mtime": source.Meta["Mtime"]}
+		if mtime["Mtime"] == "" {
+			mtime["Mtime"] = "1756400000"
+		}
+		object := swifttest.Object{Bytes: int64(len(data)), ETag: md5hex(string(data)), ContentType: source.ContentType,
+			Meta: mtime, Data: data}
+		if f.chunk > 0 && int64(len(data)) > f.chunk {
+			prefix := dstP + name + "/2026-11-16-000000-run/"
+			for i := 0; int64(i)*f.chunk < int64(len(data)); i++ {
+				segment := data[int64(i)*f.chunk : min(int64(i+1)*f.chunk, int64(len(data)))]
+				segmentName := fmt.Sprintf("%s%08d", prefix, i)
+				f.w.dstMock.PutObject(dstC+"_segments", segmentName, swifttest.Object{
+					Bytes: int64(len(segment)), ETag: md5hex(string(segment)), Data: segment})
+				if !f.quiet {
+					onEvent(rclone.Event{Level: "debug", Object: name,
+						Msg: fmt.Sprintf("Uploading segment file %q into %q", segmentName, dstC+"_segments")})
+				}
+			}
+			object = swifttest.Object{ContentType: source.ContentType, ETag: md5hex(""),
+				Manifest: dstC + "_segments/" + strings.TrimSuffix(prefix, "/"), Meta: mtime}
+		}
+		f.w.dstMock.PutObject(dstC, dstP+name, object)
+		onEvent(rclone.Event{Level: "info", Object: name, Msg: "Copied (new)"})
+	}
+	if f.during != nil {
+		f.during()
+	}
+	return result, nil
+}
+
+func (f *lineEngine) CopyTo(context.Context, string, string, func(rclone.Event)) (*rclone.Result, error) {
+	return nil, errors.New("a copy does not use this")
+}
+
+// records collects what the executor recorded for each name.
+type records struct {
+	executed map[string]Observation
+	verified map[string]bool
+	admitted []string
+}
+
+func (r *records) recorder() *Recorder {
+	r.executed, r.verified = map[string]Observation{}, map[string]bool{}
+	return &Recorder{
+		Admit:   func(a Admission) error { r.admitted = append(r.admitted, a.Item.Name); return nil },
+		Execute: func(name string, o Observation) error { r.executed[name] = o; return nil },
+		Verify:  func(name string, o Observation) error { r.verified[name] = o.Result == ResultVerified; return nil },
+	}
+}
+
+func newExecutor(t *testing.T, w *world, engine Engine, change ...func(*Config)) *Executor {
 	t.Helper()
-	e, err := New(Config{
+	cfg := Config{
 		Source: w.src, Dest: w.dst, Engine: engine,
 		SrcSpec: "aeronautes_src:media", DstSpec: "aeronautes_dst:backup",
-		SrcContainer: "media", DstContainer: "backup",
-		JobID: "job01",
-	})
+		SrcContainer: "media", DstContainer: "backup", ChunkBytes: 8,
+	}
+	for _, apply := range change {
+		apply(&cfg)
+	}
+	e, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := e.Close(); err != nil {
-			t.Error(err)
-		}
-	})
 	return e
 }
 
@@ -228,1420 +209,574 @@ func headDst(t *testing.T, w *world, name string) *swiftcontrol.ObjectDetail {
 	return d
 }
 
-// ADR 0105 decision 3: the staging namespace is not a destination. A source
-// that holds another job's stage is listed like any other, and the copy
-// refuses each item whose destination name would land in a staging area,
-// records it, creates nothing there and copies the rest.
-func TestCopyRefusesADestinationInTheStagingNamespace(t *testing.T) {
-	w := newWorld(t)
-	const staged = ".aeronautes/stage/0a1b/batch/part.bin"
-	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
-	seed(w.srcMock, "media", staged, []byte("someone's stage"), nil)
-	engine := &fakeEngine{w: w, interruptAfter: -1}
-
-	report, err := newExecutor(t, w, engine).Run(context.Background(), []plan.Item{
-		{Name: staged, Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 15},
-		{Name: "a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The refusal is a failure of that one name with its reason, and not an
-	// overwrite refusal, which is what the job would otherwise report.
-	if report.Copied != 1 || report.OverwritesRefused != 0 || len(report.Failures) != 1 ||
-		report.Failures[0].Name != staged || !strings.Contains(report.Failures[0].Err, "staging area") {
-		t.Fatalf("report = %+v, want the ordinary name copied and the staged one refused with its reason", report)
-	}
-	if _, err := w.dst.ObjectDetail(context.Background(), "backup", staged); err == nil {
-		t.Error("the copy published into the staging namespace")
-	}
-	headDst(t, w, "a.txt")
-}
-
-func TestPlannedNewBatchFinalizes(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	seed(w.srcMock, "media", "a.txt", []byte("alpha"), map[string]string{"Shoot": "wedding"})
-	seed(w.srcMock, "media", "b.txt", []byte("bravo!"), nil)
-	engine := &fakeEngine{w: w, interruptAfter: -1}
-
-	report, err := newExecutor(t, w, engine).Run(ctx, []plan.Item{
-		{Name: "a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
-		{Name: "b.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 6},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 2 || len(report.Failures) != 0 || report.BytesCopied != 11 {
-		t.Fatalf("report = %+v", report)
-	}
-	// The engine dropped custom metadata (measured §27.4); finalize
-	// re-applied it and stamped the fingerprint.
-	d := headDst(t, w, "a.txt")
-	if d.Meta["Shoot"] != "wedding" {
-		t.Errorf("metadata not re-applied: %v", d.Meta)
-	}
-	sum := md5.Sum([]byte("alpha"))
-	want := "v1:5:" + hex.EncodeToString(sum[:])
-	if d.Meta["Aeronautes-Fingerprint"] != want {
-		t.Errorf("fingerprint = %q, want %q", d.Meta["Aeronautes-Fingerprint"], want)
-	}
-}
-
-func TestSilentDropDetected(t *testing.T) {
-	w := newWorld(t)
-	seed(w.srcMock, "media", "kept.txt", []byte("kept"), nil)
-	seed(w.srcMock, "media", "dropped.txt", []byte("gone"), nil)
-	engine := &fakeEngine{w: w, drops: map[string]bool{"dropped.txt": true}, interruptAfter: -1}
-
-	report, err := newExecutor(t, w, engine).Run(context.Background(), []plan.Item{
-		{Name: "dropped.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone},
-		{Name: "kept.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Exit 0 + a missing object MUST surface as a failure (§14.3: exit
-	// codes are useless for completeness).
-	if report.Copied != 1 || len(report.Failures) != 1 {
-		t.Fatalf("report = %+v", report)
-	}
-	if report.Failures[0].Name != "dropped.txt" || !strings.Contains(report.Failures[0].Err, "silent drop") {
-		t.Errorf("failure = %+v", report.Failures[0])
-	}
-}
-
-func TestLargePlannedNewStageAndCommit(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-
-	// Live destination: a DLO whose segments are SHARED with another
-	// manifest — the §28.6 acceptance fixture. Overwriting must leave
-	// the other logical object fully intact.
-	w.dstMock.AddContainer("backup_segments", "standard")
-	sharedSegment := []byte("shared-segment-bytes")
-	sum := md5.Sum(sharedSegment)
-	w.dstMock.PutObject("backup_segments", "old/live.bin/1", swifttest.Object{
-		Bytes: int64(len(sharedSegment)), ETag: hex.EncodeToString(sum[:]), Data: sharedSegment,
-	})
-	oldManifest := "backup_segments/old/live.bin/"
-	w.dstMock.PutObject("backup", "previous.bin", swifttest.Object{
-		Manifest: oldManifest, ContentType: "application/octet-stream",
-	})
-	w.dstMock.PutObject("backup", "sibling.bin", swifttest.Object{
-		Manifest: oldManifest, ContentType: "application/octet-stream",
-	})
-
-	// Source: 5000 bytes, chunked at 2000 by the engine → 3 segments.
-	payload := bytes.Repeat([]byte("x"), 5000)
-	seed(w.srcMock, "media", "live.bin", payload, map[string]string{"Kind": "video"})
-
-	engine := &fakeEngine{w: w, chunk: 2000, interruptAfter: -1}
-	executor := newExecutor(t, w, engine)
-	report, err := executor.Run(ctx, []plan.Item{{
-		Name: "live.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone,
-		SourceBytes: 5000, DestBytes: int64(len(sharedSegment)),
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 1 || report.Overwrites != 0 || report.OverwritesRefused != 0 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-
-	// The live name is now a DLO over the staged prefix, fingerprinted,
-	// with source metadata.
-	live := headDst(t, w, "live.bin")
-	if live.Class != swiftcontrol.ClassDLO || live.ContentLength != 5000 {
-		t.Fatalf("live = %+v", live)
-	}
-	if live.Manifest == oldManifest {
-		t.Fatal("manifest not swapped")
-	}
-	if live.Meta["Kind"] != "video" || live.Meta["Aeronautes-Fingerprint"] == "" {
-		t.Errorf("metadata = %v", live.Meta)
-	}
-	// Unrelated DLOs retain their shared backing objects.
-	sibling := headDst(t, w, "sibling.bin")
-	if sibling.ContentLength != int64(len(sharedSegment)) {
-		t.Fatalf("shared segments were harmed by the copy: %+v", sibling)
-	}
-	// Staging litter cleaned: manifest gone, no residue; committed
-	// prefix recorded so reconciliation keeps it.
-	if len(report.StagedResidue) != 0 {
-		t.Errorf("staged residue = %v", report.StagedResidue)
-	}
-	if len(report.CommittedPrefixes) != 1 || len(report.CapturedPrefixes) != 1 {
-		t.Errorf("prefixes: captured %v committed %v", report.CapturedPrefixes, report.CommittedPrefixes)
-	}
-	if _, err := w.dst.ObjectDetail(ctx, "backup", executor.StagingPrefix()+"batch/live.bin"); !swiftcontrol.IsNotFound(err) {
-		t.Errorf("staged manifest still present: %v", err)
-	}
-}
-
-func TestRefusalPreservesReplacedDestination(t *testing.T) {
-	w := newWorld(t)
-	seed(w.srcMock, "media", "doc.txt", []byte("source-v2"), nil)
-	seed(w.dstMock, "backup", "doc.txt", []byte("external!"), nil)
-
-	engine := &fakeEngine{w: w, interruptAfter: -1}
-	report, err := newExecutor(t, w, engine).Run(context.Background(), []plan.Item{{
-		Name: "doc.txt", Verdict: plan.VerdictChanged, Route: plan.RouteRclone,
-		SourceBytes: 9, DestBytes: 9, DestETag: "plan-time-etag-no-longer-current",
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.OverwritesRefused != 1 || len(report.Conflicts) != 0 || report.Copied != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	// Refusal must preserve the competing writer without creating staging.
-	d := headDst(t, w, "doc.txt")
-	sum := md5.Sum([]byte("external!"))
-	if d.ETag != hex.EncodeToString(sum[:]) {
-		t.Error("conflicted destination was overwritten")
-	}
-	if len(report.StagedResidue) != 0 {
-		t.Errorf("staging not cleaned: %v", report.StagedResidue)
-	}
-}
-
-func TestUnknownResolution(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	// equal.txt: identical both sides → proven equal, skipped.
-	seed(w.srcMock, "media", "equal.txt", []byte("same"), nil)
-	seed(w.dstMock, "backup", "equal.txt", []byte("same"), nil)
-	// fresh.txt: destination vanished since planning → runs as new.
-	seed(w.srcMock, "media", "fresh.txt", []byte("fresh"), nil)
-	// Unequal existing destinations are refused after HEAD resolution.
-	seed(w.srcMock, "media", "diff.txt", []byte("aaaa"), nil)
-	seed(w.dstMock, "backup", "diff.txt", []byte("bbbb"), nil)
-
-	engine := &fakeEngine{w: w, interruptAfter: -1}
-	items := []plan.Item{
-		{Name: "diff.txt", Verdict: plan.VerdictUnknown, Route: plan.RouteRclone, Reason: plan.ReasonPossibleManifest},
-		{Name: "equal.txt", Verdict: plan.VerdictUnknown, Route: plan.RouteRclone, Reason: plan.ReasonPossibleManifest},
-		{Name: "fresh.txt", Verdict: plan.VerdictUnknown, Route: plan.RouteRclone, Reason: plan.ReasonPossibleManifest},
-	}
-	report, err := newExecutor(t, w, engine).Run(ctx, items)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.SkippedEqual != 1 || report.Copied != 1 || report.OverwritesRefused != 1 || report.Overwrites != 0 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	sum := md5.Sum([]byte("bbbb"))
-	if headDst(t, w, "diff.txt").ETag != hex.EncodeToString(sum[:]) {
-		t.Error("refused diff.txt changed")
-	}
-	if headDst(t, w, "fresh.txt").ContentLength != 5 {
-		t.Error("fresh.txt not copied")
-	}
-}
-
-func TestNativeUnsafeNames(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	// Run takes strictly name-ordered items, as its own contract says and as
-	// plan.Copy produces, because this executor's private spools are written in
-	// that order and read forward. This list was hand-written out of order, which
-	// no planner produces; sorting it keeps the case about hostile NAMES rather
-	// than about an input the contract excludes.
-	hostile := []string{"/lead", "trail/", "a//b", "line\nbreak"}
-	slices.Sort(hostile)
-	for _, name := range hostile {
-		seed(w.srcMock, "media", name, []byte("payload-"+name), map[string]string{"Origin": "suite"})
-	}
-
-	var items []plan.Item
-	for _, name := range hostile {
-		items = append(items, plan.Item{
-			Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
-		})
-	}
-	// No engine at all: native routing must not need one.
-	report, err := newExecutor(t, w, nil).Run(ctx, items)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != int64(len(hostile)) || report.NativeRouted != int64(len(hostile)) || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	for _, name := range hostile {
-		d := headDst(t, w, name)
-		sum := md5.Sum([]byte("payload-" + name))
-		if d.ETag != hex.EncodeToString(sum[:]) || d.Meta["Origin"] != "suite" {
-			t.Errorf("%q arrived wrong: etag %s meta %v", name, d.ETag, d.Meta)
-		}
-		// ADR 0045: this route publishes unstamped. The stamp asserts that the
-		// destination holds the source's content, and a one-request publication
-		// offers no moment at which that is already established.
-		if d.Meta[fingerprintMetaKey] != "" {
-			t.Errorf("%q was stamped %q", name, d.Meta[fingerprintMetaKey])
-		}
-	}
-}
-
-// A manifest source this route cannot hold is not attempted: ADR 0084 binds a
-// manifest by digesting the bytes it holds, so above the bound there is nothing
-// to declare and the alternative would be publishing bytes nobody compared.
-func TestNativeManifestPastTheHoldBoundIsNotAttempted(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	w.srcMock.AddContainer("media_segments", "standard")
-	// Two segments whose assembled length is one mebibyte past the bound.
-	half := heldManifestBound/2 + 512*1024
-	for i := 0; i < 2; i++ {
-		chunk := bytes.Repeat([]byte{byte('a' + i)}, int(half))
-		sum := md5.Sum(chunk)
-		w.srcMock.PutObject("media_segments", fmt.Sprintf("weird//big/%d", i), swifttest.Object{
-			Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
-		})
-	}
-	w.srcMock.PutObject("media", "weird//big", swifttest.Object{
-		Manifest: "media_segments/weird//big/", ContentType: "video/mp4",
-	})
-
-	report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
-		Name: "weird//big", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 0 || len(report.Failures) != 1 {
-		t.Fatalf("report = %+v", report)
-	}
-	if got := report.Failures[0]; got.Stage != "native-class" || !strings.Contains(got.Err, "bound") {
-		t.Errorf("failure = %+v, want the hold bound named at the native-class stage", got)
-	}
-	// Nothing was published, so there is no residue to retain.
-	if _, err := w.dst.ObjectDetail(ctx, "backup", "weird//big"); err == nil {
-		t.Error("a source past the bound published something")
-	}
-}
-
-func TestNativeDLOMaterializesSmallLogical(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	// An unsafe-named DLO with small logical content: the native path
-	// serves the assembled stream and lands a plain object (§25 logical
-	// replication; re-segmentation to one inline "segment").
-	w.srcMock.AddContainer("media_segments", "standard")
-	for i, chunk := range []string{"part-one|", "part-two"} {
-		sum := md5.Sum([]byte(chunk))
-		w.srcMock.PutObject("media_segments", fmt.Sprintf("weird//dlo/%d", i), swifttest.Object{
-			Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: []byte(chunk),
-		})
-	}
-	w.srcMock.PutObject("media", "weird//dlo", swifttest.Object{
-		Manifest: "media_segments/weird//dlo/", ContentType: "video/mp4",
-	})
-
-	report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
-		Name: "weird//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 1 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	d := headDst(t, w, "weird//dlo")
-	if d.Class != swiftcontrol.ClassPlain || d.ContentLength != 17 {
-		t.Errorf("materialized = %+v", d)
-	}
-}
-
-func TestVerifyCatchesSabotage(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	seed(w.srcMock, "media", "ok.txt", []byte("fine"), nil)
-	seed(w.dstMock, "backup", "ok.txt", []byte("fine"), nil)
-	seed(w.srcMock, "media", "hurt.txt", []byte("real bytes"), nil)
-	seed(w.dstMock, "backup", "hurt.txt", []byte("corrupted!"), nil)
-	seed(w.srcMock, "media", "missing.txt", []byte("never arrived"), nil)
-
-	executor := newExecutor(t, w, nil)
-	report, err := executor.Verify(ctx,
-		w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
-		w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Verified != 1 || len(report.Failures) != 2 {
-		t.Fatalf("verify = %+v", report)
-	}
-}
-
-func TestReconcileRetainsUncertainData(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	executor := newExecutor(t, w, nil)
-	w.dstMock.AddContainer("backup_segments", "standard")
-
-	// A completed upload: live DLO references its captured prefix.
-	completedPrefix := "video.bin/2026-08-29-0000000000000000000001/"
-	w.dstMock.PutObject("backup_segments", completedPrefix+"00000000", swifttest.Object{Bytes: 4, ETag: "aaaa", Data: []byte("data")})
-	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + completedPrefix})
-
-	// Missing local references cannot establish deletion authority.
-	orphanPrefix := "big.bin/2026-08-29-0000000000000000000002/"
-	for i := 0; i < 3; i++ {
-		w.dstMock.PutObject("backup_segments", fmt.Sprintf("%s%08d", orphanPrefix, i), swifttest.Object{Bytes: 4, ETag: "bbbb", Data: []byte("data")})
-	}
-
-	// Staged residue left by a crash.
-	staged := executor.StagingPrefix() + "000007"
-	w.dstMock.PutObject("backup", staged, swifttest.Object{Bytes: 1, ETag: "cccc", Data: []byte("x")})
-
-	report := &Report{
-		CapturedPrefixes: []rclone.SegmentPrefix{
-			{Container: "backup_segments", Prefix: completedPrefix},
-			{Container: "backup_segments", Prefix: orphanPrefix},
-		},
-		StagedResidue: []string{staged},
-	}
-	out, err := executor.Reconcile(ctx, report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.SweptStaged != 0 || out.SweptSegments != 0 || len(out.Notes) == 0 {
-		t.Fatalf("reconcile = %+v", out)
-	}
-	// The completed object's segments survived (its prefix was kept).
-	if headDst(t, w, "video.bin").ContentLength != 4 {
-		t.Error("completed DLO broken by reconciliation")
-	}
-	if len(out.KeptPrefixes) != 2 || !strings.Contains(out.KeptPrefixes[0], completedPrefix) {
-		t.Errorf("kept = %v", out.KeptPrefixes)
-	}
-	if _, err := w.dst.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err != nil {
-		t.Errorf("uncertain segment was not retained: %v", err)
-	}
-	if _, err := w.dst.ObjectDetail(ctx, "backup", staged); err != nil {
-		t.Errorf("uncertain staging object was not retained: %v", err)
-	}
-}
-
-// statusEngine wraps another engine and force-returns canned results for
-// the first N Copy calls — the exit-status contract fixture.
-type statusEngine struct {
-	inner  Engine
-	canned []*rclone.Result
-	calls  int
-}
-
-func (s *statusEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	s.calls++
-	if len(s.canned) > 0 {
-		r := s.canned[0]
-		s.canned = s.canned[1:]
-		return r, nil
-	}
-	return s.inner.Copy(ctx, src, dst, names, onEvent)
-}
-
-func (s *statusEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	s.calls++
-	if len(s.canned) > 0 {
-		r := s.canned[0]
-		s.canned = s.canned[1:]
-		return r, nil
-	}
-	return s.inner.CopyTo(ctx, src, dst, onEvent)
-}
-
-func TestEngineStatusIsAuthoritativeFailure(t *testing.T) {
-	ctx := context.Background()
-	items := func() []plan.Item {
-		return []plan.Item{{Name: "a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5}}
-	}
-	seedBoth := func() *world {
-		w := newWorld(t)
-		seed(w.srcMock, "media", "a.txt", []byte("aaaaa"), nil)
-		return w
-	}
-
-	// Nonzero exit fails the batch even when a same-size destination
-	// answers the verification HEAD (stale/partial output must not be
-	// silently accepted).
-	w := seedBoth()
-	seed(w.dstMock, "backup", "a.txt", []byte("bbbbb"), nil)
-	e := newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{ExitCode: 9, Errors: []string{"io broke"}}}})
-	report, err := e.Run(ctx, items())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 0 || len(report.Failures) != 1 || report.Failures[0].Stage != "engine-status" {
-		t.Fatalf("exit 9 report = %+v", report)
-	}
-
-	// A cancelled child fails the names rather than finalizing them.
-	w = seedBoth()
-	e = newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{Cancelled: true}}})
-	report, _ = e.Run(ctx, items())
-	if report.Copied != 0 || len(report.Failures) != 1 {
-		t.Fatalf("cancelled report = %+v", report)
-	}
-
-	// A truncated log stream means capture cannot be trusted: failure.
-	w = seedBoth()
-	e = newExecutor(t, w, &statusEngine{canned: []*rclone.Result{{LogStreamErr: "bufio: token too long"}}})
-	report, _ = e.Run(ctx, items())
-	if report.Copied != 0 || len(report.Failures) != 1 {
-		t.Fatalf("log-stream report = %+v", report)
-	}
-
-	// An auth-shaped failure earns exactly one fresh child; the second
-	// spawn succeeds and the name lands verified.
-	w = seedBoth()
-	authy := &statusEngine{
-		inner:  &fakeEngine{w: w, interruptAfter: -1},
-		canned: []*rclone.Result{{ExitCode: 1, Errors: []string{"HTTP Error: 401 Unauthorized"}}},
-	}
-	e = newExecutor(t, w, authy)
-	report, err = e.Run(ctx, items())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 1 || len(report.Failures) != 0 || authy.calls != 2 {
-		t.Fatalf("auth retry report = %+v calls=%d", report, authy.calls)
-	}
-
-	// Two auth failures in a row: the retry is bounded at one.
-	w = seedBoth()
-	twice := &statusEngine{canned: []*rclone.Result{
-		{ExitCode: 1, Errors: []string{"401 Unauthorized"}},
-		{ExitCode: 1, Errors: []string{"401 Unauthorized"}},
-	}}
-	e = newExecutor(t, w, twice)
-	report, _ = e.Run(ctx, items())
-	if report.Copied != 0 || len(report.Failures) != 1 || twice.calls != 2 {
-		t.Fatalf("bounded retry report = %+v calls=%d", report, twice.calls)
-	}
-}
-
-// recordingEngine wraps an engine and records every destination spec the
-// executor hands it.
-type recordingEngine struct {
-	inner Engine
-	dsts  []string
-}
-
-func (r *recordingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	r.dsts = append(r.dsts, dst)
-	return r.inner.Copy(ctx, src, dst, names, onEvent)
-}
-
-func (r *recordingEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	r.dsts = append(r.dsts, dst)
-	return r.inner.CopyTo(ctx, src, dst, onEvent)
-}
-
-func TestEngineNeverReceivesLiveNames(t *testing.T) {
-	// K-XFER-014's absolute boundary, mechanized: every engine write —
-	// planned-new batches only — carries the job
-	// staging namespace, never a live destination path.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "new-a.txt", []byte("alpha"), nil)
-	seed(w.srcMock, "media", "new-b.txt", []byte("bravo"), nil)
-	seed(w.srcMock, "media", "changed.txt", []byte("fresh content"), nil)
-	seed(w.dstMock, "backup", "changed.txt", []byte("old"), nil)
-
-	rec := &recordingEngine{inner: &fakeEngine{w: w, interruptAfter: -1}}
-	e := newExecutor(t, w, rec)
-	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "new-a.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
-		{Name: "new-b.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5},
-		{Name: "changed.txt", Verdict: plan.VerdictChanged, Route: plan.RouteRclone, SourceBytes: 13, DestETag: md5hex("old")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 2 || report.OverwritesRefused != 1 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	if len(rec.dsts) == 0 {
-		t.Fatal("engine never invoked")
-	}
-	for _, dst := range rec.dsts {
-		if !strings.Contains(dst, "/.aeronautes/stage/") {
-			t.Errorf("engine received a live destination %q", dst)
-		}
-	}
-	// New names committed; the refused existing name remains unchanged.
-	ctx := context.Background()
-	for _, name := range []string{"new-a.txt", "new-b.txt", "changed.txt"} {
-		if _, err := w.dst.ObjectDetail(ctx, "backup", name); err != nil {
-			t.Errorf("%s missing after staged commit: %v", name, err)
-		}
-	}
-	if headDst(t, w, "changed.txt").ETag != md5hex("old") {
-		t.Error("refused changed name was modified")
-	}
-	if len(report.StagedResidue) != 0 {
-		t.Errorf("staging residue after clean run: %v", report.StagedResidue)
-	}
-}
-
-func TestPlannedNewConflictsWhenDestinationAppears(t *testing.T) {
-	// The C-02 race: a name classified New gains a live DLO (whose
-	// segments another manifest shares) before the engine batch lands.
-	// The commit must CONFLICT — the shared segments survive untouched.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "video.bin", []byte("new content!"), nil)
-	w.dstMock.AddContainer("backup_segments", "standard")
-	seed(w.dstMock, "backup_segments", "shared/0", bytes.Repeat([]byte("s"), 40), nil)
-	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
-	w.dstMock.PutObject("backup", "sibling.bin", swifttest.Object{Manifest: "backup_segments/shared/"})
-
-	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
-	report, err := e.Run(context.Background(), []plan.Item{
-		// Planned as New: the advisory listing predates the DLO.
-		{Name: "video.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 12},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Conflicts) != 1 || report.Copied != 0 {
-		t.Fatalf("report = %+v, want one conflict and no copy", report)
-	}
-	// The concurrent DLO and its shared segments are intact.
-	ctx := context.Background()
-	d, err := w.dst.ObjectDetail(ctx, "backup", "sibling.bin")
-	if err != nil || d.ContentLength != 40 {
-		t.Fatalf("sibling = %+v %v: shared segments were harmed", d, err)
-	}
-	live, err := w.dst.ObjectDetail(ctx, "backup", "video.bin")
-	if err != nil || live.Class != swiftcontrol.ClassDLO {
-		t.Fatalf("live DLO = %+v %v: the racing object was overwritten", live, err)
-	}
-}
-
-func md5hex(s string) string {
-	sum := md5.Sum([]byte(s))
-	return hex.EncodeToString(sum[:])
-}
-
-func TestUnobservedManifestNeverPromoted(t *testing.T) {
-	// H-01: a destination manifest whose prefix this job's child was
-	// never observed creating must not become a committed (ownership)
-	// prefix, whatever the commit path sees.
-	w := newWorld(t)
-	e := newExecutor(t, w, nil)
-	e.markCommitted("backup_segments/somebody-elses/prefix/")
-	if len(e.report.CommittedPrefixes) != 0 {
-		t.Fatalf("unobserved manifest promoted: %+v", e.report.CommittedPrefixes)
-	}
-	// An observed (captured) prefix promotes normally.
-	e.capturePrefix(rclone.SegmentPrefix{Container: "backup_segments", Prefix: "ours/gen/"})
-	e.markCommitted("backup_segments/ours/gen/")
-	if len(e.report.CommittedPrefixes) != 1 {
-		t.Fatalf("observed manifest not promoted: %+v", e.report.CommittedPrefixes)
-	}
-}
-
-func TestStaleManifestFingerprintCannotSkip(t *testing.T) {
-	// H-04: a destination DLO carrying a matching fingerprint but whose
-	// live logical size no longer matches (a segment vanished) must NOT
-	// be skipped as proven-equal.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "video.bin", bytes.Repeat([]byte("v"), 3000), nil)
-	src, err := w.src.ObjectDetail(context.Background(), "media", "video.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.dstMock.AddContainer("backup_segments", "standard")
-	// Destination DLO: fingerprint stamped for the FULL size, but only
-	// ONE segment actually remains (2000 of 3000 bytes).
-	seed(w.dstMock, "backup_segments", "video.bin/gen/00000000", bytes.Repeat([]byte("v"), 2000), nil)
-	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
-		Manifest:    "backup_segments/video.bin/gen/",
-		ContentType: "text/plain", // a faithful copy carries the source's content type (§27.4)
-		Meta:        map[string]string{"Aeronautes-Fingerprint": fingerprint(src.ContentLength, src.ETag)},
-	})
-	dst, err := w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if skippableEqual(src, dst) {
-		t.Fatal("stale fingerprint with mismatched live length passed as proven-equal")
-	}
-
-	// Restoring the missing bytes makes the live length match again, but
-	// a destination this executor never published carries no staged
-	// aggregate, and an absent stamp is not evidence.
-	seed(w.dstMock, "backup_segments", "video.bin/gen/00000001", bytes.Repeat([]byte("v"), 1000), nil)
-	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
-	if skippableEqual(src, dst) {
-		t.Fatal("unstamped DLO destination passed as proven-equal")
-	}
-
-	// Stamped with the aggregate actually observed, it IS proven.
-	w.dstMock.PutObject("backup", "video.bin", swifttest.Object{
-		Manifest:    "backup_segments/video.bin/gen/",
-		ContentType: "text/plain", // a faithful copy carries the source's content type (§27.4)
-		Meta: map[string]string{
-			"Aeronautes-Fingerprint":      fingerprint(src.ContentLength, src.ETag),
-			"Aeronautes-Staged-Aggregate": aggregateStamp(dst.ContentLength, dst.ETag),
-		},
-	})
-	dst, _ = w.dst.ObjectDetail(context.Background(), "backup", "video.bin")
-	if !skippableEqual(src, dst) {
-		t.Fatal("intact stamped DLO no longer proves equal")
-	}
-}
-
-func TestStagedSegmentCompletenessGate(t *testing.T) {
-	// K-CON-001: a staged DLO whose segments do not sum to the source's
-	// logical size must fail before commit — driven end to end with a
-	// chunking engine that drops one segment.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "big.bin", bytes.Repeat([]byte("b"), 5000), nil)
-	w.dstMock.AddContainer("backup_segments", "standard")
-
-	engine := &segmentDroppingEngine{fakeEngine{w: w, chunk: 1024, interruptAfter: -1}}
-	e := newExecutor(t, w, engine)
-	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "big.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 5000},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 0 || len(report.Failures) != 1 {
-		t.Fatalf("report = %+v, want the truncated stage to fail", report)
-	}
-	// Incomplete staged bytes must never become a new live object.
-	live, err := w.dst.ObjectDetail(context.Background(), "backup", "big.bin")
-	if !swiftcontrol.IsNotFound(err) {
-		t.Fatalf("live = %+v %v (truncated commit went live)", live, err)
-	}
-}
-
-// segmentDroppingEngine chunks like the fake engine, then deletes one
-// segment after upload — a truncated sidecar whose manifest still
-// answers.
-type segmentDroppingEngine struct {
-	fakeEngine
-}
-
-func (s *segmentDroppingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	result, err := s.fakeEngine.Copy(ctx, src, dst, names, onEvent)
-	if err == nil && len(result.SegmentPrefixes) > 0 {
-		p := result.SegmentPrefixes[0]
-		var names []string
-		for entry, listErr := range s.w.dst.Objects(ctx, p.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: p.Prefix}) {
-			if listErr != nil {
-				break
-			}
-			if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
-				names = append(names, object.Name)
-			}
-		}
-		if len(names) > 0 {
-			_ = s.w.dst.DeleteObject(ctx, p.Container, names[len(names)-1])
-		}
-	}
-	return result, err
-}
-
-func TestSymlinkCopiedAsSymlink(t *testing.T) {
-	// §17.1's carry-when-present row, finally executable: a source
-	// symlink lands at the destination AS a symlink with the link's own
-	// metadata — never materialized target bytes.
-	w := newWorld(t)
-	seed(w.srcMock, "media", "real/data.bin", []byte("target-bytes"), nil)
-	w.srcMock.PutObject("media", "link.bin", swifttest.Object{
-		ContentType:   "application/octet-stream",
-		SymlinkTarget: "media/real/data.bin",
-		Meta:          map[string]string{"Kind": "pointer"},
-	})
-
-	e := newExecutor(t, w, &fakeEngine{w: w, interruptAfter: -1})
-	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "link.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 12},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 1 || len(report.Failures) != 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	link, err := w.dst.SymlinkGet(context.Background(), "backup", "link.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if link.SymlinkTarget != "media/real/data.bin" || link.Meta["Kind"] != "pointer" {
-		t.Fatalf("destination link = %+v", link)
-	}
-}
-
-func TestReheadRefusesDestinationCreatedDuringStaging(t *testing.T) {
-	w := newWorld(t)
-	seed(w.srcMock, "media", "raced.txt", []byte("mine"), nil)
-	e := newExecutor(t, w, &liveRacingEngine{fakeEngine{w: w, interruptAfter: -1}})
-	report, err := e.Run(context.Background(), []plan.Item{
-		{Name: "raced.txt", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: 4},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Conflicts) != 1 || report.Copied != 0 {
-		t.Fatalf("report = %+v, want a commit-time conflict", report)
-	}
-	live, err := w.dst.ObjectDetail(context.Background(), "backup", "raced.txt")
-	if err != nil || live.ContentLength != int64(len("theirs, first")) {
-		t.Fatalf("live = %+v %v (the racing writer's object was overwritten)", live, err)
-	}
-}
-
-// This writer arrives during staging, before the final destination HEAD.
-// The acknowledged response-barrier tests cover the later race window.
-type liveRacingEngine struct {
-	fakeEngine
-}
-
-func (l *liveRacingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	result, err := l.fakeEngine.Copy(ctx, src, dst, names, onEvent)
-	seed(l.w.dstMock, "backup", "raced.txt", []byte("theirs, first"), nil)
-	return result, err
-}
-
-// placeSLO stores a static large object whose recorded manifest states the
-// given parts and whose body serves exactly servedBytes.
-//
-// Swift reports the aggregate a static manifest RECORDED rather than one
-// derived from the segments present now, so a manifest and a body can
-// disagree while every header stays self-consistent. That is the condition
-// ADR 0084's comparison exists to catch, and the one a digest of delivered
-// bytes cannot see: the delivered bytes always hash to their own digest.
-func placeSLO(t *testing.T, mock *swifttest.Server, container, name string, parts [][]byte, servedBytes []byte) {
+func readDst(t *testing.T, w *world, name string) string {
 	t.Helper()
-	var entries []string
-	var total int64
-	aggregate := md5.New()
-	for i, part := range parts {
-		sum := md5.Sum(part)
-		hash := hex.EncodeToString(sum[:])
-		segment := fmt.Sprintf("%s/%d", name, i)
-		mock.PutObject("media_segments", segment, swifttest.Object{
-			Bytes: int64(len(part)), ETag: hash, Data: part,
-		})
-		entries = append(entries, fmt.Sprintf(
-			`{"name": "/media_segments/%s", "hash": "%s", "bytes": %d, "content_type": "application/octet-stream"}`,
-			segment, hash, len(part)))
-		total += int64(len(part))
-		if _, err := aggregate.Write([]byte(hash)); err != nil {
-			t.Fatal(err)
-		}
+	body, _, err := w.dst.OpenObject(context.Background(), "backup", name)
+	if err != nil {
+		t.Fatalf("GET backup/%s: %v", name, err)
 	}
-	etag := hex.EncodeToString(aggregate.Sum(nil))
-	mock.PutObject(container, name, swifttest.Object{
-		Bytes: total, ETag: `"` + etag + `"`, SLOEtag: etag, SLO: true,
-		SLOManifestJSON: "[" + strings.Join(entries, ",") + "]",
-		ContentType:     "video/mp4", Data: servedBytes,
-	})
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("GET backup/%s: %v", name, err)
+	}
+	return string(data)
 }
 
-// A manifest source's copy is bound to the source's OWN manifest, not to
-// whatever the GET delivered (ADR 0084).
-//
-// The drifted rows are the regression guard for the shape this route was
-// first written in: hold the delivered bytes, hash THEM, declare that
-// digest. Under that shape the destination's PUT always satisfies its own
-// declaration, so same-length content that is not what the manifest
-// describes publishes cleanly and verifies cleanly — the binding proves
-// only that the transport did not corrupt what it was handed. Comparing
-// against the ladder the manifest itself supplies is what makes the
-// declaration mean the source's content.
-func TestNativeManifestBindsAgainstItsManifest(t *testing.T) {
-	parts := [][]byte{[]byte("part-one|"), []byte("part-two")}
-	whole := append(append([]byte{}, parts[0]...), parts[1]...)
-	// Same length, different bytes: the only substitution a length check
-	// and a self-consistent digest both miss.
-	drifted := append(append([]byte{}, parts[0]...), []byte("EVIL-two")...)
+func newItem(name string) plan.Item {
+	return plan.Item{Name: name, Verdict: plan.VerdictNew, Route: plan.RouteRclone}
+}
 
+// ADR 0122 decision 4 and its required proof: a copy writes each object at
+// its name. The engine is given the destination folder itself, the
+// application asks the destination nothing about a name before its write or
+// after it, and what the engine said is each object's outcome and its record.
+func TestCopyWritesEachObjectAtItsNameAndAsksTheDestinationNothing(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "from/a.txt", []byte("alpha"), nil)
+	seed(w.srcMock, "media", "from/sub/b.txt", []byte("beta"), map[string]string{"Mtime": "1700000000.5"})
+	engine := &lineEngine{w: w}
+	var kept records
+	e := newExecutor(t, w, engine, func(c *Config) {
+		c.SrcPrefix, c.DstPrefix, c.Recorder = "from/", "to/", kept.recorder()
+	})
+	mark := len(w.dstMock.RequestLog())
+	report, err := e.Run(t.Context(), []plan.Item{newItem("a.txt"), newItem("sub/b.txt")})
+	sent := w.dstMock.RequestLog()[mark:]
+	if err != nil || report.Copied != 2 || report.Verified != 2 || len(report.Failures) != 0 {
+		t.Fatalf("report = %+v, %v", report, err)
+	}
+	if want := []string{"aeronautes_src:media/from -> aeronautes_dst:backup/to a.txt,sub/b.txt"}; !reflect.DeepEqual(engine.calls, want) {
+		t.Fatalf("engine runs = %q, want %q", engine.calls, want)
+	}
+	if len(sent) != 0 {
+		t.Fatalf("the application sent the destination %q, want nothing: the engine writes, and no name is read around its write", sent)
+	}
+	if readDst(t, w, "to/a.txt") != "alpha" || readDst(t, w, "to/sub/b.txt") != "beta" {
+		t.Fatal("the objects are not at their names")
+	}
+	for _, name := range []string{"a.txt", "sub/b.txt"} {
+		if got := kept.executed[name]; got.Result != ResultCopied || got.Effect != EffectReportedApplied || !kept.verified[name] {
+			t.Fatalf("%s recorded %+v, second record %v", name, got, kept.verified[name])
+		}
+	}
+}
+
+// A name the two listings show as the same is skipped with no request to
+// either store; no stamp is written, and none is read.
+func TestANameTheListingsShowAsTheSameIsSkippedWithNoRequest(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+	seed(w.dstMock, "backup", "a.txt", []byte("alpha"), map[string]string{"Kept": "yes"})
+	engine := &lineEngine{w: w}
+	var kept records
+	e := newExecutor(t, w, engine, func(c *Config) { c.Recorder = kept.recorder() })
+	srcMark, dstMark := len(w.srcMock.RequestLog()), len(w.dstMock.RequestLog())
+	report, err := e.Run(t.Context(), []plan.Item{{Name: "a.txt", Verdict: plan.VerdictSame}})
+	if err != nil || report.SkippedEqual != 1 || report.Copied != 0 {
+		t.Fatalf("report = %+v, %v", report, err)
+	}
+	if src, dst := w.srcMock.RequestLog()[srcMark:], w.dstMock.RequestLog()[dstMark:]; len(src)+len(dst) != 0 || len(engine.calls) != 0 {
+		t.Fatalf("a skipped name cost requests: source %q, destination %q, engine %q", src, dst, engine.calls)
+	}
+	if got := kept.executed["a.txt"]; got.Result != ResultSame || !kept.verified["a.txt"] {
+		t.Fatalf("recorded %+v, second record %v", got, kept.verified["a.txt"])
+	}
+	if headDst(t, w, "a.txt").Meta["Kept"] != "yes" {
+		t.Fatal("the skipped object was written")
+	}
+}
+
+// A pair the listings cannot compare, an empty row or a large object, is read
+// once on each side, and the store's description of the two decides: the same
+// length and tag are the same content, a name that is gone is a first copy,
+// and anything else is a replacement, refused unless it was confirmed.
+func TestAPairTheListingsCannotCompareIsReadOnceOnEachSide(t *testing.T) {
+	big := "0123456789abcdefghij"
+	sameCut := swifttest.Object{Manifest: "backup_segments/big/", ETag: md5hex("")}
 	for _, tc := range []struct {
-		name     string
-		static   bool
-		drift    bool
-		copied   int64
-		errorHas string
+		name        string
+		source      string
+		destination func(w *world)
+		replace     bool
+		result      Result
+		wrote       bool
 	}{
-		{name: "slo_matches_its_manifest", static: true, copied: 1},
-		{name: "slo_content_drifted", static: true, drift: true, errorHas: "did not match its manifest"},
-		{name: "dlo_matches_its_segments", copied: 1},
-		{name: "dlo_content_drifted", drift: true, errorHas: "did not match its manifest"},
+		{name: "two empty objects", source: "", destination: func(w *world) { seed(w.dstMock, "backup", "x", nil, nil) }, result: ResultSame},
+		{name: "a destination that is gone", source: "", destination: func(*world) {}, result: ResultCopied, wrote: true},
+		{name: "a large object cut at the same places", source: big, destination: func(w *world) {
+			seed(w.dstMock, "backup_segments", "big/00000000", []byte(big[:8]), nil)
+			seed(w.dstMock, "backup_segments", "big/00000001", []byte(big[8:16]), nil)
+			seed(w.dstMock, "backup_segments", "big/00000002", []byte(big[16:]), nil)
+			w.dstMock.PutObject("backup", "x", sameCut)
+		}, result: ResultSame},
+		{name: "a link to the same content, which is never the same as anything", source: "link", destination: func(w *world) {
+			seed(w.dstMock, "backup", "target.txt", []byte("alpha"), nil)
+			w.dstMock.PutObject("backup", "x", swifttest.Object{SymlinkTarget: "backup/target.txt"})
+		}, result: ResultRefused},
+		{name: "a large object cut elsewhere, not confirmed", source: big, destination: func(w *world) {
+			seed(w.dstMock, "backup", "x", []byte(big), nil)
+		}, result: ResultRefused},
+		{name: "a large object cut elsewhere, confirmed", source: big, replace: true, destination: func(w *world) {
+			seed(w.dstMock, "backup", "x", []byte(big), nil)
+		}, result: ResultCopied, wrote: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld(t)
-			ctx := context.Background()
 			w.srcMock.AddContainer("media_segments", "standard")
-			const name = "weird//manifest"
-			if tc.static {
-				served := whole
-				if tc.drift {
-					served = drifted
-				}
-				placeSLO(t, w.srcMock, "media", name, parts, served)
-			} else {
-				for i, part := range parts {
-					sum := md5.Sum(part)
-					w.srcMock.PutObject("media_segments", fmt.Sprintf("%s/%d", name, i), swifttest.Object{
-						Bytes: int64(len(part)), ETag: hex.EncodeToString(sum[:]), Data: part,
-					})
-				}
-				w.srcMock.PutObject("media", name, swifttest.Object{
-					Manifest: "media_segments/" + name + "/", ContentType: "video/mp4",
-				})
-				if tc.drift {
-					// The segment's recorded entity tag stays as it was, so
-					// the listing still recombines to the aggregate the HEAD
-					// reports and the ladder still builds: only the bytes the
-					// store serves for that run have changed.
-					sum := md5.Sum(parts[1])
-					w.srcMock.PutObject("media_segments", fmt.Sprintf("%s/1", name), swifttest.Object{
-						Bytes: int64(len(parts[1])), ETag: hex.EncodeToString(sum[:]), Data: []byte("EVIL-two"),
-					})
-				}
+			w.dstMock.AddContainer("backup_segments", "standard")
+			switch tc.source {
+			case "":
+				seed(w.srcMock, "media", "x", nil, nil)
+			case "link":
+				seed(w.srcMock, "media", "target.txt", []byte("alpha"), nil)
+				w.srcMock.PutObject("media", "x", swifttest.Object{SymlinkTarget: "media/target.txt"})
+			default:
+				seed(w.srcMock, "media_segments", "x/00000000", []byte(tc.source[:8]), nil)
+				seed(w.srcMock, "media_segments", "x/00000001", []byte(tc.source[8:16]), nil)
+				seed(w.srcMock, "media_segments", "x/00000002", []byte(tc.source[16:]), nil)
+				w.srcMock.PutObject("media", "x", swifttest.Object{Manifest: "media_segments/x/", ETag: md5hex("")})
 			}
-			before, err := w.src.ObjectDetail(ctx, "media", name)
+			tc.destination(w)
+			engine := &lineEngine{w: w, chunk: 8}
+			var kept records
+			e := newExecutor(t, w, engine, func(c *Config) { c.Replace, c.Recorder = tc.replace, kept.recorder() })
+			srcMark, dstMark := len(w.srcMock.RequestLog()), len(w.dstMock.RequestLog())
+			report, err := e.Run(t.Context(), []plan.Item{{Name: "x", Verdict: plan.VerdictUnknown, Route: plan.RouteRclone}})
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("report = %+v, %v", report, err)
 			}
-
-			report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
-				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
-			}})
-			if err != nil {
-				t.Fatal(err)
+			if got := kept.executed["x"].Result; got != tc.result {
+				t.Fatalf("result = %s, want %s (report %+v)", got, tc.result, report)
 			}
-			if report.Copied != tc.copied {
-				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
+			if (len(engine.calls) == 1) != tc.wrote {
+				t.Fatalf("engine runs = %q, want a run: %v", engine.calls, tc.wrote)
 			}
-			if tc.errorHas == "" {
-				if len(report.Failures) != 0 {
-					t.Fatalf("report = %+v", report)
-				}
-				// The declaration the store enforced is the digest of the
-				// bytes that matched, so the destination carries it.
-				sum := md5.Sum(whole)
-				d := headDst(t, w, name)
-				if d.Class != swiftcontrol.ClassPlain || d.ETag != hex.EncodeToString(sum[:]) || d.ContentLength != int64(len(whole)) {
-					t.Errorf("materialized = %+v, want a plain %d-byte object with the verified digest", d, len(whole))
-				}
-			} else {
-				if len(report.Failures) != 1 {
-					t.Fatalf("report = %+v, want one failure", report)
-				}
-				if got := report.Failures[0]; got.Stage != "native-hold" || !strings.Contains(got.Err, tc.errorHas) {
-					t.Errorf("failure = %+v, want %q at the native-hold stage", got, tc.errorHas)
-				}
-				// Refused BEFORE the destination PUT: nothing was placed, so
-				// there is no residue and no overwrite decision to make.
-				if _, err := w.dst.ObjectDetail(ctx, "backup", name); err == nil {
-					t.Error("a source whose content did not match its manifest published something")
-				}
+			if heads := count(w.dstMock.RequestLog()[dstMark:], "HEAD /v1/AUTH_test/backup/x"); heads != 1 {
+				t.Fatalf("the destination was read %d times, want once: %q", heads, w.dstMock.RequestLog()[dstMark:])
 			}
-			// A read never writes: the source is as it was either way.
-			after, err := w.src.ObjectDetail(ctx, "media", name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if after.ETag != before.ETag || after.ContentLength != before.ContentLength {
-				t.Errorf("source changed: %+v, was %+v", after, before)
+			// The engine's own reads of the source are in this log too, so
+			// only the application's HEAD is counted.
+			if heads := count(w.srcMock.RequestLog()[srcMark:], "HEAD /v1/AUTH_test/media/x"); heads != 1 {
+				t.Fatalf("the source was read %d times by the application, want once: %q", heads, w.srcMock.RequestLog()[srcMark:])
 			}
 		})
 	}
 }
 
-// The hold's two wrappers, at the boundaries the route depends on: the cap
-// refuses rather than growing, and the body is closed once even though the
-// comparison and this route's own deferred close both close it.
-func TestHeldManifestWrappers(t *testing.T) {
-	hold := &cappedHold{limit: 4}
-	if n, err := hold.Write([]byte("DATA")); n != 4 || err != nil {
-		t.Fatalf("write at the limit = %d, %v", n, err)
-	}
-	if _, err := hold.Write([]byte("X")); err == nil || !strings.Contains(err.Error(), "4-byte hold") {
-		t.Errorf("write past the limit = %v, want the limit named", err)
-	}
-	if string(hold.bytes) != "DATA" {
-		t.Errorf("held = %q, want the refused write excluded", hold.bytes)
-	}
-
-	failure := errors.New("source body close failed")
-	closes := 0
-	once := closeOnce(readCloser{Reader: strings.NewReader(""), Closer: closerFunc(func() error {
-		closes++
-		return failure
-	})})
-	if err := once.Close(); !errors.Is(err, failure) {
-		t.Errorf("first close = %v, want the body's own failure", err)
-	}
-	if err := once.Close(); err != nil {
-		t.Errorf("second close = %v, want nil", err)
-	}
-	if closes != 1 {
-		t.Errorf("delegated closes = %d, want one", closes)
-	}
-}
-
-// A plain source that does not state a complete MD5 states nothing this route
-// can declare, so it is not attempted. Swift states one for every plain object;
-// this is the shape of a source that is not what it says it is, and the point of
-// naming it here is that the alternative is a PUT the store refuses, reported as
-// a commit failure for a source that was never usable.
-func TestNativePlainSourceWithoutAnMD5IsNotAttempted(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	w.srcMock.PutObject("media", "weird//short", swifttest.Object{
-		Bytes: 5, ETag: "short", Data: []byte("alpha"), ContentType: "text/plain",
-	})
-
-	report, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{{
-		Name: "weird//short", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Copied != 0 || len(report.Failures) != 1 {
-		t.Fatalf("report = %+v", report)
-	}
-	if got := report.Failures[0]; got.Stage != "native-etag" || !strings.Contains(got.Err, "complete MD5") {
-		t.Errorf("failure = %+v, want the missing MD5 named at the native-etag stage", got)
-	}
-	if _, err := w.dst.ObjectDetail(ctx, "backup", "weird//short"); err == nil {
-		t.Error("a source with no declarable digest published something")
-	}
-}
-
-// Out-of-order items stop the job rather than quietly losing a name's evidence.
-// The spool carrying a native copy's proof is read forward, so a name written out
-// of order would be skipped by that read and a good copy would lose its verified
-// credit with nothing saying why. Run's contract already requires ascending names
-// and plan.Copy produces them; this is what happens when a caller breaks it. The
-// publication has already happened by then, which is why the run stops and
-// reports rather than pretending otherwise. The sources here are manifests
-// because those are the copies whose proof the spool carries.
-func TestNativeOutOfOrderItemsStopTheJob(t *testing.T) {
-	w := newWorld(t)
-	ctx := context.Background()
-	w.srcMock.AddContainer("media_segments", "standard")
-	for _, name := range []string{"b//dlo", "a//dlo"} {
-		chunk := []byte("payload-" + name)
-		sum := md5.Sum(chunk)
-		w.srcMock.PutObject("media_segments", name+"/0", swifttest.Object{
-			Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
-		})
-		w.srcMock.PutObject("media", name, swifttest.Object{
-			Manifest: "media_segments/" + name + "/", ContentType: "video/mp4",
-		})
-	}
-	_, err := newExecutor(t, w, nil).Run(ctx, []plan.Item{
-		{Name: "b//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest},
-		{Name: "a//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest},
-	})
-	if err == nil || !strings.Contains(err.Error(), "strictly ordered") {
-		t.Fatalf("Run = %v, want the spool's ordering requirement named", err)
-	}
-	// Both names were published before the second one's evidence could not be
-	// stored, and nothing deletes them: the stop is about evidence, not residue.
-	for _, name := range []string{"b//dlo", "a//dlo"} {
-		if _, err := w.dst.ObjectDetail(ctx, "backup", name); err != nil {
-			t.Errorf("%q: %v", name, err)
+func count(log []string, prefix string) int {
+	n := 0
+	for _, line := range log {
+		if strings.HasPrefix(line, prefix) {
+			n++
 		}
 	}
+	return n
 }
 
-// A copy's own evidence is about a SOURCE as well as a destination. The native
-// route publishes unstamped, so what a successful copy proved is kept in the job
-// rather than on the object — and a destination still holding exactly the verified
-// bytes says nothing once the source has become different content of the same
-// length. The copy was true when it was made; the two sides no longer agree, and
-// a fresh pass that credited it would turn a stale proof into a current one.
-func TestNativeEvidenceRejectsAChangedSource(t *testing.T) {
+// A name the listings show as different is replaced only when the operator
+// confirmed replacing (ADR 0122 decision 2). Refused, it is left as it was
+// and nothing is sent for it; confirmed, the engine writes over it.
+func TestAChangedNameIsReplacedOnlyWhenReplacingWasConfirmed(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(map[bool]string{false: "not confirmed", true: "confirmed"}[replace], func(t *testing.T) {
+			w := newWorld(t)
+			seed(w.srcMock, "media", "a.txt", []byte("new content"), nil)
+			seed(w.dstMock, "backup", "a.txt", []byte("old"), nil)
+			engine := &lineEngine{w: w}
+			var kept records
+			e := newExecutor(t, w, engine, func(c *Config) { c.Replace, c.Recorder = replace, kept.recorder() })
+			mark := len(w.dstMock.RequestLog())
+			report, err := e.Run(t.Context(), []plan.Item{{Name: "a.txt", Verdict: plan.VerdictChanged, Route: plan.RouteRclone}})
+			sent := w.dstMock.RequestLog()[mark:]
+			if err != nil || len(sent) != 0 {
+				t.Fatalf("report = %+v, %v; the application sent the destination %q", report, err, sent)
+			}
+			if !replace {
+				if report.OverwritesRefused != 1 || report.Copied != 0 || len(engine.calls) != 0 || kept.executed["a.txt"].Result != ResultRefused {
+					t.Fatalf("report = %+v, engine %q, record %+v", report, engine.calls, kept.executed["a.txt"])
+				}
+				if readDst(t, w, "a.txt") != "old" {
+					t.Fatal("a refused name was written")
+				}
+				return
+			}
+			if report.Copied != 1 || report.Overwrites != 1 || readDst(t, w, "a.txt") != "new content" {
+				t.Fatalf("report = %+v, destination %q", report, readDst(t, w, "a.txt"))
+			}
+		})
+	}
+}
+
+// ADR 0122 decision 7, measured on the pinned engine: an object's outcome is
+// what the engine said about it. Its line is the object written. Its error
+// line is the object failed with that error. Nothing said is unknown when the
+// engine itself failed, and not written when it ended cleanly, which is what
+// a listed name that is no longer at the source gets.
+func TestAnObjectsOutcomeIsWhatTheEngineSaid(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		change   bool
-		verified int64
-		failures int
+		name   string
+		engine func(w *world) *lineEngine
+		result Result
+		effect Effect
+		// says is in the failure the job reports, and never is not.
+		says, never string
 	}{
-		{name: "source_unchanged_is_verified", verified: 1},
-		{name: "source_changed_after_the_copy_is_not", change: true, failures: 1},
+		{name: "its line", engine: func(w *world) *lineEngine { return &lineEngine{w: w} }, result: ResultCopied, effect: EffectReportedApplied},
+		{name: "an error line", engine: func(w *world) *lineEngine {
+			return &lineEngine{w: w, exit: 5, refuse: map[string]string{"a.txt": "Failed to copy: unexpected EOF"}}
+		}, result: ResultFailed, effect: EffectUnresolved, says: "Failed to copy: unexpected EOF", never: "without reporting this object"},
+		{name: "nothing, and the engine failed", engine: func(w *world) *lineEngine {
+			return &lineEngine{w: w, exit: 3, gone: map[string]bool{"a.txt": true}}
+		}, result: ResultFailed, effect: EffectUnresolved, says: "the engine stopped without reporting this object"},
+		{name: "nothing, and the engine ended cleanly", engine: func(w *world) *lineEngine {
+			return &lineEngine{w: w, gone: map[string]bool{"a.txt": true}}
+		}, result: ResultFailed, effect: EffectNotAttempted, says: "it may no longer be at the source"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld(t)
-			ctx := context.Background()
-			w.srcMock.AddContainer("media_segments", "standard")
-			for i, chunk := range []string{"part-one|", "part-two"} {
-				sum := md5.Sum([]byte(chunk))
-				w.srcMock.PutObject("media_segments", fmt.Sprintf("weird//dlo/%d", i), swifttest.Object{
-					Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: []byte(chunk),
-				})
+			seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+			var kept records
+			e := newExecutor(t, w, tc.engine(w), func(c *Config) { c.Recorder = kept.recorder() })
+			report, _ := e.Run(t.Context(), []plan.Item{newItem("a.txt")})
+			got := kept.executed["a.txt"]
+			if got.Result != tc.result || got.Effect != tc.effect {
+				t.Fatalf("recorded %+v, want %s with effect %s (report %+v)", got, tc.result, tc.effect, report)
 			}
-			w.srcMock.PutObject("media", "weird//dlo", swifttest.Object{
-				Manifest: "media_segments/weird//dlo/", ContentType: "video/mp4",
-			})
-
-			executor := newExecutor(t, w, nil)
-			report, err := executor.Run(ctx, []plan.Item{{
-				Name: "weird//dlo", Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonPossibleManifest,
-			}})
-			if err != nil {
-				t.Fatal(err)
+			if tc.says != "" && (len(report.Failures) != 1 || !strings.Contains(report.Failures[0].Err, tc.says) ||
+				tc.never != "" && strings.Contains(report.Failures[0].Err, tc.never)) {
+				t.Fatalf("failures = %+v, want one that says %q and not %q", report.Failures, tc.says, tc.never)
 			}
-			if report.Copied != 1 || len(report.Failures) != 0 {
-				t.Fatalf("report = %+v", report)
-			}
-			if tc.change {
-				// An honest source change: the segment's recorded entity tag
-				// moves with its bytes, so the manifest's aggregate moves too and
-				// the source now describes different content of the same length.
-				chunk := []byte("EVIL-two")
-				sum := md5.Sum(chunk)
-				w.srcMock.PutObject("media_segments", "weird//dlo/1", swifttest.Object{
-					Bytes: int64(len(chunk)), ETag: hex.EncodeToString(sum[:]), Data: chunk,
-				})
-			}
-
-			verify, err := executor.Verify(ctx,
-				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
-				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
-				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
-			}
-			// The destination is untouched either way: this is about what may be
-			// claimed, not about repairing anything (ADR 0020).
-			if d := headDst(t, w, "weird//dlo"); d.ContentLength != 17 {
-				t.Errorf("destination changed: %+v", d)
+			if kept.verified["a.txt"] != (tc.result == ResultCopied) {
+				t.Fatalf("second record = %v for a %s object", kept.verified["a.txt"], tc.result)
 			}
 		})
 	}
 }
 
-// A name this job recorded as a content failure takes no verified credit, no
-// Same verdict and no skip in the same job, independently of any stamp (ADR
-// 0045). The fresh listing-grade pass is where that bites: a destination replaced
-// with equal bytes after the failure makes two listing rows agree, and that
-// agreement is about the rows, not about the copy this job already found wrong.
-func TestRecordedContentFailureTakesNoLaterCredit(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		sabotage bool
-		copied   int64
-		verified int64
-		failures int
-	}{
-		{name: "healthy_copy_is_verified", copied: 1, verified: 1},
-		{name: "recorded_failure_is_not_verified_when_the_rows_later_agree", sabotage: true, failures: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			const name = "weird//plain"
-			body := []byte("alpha")
-			var w *world
-			// The destination is replaced between this route's PUT and the HEAD
-			// that checks it, which is what the post-PUT comparison exists to
-			// catch. The replacement is same-length, so nothing but the digest
-			// says it happened.
-			w = newWorldWrappingDest(t, func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-					next.ServeHTTP(rw, r)
-					if !tc.sabotage || r.Method != http.MethodPut || !strings.HasSuffix(r.URL.Path, "/"+name) {
-						return
-					}
-					sum := md5.Sum([]byte("EVILS"))
-					w.dstMock.PutObject("backup", name, swifttest.Object{
-						Bytes: 5, ETag: hex.EncodeToString(sum[:]), Data: []byte("EVILS"), ContentType: "text/plain",
-					})
-				})
-			})
-			seed(w.srcMock, "media", name, body, nil)
-
-			executor := newExecutor(t, w, nil)
-			report, err := executor.Run(ctx, []plan.Item{{
-				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
-			}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if report.Copied != tc.copied {
-				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
-			}
-			if tc.sabotage {
-				if len(report.Failures) != 1 || !strings.Contains(report.Failures[0].Err, "declared") {
-					t.Fatalf("report = %+v, want the declaration named", report)
-				}
-				// Equal bytes restored before verification: the rows now agree.
-				sum := md5.Sum(body)
-				w.dstMock.PutObject("backup", name, swifttest.Object{
-					Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
-				})
-				d := headDst(t, w, name)
-				if d.ETag != hex.EncodeToString(sum[:]) {
-					t.Fatalf("the fixture did not restore equal bytes: %+v", d)
-				}
-			}
-
-			verify, err := executor.Verify(ctx,
-				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
-				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
-				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
-			}
-			if tc.sabotage && !strings.Contains(verify.Failures[0].Err, "recorded a content failure") {
-				t.Errorf("verify failure = %+v, want the recorded failure named", verify.Failures[0])
-			}
-		})
+// Measured on the pinned engine: it copies the content type and the source's
+// modification time, and no other header. The application gives the
+// destination the source's set in one POST after the engine wrote the object,
+// and sends none where the engine already delivered all of it.
+func TestACopyCarriesTheHeadersTheEngineDoesNot(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "plain.txt", []byte("alpha"), nil)
+	seed(w.srcMock, "media", "timed.txt", []byte("beta"), map[string]string{"Mtime": "1700000000.5"})
+	w.srcMock.PutObject("media", "tagged.txt", swifttest.Object{Bytes: 5, ETag: md5hex("gamma"), ContentType: "text/plain",
+		Meta: map[string]string{"Colour": "blue", "Mtime": "1700000000.5"}, DeleteAt: 4102444800, Data: []byte("gamma")})
+	seed(w.srcMock, "media", "untimed.txt", []byte("delta"), map[string]string{"Colour": "red"})
+	e := newExecutor(t, w, &lineEngine{w: w})
+	mark := len(w.dstMock.RequestLog())
+	report, err := e.Run(t.Context(), []plan.Item{newItem("plain.txt"), newItem("tagged.txt"), newItem("timed.txt"), newItem("untimed.txt")})
+	sent := w.dstMock.RequestLog()[mark:]
+	if err != nil || report.Copied != 4 {
+		t.Fatalf("report = %+v, %v", report, err)
 	}
-}
-
-// The spool itself: ordering, framing, forward lookup and a latched write
-// failure. These are the properties the verification pass trusts without being
-// able to see them, and the reason the evidence is bounded by construction — one
-// record resident at a time, whatever the namespace size.
-func TestCopyEvidenceSpool(t *testing.T) {
-	var broken evidenceLog
-	t.Cleanup(func() {
-		if err := broken.close(); err != nil {
-			t.Error(err)
-		}
-	})
-	if err := broken.copied("a", "v1:3:aaa", "dddd"); err != nil {
-		t.Fatal(err)
+	if want := []string{"POST /v1/AUTH_test/backup/tagged.txt", "POST /v1/AUTH_test/backup/untimed.txt"}; !reflect.DeepEqual(sent, want) {
+		t.Fatalf("the application sent the destination %q, want %q", sent, want)
 	}
-	if err := broken.contentFailure("a"); err == nil {
-		t.Error("a repeated name was accepted")
+	got := headDst(t, w, "tagged.txt")
+	if want := map[string]string{"Colour": "blue", "Mtime": "1700000000.5"}; !reflect.DeepEqual(got.Meta, want) || got.DeleteAt.Unix() != 4102444800 || got.ContentType != "text/plain" {
+		t.Fatalf("destination carries %v, expiry %v, type %q; want the source's %v and its expiry", got.Meta, got.DeleteAt, got.ContentType, want)
 	}
-	// That refusal latched, and every later use has to report it rather than
-	// hand back partial evidence.
-	if err := broken.contentFailure("z"); err == nil {
-		t.Error("the spool kept writing after a refusal")
-	}
-	if _, err := broken.reader(); err == nil {
-		t.Error("the verification pass was given a broken spool")
-	}
-
-	var log evidenceLog
-	t.Cleanup(func() {
-		if err := log.close(); err != nil {
-			t.Error(err)
-		}
-	})
-	for _, name := range []string{"a", "c", "e"} {
-		if err := log.copied(name, "v1:1:"+name, "digest-"+name); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := log.contentFailure("g"); err != nil {
-		t.Fatal(err)
-	}
-	reader, err := log.reader()
+	// The POST replaces the destination's whole set, so for a source that
+	// states no modification time it repeats the one the engine wrote: the
+	// time the source was last changed, in whole seconds.
+	source, err := w.src.ObjectDetail(t.Context(), "media", "untimed.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Forward only, including names the spool does not hold and names that fall
-	// between two it does.
-	for _, tc := range []struct {
-		name, payload string
-		kind          evidenceKind
-	}{
-		{name: "a", kind: evidenceCopied, payload: "v1:1:a\x00digest-a"},
-		{name: "b", kind: evidenceNone},
-		{name: "c", kind: evidenceCopied, payload: "v1:1:c\x00digest-c"},
-		{name: "d", kind: evidenceNone},
-		{name: "e", kind: evidenceCopied, payload: "v1:1:e\x00digest-e"},
-		{name: "g", kind: evidenceContentFailure},
-	} {
-		kind, payload, err := reader.at(tc.name)
-		if err != nil {
-			t.Fatalf("at %q: %v", tc.name, err)
-		}
-		if kind != tc.kind || payload != tc.payload {
-			t.Errorf("at %q = %d %q, want %d %q", tc.name, kind, payload, tc.kind, tc.payload)
-		}
-	}
-	if err := reader.finish(); err != nil {
-		t.Fatal(err)
+	if want := map[string]string{"Colour": "red", "Mtime": strconv.FormatInt(source.LastModified.Unix(), 10)}; !reflect.DeepEqual(headDst(t, w, "untimed.txt").Meta, want) {
+		t.Fatalf("destination carries %v, want %v", headDst(t, w, "untimed.txt").Meta, want)
 	}
 }
 
-// The store's own refusal is a content disagreement too. A PUT whose body does
-// not hash to what this route declared comes back 422 with nothing stored, and
-// that verdict is about this name's content, so ADR 0045's same-job exclusion
-// covers it. Without the record a later equal pair of listing rows verifies a
-// name whose publication the store refused.
-func TestDeclaredDigestRefusalTakesNoLaterCredit(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		alter    bool
-		copied   int64
-		verified int64
-		failures int
-	}{
-		{name: "healthy_copy_is_verified", copied: 1, verified: 1},
-		{name: "refused_then_equal_is_not_verified", alter: true, failures: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			const name = "weird//refused"
-			body := []byte("alpha")
-			// The body is altered on its way to the store while the declared tag
-			// and the conditional header travel untouched, so what answers is the
-			// store's real verdict rather than a fixture's.
-			w := newWorldWrappingDest(t, func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-					if tc.alter && r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/"+name) {
-						r.Body = io.NopCloser(strings.NewReader("EVILS"))
-						r.ContentLength = 5
-					}
-					next.ServeHTTP(rw, r)
-				})
-			})
-			seed(w.srcMock, "media", name, body, nil)
-
-			executor := newExecutor(t, w, nil)
-			report, err := executor.Run(ctx, []plan.Item{{
-				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
-			}})
-			if err != nil {
-				t.Fatal(err)
+// A POST to a dynamic manifest that does not repeat its manifest header
+// empties the object (measured on the owned Swift, and the mock does the
+// same). So the POST for an object the engine wrote in segments names the
+// path the engine reported, and an object too large to be anything but
+// segmented, whose path the engine did not report, is sent no POST: it is
+// reported failed for its metadata and stays the whole object it is.
+func TestCarryingHeadersToASegmentedObjectKeepsItsManifest(t *testing.T) {
+	const content = "0123456789abcdefghij"
+	for _, quiet := range []bool{false, true} {
+		t.Run(map[bool]string{false: "the engine said where the segments are", true: "the engine did not say"}[quiet], func(t *testing.T) {
+			w := newWorld(t)
+			w.dstMock.AddContainer("backup_segments", "standard")
+			seed(w.srcMock, "media", "big.bin", []byte(content), map[string]string{"Colour": "blue"})
+			e := newExecutor(t, w, &lineEngine{w: w, chunk: 8, quiet: quiet})
+			mark := len(w.dstMock.RequestLog())
+			report, err := e.Run(t.Context(), []plan.Item{newItem("big.bin")})
+			posts := count(w.dstMock.RequestLog()[mark:], "POST ")
+			got := headDst(t, w, "big.bin")
+			if err != nil || got.Class != swiftcontrol.ClassDLO || readDst(t, w, "big.bin") != content {
+				t.Fatalf("destination is %s holding %q, %v; want the dynamic object whole", got.Class, readDst(t, w, "big.bin"), err)
 			}
-			if report.Copied != tc.copied {
-				t.Fatalf("report = %+v, want %d copied", report, tc.copied)
-			}
-			if tc.alter {
-				if len(report.Failures) != 1 {
-					t.Fatalf("report = %+v, want the refusal reported", report)
+			if quiet {
+				if posts != 0 || report.Copied != 0 || len(report.Failures) != 1 || report.Failures[0].Stage != "metadata" {
+					t.Fatalf("POSTs = %d, report = %+v; want no POST and the object failed for its metadata", posts, report)
 				}
-				// Refused means nothing was stored, which is what makes the next
-				// step a fixture's placement rather than a repair.
-				if _, err := w.dst.ObjectDetail(ctx, "backup", name); err == nil {
-					t.Fatal("a refused publication left an object behind")
-				}
-				sum := md5.Sum(body)
-				w.dstMock.PutObject("backup", name, swifttest.Object{
-					Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
-				})
+				return
 			}
-
-			verify, err := executor.Verify(ctx,
-				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
-				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if verify.Verified != tc.verified || len(verify.Failures) != tc.failures {
-				t.Fatalf("verify = %+v, want %d verified and %d failures", verify, tc.verified, tc.failures)
-			}
-			if tc.alter && !strings.Contains(verify.Failures[0].Err, "recorded a content failure") {
-				t.Errorf("verify failure = %+v, want the recorded failure named", verify.Failures[0])
+			if posts != 1 || report.Copied != 1 || got.Meta["Colour"] != "blue" {
+				t.Fatalf("POSTs = %d, report = %+v, metadata %v", posts, report, got.Meta)
 			}
 		})
 	}
 }
 
-// A spool that is not the one this job wrote releases nothing. The forward read
-// answers absence from the records it has passed, so a substituted record of the
-// same length would look like a name the spool never held, and absence is what
-// lets a name reach the pass's success paths. Validating the whole file before
-// the pass begins means no credit can be counted or SAVED against evidence that
-// is later contradicted — zeroing a returned count afterwards would not undo a
-// persisted observation.
-func TestCorruptEvidenceSpoolWithholdsCreditAndSavesNone(t *testing.T) {
+// An object the engine wrote gets its headers even when the job was
+// cancelled while the engine ran, so that a cancel leaves no copied object
+// without them. A POST the store refuses fails the object with that reason.
+func TestHeadersAreCarriedAfterACancelAndARefusalFailsTheObject(t *testing.T) {
+	t.Run("cancelled while the engine ran", func(t *testing.T) {
+		w := newWorld(t)
+		seed(w.srcMock, "media", "tagged.txt", []byte("gamma"), map[string]string{"Colour": "blue"})
+		ctx, cancel := context.WithCancel(t.Context())
+		e := newExecutor(t, w, &lineEngine{w: w, during: cancel})
+		report, err := e.Run(ctx, []plan.Item{newItem("tagged.txt")})
+		if !errors.Is(err, context.Canceled) || report.Copied != 1 || headDst(t, w, "tagged.txt").Meta["Colour"] != "blue" {
+			t.Fatalf("report = %+v, %v, metadata %v", report, err, headDst(t, w, "tagged.txt").Meta)
+		}
+	})
+	t.Run("refused by the store", func(t *testing.T) {
+		w := newWorld(t)
+		seed(w.srcMock, "media", "tagged.txt", []byte("gamma"), map[string]string{"Colour": "blue"})
+		w.dstMock.SetObjectPOSTStatus(http.StatusForbidden)
+		var kept records
+		e := newExecutor(t, w, &lineEngine{w: w}, func(c *Config) { c.Recorder = kept.recorder() })
+		report, err := e.Run(t.Context(), []plan.Item{newItem("tagged.txt")})
+		if err != nil || report.Copied != 0 || len(report.Failures) != 1 || !strings.Contains(report.Failures[0].Err, "its metadata was not set") {
+			t.Fatalf("report = %+v, %v", report, err)
+		}
+		if got := kept.executed["tagged.txt"]; got.Result != ResultFailed || got.Effect != EffectUnresolved || kept.verified["tagged.txt"] {
+			t.Fatalf("recorded %+v, second record %v", got, kept.verified["tagged.txt"])
+		}
+	})
+}
+
+// A name the engine cannot carry is read and written by the application in
+// one pass: one GET, and one PUT that declares the source's entity tag,
+// carries its headers and sends no condition. Nothing is read afterwards, and
+// a body the store refuses against the tag leaves the name as it was.
+func TestTheApplicationsOwnCopyIsOneReadAndOneWrite(t *testing.T) {
+	const name = "line\n/object"
+	var puts []string
+	w := newWorldWrappingDest(t, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/AUTH_test/backup/") {
+				puts = append(puts, "etag="+r.Header.Get("ETag")+" if-none-match="+r.Header.Get("If-None-Match")+" colour="+r.Header.Get("X-Object-Meta-Colour"))
+			}
+			next.ServeHTTP(rw, r)
+		})
+	})
+	seed(w.srcMock, "media", name, []byte("alpha"), map[string]string{"Colour": "blue"})
+	engine := &lineEngine{w: w}
+	e := newExecutor(t, w, engine)
+	srcMark, dstMark := len(w.srcMock.RequestLog()), len(w.dstMock.RequestLog())
+	report, err := e.Run(t.Context(), []plan.Item{{Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative}})
+	if err != nil || report.Copied != 1 || report.NativeRouted != 1 || len(engine.calls) != 0 {
+		t.Fatalf("report = %+v, %v, engine %q", report, err, engine.calls)
+	}
+	if src, dst := w.srcMock.RequestLog()[srcMark:], w.dstMock.RequestLog()[dstMark:]; len(src) != 1 || !strings.HasPrefix(src[0], "GET ") || len(dst) != 1 || !strings.HasPrefix(dst[0], "PUT ") {
+		t.Fatalf("requests: source %q, destination %q; want one GET and one PUT", src, dst)
+	}
+	if want := []string{"etag=" + md5hex("alpha") + " if-none-match= colour=blue"}; !reflect.DeepEqual(puts, want) {
+		t.Fatalf("the PUT carried %q, want %q", puts, want)
+	}
+	if readDst(t, w, name) != "alpha" {
+		t.Fatal("the name does not hold the object")
+	}
+}
+
+func TestTheApplicationsOwnCopyFailsWhenTheStoreRefusesTheBytes(t *testing.T) {
+	const name = "line\n/object"
+	w := newWorld(t)
+	// A source whose stated tag is not the MD5 of what it serves: the store
+	// refuses the declared tag against the bytes that arrive.
+	w.srcMock.PutObject("media", name, swifttest.Object{Bytes: 5, ETag: md5hex("other"), ContentType: "text/plain", Data: []byte("alpha")})
+	seed(w.dstMock, "backup", name, []byte("old"), nil)
+	var kept records
+	e := newExecutor(t, w, nil, func(c *Config) { c.Replace, c.Recorder = true, kept.recorder() })
+	report, err := e.Run(t.Context(), []plan.Item{{Name: name, Verdict: plan.VerdictChanged, Route: plan.RouteNative}})
+	if err != nil || report.Copied != 0 || len(report.Failures) != 1 {
+		t.Fatalf("report = %+v, %v", report, err)
+	}
+	if got := kept.executed[name]; got.Result != ResultFailed || got.Effect != EffectNotAttempted {
+		t.Fatalf("recorded %+v, want a refusal that wrote nothing", got)
+	}
+	if readDst(t, w, name) != "old" {
+		t.Fatal("the refused write changed the name")
+	}
+}
+
+// The engine copies a link as its target's bytes (measured), so a link is
+// found by the read of the source that precedes the engine and is carried by
+// the application as a link, in one PUT with nothing read after it. A link
+// the store does not follow on a plain read, such as one into another
+// account, is recognised by its own header and carried the same way.
+func TestALinkIsCarriedAsALinkAndNeverGivenToTheEngine(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		corrupt  bool
-		verified int64
+		name          string
+		link          swifttest.Object
+		route         plan.Route
+		wantedAccount string
 	}{
-		{name: "intact_spool_withholds_the_failed_name", verified: 0},
-		{name: "corrupt_spool_credits_nothing_at_all", corrupt: true},
+		{name: "a link the store follows", route: plan.RouteRclone,
+			link: swifttest.Object{SymlinkTarget: "media/target.txt", ContentType: "application/symlink", Meta: map[string]string{"Colour": "blue"}}},
+		{name: "a link into another account, on the application's own route", route: plan.RouteNative, wantedAccount: "AUTH_other",
+			link: swifttest.Object{SymlinkTarget: "media/target.txt", SymlinkTargetAccount: "AUTH_other", ContentType: "application/symlink", Meta: map[string]string{"Colour": "blue"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			const name = "a//bad"
-			body := []byte("alpha")
-			var w *world
-			w = newWorldWrappingDest(t, func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-					next.ServeHTTP(rw, r)
-					if r.Method != http.MethodPut || !strings.HasSuffix(r.URL.Path, "/"+name) {
-						return
-					}
-					sum := md5.Sum([]byte("EVILS"))
-					w.dstMock.PutObject("backup", name, swifttest.Object{
-						Bytes: 5, ETag: hex.EncodeToString(sum[:]), Data: []byte("EVILS"), ContentType: "text/plain",
-					})
-				})
-			})
-			seed(w.srcMock, "media", name, body, nil)
+			w := newWorld(t)
+			seed(w.srcMock, "media", "target.txt", []byte("alpha"), nil)
+			w.srcMock.PutObject("media", "link", tc.link)
+			engine := &lineEngine{w: w}
+			e := newExecutor(t, w, engine)
+			mark := len(w.dstMock.RequestLog())
+			report, err := e.Run(t.Context(), []plan.Item{{Name: "link", Verdict: plan.VerdictNew, Route: tc.route}})
+			sent := w.dstMock.RequestLog()[mark:]
+			if err != nil || report.Copied != 1 || len(engine.calls) != 0 {
+				t.Fatalf("report = %+v, %v, engine %q", report, err, engine.calls)
+			}
+			if len(sent) != 1 || !strings.HasPrefix(sent[0], "PUT /v1/AUTH_test/backup/link") {
+				t.Fatalf("the application sent the destination %q, want one PUT", sent)
+			}
+			link, err := w.dst.SymlinkGet(t.Context(), "backup", "link")
+			if err != nil || link.SymlinkTarget != "media/target.txt" || link.SymlinkTargetAccount != tc.wantedAccount || link.Meta["Colour"] != "blue" {
+				t.Fatalf("destination link = %+v, %v", link, err)
+			}
+		})
+	}
+}
 
-			var saved []string
+// A copy parks only at the head of an item and the head of an engine batch
+// (ADR 0104). A batch that is never dispatched, because the job was cancelled
+// first, is recorded as not attempted and the engine is not started.
+func TestABatchThatIsNotDispatchedIsRecordedAsNotAttempted(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+	engine := &lineEngine{w: w}
+	var kept records
+	e := newExecutor(t, w, engine, func(c *Config) { c.Recorder = kept.recorder() })
+	ctx, cancel := context.WithCancel(t.Context())
+	if err := e.Handle(ctx, newItem("a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	report, err := e.Finish(ctx)
+	if !errors.Is(err, context.Canceled) || len(engine.calls) != 0 || report.Copied != 0 {
+		t.Fatalf("report = %+v, %v, engine %q", report, err, engine.calls)
+	}
+	if got := kept.executed["a.txt"]; got.Result != ResultNotAttempted || got.Effect != EffectNotAttempted {
+		t.Fatalf("recorded %+v, want not attempted", got)
+	}
+}
+
+// A recorded run needs all three records, and a record that cannot be kept
+// stops the run: nothing further is dispatched.
+func TestARecordThatCannotBeKeptStopsTheRun(t *testing.T) {
+	w := newWorld(t)
+	for _, partial := range []*Recorder{
+		{Execute: func(string, Observation) error { return nil }, Verify: func(string, Observation) error { return nil }},
+		{Admit: func(Admission) error { return nil }, Verify: func(string, Observation) error { return nil }},
+		{Admit: func(Admission) error { return nil }, Execute: func(string, Observation) error { return nil }},
+	} {
+		if _, err := New(Config{Source: w.src, Dest: w.dst, SrcContainer: "media", DstContainer: "backup", Recorder: partial}); err == nil {
+			t.Fatalf("a recorder missing a record was accepted: %+v", partial)
+		}
+	}
+	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+	seed(w.srcMock, "media", "b.txt", []byte("beta"), nil)
+	lost := errors.New("the job store is gone")
+	for _, tc := range []struct {
+		name               string
+		admit, exec, check error
+		runs               int
+	}{
+		{name: "the admission", admit: lost, runs: 0},
+		{name: "the outcome", exec: lost, runs: 1},
+		{name: "the second record", check: lost, runs: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := &lineEngine{w: w}
 			recorder := &Recorder{
-				Admit:   func(Admission) error { return nil },
-				Execute: func(string, Observation) error { return nil },
-				Verify: func(itemName string, o Observation) error {
-					saved = append(saved, itemName+"="+string(o.Result))
-					return nil
-				},
+				Admit:   func(Admission) error { return tc.admit },
+				Execute: func(string, Observation) error { return tc.exec },
+				Verify:  func(string, Observation) error { return tc.check },
 			}
-			executor := recordingExecutor(t, w, nil, recorder)
-			report, err := executor.Run(ctx, []plan.Item{{
-				Name: name, Verdict: plan.VerdictNew, Route: plan.RouteNative, Reason: plan.ReasonUnsafeName,
-			}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if report.Copied != 0 || len(report.Failures) != 1 {
-				t.Fatalf("report = %+v, want the post-PUT comparison to fail it", report)
-			}
-			// Equal bytes restored, so the fresh listing rows agree and only the
-			// recorded failure stands between this name and verified credit.
-			sum := md5.Sum(body)
-			w.dstMock.PutObject("backup", name, swifttest.Object{
-				Bytes: int64(len(body)), ETag: hex.EncodeToString(sum[:]), Data: body, ContentType: "text/plain",
-			})
-			if tc.corrupt {
-				// One name swapped for another of the same length: the file's
-				// size and record count are untouched, and only its digest
-				// disagrees.
-				if _, err := executor.evidence.file.WriteAt([]byte("b//bad"), 4); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			verify, err := executor.Verify(ctx,
-				w.src.Objects(ctx, "media", swiftcontrol.ObjectListOptions{Deep: true}),
-				w.dst.Objects(ctx, "backup", swiftcontrol.ObjectListOptions{Deep: true}))
-			if tc.corrupt {
-				if err == nil || !strings.Contains(err.Error(), "incomplete or corrupt") {
-					t.Fatalf("Verify = %v, want the spool's integrity reported", err)
-				}
-			} else if err != nil {
-				t.Fatal(err)
-			}
-			if verify.Verified != tc.verified {
-				t.Errorf("verified = %d, want %d", verify.Verified, tc.verified)
-			}
-			// Neither case may leave a verified observation saved beside the
-			// failed execution. The intact spool withholds it by excluding the
-			// name; the corrupt one withholds it by not deciding at all.
-			for _, entry := range saved {
-				if strings.HasSuffix(entry, "=verified") {
-					t.Errorf("a verified observation was saved: %q (all: %q)", entry, saved)
-				}
-			}
-			if tc.corrupt && len(saved) != 0 {
-				t.Errorf("a corrupt spool still produced saved observations: %q", saved)
+			e := newExecutor(t, w, engine, func(c *Config) { c.Recorder, c.BatchSize = recorder, 1 })
+			_, err := e.Run(t.Context(), []plan.Item{newItem("a.txt"), newItem("b.txt")})
+			if !errors.Is(err, lost) || len(engine.calls) != tc.runs {
+				t.Fatalf("run ended %v after %d engine runs, want the lost record and %d", err, len(engine.calls), tc.runs)
 			}
 		})
+	}
+}
+
+// Where the engine put an object's segments is kept as the engine reports it
+// (ADR 0122 decision 8), and a record of it that cannot be kept stops the run.
+// The engine has had the whole batch by then, so every object of it still
+// gets its outcome: both are written, and both are recorded as written.
+func TestTheEnginesSegmentPathsAreKept(t *testing.T) {
+	for _, fails := range []bool{false, true} {
+		t.Run(map[bool]string{false: "kept", true: "cannot be kept"}[fails], func(t *testing.T) {
+			w := newWorld(t)
+			w.dstMock.AddContainer("backup_segments", "standard")
+			seed(w.srcMock, "media", "a.bin", []byte("0123456789abcdefghij"), nil)
+			seed(w.srcMock, "media", "b.bin", []byte("ABCDEFGHIJ0123456789"), nil)
+			var paths []string
+			var kept records
+			lost := errors.New("the recovery store is gone")
+			e := newExecutor(t, w, &lineEngine{w: w, chunk: 8}, func(c *Config) {
+				c.Recorder = kept.recorder()
+				c.OnRecovery = func(kind, container, prefix, object string) error {
+					paths = append(paths, kind+" "+container+"/"+prefix)
+					if fails {
+						return lost
+					}
+					return nil
+				}
+			})
+			report, err := e.Run(t.Context(), []plan.Item{newItem("a.bin"), newItem("b.bin")})
+			// A run that is stopped asks for no further record of a path.
+			want := []string{"captured backup_segments/a.bin/2026-11-16-000000-run/", "captured backup_segments/b.bin/2026-11-16-000000-run/"}
+			if fails {
+				want = want[:1]
+			}
+			if !reflect.DeepEqual(paths, want) || len(report.CapturedPrefixes) != 2 {
+				t.Fatalf("kept %q and reported %+v, want %q", paths, report.CapturedPrefixes, want)
+			}
+			if fails != errors.Is(err, lost) {
+				t.Fatalf("run ended %v", err)
+			}
+			for _, name := range []string{"a.bin", "b.bin"} {
+				if got := kept.executed[name]; got.Result != ResultCopied || !kept.verified[name] {
+					t.Fatalf("%s recorded %+v, second record %v; want every object the engine wrote recorded as written", name, got, kept.verified[name])
+				}
+			}
+			if report.Copied != 2 {
+				t.Fatalf("report = %+v, want both objects counted", report)
+			}
+		})
+	}
+}
+
+// One failure that looks like a rejected token gets one fresh child, after
+// the tokens are invalidated; the second failure is the batch's outcome.
+func TestARejectedTokenGetsOneFreshChild(t *testing.T) {
+	w := newWorld(t)
+	seed(w.srcMock, "media", "a.txt", []byte("alpha"), nil)
+	engine := &lineEngine{w: w, exit: 1, refuse: map[string]string{"a.txt": "401 Unauthorized"}}
+	reauthenticated := 0
+	e := newExecutor(t, w, engine, func(c *Config) {
+		c.OnAuthFailure = func() {
+			reauthenticated++
+			engine.exit, engine.refuse = 0, nil
+		}
+	})
+	report, err := e.Run(t.Context(), []plan.Item{newItem("a.txt")})
+	if err != nil || reauthenticated != 1 || len(engine.calls) != 2 || report.Copied != 1 {
+		t.Fatalf("report = %+v, %v, reauthenticated %d, engine runs %d", report, err, reauthenticated, len(engine.calls))
 	}
 }

@@ -9,9 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // sentTagForFixture is the entity tag of the bytes the fixture's files
@@ -306,29 +303,6 @@ func TestAcknowledgedUploadRefusesAVersioningModeItCannotDescribe(t *testing.T) 
 	}
 	if got := f.liveTag(t); got != f.tag {
 		t.Fatalf("the live object changed: %q, was %q", got, f.tag)
-	}
-}
-
-// A cancel that lands in the fixed-point read is the job stopping, not a
-// finding about the container: the hook records nothing, where a container
-// that could not be read is recorded as the conflict it is.
-func TestVersioningReadCancelledRecordsNothing(t *testing.T) {
-	f := newOverwriteFixture(t)
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
-	refusal, err := f.h.transfer.versioningUnchanged(cancelled, t.Context(), f.bookmark, "replaceable",
-		swiftcontrol.ContainerVersioning{}, "object.upload.replace", "replaceable/live/taken")
-	if err != nil || !strings.Contains(refusal, "cancelled") {
-		t.Fatalf("hook = %q, %v; want the cancellation and no record failure", refusal, err)
-	}
-	events, err := f.h.auditSvc.audit.List(t.Context(), audit.Query{Limit: 20})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, event := range events {
-		if event.Result == audit.ResultConflict {
-			t.Errorf("a cancelled read left a conflict in the trail: %+v", event)
-		}
 	}
 }
 

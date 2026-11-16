@@ -81,8 +81,10 @@ func shortListingLargeCopy(t *testing.T, h *Harness, class string) {
 			terminalReads++
 		}
 	}
-	if terminalReads < 2 {
-		t.Fatalf("source tail reached only %d times across planning and fresh verification", terminalReads)
+	// One listing pass: nothing is listed again after the copy (ADR 0122
+	// decision 4).
+	if terminalReads != 1 {
+		t.Fatalf("the source listing's tail was read %d times, want once", terminalReads)
 	}
 	receipt.CreditHappy()
 }

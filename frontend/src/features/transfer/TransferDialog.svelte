@@ -87,8 +87,8 @@
   // The overwrite question only has an answer once a copy preview shows a
   // destination that exists: Changed is a listed difference, Unknown a pair the
   // listing could not prove equal. Both are refused by default and both can be
-  // replaced once acknowledged — the executor replaces what still differs at
-  // the fixed point and skips what is identical.
+  // replaced once acknowledged — the copy replaces what differs and skips what
+  // is identical.
   const overwriteCandidates = $derived(mode === "copy" && preview ? preview.summary.changed + preview.summary.unknown : 0);
   const acknowledged = $derived(!!preview && prepared?.request.acknowledgeOverwrite === true);
 
@@ -212,9 +212,7 @@
   // plan is not re-read: it does not depend on this flag, so re-listing would
   // only risk showing a different set than the one they chose to replace. The
   // flag is an accident guard — StartCopy raises the one native confirmation,
-  // naming both accounts and the live names, before it writes anything, and the
-  // executor still refuses at the fixed point anything whose identity no longer
-  // matches what was acknowledged.
+  // naming both accounts and the live names, before it writes anything.
   function replace() {
     const current = prepared;
     if (previewing || starting || mode !== "copy" || !current || !isCurrent(current.intent)
@@ -443,7 +441,7 @@
                 Equal objects are skipped; {acknowledged
                   ? "unequal existing destinations are replaced once you confirm"
                   : "unequal existing destinations are refused"}.
-                A missing destination can be created conditionally.
+                A destination that is no longer there is created.
               </p>
             {/if}
             {#if s.nativeRouted > 0}

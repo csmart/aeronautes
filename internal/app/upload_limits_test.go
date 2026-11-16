@@ -83,11 +83,13 @@ func TestDestinationChunkSettings(t *testing.T) {
 							// default unless overridden, and the record shows it (ADR 0074).
 							want := rclone.Options{ChunkSize: tc.want, Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
 							wantEngine := want
-							wantEngine.NoGzipEncoding = operation == "copy"
-							// An upload's engine writes at the names themselves, and
-							// may remove a replaced large object's old segments here:
-							// the container keeps no versions and reclaiming is on.
-							wantEngine.LiveDestination = operation == "upload"
+							// The engine of an upload and of a copy writes at the
+							// names themselves, and may remove a replaced large
+							// object's old segments here: the container keeps no
+							// versions and reclaiming is on. A copy also reads stored
+							// bytes as they are and leaves the size check off.
+							wantEngine.LiveDestination = true
+							wantEngine.NoGzipEncoding, wantEngine.IgnoreSize = operation == "copy", operation == "copy"
 							if job.State != "complete" || len(*seen) != 1 || (*seen)[0] != wantEngine || recorded.options() != want {
 								t.Errorf("effective settings differ: state=%s recorded=%+v engine=%+v want=%+v", job.State, recorded, *seen, want)
 							}

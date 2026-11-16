@@ -27,7 +27,7 @@ func TestCopyRepresentationFactoryPolicy(t *testing.T) {
 			// here keeps the resolved copy settings equal to the request.
 			settings := TransferSettingsDTO{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
 			if operation == "copy" {
-				_, effective, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
+				_, effective, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session, true)
 				if err != nil || effective != settings {
 					t.Fatalf("Copy settings = %+v; error=%v", effective, err)
 				}
@@ -40,11 +40,18 @@ func TestCopyRepresentationFactoryPolicy(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			want := rclone.Options{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize, NoGzipEncoding: operation == "copy"}
-			if len(*seen) != 1 || (*seen)[0] != want {
-				t.Errorf("engine policy = %+v; want %+v", *seen, want)
+			want := rclone.Options{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
+			policy := want
+			if operation == "copy" {
+				// A copy's engine reads stored bytes as they are, writes each
+				// object at its name, keeps a replaced large object's old
+				// segments when it is told to, and leaves the size check off
+				// (ADR 0122 decision 4).
+				policy.NoGzipEncoding, policy.LiveDestination, policy.KeepReplacedSegments, policy.IgnoreSize = true, true, true, true
 			}
-			want.NoGzipEncoding = false
+			if len(*seen) != 1 || (*seen)[0] != policy {
+				t.Errorf("engine policy = %+v; want %+v", *seen, policy)
+			}
 			if settings.options() != want {
 				t.Errorf("shared settings changed the local policy: %+v", settings.options())
 			}
@@ -73,11 +80,11 @@ func TestCopyRepresentationRunnerPolicy(t *testing.T) {
 			settings := TransferSettingsDTO{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M"}
 			var result *rclone.Result
 			if operation == "copy" {
-				engine, _, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session)
+				engine, _, _, err := h.transfer.buildEngine(t.Context(), CopyRequestDTO{SourceBookmarkID: bookmark, Settings: settings}, session, session, false)
 				if err != nil {
 					t.Fatal(err)
 				}
-				result, err = engine.Copy(t.Context(), "aeronautes_src:source", "aeronautes_dst:destination/.aeronautes/stage/job/batch", []string{"asset"}, nil)
+				result, err = engine.Copy(t.Context(), "aeronautes_src:source", "aeronautes_dst:destination/folder", []string{"asset"}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

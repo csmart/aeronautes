@@ -3,7 +3,6 @@ package systemtest
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 
@@ -51,9 +50,8 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 			t.Fatalf("unchanged Copy misrepresented an exact identity or outcome: %+v", item)
 		}
 	}
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Secondary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: "scope/.aeronautes/stage/" + id + "/"}}
 	wantSummary := "job " + id + " · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems"
-	if !reflect.DeepEqual(saved.Rows, wantRows) || len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.copy.complete" ||
+	if len(saved.Rows) != 0 || len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.copy.complete" ||
 		saved.Audit[0].Result != audit.ResultApplied || saved.Audit[0].Summary != wantSummary || saved.Audit[0].BookmarkID != h.Primary.BookmarkID ||
 		saved.Audit[0].Resource != src+"/scope/ → "+dst+"/scope/" {
 		t.Fatalf("unchanged Copy audit or recovery authority differs: %+v", saved)
@@ -64,11 +62,17 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 	requests := srcTrace.requestCount() + dstTrace.requestCount()
+	// A name the two listings show as the same is skipped with nothing sent
+	// for it (ADR 0122 decision 4): the listings and the start's own reads
+	// are all the two accounts answered, far fewer than one request a name.
+	if requests >= count {
+		t.Fatalf("an unchanged copy of %d names sent %d requests, so something was sent for the names", count, requests)
+	}
 	copyCompletionReopen(t, h, id, saved)
 	if requests != srcTrace.requestCount()+dstTrace.requestCount() {
 		t.Fatal("unchanged record reopening contacted Swift")
 	}
-	encoded, err := json.Marshal(map[string]any{"names": count, "acknowledged_item_writes": count * 3, "actual_copy_ms": float64(elapsed) / float64(time.Millisecond)})
+	encoded, err := json.Marshal(map[string]any{"names": count, "requests": requests, "acknowledged_item_writes": count * 3, "actual_copy_ms": float64(elapsed) / float64(time.Millisecond)})
 	if err != nil {
 		t.Fatal(err)
 	}

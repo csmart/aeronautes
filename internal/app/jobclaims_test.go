@@ -13,23 +13,22 @@ import (
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
-// ADR 0105 decision 3: a sweep and a stage conflict on one account and one
-// container when one path lies inside the other, in either direction; an
+// ADR 0105 decision 3: a sweep and a transfer conflict on one account and
+// one container when one path lies inside the other, in either direction; an
 // unreadable account identifier counts as any account; and two claims of one
 // kind never conflict.
 func TestScopeClaimOverlap(t *testing.T) {
-	stage := stageClaims("auth_a", "media", "backup/")
+	stage := destinationClaims("auth_a", "media", "backup/")
 	for _, tc := range []struct {
 		name  string
 		sweep scopeClaim
 		want  bool
 	}{
 		{"the whole container", sweepClaim("auth_a", "media", ""), true},
-		{"a prefix that covers the stage", sweepClaim("auth_a", "media", "backup/"), true},
-		{"the stage root itself", sweepClaim("auth_a", "media", "backup/.aeronautes/stage/"), true},
-		{"a prefix inside one job's stage", sweepClaim("auth_a", "media", "backup/.aeronautes/stage/1b2c/batch/"), true},
+		{"the destination folder itself", sweepClaim("auth_a", "media", "backup/"), true},
+		{"a folder inside the destination", sweepClaim("auth_a", "media", "backup/photos/"), true},
 		{"the segments container", sweepClaim("auth_a", "media_segments", ""), true},
-		{"a prefix beside the stage", sweepClaim("auth_a", "media", "logs/"), false},
+		{"a prefix beside the destination", sweepClaim("auth_a", "media", "logs/"), false},
 		{"a prefix that only begins like the destination", sweepClaim("auth_a", "media", "backup-old/"), false},
 		{"another container", sweepClaim("auth_a", "other", ""), false},
 		{"another account, known", sweepClaim("auth_b", "media", ""), false},
@@ -48,7 +47,7 @@ func TestScopeClaimOverlap(t *testing.T) {
 			t.Errorf("%s: overlap = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if stage[0].overlaps(stageClaims("auth_a", "media", "backup/")[0]) {
+	if stage[0].overlaps(destinationClaims("auth_a", "media", "backup/")[0]) {
 		t.Error("two transfers into one place conflict by their claims")
 	}
 	if sweepClaim("auth_a", "media", "").overlaps(sweepClaim("auth_a", "media", "")) {
@@ -73,7 +72,7 @@ func TestConflictingClaimsRaceToExactlyOneAndLeaveWithTheOwner(t *testing.T) {
 		var wg sync.WaitGroup
 		var stageErr, sweepErr error
 		wg.Add(2)
-		go func() { defer wg.Done(); stageErr = stager.claim(stageClaims("auth_a", "media", "")...) }()
+		go func() { defer wg.Done(); stageErr = stager.claim(destinationClaims("auth_a", "media", "")...) }()
 		go func() { defer wg.Done(); sweepErr = sweeper.claim(sweepClaim("auth_a", "media", "")) }()
 		wg.Wait()
 		if (stageErr == nil) == (sweepErr == nil) {
@@ -343,35 +342,13 @@ func TestAnUploadRefusedForASweepKeepsItsSelection(t *testing.T) {
 	}
 }
 
-// The rule a sweep that takes segments asks of each segment: a name in a live
-// staged job's own stage directory is that job's, and a name under the stage
-// root that is in no live job's directory is nobody's; a name under the
-// folder a live upload is writing into is that upload's, in the container
-// and in its segments container alike.
+// The rule a sweep that takes segments asks of each segment: a name under
+// the folder a live upload or copy is writing into is that job's, in the
+// container and in its segments container alike, and a name anywhere else is
+// nobody's.
 func TestASegmentALiveJobIsWritingIsKept(t *testing.T) {
 	h := newHarness(t)
 	runner := h.transfer.runner
-	owner, _, err := runner.admit(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer owner.finishStart()
-	if err := owner.claim(stageClaims("auth_test", "media", "live/")...); err != nil {
-		t.Fatal(err)
-	}
-	runner.mu.Lock()
-	owner.jobID = "0f1e2d3c4b5a6978"
-	runner.mu.Unlock()
-	for name, want := range map[string]bool{
-		"live/.aeronautes/stage/0f1e2d3c4b5a6978/batch/big/000000": true,
-		"live/.aeronautes/stage/another/batch/big/000000":          false,
-		"live/elsewhere/000000":                                    false,
-	} {
-		holder, held := runner.stagedByLiveJob("auth_test", "media_segments", name)
-		if held != want || held && holder != "job 0f1e2d3c4b5a6978" {
-			t.Errorf("%s: held by %q = %v, want %v", name, holder, held, want)
-		}
-	}
 	uploading, _, err := runner.admit(t.Context())
 	if err != nil {
 		t.Fatal(err)

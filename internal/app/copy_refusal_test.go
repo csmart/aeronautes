@@ -1,8 +1,6 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,7 +8,7 @@ import (
 )
 
 func TestCopyRefusalJobOutcomes(t *testing.T) {
-	for _, outcome := range []string{"all-refused", "mixed", "cancel", "record-write-failure", "record-damaged"} {
+	for _, outcome := range []string{"all-refused", "mixed", "cancel"} {
 		t.Run(outcome, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -24,20 +22,12 @@ func TestCopyRefusalJobOutcomes(t *testing.T) {
 			witness := mirrorWitness(t, mock, "test2:tester2", "testing2")
 			before := mirrorSnapshot(t, witness, "backup", "unrelated")
 			var block *engineBarrier
-			if outcome == "cancel" || outcome == "record-damaged" {
+			if outcome == "cancel" {
 				block = newEngineBarrier(t)
 			}
 			h.installEngine(block)
 			if outcome == "mixed" || block != nil {
 				seedObject(h.mock, "media", "z-new", "new bytes", nil)
-			}
-			spoolDir := t.TempDir()
-			if outcome == "record-write-failure" {
-				spoolDir = filepath.Join(spoolDir, "missing")
-			}
-			// Keep fault injection within this test's private local files.
-			for _, variable := range []string{"TMPDIR", "TMP", "TEMP"} {
-				t.Setenv(variable, spoolDir)
 			}
 			id, err := h.transfer.StartCopy(t.Context(), CopyRequestDTO{
 				SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup",
@@ -47,26 +37,15 @@ func TestCopyRefusalJobOutcomes(t *testing.T) {
 			}
 			if block != nil {
 				block.waitUntilEntered(t)
-				if outcome == "cancel" {
-					if err := h.transfer.CancelJob(t.Context(), id); err != nil {
-						t.Fatal(err)
-					}
-					// Leave the barrier closed so cancellation, not a racing
-					// normal return, is what releases the test engine.
-				} else {
-					files, err := filepath.Glob(filepath.Join(spoolDir, "aeronautes-copy-refusals-*"))
-					if err != nil || len(files) != 1 {
-						t.Fatalf("expected one owned refusal record: %v, %v", files, err)
-					}
-					if err := os.Truncate(files[0], 0); err != nil {
-						t.Fatal(err)
-					}
-					block.unblock()
+				if err := h.transfer.CancelJob(t.Context(), id); err != nil {
+					t.Fatal(err)
 				}
+				// Leave the barrier closed so cancellation, not a racing
+				// normal return, is what releases the test engine.
 			}
 			job := awaitTerminal(t, h, id)
 			copied := int64(0)
-			if outcome == "mixed" || outcome == "record-damaged" {
+			if outcome == "mixed" {
 				copied = 1
 			}
 			if job.State != "partial" || job.Counters.OverwritesRefused != 1 || job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != copied || job.Counters.BytesCopied != 9*copied {
@@ -83,14 +62,6 @@ func TestCopyRefusalJobOutcomes(t *testing.T) {
 			case "cancel":
 				if !strings.Contains(job.Error, "context canceled") {
 					t.Errorf("later cancellation detail lost: %q", job.Error)
-				}
-			case "record-write-failure":
-				if !strings.Contains(job.Error, "create refusal record") {
-					t.Errorf("later persistence error lost: %q", job.Error)
-				}
-			case "record-damaged":
-				if !strings.Contains(job.Error, "verification: refusal record") || job.Counters.ObjectsVerified != 0 {
-					t.Errorf("invalid verification presented as evidence: %+v", job)
 				}
 			}
 			awaitJobAudit(t, h, id, "transfer.copy.partial")

@@ -31,7 +31,6 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
-	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	localtransfer "github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/plan"
@@ -642,7 +641,9 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	// A transfer's engine writes each object at its name (ADR 0122
+	// decisions 3 and 4).
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,9 +673,8 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
 		{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
 	}
-	// The runner's own policy: writes land in a staging namespace.
 	result, err := runner.Copy(ctx, remotes,
-		"aeronautes_src:"+srcName, "aeronautes_dst:"+dstName+"/.aeronautes/stage/it-runner/batch",
+		"aeronautes_src:"+srcName, "aeronautes_dst:"+dstName+"/copied",
 		[]string{"runner/big.bin", "runner/small.txt"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -700,12 +700,12 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 	}
 
 	// Both objects landed with the right sizes.
-	obj, _, err := h.Conn2().Object(ctx, dstName, ".aeronautes/stage/it-runner/batch/runner/big.bin")
+	obj, _, err := h.Conn2().Object(ctx, dstName, "copied/runner/big.bin")
 	if err != nil || obj.Bytes != int64(len(big)) {
-		t.Errorf("big.bin at staged dest: %v bytes=%d", err, obj.Bytes)
+		t.Errorf("big.bin at its name: %v bytes=%d", err, obj.Bytes)
 	}
-	if _, _, err := h.Conn2().Object(ctx, dstName, ".aeronautes/stage/it-runner/batch/runner/small.txt"); err != nil {
-		t.Errorf("small.txt at staged dest: %v", err)
+	if _, _, err := h.Conn2().Object(ctx, dstName, "copied/runner/small.txt"); err != nil {
+		t.Errorf("small.txt at its name: %v", err)
 	}
 }
 
@@ -808,10 +808,11 @@ func TestCopyPlannerRealSwift(t *testing.T) {
 }
 
 // executorFixture builds a real-Swift executor over the two SAIO
-// accounts with the pinned rclone bound as the engine.
-func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer, jobID string) *transfercopy.Executor {
+// accounts with the pinned rclone bound as the engine, set up as a copy
+// sets it up: each object is written at its name (ADR 0122 decision 4).
+func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer string) *transfercopy.Executor {
 	t.Helper()
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, IgnoreSize: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -824,16 +825,11 @@ func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer, jobID
 		Engine:  transfercopy.BindRunner(runner, remotes),
 		SrcSpec: "aeronautes_src:" + srcContainer, DstSpec: "aeronautes_dst:" + dstContainer,
 		SrcContainer: srcContainer, DstContainer: dstContainer,
-		JobID: jobID,
+		ChunkBytes: 1 << 20,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := executor.Close(); err != nil {
-			t.Error(err)
-		}
-	})
 	return executor
 }
 
@@ -856,10 +852,11 @@ func planInto(ctx context.Context, t *testing.T, h *Harness, executor *transferc
 }
 
 // TestCopyExecutorRealSwift is the K-TEST-001 copy gate on real Swift:
-// the full §58 hostile-name suite crosses accounts byte-exact through
-// the real pinned rclone with native fallback, large objects survive as
-// logical copies, changed destinations are refused, and reconciliation
-// retains uncertain residue after cancellation.
+// the full §58 hostile-name suite crosses accounts byte-exact, each name at
+// its own name, through the real pinned rclone with the application's own
+// copy for the names the engine cannot carry. What a copy does with large
+// objects, replacements and a cancel is held by the system tests, through
+// the service.
 func TestCopyExecutorRealSwift(t *testing.T) {
 	if _, err := exec.LookPath("rclone"); err != nil {
 		t.Skip("pinned rclone not installed")
@@ -870,219 +867,40 @@ func TestCopyExecutorRealSwift(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	t.Run("hostile-suite", func(t *testing.T) {
-		src := h.Container("encoding")
-		dst := h.Prefix + "exec-encoding"
-		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
-			t.Fatal(err)
-		}
-		executor := executorFixture(t, h, src, dst, "job-enc")
-		report := planInto(ctx, t, h, executor, src, dst)
-		if len(report.Failures) != 0 {
-			t.Fatalf("failures: %+v", report.Failures)
-		}
-		if report.Copied != int64(len(EncodingNames)) {
-			t.Errorf("copied %d of %d", report.Copied, len(EncodingNames))
-		}
-		if report.NativeRouted == 0 {
-			t.Error("no names went native — the unsafe identities must have")
-		}
+	src := h.Container("encoding")
+	dst := h.Prefix + "exec-encoding"
+	if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	report := planInto(ctx, t, h, executorFixture(t, h, src, dst), src, dst)
+	if len(report.Failures) != 0 {
+		t.Fatalf("failures: %+v", report.Failures)
+	}
+	if report.Copied != int64(len(EncodingNames)) {
+		t.Errorf("copied %d of %d", report.Copied, len(EncodingNames))
+	}
+	if report.NativeRouted == 0 {
+		t.Error("no names went native — the unsafe identities must have")
+	}
 
-		// Independent verification: fresh listings prove Same for every
-		// name (§28.4), then raw byte compares on the worst identities.
-		verify, err := executor.Verify(ctx,
-			h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true}),
-			h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true}))
+	// Independent verification: fresh listings of both sides show every
+	// name the same, so a second copy has nothing to send (§28.4), then raw
+	// byte compares on the worst identities.
+	again := planInto(ctx, t, h, executorFixture(t, h, src, dst), src, dst)
+	if again.SkippedEqual != int64(len(EncodingNames)) || again.Copied != 0 || again.OverwritesRefused != 0 || len(again.Failures) != 0 {
+		t.Fatalf("a second copy over fresh listings = %+v, want every name the same", again)
+	}
+	for _, name := range []string{"/foo", "foo/", "foo//bar", "line\nbreak", "   ", "a/./b"} {
+		body, _, err := h.Session2().OpenObject(ctx, dst, name)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("GET dest %q: %v", name, err)
 		}
-		if len(verify.Failures) != 0 || verify.Verified != int64(len(EncodingNames)) {
-			t.Fatalf("verify = %+v", verify)
+		data, _ := io.ReadAll(body)
+		body.Close()
+		if string(data) != "payload:"+name {
+			t.Errorf("%q arrived as %q", name, data)
 		}
-		for _, name := range []string{"/foo", "foo/", "foo//bar", "line\nbreak", "   ", "a/./b"} {
-			body, _, err := h.Session2().OpenObject(ctx, dst, name)
-			if err != nil {
-				t.Fatalf("GET dest %q: %v", name, err)
-			}
-			data, _ := io.ReadAll(body)
-			body.Close()
-			if string(data) != "payload:"+name {
-				t.Errorf("%q arrived as %q", name, data)
-			}
-		}
-	})
-
-	t.Run("large-and-metadata", func(t *testing.T) {
-		src := h.Container("exec-src")
-		dst := h.Prefix + "exec-dst"
-		if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
-			t.Fatal(err)
-		}
-		big := bytes.Repeat([]byte{0xCD}, 3*1024*1024)
-		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream",
-			swift.Headers{"X-Object-Meta-Shoot": "launch"}); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.put(ctx, src, "small.txt", []byte("v1 bytes"), "text/plain", nil); err != nil {
-			t.Fatal(err)
-		}
-
-		executor := executorFixture(t, h, src, dst, "job-big")
-		report := planInto(ctx, t, h, executor, src, dst)
-		if len(report.Failures) != 0 || report.Copied != 2 {
-			t.Fatalf("report: copied=%d failures=%+v", report.Copied, report.Failures)
-		}
-		// The 3MiB object crossed at 1Mi chunks: the destination is the
-		// engine's own DLO, logical size preserved, metadata re-applied
-		// (rclone drops it), fingerprint stamped.
-		d, err := h.Session2().ObjectDetail(ctx, dst, "big.bin")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if d.Class != swiftcontrol.ClassDLO || d.ContentLength != int64(len(big)) {
-			t.Fatalf("big.bin = class %s length %d", d.Class, d.ContentLength)
-		}
-		if d.Meta["Shoot"] != "launch" || d.Meta["Aeronautes-Fingerprint"] == "" {
-			t.Errorf("metadata = %v", d.Meta)
-		}
-		if len(report.CapturedPrefixes) == 0 || len(report.CommittedPrefixes) == 0 {
-			t.Errorf("prefixes: %+v / %+v", report.CapturedPrefixes, report.CommittedPrefixes)
-		}
-
-		// Updating the source cannot authorise replacing either destination.
-		if err := h.put(ctx, src, "small.txt", []byte("v2 BYTES"), "text/plain", nil); err != nil {
-			t.Fatal(err)
-		}
-		big2 := bytes.Repeat([]byte{0xEE}, 2*1024*1024+512)
-		if err := h.put(ctx, src, "big.bin", big2, "application/octet-stream", nil); err != nil {
-			t.Fatal(err)
-		}
-		executor2 := executorFixture(t, h, src, dst, "job-big2")
-		report2 := planInto(ctx, t, h, executor2, src, dst)
-		if len(report2.Failures) != 0 || report2.Overwrites != 0 || report2.OverwritesRefused != 2 || report2.Copied != 0 {
-			t.Fatalf("refusal report: %+v (failures %+v)", report2, report2.Failures)
-		}
-		d2, err := h.Session2().ObjectDetail(ctx, dst, "big.bin")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if d2.Class != swiftcontrol.ClassDLO || d2.ContentLength != int64(len(big)) {
-			t.Fatalf("big.bin after refusal = class %s length %d", d2.Class, d2.ContentLength)
-		}
-		if d2.Manifest != d.Manifest {
-			t.Error("manifest changed despite refusal")
-		}
-		small, _, err := h.Session2().OpenObject(ctx, dst, "small.txt")
-		if err != nil {
-			t.Fatal(err)
-		}
-		smallBytes, _ := io.ReadAll(small)
-		small.Close()
-		if string(smallBytes) != "v1 bytes" {
-			t.Errorf("small.txt = %q", smallBytes)
-		}
-		// No staging litter under either job's prefix.
-		for _, ex := range []*transfercopy.Executor{executor, executor2} {
-			for entry, err := range h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: ex.StagingPrefix()}) {
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Errorf("staging litter: %+v", entry)
-			}
-		}
-
-		// Restoring the original source makes both pairs equal again;
-		// refusal has preserved the prior destination fingerprint and bytes.
-		// A full-fidelity skip (ADR 0096) treats a missing X-Object-Meta-Shoot as a
-		// difference, so the restore returns big.bin's metadata too, not only its
-		// bytes: idempotency now requires the source's carried set to match what
-		// was copied, which is what "the original source" means.
-		if err := h.put(ctx, src, "small.txt", []byte("v1 bytes"), "text/plain", nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.put(ctx, src, "big.bin", big, "application/octet-stream",
-			swift.Headers{"X-Object-Meta-Shoot": "launch"}); err != nil {
-			t.Fatal(err)
-		}
-		executor3 := executorFixture(t, h, src, dst, "job-noop")
-		report3 := planInto(ctx, t, h, executor3, src, dst)
-		if report3.Copied != 0 || report3.OverwritesRefused != 0 || len(report3.Failures) != 0 || report3.SkippedEqual == 0 {
-			t.Errorf("idempotent re-plan: %+v (failures %+v)", report3, report3.Failures)
-		}
-	})
-
-	t.Run("cancel-reconcile", func(t *testing.T) {
-		src := h.Container("exec-cancel-src")
-		dst := h.Prefix + "exec-cancel-dst"
-		if err := h.conn.ContainerCreate(ctx, src, nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.rawPut2(ctx, dst, nil, ""); err != nil {
-			t.Fatal(err)
-		}
-		huge := bytes.Repeat([]byte{0x5A}, 24*1024*1024)
-		if err := h.put(ctx, src, "huge.bin", huge, "application/octet-stream", nil); err != nil {
-			t.Fatal(err)
-		}
-
-		runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", BWLimit: "2M", Retries: 1, LowLevelRetries: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		remotes := []rclone.Remote{
-			{Name: "aeronautes_src", StorageURL: h.conn.StorageUrl, Token: h.conn.AuthToken},
-			{Name: "aeronautes_dst", StorageURL: h.Conn2().StorageUrl, Token: h.Conn2().AuthToken},
-		}
-		executor, err := transfercopy.New(transfercopy.Config{
-			Source: h.Session, Dest: h.Session2(),
-			Engine:  transfercopy.BindRunner(runner, remotes),
-			SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
-			SrcContainer: src, DstContainer: dst,
-			JobID: "job-cancel",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Cancel a few seconds into the throttled upload.
-		defer func() {
-			if err := executor.Close(); err != nil {
-				t.Error(err)
-			}
-		}()
-		cancelCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		defer cancel()
-		_ = executor.Handle(cancelCtx, plan.Item{Name: "huge.bin", Verdict: plan.VerdictNew, Route: plan.RouteRclone, SourceBytes: int64(len(huge))})
-		report, _ := executor.Finish(cancelCtx)
-
-		witness, err := oracle.Connect(os.Getenv("AERONAUTES_SAIO_AUTH_URL"), envOr("AERONAUTES_SAIO_USER2", "test2:tester2"), envOr("AERONAUTES_SAIO_KEY2", "testing2"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(witness.Close)
-		// The child and Finish may already have cleaned some objects.
-		// Reconciliation must retain everything that remains at its boundary.
-		before, err := witness.SnapshotContainers(dst, dst+"_segments")
-		if err != nil {
-			t.Fatal(err)
-		}
-		reconcile, err := executor.Reconcile(ctx, report)
-		if err != nil || reconcile.SweptStaged != 0 || reconcile.SweptSegments != 0 || len(reconcile.Notes) == 0 {
-			t.Fatalf("cancel reconciliation = %+v, %v", reconcile, err)
-		}
-		after, err := witness.SnapshotContainers(dst, dst+"_segments")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if delta := oracle.Diff(before, after); !delta.Empty() {
-			t.Fatalf("reconciliation changed retained data after child exit: %s", delta)
-		}
-		t.Logf("cancel: captured=%d swept=%d kept=%v notes=%v",
-			len(report.CapturedPrefixes), reconcile.SweptSegments, reconcile.KeptPrefixes, reconcile.Notes)
-	})
+	}
 }
 
 // TestLocalTransferRealSwift drives upload and download through the
@@ -1459,7 +1277,7 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 	seed2("outside-kept-dlo.bin", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
 
 	// Copy half through the real engine, scoped to the prefixes.
-	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1473,16 +1291,11 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 		SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
 		SrcContainer: src, DstContainer: dst,
 		SrcPrefix: "scope/", DstPrefix: "scope/",
-		JobID: "job-mirror",
+		ChunkBytes: 5 << 30,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := executor.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
 	var destOnly []string
 	_, err = plan.Copy(ctx,
 		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
@@ -1497,15 +1310,11 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// keep.txt is on both sides already, so new.txt is the one copy; the
+	// join at the end shows the two scopes converged.
 	report, err := executor.Finish(ctx)
-	if err != nil || len(report.Failures) != 0 {
-		t.Fatalf("copy half: %v %+v", err, report.Failures)
-	}
-	verify, err := executor.Verify(ctx,
-		h.Session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}),
-		h.Session2().Objects(ctx, dst, swiftcontrol.ObjectListOptions{Deep: true, Prefix: "scope/"}))
-	if err != nil || len(verify.Failures) != 0 {
-		t.Fatalf("copy verify: %v %+v", err, verify)
+	if err != nil || len(report.Failures) != 0 || report.Copied != 1 || report.SkippedEqual != 1 {
+		t.Fatalf("copy half: %v %+v", err, report)
 	}
 
 	// THE RACE (§28.6): one planned dest-only plain object becomes a
@@ -1697,7 +1506,7 @@ func TestTLSRealSwift(t *testing.T) {
 	if _, err := caSession.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: dst}); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1705,14 +1514,14 @@ func TestTLSRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 	}
-	result, err := runner.Copy(ctx, remotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls/batch", []string{"hello.txt"}, nil)
+	result, err := runner.Copy(ctx, remotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/ca", []string{"hello.txt"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.ExitCode != 0 || len(result.Errors) != 0 {
 		t.Fatalf("rclone over TLS: exit %d errors %v", result.ExitCode, result.Errors)
 	}
-	d, err := caSession.ObjectDetail(ctx, dst, ".aeronautes/stage/it-tls/batch/hello.txt")
+	d, err := caSession.ObjectDetail(ctx, dst, "ca/hello.txt")
 	if err != nil || d.ContentLength != 9 {
 		t.Fatalf("copied object: %+v %v", d, err)
 	}
@@ -1726,7 +1535,7 @@ func TestTLSRealSwift(t *testing.T) {
 	untrusted, err := runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken()},
-	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls2/batch", []string{"hello.txt"}, nil)
+	}, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/other", []string{"hello.txt"}, nil)
 	if err == nil {
 		t.Fatalf("mixed trust in one child accepted: %+v", untrusted)
 	}
@@ -1746,7 +1555,7 @@ func TestTLSRealSwift(t *testing.T) {
 		{Name: "aeronautes_src", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
 		{Name: "aeronautes_dst", StorageURL: insecureSession.StorageURL(), Token: insecureSession.AuthToken(), InsecureTLS: true},
 	}
-	result, err = runner.Copy(ctx, insecureRemotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/.aeronautes/stage/it-tls2/batch", []string{"hello.txt"}, nil)
+	result, err = runner.Copy(ctx, insecureRemotes, "aeronautes_src:"+src, "aeronautes_dst:"+dst+"/other", []string{"hello.txt"}, nil)
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("insecure rclone over TLS: %v %+v", err, result)
 	}
@@ -1868,7 +1677,7 @@ func TestVersionedOverwriteRefusedRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	executor := executorFixture(t, h, src, dst, "job-versioned")
+	executor := executorFixture(t, h, src, dst)
 	report := planInto(ctx, t, h, executor, src, dst)
 	if len(report.Failures) != 0 || report.Overwrites != 0 || report.OverwritesRefused != 1 || report.Copied != 0 {
 		t.Fatalf("report = %+v (failures %+v)", report, report.Failures)
@@ -1955,7 +1764,7 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 		}
 	}
 
-	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1974,16 +1783,11 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 		Engine:  transfercopy.BindRunnerSource(runner, source),
 		SrcSpec: "aeronautes_src:" + src, DstSpec: "aeronautes_dst:" + dst,
 		SrcContainer: src, DstContainer: dst,
-		JobID: "job-token", BatchSize: 1, // one child per object: three spawns
+		ChunkBytes: 5 << 30, BatchSize: 1, // one child per object: three spawns
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := executor.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
 	before := atomic.LoadInt64(&authCalls)
 	_, err = plan.Copy(ctx,
 		session.Objects(ctx, src, swiftcontrol.ObjectListOptions{Deep: true}),

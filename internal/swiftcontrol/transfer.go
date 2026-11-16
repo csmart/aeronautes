@@ -60,11 +60,22 @@ type StaticSegment struct {
 	Bytes           int64
 }
 
-// EngineModTime is the metadata header, and its value for t, under which the
-// transfer engine records a file's modification time on every object it
-// uploads.
+// EngineModTimeHeader is the metadata header under which the transfer engine
+// records a modification time on every object it writes.
+const EngineModTimeHeader = "X-Object-Meta-Mtime"
+
+// EngineModTime is that header and its value for t.
 func EngineModTime(t time.Time) (header, value string) {
-	return "X-Object-Meta-Mtime", swift.TimeToFloatString(t)
+	return EngineModTimeHeader, swift.TimeToFloatString(t)
+}
+
+// PostObject replaces an object's user metadata, content headers and expiry
+// with the given headers in one POST, and reads nothing before or after it.
+// A dynamic manifest's X-Object-Manifest has to be among them: the store
+// drops the one it had with the rest (measured on the owned Swift).
+func (s *Session) PostObject(ctx context.Context, container, name string, headers map[string]string) error {
+	_, err := s.post(ctx, container, name, swift.Headers(headers))
+	return err
 }
 
 // PutStaticManifest writes a static large object (?multipart-manifest=put)

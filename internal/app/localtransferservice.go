@@ -660,7 +660,7 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	return nil
 }
 
-// keepsReplaced decides, once at the start of an upload, whether the engine
+// keepsReplaced decides, once at the start of an upload or a copy, whether the engine
 // may remove a replaced large object's old segments, and gives the sentence
 // that says so (ADR 0122 decision 3). One switch gives both, because a
 // sentence that promises the segments stay beside permission to remove them
@@ -689,71 +689,6 @@ func (s *TransferService) keepsReplaced(ctx context.Context, container, prefix s
 		where = "under " + prefix + " " + where
 	}
 	return false, "where a large object is replaced, the transfer engine REMOVES its old segments " + where + " as it writes the new object; old segments kept anywhere else, and those of a name this application sends itself, stay where they are"
-}
-
-// versioningUnchanged is ADR 0102 decision 2's question at the fixed point:
-// does the destination container still report the versioning the question
-// was composed from? The answer is a fresh read, never the observation
-// remembered, and the two are compared as values: the mode and the archive
-// as read, never the sentence displayed, which bounds the archive name so two
-// archives can read alike. A different observation, or none, refuses the
-// replacement, and both observations go to the trail for the name, worded as
-// the question words them, because the run's own failure list keeps only its
-// first message.
-//
-// It returns the recorded refusal, or "" when the observation still holds;
-// an error means the refusal could not be recorded, which the route turns
-// into a stop. The read takes the route's live context so a cancelled job
-// stops it; the record takes the recorder's own context so a cancellation
-// cannot lose it.
-func (s *TransferService) versioningUnchanged(live, record context.Context, bookmarkID, container string,
-	authorised swiftcontrol.ContainerVersioning, operation, resource string) (string, error) {
-	now, err := s.readVersioning(live, bookmarkID, container)
-	if err == nil && now == authorised {
-		return "", nil
-	}
-	if err != nil && live.Err() != nil {
-		// A cancel that lands in the read is the job stopping, not a finding
-		// about the container: nothing is recorded, and the route stops on
-		// the same context.
-		return "the job was cancelled before the container's versioning was read again", nil
-	}
-	compose := func(withArchive bool) string {
-		found := "the container's versioning could not be read again before publishing"
-		if err == nil {
-			found = "the read before publishing found: " + describeVersioning(now, withArchive)
-		}
-		return "replacement refused at the last observation: the question said " +
-			describeVersioning(authorised, withArchive) + ", and " + found
-	}
-	summary := compose(true)
-	if audit.SummaryRefusal(summary) != "" {
-		// A legitimate archive name can carry a word the audit store refuses;
-		// the record keeps both modes and withholds the names rather than
-		// losing the event to ordinary input.
-		summary = compose(false) + "; an archive name is withheld from this record"
-	}
-	if err := s.runner.audit.Append(record, audit.Event{
-		BookmarkID: bookmarkID, Operation: operation, Resource: resource,
-		Summary: summary, Result: audit.ResultConflict,
-	}); err != nil {
-		return "", fmt.Errorf("%s; the refusal could not be recorded: %w", summary, err)
-	}
-	return summary, nil
-}
-
-// describeVersioning words an observation for a record, including a mode the
-// question would have refused to describe; withArchive false keeps the
-// archive name out of it.
-func describeVersioning(observed swiftcontrol.ContainerVersioning, withArchive bool) string {
-	if !withArchive && observed.Archive != "" {
-		return "the container reports " + string(observed.Mode) + ", archiving into a container this record does not name"
-	}
-	statement, err := versioningStatement(observed)
-	if err != nil {
-		return "a mode this build does not manage (" + titleText(string(observed.Mode), 40) + ")"
-	}
-	return statement
 }
 
 // overwriteQuestion is the statement the operator is asked to authorise.

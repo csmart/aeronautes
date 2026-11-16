@@ -229,7 +229,7 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 		"a dynamic manifest whose namespace is wider than the scope": {func(t *testing.T, h *harness) {
 			h.mock.PutObject("media", "scope/in/big", swifttest.Object{Manifest: "media/scope"})
 		}, "wider than the scope"},
-		"a dynamic manifest whose segments' container another job is staging into": {func(t *testing.T, h *harness) {
+		"a dynamic manifest whose segments' container another job is writing into": {func(t *testing.T, h *harness) {
 			h.mock.PutObject("media", "scope/in/big", swifttest.Object{Manifest: "media_segments/big"})
 			owner, _, err := h.transfer.runner.admit(t.Context())
 			if err != nil {
@@ -237,29 +237,26 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 			}
 			t.Cleanup(owner.finishStart)
 			// A transfer into another folder of the same container: it does not
-			// overlap the scope, and it stages in the segments container too.
-			if err := owner.claim(stageClaims("auth_test", "media", "elsewhere/")...); err != nil {
+			// overlap the scope, and it writes in the segments container too.
+			if err := owner.claim(destinationClaims("auth_test", "media", "elsewhere/")...); err != nil {
 				t.Fatal(err)
 			}
 		}, "another job is writing into the container"},
-		"a segment in a live job's stage": {func(t *testing.T, h *harness) {
-			const other = "0f1e2d3c4b5a6978"
-			staged := ".aeronautes/stage/" + other + "/big/0001"
-			putSLO(h, "media", "scope/in/big", "media_segments", staged+"=0123456789")
+		"a segment under the folder a live job is writing into": {func(t *testing.T, h *harness) {
+			putSLO(h, "media", "scope/in/big", "media_segments", "elsewhere/big/0001=0123456789")
 			runner := h.transfer.runner
 			owner, _, err := runner.admit(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(owner.finishStart)
-			if err := owner.claim(stageClaims("auth_test", "media", "elsewhere/")...); err != nil {
+			if err := owner.claim(destinationClaims("auth_test", "media", "elsewhere/")...); err != nil {
 				t.Fatal(err)
 			}
 			runner.mu.Lock()
-			owner.jobID = other
-			owner.claims[1].path = ".aeronautes/stage/"
+			owner.jobID = "0f1e2d3c4b5a6978"
 			runner.mu.Unlock()
-		}, "is writing"},
+		}, "0f1e2d3c4b5a6978 is writing"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, service, bookmark := deleteHarness(t)

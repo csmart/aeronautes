@@ -400,3 +400,10 @@ func CompareContent(ctx context.Context, body io.ReadCloser, l Ladder) (code Cod
 		}
 	}
 }
+
+func ladderMismatch(index, runs int) error {
+	if runs == 1 {
+		return errors.New("staged content MD5 does not match the plain source")
+	}
+	return fmt.Errorf("staged content MD5 does not match source segment %d of %d", index+1, runs)
+}

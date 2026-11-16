@@ -68,11 +68,13 @@ func InStageNamespace(name string) bool {
 }
 
 // checkRemoteDest is the LAST boundary for a REMOTE destination (our fixed
-// remote names). A live destination is the names themselves: an upload
-// writes each file at its name (ADR 0122 decision 3). Any other must live
-// under an .aeronautes staging namespace (K-XFER-014), which a copy still
-// uses. Neither may hold a ".." segment. Local filesystem destinations
-// (downloads) are governed by the local stage-and-place path instead.
+// remote names). A live destination is the names themselves: an upload and
+// a copy write each object at its name (ADR 0122 decisions 3 and 4). A
+// caller that does not say its destination is live must name one under an
+// .aeronautes staging namespace; no job does since the copy step, and the
+// rule goes with that record's removal step. Neither may hold a ".."
+// segment. Local filesystem destinations (downloads) are governed by the
+// local stage-and-place path instead.
 func checkRemoteDest(dst string, live bool) error {
 	if !strings.HasPrefix(dst, "aeronautes_") {
 		return nil
@@ -146,9 +148,9 @@ type Options struct {
 	// other callers retain the child's default transport policy.
 	NoGzipEncoding bool
 	// LiveDestination says that Copy's remote destination is the names
-	// themselves, with no staging path: an upload writes each file at its
-	// name (ADR 0122 decision 3). It is false for a copy, which still
-	// stages, and has no meaning for a local destination.
+	// themselves, with no staging path: an upload and a copy write each
+	// object at its name (ADR 0122 decisions 3 and 4). It has no meaning
+	// for a local destination.
 	LiveDestination bool
 	// KeepReplacedSegments refuses every DELETE the child sends to its
 	// destination. The engine, writing over a large object, deletes that

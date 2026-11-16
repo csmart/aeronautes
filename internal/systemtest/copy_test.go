@@ -2,18 +2,23 @@ package systemtest
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"maps"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/app"
 )
 
 // TestCopyCrossAccountPreservesLogicalContent is the copy matrix's
 // cornerstone: a cross-account copy of plain, DLO, and SLO objects lands
-// byte-for-byte-identical LOGICAL content on the destination, leaves the
-// source account completely untouched, and touches nothing else on the
-// destination (no sidecar/segment container, no staging residue). The
+// byte-for-byte-identical LOGICAL content on the destination, each object at
+// its own name (ADR 0122 decision 4), leaves the source account completely
+// untouched, and touches nothing else on the destination: no sidecar or
+// segment container, and no name of the application's own invention. The
 // oracle compares logical GET digests, so re-chunking by the engine is
 // irrelevant — only the readable bytes must match.
 func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
@@ -35,6 +40,9 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	h.Seed(h.Primary, srcSegs, "slo/leaf", leaf, nil)
 	h.SeedSLO(h.Primary, srcC, "manifest.slo", fmt.Sprintf(`[{"path":"/%s/slo/leaf","size_bytes":2048}]`, srcSegs))
 	h.Seed(h.Primary, srcC, "sentinel.txt", []byte("must not change"), nil)
+	// A name under .aeronautes/stage/ is an ordinary name: one an earlier
+	// build left behind is copied like any other.
+	h.Seed(h.Primary, srcC, ".aeronautes/stage/earlier-job/left.txt", []byte("left by an earlier build"), nil)
 
 	srcBefore := h.Snapshot(h.Primary, srcC, srcSegs)
 	// Witness the WHOLE destination namespace — dstC and any sidecar the
@@ -61,7 +69,7 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	// does NOT assert class preservation (DLO-copied-as-DLO) or ordered
 	// per-segment/metadata fidelity — that stronger contract is deferred
 	// verification work (codex W-07/W-12), not claimed here (grok #3).
-	copied := []string{"plain.txt", "big.bin", "manifest.slo", "sentinel.txt"}
+	copied := []string{"plain.txt", "big.bin", "manifest.slo", "sentinel.txt", ".aeronautes/stage/earlier-job/left.txt"}
 	sb, db := srcBefore.Containers[srcC].Objects, dstAfter.Containers[dstC].Objects
 	for _, name := range copied {
 		if db[name].Digest != sb[name].Digest || db[name].Size != sb[name].Size {
@@ -78,7 +86,7 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 		t.Fatalf("source account changed during a copy:\n%s", d)
 	}
 	// The destination namespace gained ONLY the copied names — no sidecar
-	// container, no segment leak, no staging residue anywhere.
+	// container, no segment leak, and nothing written under any other name.
 	allowed := make([]string, len(copied))
 	for i, name := range copied {
 		allowed[i] = dstC + "/" + name
@@ -127,4 +135,115 @@ func TestCopyUpToTheContainerTop(t *testing.T) {
 	}
 	h.AssertNoCollateral(before, after, c+"/one.txt", c+"/two.txt")
 	rec.CreditHappy()
+}
+
+// copyCarriesHeadersAndLinks holds what a copied object carries (ADR 0122
+// decision 4). The engine copies the content type and a modification time
+// and no other header, and copies a link as its target's bytes. So the
+// application gives an object the engine wrote the source's user metadata,
+// content encoding, content disposition and expiry in one request, sends
+// none for an object that has only what the engine delivers, and carries a
+// link itself, as a link. The stored bytes are never decoded on the way:
+// an object stored with a content encoding arrives as the same bytes.
+//
+// The copy stays in one account so that the copied link still resolves: the
+// witness cannot describe a link whose target is missing.
+func copyCarriesHeadersAndLinks(t *testing.T, h *Harness) {
+	t.Helper()
+	src, dst := h.Container(h.Primary, "carried-src"), h.Container(h.Primary, "carried-dst")
+	var zipped bytes.Buffer
+	writer := gzip.NewWriter(&zipped)
+	if _, err := writer.Write(bytes.Repeat([]byte("stored as gzip "), 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	expires := fmt.Sprint(time.Now().Add(time.Hour).Unix())
+	h.Seed(h.Primary, src, "from/tagged.txt", zipped.Bytes(), map[string]string{
+		"Content-Type": "text/plain", "Content-Encoding": "gzip", "Content-Disposition": `attachment; filename="report.txt"`,
+		"X-Object-Meta-Team": "ops", "X-Object-Meta-Colour": "blue", "X-Delete-At": expires})
+	// Bytes that claim an encoding they are not in, and no bytes at all:
+	// either would break an engine that decoded what it carried.
+	h.Seed(h.Primary, src, "from/broken.gz", []byte("not a gzip stream"), map[string]string{"Content-Encoding": "gzip", "X-Object-Meta-Team": "ops"})
+	h.Seed(h.Primary, src, "from/empty.gz", nil, map[string]string{"Content-Encoding": "gzip", "X-Object-Meta-Team": "ops"})
+	h.Seed(h.Primary, src, "from/plain.txt", []byte("only what the engine delivers"), map[string]string{"Content-Type": "text/plain"})
+	h.Seed(h.Primary, src, "from/link", nil, map[string]string{"X-Symlink-Target": src + "/from/tagged.txt", "X-Object-Meta-Kind": "pointer"})
+	names := []string{"tagged.txt", "broken.gz", "empty.gz", "plain.txt", "link"}
+	before := h.SnapshotNamespace(h.Primary)
+	source := before.Containers[src].Objects
+	if h.MockPrimary == nil {
+		// The in-process store keeps neither of these two headers, so only
+		// the owned Swift can show that the fixture has them to carry.
+		if tagged := source["from/tagged.txt"]; tagged.ContentEncoding != "gzip" || tagged.ContentDisposition == "" {
+			t.Fatalf("the source was not seeded with its encoding and disposition: %+v", tagged)
+		}
+	}
+	if tagged := source["from/tagged.txt"]; tagged.DeleteAt == "" || tagged.Meta["Team"] != "ops" || source["from/link"].Class != "symlink" {
+		t.Fatalf("the source fixture is not what the case needs: %+v %+v", tagged, source["from/link"])
+	}
+	trace := copyCompletionProxy(t, h, h.Primary, "")
+
+	rec := h.StartCopy(t.Context(), app.CopyRequestDTO{
+		SourceBookmarkID: h.Primary.BookmarkID, SourceContainer: src, SourcePrefix: "from/",
+		DestBookmarkID: h.Primary.BookmarkID, DestContainer: dst, DestPrefix: "to/",
+	})
+	if rec.Err() != nil {
+		t.Fatal(rec.Err())
+	}
+	job := h.AwaitJob(rec.JobID())
+	if job.State != "complete" || job.Counters.ObjectsCopied != int64(len(names)) || job.Counters.ObjectsFailed != 0 {
+		t.Fatalf("copy job = %s %+v: %s", job.State, job.Counters, job.Error)
+	}
+	copyCompletionAwaitPins(t, h, h.Primary)
+
+	after := h.SnapshotNamespace(h.Primary)
+	var allowed []string
+	for _, name := range names {
+		want, got := source["from/"+name], after.Containers[dst].Objects["to/"+name]
+		allowed = append(allowed, dst+"/to/"+name)
+		// A link is the pointer it holds: the witness reads its other
+		// headers through it, from the target.
+		if got.Class != want.Class || got.Digest != want.Digest || got.SymlinkTarget != want.SymlinkTarget || got.SymlinkAccount != want.SymlinkAccount {
+			t.Errorf("to/%s arrived as %+v, want the source's %+v", name, got, want)
+		}
+		if want.Class != "symlink" && (got.Size != want.Size || got.ContentType != want.ContentType || got.ContentEncoding != want.ContentEncoding ||
+			got.ContentDisposition != want.ContentDisposition || got.DeleteAt != want.DeleteAt) {
+			t.Errorf("to/%s arrived as %+v, want the source's %+v", name, got, want)
+		}
+		// The engine records a modification time on an object it writes;
+		// every other key is the source's, and nothing else is added.
+		meta := maps.Clone(got.Meta)
+		if _, has := want.Meta["Mtime"]; !has {
+			delete(meta, "Mtime")
+		}
+		if !maps.Equal(meta, want.Meta) && (len(meta) != 0 || len(want.Meta) != 0) {
+			t.Errorf("to/%s carries metadata %v, want the source's %v", name, got.Meta, want.Meta)
+		}
+	}
+	h.AssertNoCollateral(before, after, allowed...)
+
+	// One metadata request for an object that has more than the engine
+	// delivers, none for one that has not, and the link written once by the
+	// application.
+	storage, err := url.Parse(h.Primary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := map[string]int{}
+	for _, write := range trace.writeSnapshot() {
+		sent[write]++
+	}
+	at := func(method, name string) int { return sent[method+" "+storage.Path+"/"+dst+"/to/"+name] }
+	if at("POST", "tagged.txt") != 1 || at("POST", "plain.txt") != 0 || at("POST", "link") != 0 || at("PUT", "link") != 1 {
+		t.Errorf("the destination was sent %v", sent)
+	}
+}
+
+func TestCopyCarriesHeadersAndLinksMock(t *testing.T) {
+	copyCarriesHeadersAndLinks(t, findMockHarness(t))
+}
+
+func TestCopyCarriesHeadersAndLinksRealSwift(t *testing.T) {
+	copyCarriesHeadersAndLinks(t, New(t))
 }

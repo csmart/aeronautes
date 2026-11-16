@@ -592,61 +592,6 @@ func TestAStoppedStoreEndsAParkedJobWithoutAFurtherUnit(t *testing.T) {
 	}
 }
 
-// ADR 0104 decision 4: a paused copy that is cancelled ends partial whenever
-// the run holds an outcome beside the cancellation. A name refused for a
-// conflict is such an outcome even though nothing was copied.
-func TestCancellingAPausedCopyKeepsAnEarlierConflict(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	h.installEngine(nil)
-	source := h.transfer.connections.ActiveBookmarkID()
-	dest, destMock := secondCluster(t, h)
-	h.mock.AddContainer("media", "standard")
-	destMock.AddContainer("backup", "standard")
-	// A newline in a name is what routes a plain object natively.
-	names := []string{"a\none", "b\ntwo"}
-	for _, name := range names {
-		seedObject(h.mock, "media", name, "bytes of "+name, nil)
-	}
-	ctx := context.Background()
-	ready := make(chan string, 1)
-	var asked atomic.Bool
-	destMock.BeforeRequest = func(method, path string) {
-		// The first write to the destination is the first item's conditional
-		// create. Another writer takes the name first, so the create
-		// conflicts, and the pause is asked inside that unit.
-		if method == "PUT" && strings.Contains(path, "/backup/") && asked.CompareAndSwap(false, true) {
-			seedObject(destMock, "backup", names[0], "someone else's", nil)
-			if err := h.transfer.PauseJob(ctx, <-ready); err != nil {
-				t.Error(err)
-			}
-		}
-	}
-	id, err := h.transfer.StartCopy(ctx, CopyRequestDTO{
-		SourceBookmarkID: source, SourceContainer: "media", DestBookmarkID: dest, DestContainer: "backup",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ready <- id
-	awaitJobState(t, h, id, jobs.StatePaused)
-	destMock.BeforeRequest = nil
-	sent := len(h.mock.RequestLog()) + len(destMock.RequestLog())
-	if err := h.transfer.CancelJob(ctx, id); err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, id)
-	if job.State != "partial" || job.Counters.ObjectsCopied != 0 || !strings.Contains(job.Error, "1 conflicts") {
-		t.Fatalf("cancelled paused copy after a conflict = %+v; want partial with the conflict stated", job)
-	}
-	if after := len(h.mock.RequestLog()) + len(destMock.RequestLog()); after != sent {
-		t.Errorf("the cancel sent %d requests", after-sent)
-	}
-	if results, admitted := executedItems(t, h, source, id); admitted != 1 || len(results) != 1 {
-		t.Errorf("records after the cancel: %d admitted, %v; want the conflicted name alone", admitted, results)
-	}
-}
-
 // A job this process is not holding cannot be resumed, and a paused row is not
 // paused again: nothing resumes a job across a restart (ADR 0104 decision 4).
 func TestAJobThisProcessDoesNotHoldRefusesPauseAndResume(t *testing.T) {

@@ -88,12 +88,33 @@ func copyJourney(w *world, from, to *account, round int) {
 		t.Fatalf("the segmented file is a %s object, want %s", detail.Class, kind)
 	}
 
-	// The whole container, across clouds.
+	// Two of the files get metadata of their own, one of them the segmented
+	// file. The engine does not carry it, so the copy sets it in a request
+	// of its own, which for an object the engine wrote in segments has to
+	// leave that object whole.
+	tagged := []string{"file00.bin", "file03.bin"}
+	for _, name := range tagged {
+		before, err := from.check.ObjectDetail(w.ctx, src, prefix+name)
+		if err != nil {
+			t.Fatalf("read %s before tagging it: %s", name, failure(err))
+		}
+		meta := map[string]string{"Journey": "copied"}
+		for key, value := range before.Meta {
+			meta[key] = value
+		}
+		if _, err := from.check.UpdateObjectMetadata(w.ctx, src, prefix+name, "", swiftcontrol.ObjectMetadataEdit{Meta: meta}); err != nil {
+			t.Fatalf("tag %s: %s", name, failure(err))
+		}
+	}
+
+	// The whole container, across clouds, at a chunk size that makes the
+	// engine write the 3 MiB file in segments at the destination too.
 	dst := w.container(to, fmt.Sprintf("dst%d", round))
 	if err := to.owned.ClaimSidecar(w.ctx, dst); err != nil {
 		t.Fatalf("claim the sidecar: %s", failure(err))
 	}
-	copyRequest := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, DestBookmarkID: to.bookmarkID, DestContainer: dst}
+	copyRequest := app.CopyRequestDTO{SourceBookmarkID: from.bookmarkID, SourceContainer: src, DestBookmarkID: to.bookmarkID, DestContainer: dst,
+		Settings: app.TransferSettingsDTO{ChunkSize: "1Mi"}}
 	if _, err := w.transfer.PlanCopy(w.ctx, copyRequest); err != nil {
 		t.Fatalf("preview the copy: %s", failure(err))
 	}
@@ -103,6 +124,39 @@ func copyJourney(w *world, from, to *account, round int) {
 	w.ended("copy", w.await(to, id), "complete")
 	if diff := w.settled(func() string { return same(w.stored(to, dst, prefix), digests) }); diff != "" {
 		t.Fatalf("copied files differ from the source: %s", diff)
+	}
+	for _, name := range tagged {
+		if problem := w.settled(func() string {
+			copied, err := to.check.ObjectDetail(w.ctx, dst, prefix+name)
+			if err != nil {
+				return failure(err)
+			}
+			if copied.Meta["Journey"] != "copied" {
+				return fmt.Sprintf("%s arrived with metadata %v", name, copied.Meta)
+			}
+			return ""
+		}); problem != "" {
+			t.Fatal(problem)
+		}
+	}
+	copiedLarge, err := to.check.ObjectDetail(w.ctx, dst, prefix+"file03.bin")
+	if err != nil {
+		t.Fatalf("read the copied segmented file: %s", failure(err))
+	}
+	if copiedLarge.Class != swiftcontrol.ClassDLO {
+		t.Fatalf("the copied segmented file is a %s object, want the dynamic one the engine writes", copiedLarge.Class)
+	}
+
+	// The same copy again finds nothing to do: the plain files by the two
+	// listings, and the segmented one by what the store says of both names,
+	// which are cut at the same places.
+	if id, err = w.transfer.StartCopy(w.ctx, copyRequest); err != nil {
+		t.Fatalf("copy again: %s", failure(err))
+	}
+	again := w.await(to, id)
+	w.ended("second copy", again, "complete")
+	if again.Counters.ObjectsCopied != 0 {
+		t.Fatalf("the second copy wrote %d objects, want none", again.Counters.ObjectsCopied)
 	}
 
 	// Two selected files, across clouds.

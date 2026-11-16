@@ -24,20 +24,21 @@ func assertCopyItemRecords(t *testing.T, h *Harness, id, src, dst string, failed
 		if item.JobID != id || !item.Admitted || !item.Planned || item.ListedBytes != int64(bytes) ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "scope/" + item.Key}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Secondary.BookmarkID, Container: dst, Object: "scope/" + item.Key}) ||
-			item.Execution == nil || item.Verification == nil {
-			t.Fatalf("actual Copy lost captured identity or observations: %+v", item)
+			item.Staging != nil || item.Execution == nil {
+			t.Fatalf("actual Copy lost captured identity or observations, or recorded a stage name: %+v", item)
 		}
+		// A refused read of the source wrote nothing, and that answer is the
+		// whole record: only an object that was written, or was already
+		// there, gets a second one (ADR 0122 decision 7).
 		if selected[item.Key] {
-			if item.Staging != nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
+			if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
 				Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeForbidden, HTTPStatus: 403}}) ||
-				item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
-					Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageVerification, Code: jobs.CodeUnverified}}) {
-				t.Fatalf("source refusal lost either typed failure: %+v", item)
+				item.Verification != nil {
+				t.Fatalf("a refused source read was misrecorded or acquired a second record: %+v", item)
 			}
-		} else if item.Key != "z-engine.bin" || item.Staging == nil ||
-			*item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Secondary.BookmarkID, Container: dst, Object: "scope/.aeronautes/stage/" + id + "/batch/" + item.Key}) ||
+		} else if item.Key != "z-engine.bin" ||
 			item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(bytes)}) ||
-			item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
+			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 			t.Fatalf("successful engine control was misrecorded: %+v", item)
 		}
 	}
@@ -55,7 +56,8 @@ func assertCopyItemRecords(t *testing.T, h *Harness, id, src, dst string, failed
 		for _, row := range page.Items {
 			stored, exists := byKey[row.Key]
 			if !exists || seen[row.Key] || row.Source.Object != stored.Source.Object || row.Destination.Object != stored.Destination.Object ||
-				row.Execution == nil || row.Verification == nil || row.Execution.Result != string(stored.Execution.Result) || row.Verification.Result != string(stored.Verification.Result) ||
+				row.Execution == nil || row.Execution.Result != string(stored.Execution.Result) ||
+				(row.Verification == nil) != (stored.Verification == nil) || (row.Verification != nil && row.Verification.Result != string(stored.Verification.Result)) ||
 				row.Execution.Code != string(stored.Execution.Diagnostic.Code) || row.Execution.HTTPStatus != stored.Execution.Diagnostic.HTTPStatus {
 				t.Fatalf("actual Copy public identity or observation differs: %+v", row)
 			}

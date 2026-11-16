@@ -35,7 +35,7 @@ func TestEngineCannotMixSessionCredentialsWithEditedTrust(t *testing.T) {
 			build := func() error {
 				var err error
 				if kind == "copy" {
-					_, _, _, err = h.transfer.buildEngine(ctx, CopyRequestDTO{SourceBookmarkID: id, DestBookmarkID: id}, session, session)
+					_, _, _, err = h.transfer.buildEngine(ctx, CopyRequestDTO{SourceBookmarkID: id, DestBookmarkID: id}, session, session, false)
 				} else {
 					_, err = h.transfer.localEngine(ctx, session, "aeronautes_dst", rclone.Options{})
 				}
