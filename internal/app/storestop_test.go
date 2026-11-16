@@ -238,50 +238,6 @@ func TestAStoppedStoreReachesARunningJobBeforeTheRunnerIsTold(t *testing.T) {
 	}
 }
 
-// The boundary the rule relies on is the check before each publication. An
-// upload whose first file is being published when the store stops sends no
-// request for its second file and leaves that file's staged object where it
-// is. The request that was already on its way is cancelled with the job, so
-// whether it landed is the store's to say; only one was ever sent.
-func TestAStoppedStoreStopsAnUploadBetweenTwoPublications(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	h.installEngine(nil)
-	h.mock.AddContainer("media", "standard")
-	var once sync.Once
-	h.mock.BeforeRequest = func(method, path string) {
-		// The first write to a live name is the first publication.
-		if method == "PUT" && strings.Contains(path, "/media/inbox/docs/") {
-			once.Do(func() { stopStore(t, h) })
-		}
-	}
-	bookmark, id := startFolderUpload(t, h, twoFileFolder(t))
-	ownersGone(t, h)
-	var publications []string
-	for _, request := range h.mock.RequestLog() {
-		if strings.HasPrefix(request, "PUT ") && strings.Contains(request, "/media/inbox/docs/") {
-			publications = append(publications, request)
-		}
-		if strings.HasPrefix(request, "DELETE ") {
-			t.Errorf("the stopped upload removed something: %s", request)
-		}
-	}
-	if len(publications) != 1 {
-		t.Fatalf("publishing requests = %v; want the one that was in flight and no second", publications)
-	}
-	// The file whose publication never started still has its staged object.
-	unpublished := "two.txt"
-	if strings.HasSuffix(publications[0], "/two.txt") {
-		unpublished = "one.txt"
-	}
-	if _, err := h.inspector.Object(context.Background(), bookmark, "media", ".aeronautes/stage/"+id+"/batch/docs/"+unpublished); err != nil {
-		t.Errorf("the staged object of %s was not kept: %v", unpublished, err)
-	}
-	if _, err := h.inspector.Object(context.Background(), bookmark, "media", "inbox/docs/"+unpublished); err == nil {
-		t.Errorf("%s was published after the store stopped", unpublished)
-	}
-}
-
 // The download route removes its stage on an ordinary cancel (ADR 0048). A
 // cancel made because the store stopped is the recording failure of that
 // record's decision 7 for every job at once: the download places nothing

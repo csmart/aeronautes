@@ -241,7 +241,7 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 			if err := owner.claim(stageClaims("auth_test", "media", "elsewhere/")...); err != nil {
 				t.Fatal(err)
 			}
-		}, "another job is staging into the container"},
+		}, "another job is writing into the container"},
 		"a segment in a live job's stage": {func(t *testing.T, h *harness) {
 			const other = "0f1e2d3c4b5a6978"
 			staged := ".aeronautes/stage/" + other + "/big/0001"
@@ -259,7 +259,7 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 			owner.jobID = other
 			owner.claims[1].path = ".aeronautes/stage/"
 			runner.mu.Unlock()
-		}, "staging area"},
+		}, "is writing"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, service, bookmark := deleteHarness(t)

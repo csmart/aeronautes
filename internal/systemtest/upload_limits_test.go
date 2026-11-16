@@ -175,7 +175,13 @@ func destinationChunkSettings(t *testing.T, h *Harness, operation, chunk string)
 			h.AssertNoCollateral(beforeB, afterB)
 		}
 		object := after.Containers[destination].Objects["asset"]
-		allowed := uploadRecoveryVerifyObject(t, object, body, "dlo", destination+"_segments", ".aeronautes/stage/"+id+"/batch/asset")
+		// The engine puts an upload's segments under the object's own name.
+		// A copy still stages, so its segments sit under the stage name.
+		segmentsUnder := "asset"
+		if operation == "copy" {
+			segmentsUnder = ".aeronautes/stage/" + id + "/batch/asset"
+		}
+		allowed := uploadRecoveryVerifyObject(t, object, body, "dlo", destination+"_segments", segmentsUnder)
 		if stray := collateral(before, after, append(allowed, destination+"/asset")); len(stray) != 0 {
 			t.Errorf("chunk transfer changed collateral: %v", stray)
 		}

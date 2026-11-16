@@ -266,9 +266,10 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 	}
 	saved := interruptionOutcome(t, h, id, state, want, fragments...)
 	assertInterruptedUploadItems(t, h, id, container, mode, paths, bodies, want.ObjectsFailed, saved)
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: container, Prefix: ".aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) || saved.Job.RecoveryRecords != 1 {
-		t.Fatalf("retained recovery facts differ: %+v", saved)
+	// No file here is large enough for the engine to report a segment
+	// path, which is the only recovery record an upload still makes.
+	if len(saved.Rows) != 0 || saved.Status != (app.RecoveryStatusDTO{}) || saved.Job.RecoveryRecords != 0 {
+		t.Fatalf("an upload of plain files left recovery facts: %+v", saved)
 	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	var allowed []string
@@ -303,7 +304,13 @@ func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode 
 	if cancelled {
 		count = 2
 	}
-	want := jobs.ItemTotals{Items: int64(count), Planned: int64(count), Admitted: int64(count), Failed: failed, Unresolved: failed, Problems: failed}
+	// A refused PUT wrote nothing. Only the PUT cancelled before its answer
+	// leaves the name unknown.
+	var unresolved int64
+	if cancelled {
+		unresolved = 1
+	}
+	want := jobs.ItemTotals{Items: int64(count), Planned: int64(count), Admitted: int64(count), Failed: failed, Unresolved: unresolved, Problems: failed}
 	if !saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != count {
 		t.Fatalf("interruption lost admitted upload identities: captured=%t totals=%+v rows=%d want=%+v", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items), want)
 	}
@@ -315,16 +322,18 @@ func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode 
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: key}) || item.Execution == nil {
 			t.Fatalf("interruption changed original upload identity: %+v", item)
 		}
-		if i < 2 && item.Staging != nil || i == 2 && (item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: ".aeronautes/stage/" + id + "/batch/" + filepath.Base(paths[i])})) {
-			t.Fatalf("interruption invented or lost staging identity: %+v", item)
+		if item.Staging != nil {
+			t.Fatalf("an upload recorded a stage name: %+v", item)
 		}
 		failure := i == 0 && strings.HasPrefix(mode, "failure") || i == 1 && mode != "complete_control"
 		if failure {
-			diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeForbidden, HTTPStatus: 403}
+			wantFailure := jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
+				Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeForbidden, HTTPStatus: 403}}
 			if i == 1 && cancelled {
-				diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeCancelled}
+				wantFailure = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
+					Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeCancelled}}
 			}
-			if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: diagnostic}) || item.Verification != nil {
+			if item.Execution.ItemObservation != wantFailure || item.Verification != nil {
 				t.Fatalf("interruption fabricated verification or lost failed name: %+v", item)
 			}
 		} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(bodies[i]))}) ||
@@ -334,7 +343,7 @@ func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode 
 		byKey[key] = item
 	}
 	assertUploadItemPages(t, h, id, byKey, want)
-	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, failed, failed)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, unresolved, failed)
 	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
 		t.Fatalf("interruption audit lost distinct item facets: %+v", saved.Audit)
 	}

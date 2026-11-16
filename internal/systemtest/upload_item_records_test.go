@@ -47,8 +47,8 @@ func uploadItemRecordsProxy(t *testing.T, h *Harness, container string, names ma
 		trace.traffic.mu.Unlock()
 		prefix := storage.Path + "/" + container + "/scope/"
 		name, selected := strings.CutPrefix(r.URL.Path, prefix)
-		if r.Method == http.MethodPut && selected && r.Header.Get("If-None-Match") != "*" {
-			t.Errorf("live upload PUT lacks conditional creation: %q", name)
+		if r.Method == http.MethodPut && selected && r.Header.Get("If-None-Match") != "" {
+			t.Errorf("an upload PUT carries a create-only condition: %q", name)
 		}
 		if r.Method == http.MethodPut && selected && names[name] {
 			trace.mu.Lock()
@@ -126,7 +126,7 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Hundreds of checked commits may outlast the separate cleanup wait.
+	// Hundreds of refused files may outlast the separate cleanup wait.
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	serviceTime := time.Since(started)
@@ -174,9 +174,10 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if err := h.database.Reader().QueryRowContext(t.Context(), "SELECT bookmark_id FROM audit_events WHERE operation=? AND resource=?", "transfer.local."+state, "job "+id).Scan(&bookmark); err != nil || bookmark != h.Primary.BookmarkID {
 		t.Errorf("audit authority differs: %q %v", bookmark, err)
 	}
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: ".aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Job.RecoveryRecords != 1 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) {
-		t.Errorf("upload recovery differs: %+v", saved)
+	// No file here is large enough for the engine to report a segment
+	// path, which is the only recovery record an upload still makes.
+	if len(saved.Rows) != 0 || saved.Job.RecoveryRecords != 0 || saved.Status != (app.RecoveryStatusDTO{}) {
+		t.Errorf("an upload of plain files left recovery facts: %+v", saved)
 	}
 	page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 100)
 	if err != nil {
@@ -202,25 +203,16 @@ func uploadItemRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 		t.Errorf("engine control bytes differ: %+v", got)
 	}
 
-	allowed := []string{dst + "/scope/z-engine.bin"}
-	if !native {
-		for name := range selected {
-			staged := ".aeronautes/stage/" + id + "/batch/" + name
-			object, exists := afterA.Containers[dst].Objects[staged]
-			if !exists || object.Size != int64(len(body)) || object.Digest != fmt.Sprintf("%x", sha256.Sum256(body)) || object.Class != "plain" {
-				t.Fatalf("failed live PUT lost staged bytes for %q: %+v", name, object)
-			}
-			allowed = append(allowed, dst+"/"+staged)
-		}
-	}
-	h.AssertNoCollateral(beforeA, afterA, allowed...)
+	// A refused file leaves nothing anywhere: the only name that changed
+	// is the one the store accepted.
+	h.AssertNoCollateral(beforeA, afterA, dst+"/scope/z-engine.bin")
 	h.AssertNoCollateral(beforeB, afterB)
 	if !reflect.DeepEqual(localBefore, snapshotListingLocal(t, localRoot)) {
 		t.Error("upload changed selected or unselected local bytes")
 	}
 
 	assertUploadItemRecords(t, h, id, dst, count, len(body), native, paths, saved)
-	assertUploadItemWrites(t, trace, h.Primary.storageURL, dst, id, native, paths)
+	assertUploadItemWrites(t, trace, h.Primary.storageURL, dst, native, paths)
 	if version != 1 || records != count+1 || page.Status != "available" || totals.Status != "available" {
 		t.Fatalf("actual upload caller did not opt in: version=%d rows=%d page=%+v totals=%+v", version, records, page, totals)
 	}

@@ -16,7 +16,7 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 )
 
-func assertUploadItemWrites(t *testing.T, trace *copyItemRecordsTrace, storageURL, container, id string, native bool, paths []string) {
+func assertUploadItemWrites(t *testing.T, trace *copyItemRecordsTrace, storageURL, container string, native bool, paths []string) {
 	t.Helper()
 	storage, err := url.Parse(storageURL)
 	if err != nil {
@@ -26,75 +26,75 @@ func assertUploadItemWrites(t *testing.T, trace *copyItemRecordsTrace, storageUR
 	for _, write := range trace.traffic.writeSnapshot() {
 		got[write]++
 	}
-	if problems := uploadWriteProblems(got, storage.Path+"/"+container+"/", id, native, paths); len(problems) > 0 {
+	if problems := uploadWriteProblems(got, storage.Path+"/"+container+"/", native, paths); len(problems) > 0 {
 		t.Fatalf("upload mutations differ:\n  %s", strings.Join(problems, "\n  "))
 	}
 }
 
-// uploadWriteProblems is the pure core of assertUploadItemWrites, testable
-// without a fixture: it returns every way the observed mutations depart
-// from what an upload of these paths is allowed to make.
-//
-// This application's own mutations are exactly once, because it issues
-// them: each item's live publication, and the delete of the one staged
-// object. The ENGINE's staging writes are not, and asserting that they
-// were claimed something the engine's own flags contradict. pacingArgs
-// hands it a low-level retry budget, and a low-level retry re-sends one
-// request, so a transient refusal of one staged upload out of hundreds is
-// re-sent by design. PR 182's first attempt failed on exactly that, one
-// staged PUT of 402 issued twice. The identities stay exact in both
-// directions and the engine's repeats stay bounded by the budget it was
-// given, so nothing here is unchecked.
-// maxEngineWritesPerIdentity is how many times ONE staged object can be
-// written across a whole upload job, which is the two retry layers of its
-// lifecycle multiplied, not either of them alone.
+// maxEngineWritesPerIdentity is how many times ONE name can be written by
+// the engine across a whole upload job, which is the two retry layers of
+// its lifecycle multiplied, not either of them alone.
 //
 // The engine's own budget bounds total attempts at one request, so it is
 // used as it stands rather than with one added; the measurement is in
 // rclone.DefaultLowLevelRetries' own comment. On top of that,
 // uploadRun.copy in internal/transfer/local/upload.go runs the engine a
 // second time when the first run fails an authentication-shaped failure,
-// once and only once, which
-// TestUploadAuthenticationRestartIsBoundedToOneFreshChild pins, so one
-// identity can be written by two separate child runs.
+// once and only once, so one name can be written by two separate child runs.
 func maxEngineWritesPerIdentity() int {
 	const maxChildRuns = 2 // uploadRun.copy's single authentication restart
 	return rclone.DefaultLowLevelRetries * maxChildRuns
 }
 
-func uploadWriteProblems(got map[string]int, prefix, id string, native bool, paths []string) []string {
+// uploadWriteProblems is the pure core of assertUploadItemWrites, testable
+// without a fixture: it returns every way the observed mutations depart
+// from what an upload of these paths is allowed to make (ADR 0122 decision
+// 3). An upload writes each file at its own name and nothing else, so a
+// stage name, a delete or any other name is a problem.
+//
+// This application's own PUT, of a name the engine cannot carry, is exactly
+// once, because it issues it. The ENGINE's writes are not, and asserting
+// that they were claimed something the engine's own flags contradict.
+// pacingArgs hands it a low-level retry budget, and a low-level retry
+// re-sends one request, so a transient refusal of one upload out of
+// hundreds is re-sent by design. PR 182's first attempt failed on exactly
+// that, one PUT of 402 issued twice. The names stay exact in both
+// directions and the engine's repeats stay bounded by the budget it was
+// given, so nothing here is unchecked.
+func uploadWriteProblems(got map[string]int, prefix string, native bool, paths []string) []string {
 	maxEngineAttempts := maxEngineWritesPerIdentity()
 	ours := map[string]int{}
-	staged := map[string]bool{}
+	engine := map[string]bool{}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		ours["PUT "+prefix+"scope/"+name] = 1
-		if !native || name == "z-engine.bin" {
-			staged["PUT "+prefix+".aeronautes/stage/"+id+"/batch/"+name] = true
+		write := "PUT " + prefix + "scope/" + name
+		if native && name != "z-engine.bin" {
+			ours[write] = 1
+		} else {
+			engine[write] = true
 		}
 	}
-	ours["DELETE "+prefix+".aeronautes/stage/"+id+"/batch/z-engine.bin"] = 1
 
 	var problems []string
 	mine := map[string]int{}
 	for write, attempts := range got {
-		if staged[write] {
+		if engine[write] {
 			continue
 		}
 		mine[write] = attempts
 	}
 	if !reflect.DeepEqual(mine, ours) {
-		problems = append(problems, fmt.Sprintf("this application's own mutations differ: got=%v want=%v", mine, ours))
+		problems = append(problems, fmt.Sprintf("writes other than the engine's own differ: got=%v want=%v", mine, ours))
 	}
-	for write := range staged {
+	for write := range engine {
 		attempts := got[write]
 		if attempts < 1 {
-			problems = append(problems, "the engine never wrote a staged object it was asked for: "+write)
+			problems = append(problems, "the engine never wrote a name it was given: "+write)
 			continue
 		}
 		if attempts > maxEngineAttempts {
 			problems = append(problems, fmt.Sprintf(
-				"a staged upload was written %d times, outside the engine's budget of 1 to %d: %s",
+				"a name was written %d times, outside the engine's budget of 1 to %d: %s",
 				attempts, maxEngineAttempts, write))
 		}
 	}
@@ -103,8 +103,19 @@ func uploadWriteProblems(got map[string]int, prefix, id string, native bool, pat
 
 func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, bytes int, native bool, paths []string, saved uploadRecoveryState) {
 	t.Helper()
+	// The store's refusal of this application's own PUT wrote nothing. The
+	// engine's error for a file does not say whether anything was written,
+	// so that outcome is unresolved (ADR 0122 decision 7).
+	refusal := jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
+		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIO}}
+	unresolved := failed
+	if native {
+		refusal = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeForbidden, HTTPStatus: 403}}
+		unresolved = 0
+	}
 	want := jobs.ItemTotals{Items: int64(failed + 1), Planned: int64(failed + 1), Admitted: int64(failed + 1),
-		Failed: int64(failed), Unresolved: int64(failed), Problems: int64(failed)}
+		Failed: int64(failed), Unresolved: int64(unresolved), Problems: int64(failed)}
 	if !saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != len(paths) {
 		t.Fatalf("upload lost distinct identities: captured=%t totals=%+v rows=%d want=%+v", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items), want)
 	}
@@ -119,17 +130,12 @@ func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, b
 			t.Fatalf("upload identity differs from backend selection: %+v path=%q", item, path)
 		}
 		byKey[item.Key] = item
-		if native && i < failed {
-			if item.Staging != nil {
-				t.Fatalf("native upload invented staging: %+v", item)
-			}
-		} else if item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: ".aeronautes/stage/" + id + "/batch/" + name}) {
-			t.Fatalf("engine upload lost actual stage identity: %+v", item)
+		if item.Staging != nil {
+			t.Fatalf("an upload recorded a stage name: %+v", item)
 		}
 		if i < failed {
-			if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
-				Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeForbidden, HTTPStatus: 403}}) || item.Verification != nil {
-				t.Fatalf("failed PUT lost unresolved effects or invented verification: %+v", item)
+			if item.Execution.ItemObservation != refusal || item.Verification != nil {
+				t.Fatalf("a refused PUT was misrecorded or invented a second record: %+v want=%+v", item, refusal)
 			}
 		} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(bytes)}) ||
 			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
@@ -137,7 +143,7 @@ func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, b
 		}
 	}
 	assertUploadItemPages(t, h, id, byKey, want)
-	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, failed, failed)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, unresolved, failed)
 	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
 		t.Fatalf("upload terminal audit is not item-derived: %+v want=%q", saved.Audit, summary)
 	}

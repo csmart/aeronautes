@@ -310,7 +310,7 @@ it("offers the replaced-segment option and says which way it is set", async () =
   await show(browser);
   await vi.waitFor(() => expect(reclaimBox()).not.toBeNull());
   expect(reclaimBox()!.checked, "RECLAIM-DEFAULT").toBe(true);
-  expect(reclaimFeedback()).toContain("removed once the replacement verifies");
+  expect(reclaimFeedback()).toContain("removed as the new object is written");
 
   // Turning it off saves false and nothing else.
   reclaimBox()!.checked = false;

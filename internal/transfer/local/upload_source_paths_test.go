@@ -54,7 +54,7 @@ func TestUploadRejectsChangedSourcePath(t *testing.T) {
 				t.Fatalf("source path refusal crossed JSON lossily: %s %v", encoded, err)
 			}
 			engine := &countedUploadEngine{inner: &fsEngine{s}}
-			result, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "scope/", "refused-source", report, nil, nil)
+			result, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", report, nil, nil)
 			if err == nil || result != nil || engine.calls != 0 {
 				t.Errorf("rejected preflight executed: %+v %v calls=%d", result, err, engine.calls)
 			}
@@ -64,7 +64,7 @@ func TestUploadRejectsChangedSourcePath(t *testing.T) {
 				{Path: path, Name: "scope/valid", Size: 14, Route: "native"},
 				{Path: captured, Name: "scope/invalid", Size: 14, Route: "rclone"},
 			}}
-			result, err = Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "scope/", "internal-source", bypass, nil, nil)
+			result, err = Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", bypass, nil, nil)
 			if err == nil || result != nil || engine.calls != 0 || err.Error() != uploadPathRefusal {
 				t.Errorf("execution bypass admitted a source: %+v %v calls=%d", result, err, engine.calls)
 			}
@@ -107,7 +107,7 @@ func TestUploadPreservesExactCanonicalSource(t *testing.T) {
 				return
 			}
 			engine := &countedUploadEngine{inner: &fsEngine{s}}
-			report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", prefix, "exact-source", preflight, nil, nil)
+			report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight, nil, nil)
 			if err != nil || report.Done != 1 || report.Bytes != int64(len(body)) || len(report.Failures) != 0 || engine.calls != 0 {
 				t.Fatalf("canonical native upload failed: %+v %v calls=%d", report, err, engine.calls)
 			}

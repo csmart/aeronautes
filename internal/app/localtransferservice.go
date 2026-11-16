@@ -137,11 +137,11 @@ type OverwriteConfirmation struct {
 	// Versioning is what the container said about keeping versions, as an
 	// observation and not a promise of recovery (ADR 0081 decision 8).
 	Versioning string
-	// Fragments says what this start would do to the segments backing what
-	// is being replaced: how many will be removed once the replacement is
-	// verified, or why they will be kept. An answer of yes has to cover the
-	// whole effect, and deleting objects the operator was never shown is
-	// what this sentence exists to put in front of them (decision 5).
+	// Fragments says what this start does to a replaced large object's old
+	// segments: that the transfer engine removes those under the upload's
+	// folder, or why they are kept (ADR 0122 decision 3). An answer of yes
+	// has to cover the whole effect, and deleting objects the operator was
+	// never shown is what this sentence exists to put in front of them.
 	Fragments string
 }
 
@@ -595,11 +595,10 @@ func engineChunkBytes(chunkSize string) (int64, bool) {
 // this start will replace rather than an earlier guess. The connection is
 // observed either side of the dialog for the same reason the pick is: an
 // answer given about one account must not authorise a write to another.
-// It returns what the answer authorises for the predecessor's segments: a
-// removal only where the question said so, and the sentence it said it with,
-// so a decline can quote the promise it is honouring.
-func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadRequestDTO,
-	scope selectionScope, preflight *local.UploadPreflight) (answeredFragments, error) {
+// The question states what happens to a replaced large object's old
+// segments, from what keepsReplaced decided.
+func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadRequestDTO, scope selectionScope,
+	preflight *local.UploadPreflight, observed swiftcontrol.ContainerVersioning, versioningErr error, segments string) error {
 	var names []string
 	for _, item := range preflight.Items {
 		if item.Replaces {
@@ -607,52 +606,77 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 		}
 	}
 	if len(names) == 0 {
-		// Acknowledged, but nothing is there to replace. Every name
-		// publishes conditionally, so there is nothing to ask about and
-		// nothing this answer could authorise.
-		return answeredFragments{}, nil
+		// Acknowledged, but nothing is there to replace, so there is
+		// nothing to ask about.
+		return nil
 	}
 	if s.overwrites == nil {
-		return answeredFragments{}, errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
+		return errors.New("replacing an existing object needs the shell's confirmation, and this build has none")
 	}
-	// The mode is read before the question is asked, so a container this
-	// build cannot reason about is refused without the operator being
-	// asked to authorise something it cannot describe.
-	observed, err := s.readVersioning(ctx, req.BookmarkID, req.Container)
-	if err != nil {
-		return answeredFragments{}, err
+	// A container this build cannot read or reason about is refused without
+	// the operator being asked to authorise something it cannot describe.
+	if versioningErr != nil {
+		return versioningErr
 	}
 	versioning, err := versioningStatement(observed)
 	if err != nil {
-		return answeredFragments{}, err
+		return err
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	// Bound rather than passed inline, because the reading carries the
-	// baseline as well as the counts the question states.
-	plan := s.fragmentPlanFor(ctx, req, preflight, observed)
-	question, authorises, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names, plan)
+	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names, segments)
 	if err != nil {
-		return answeredFragments{}, err
+		return err
 	}
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
-		return answeredFragments{}, err
+		return err
 	}
 	if !yes {
-		return answeredFragments{}, errors.New("the replacement was not confirmed; nothing was written")
+		return errors.New("the replacement was not confirmed; nothing was written")
 	}
 	if after := s.observeConnection(); after != before {
-		return answeredFragments{}, errors.New("the connected account changed while you were answering; start again")
+		return errors.New("the connected account changed while you were answering; start again")
 	}
 	entry, err := s.connections.sessionEntryFor(ctx, scope.bookmarkID)
 	if err != nil {
-		return answeredFragments{}, err
+		return err
 	}
 	if entry.generation != scope.generation {
-		return answeredFragments{}, errors.New("the account's credentials changed while you were answering; start again")
+		return errors.New("the account's credentials changed while you were answering; start again")
 	}
-	return answeredFragments{Removal: authorises, Said: question.Fragments, Shown: plan.Shown, Versioning: observed}, nil
+	return nil
+}
+
+// keepsReplaced decides, once at the start of an upload, whether the engine
+// may remove a replaced large object's old segments, and gives the sentence
+// that says so (ADR 0122 decision 3). One switch gives both, because a
+// sentence that promises the segments stay beside permission to remove them
+// is the defect the pair exists to prevent.
+//
+// The engine removes them itself as it writes over a large object, where
+// the gateway lets it delete: under the upload's folder. It does so even
+// where the container has a versions location, whose archived version still
+// uses them (measured on the pinned engine), so there, and where the
+// operator's setting keeps replaced segments or cannot be read, the engine's
+// deletes are refused and the segments stay.
+func (s *TransferService) keepsReplaced(ctx context.Context, container, prefix string, observed swiftcontrol.ContainerVersioning) (keeps bool, sentence string) {
+	reclaiming, err := s.reclamationSetting(ctx)
+	switch {
+	case keepsVersions(observed):
+		return true, "where a large object is replaced its old segments are KEPT, because the container keeps versions and they belong to the version the store keeps"
+	case err != nil:
+		return true, "where a large object is replaced its old segments are KEPT, because the setting that allows removing them could not be read"
+	case !reclaiming:
+		return true, "where a large object is replaced its old segments are KEPT, because reclaiming is turned off in Settings"
+	}
+	// The engine may delete only where it may write: under the upload's
+	// folder, in the container and in its segments container.
+	where := "in " + container + "_segments"
+	if prefix != "" {
+		where = "under " + prefix + " " + where
+	}
+	return false, "where a large object is replaced, the transfer engine REMOVES its old segments " + where + " as it writes the new object; old segments kept anywhere else, and those of a name this application sends itself, stay where they are"
 }
 
 // versioningUnchanged is ADR 0102 decision 2's question at the fixed point:
@@ -720,26 +744,6 @@ func describeVersioning(observed swiftcontrol.ContainerVersioning, withArchive b
 	return statement
 }
 
-// answeredFragments is what one answered confirmation said about the
-// predecessor's segments: whether it authorised removing them, and the
-// sentence the operator read. The sentence travels with the permission so a
-// decline can quote the promise it is keeping rather than paraphrasing it.
-type answeredFragments struct {
-	Removal bool
-	Said    string
-	// Shown is what the question's own reading found at each replaced name:
-	// the acknowledged baseline ADR 0085 compares a publication against,
-	// carried from the answer because this is the moment the operator saw it.
-	// A name absent from it was never identified, and that decision makes the
-	// absence a refusal to overwrite rather than a licence — a refusal the
-	// comparison slice applies, not this one.
-	Shown map[string]local.ShownObject
-	// Versioning is the observation the question was composed from, the mode
-	// and the archive as read, compared against a fresh read at the fixed
-	// point (ADR 0102 decision 2).
-	Versioning swiftcontrol.ContainerVersioning
-}
-
 // overwriteQuestion is the statement the operator is asked to authorise.
 //
 // It is composed here rather than assembled at the call site so that the
@@ -748,144 +752,33 @@ type answeredFragments struct {
 // That is the part ADR 0073's counterexample turns on, because a label may
 // belong to either of two accounts and the operator has nothing else to
 // tell them apart with. A question missing any other part of the plan it
-// would authorise is refused for the same reason.
-// It also returns what answering yes would authorise for the predecessor's
-// segments, taken from the same statement the operator reads, so execution
-// can be held to the promise the question made.
+// would authorise is refused for the same reason. segments is the sentence
+// about a replaced large object's old segments (keepsReplaced).
 func overwriteQuestion(label, account, container, prefix, versioning string, names []string,
-	fragments fragmentPlan) (OverwriteConfirmation, bool, error) {
+	segments string) (OverwriteConfirmation, error) {
 	switch {
 	case account == "":
-		return OverwriteConfirmation{}, false, errors.New("the destination account could not be identified, so an overwrite is refused")
+		return OverwriteConfirmation{}, errors.New("the destination account could not be identified, so an overwrite is refused")
 	case container == "":
-		return OverwriteConfirmation{}, false, errors.New("the destination container could not be identified, so an overwrite is refused")
+		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
 	case versioning == "":
-		return OverwriteConfirmation{}, false, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
+		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
 	case len(names) == 0:
-		return OverwriteConfirmation{}, false, errors.New("there is nothing live to ask about, so no overwrite is authorised")
+		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
 	}
-	sentence, authorises := fragments.statement()
 	return OverwriteConfirmation{
 		Bookmark: titleText(label, 80), Account: titleText(account, 80),
 		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
-		Fragments: sentence,
-	}, authorises, nil
-}
-
-// fragmentPlanFor counts what this start would remove, and says why it would
-// not, so the confirmation can state it (ADR 0081 decision 5).
-//
-// The versioning mode is the one the question is already stating, so the two
-// halves of the sentence cannot disagree. Reclamation reads the mode again at
-// the time it would run, because what matters then is what is true then.
-func (s *TransferService) fragmentPlanFor(ctx context.Context, req UploadRequestDTO,
-	preflight *local.UploadPreflight, versioning swiftcontrol.ContainerVersioning) fragmentPlan {
-	plan := fragmentPlan{Reclaiming: s.reclaimsReplacedFragments(ctx)}
-	if keepsVersions(versioning) {
-		plan.Skipped = "the container keeps versions, and those segments belong to a retained version"
-	}
-	var names []string
-	for _, item := range preflight.Items {
-		if item.Replaces {
-			names = append(names, item.Name)
-		}
-	}
-	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
-	if err != nil || session == nil {
-		// The question still has to say something true. Nothing was read, so
-		// it says that rather than claiming there is nothing there.
-		plan.Unknown = "the destination could not be read while the question was composed"
-		return plan
-	}
-	reading := local.FragmentPlan(ctx, session, req.Container, names)
-	// The reason names an object and quotes what the store said about it, so
-	// like the archive name it is stored data reaching a confirmation
-	// sentence. It is BOUNDED where the reading keeps it, because
-	// only there is the reason distinguishable from the count that follows
-	// it, and SANITISED where the question is drawn, because that is the
-	// function whose output a page must not be able to shape. A second bound
-	// here would have no case that could catch its removal, so there is not
-	// one: each of those two has its own.
-	plan.Whole, plan.Kept, plan.Unnamed, plan.Unknown = reading.Whole, reading.Kept, reading.Unnamed, reading.Unknown
-	plan.Shown = reading.Shown
-	return plan
+		Fragments: segments,
+	}, nil
 }
 
 // keepsVersions reports whether the container keeps what is replaced, which is
-// what makes reclaiming a predecessor's segments the wrong thing to do: they
+// what makes removing a predecessor's segments the wrong thing to do: they
 // belong to a version that is retained. It reads the observation itself, so
 // the decision cannot drift from how the question happens to word it.
 func keepsVersions(observed swiftcontrol.ContainerVersioning) bool {
 	return observed.Mode != swiftcontrol.VersioningOff && observed.Mode != ""
-}
-
-// fragmentPlan is what the question has to say about the predecessor's
-// segments: how many this start would remove and why it would not.
-//
-// An answer of yes has to cover the whole effect, so a question that names
-// only the object being replaced does not authorise deleting objects the
-// operator was never shown (ADR 0081 decision 5). The count is of whole
-// remote parts only, because those are the only shapes reclamation touches.
-type fragmentPlan struct {
-	// Reclaiming is the operator's setting.
-	Reclaiming bool
-	// Whole is how many whole remote segments the replaced manifests named,
-	// summed over every name this start would replace.
-	Whole int
-	// Kept is how many entries reclamation will not touch whatever the
-	// setting says: ranged, nested, inline and unrecognised shapes.
-	Kept int
-	// Unnamed is how many members an inventory counted without naming, which
-	// reclamation leaves where they are.
-	Unnamed int
-	// Shown is what each replaced name held, by name, for the names the
-	// reading could read authoritatively: the acknowledged baseline ADR 0085
-	// compares a publication against. A name absent from it was not
-	// identified, which that decision makes a refusal to overwrite.
-	Shown map[string]local.ShownObject
-	// Unknown is why this reading could not say what backs a name, empty
-	// when it could. It is not the same as there being nothing there, and a
-	// question carrying it authorises no removal at all.
-	Unknown string
-	// Skipped is why reclamation will not run at all, empty when it will.
-	Skipped string
-}
-
-// statement is the sentence the question carries and, from the same switch,
-// whether answering yes authorises removing those segments at all. One
-// switch, because a sentence that promises retention beside an authorisation
-// to remove is the defect this pair exists to prevent.
-func (p fragmentPlan) statement() (string, bool) {
-	shapes := ""
-	if p.Kept > 0 {
-		shapes = fmt.Sprintf(", and %d entr%s of a shape this build never removes stay%s whatever the setting says",
-			p.Kept, plural(p.Kept, "y", "ies"), plural(p.Kept, "s", ""))
-	}
-	if p.Unnamed > 0 {
-		shapes += fmt.Sprintf(", and %d member%s this build counted without naming stay%s as well, because only recorded identities are removed",
-			p.Unnamed, plural(p.Unnamed, "", "s"), plural(p.Unnamed, "s", ""))
-	}
-	switch {
-	case p.Unknown != "":
-		// Not knowing and knowing there is nothing are different answers,
-		// and only one of them may carry a deletion.
-		return "this build could not read what backs what is being replaced, so it cannot say what a replacement would remove and nothing will be removed: " +
-			p.Unknown, false
-	case p.Whole == 0 && p.Kept == 0 && p.Unnamed == 0:
-		return "no large object is being replaced, so there are no segments to remove", false
-	case p.Skipped != "":
-		return fmt.Sprintf("%d segment object%s backed what is being replaced and none will be removed, because %s%s",
-			p.Whole, plural(p.Whole, "", "s"), p.Skipped, shapes), false
-	case !p.Reclaiming:
-		return fmt.Sprintf("%d segment object%s backed what is being replaced and will be KEPT, because reclaiming is turned off%s",
-			p.Whole, plural(p.Whole, "", "s"), shapes), false
-	case p.Whole == 0:
-		// Nothing removable was named, so nothing is authorised, and the
-		// sentence says what is there rather than promising a removal of none.
-		return fmt.Sprintf("nothing that backs what is being replaced can be removed%s", shapes), false
-	}
-	return fmt.Sprintf("%d segment object%s backed what is being replaced and will be REMOVED once the replacement is verified%s",
-		p.Whole, plural(p.Whole, "", "s"), shapes), true
 }
 
 func plural(n int, one, many string) string {
@@ -1007,27 +900,13 @@ func (s *TransferService) downloadObjectCeiling(ctx context.Context) int64 {
 	return int64(settings.DownloadObjectCeiling)
 }
 
-// reclaimsReplacedFragments is the operator's reclamation setting for the
-// SENTENCE the question states, or the default when settings are not wired
-// or cannot be read (ADR 0081 decision 5). The default is to reclaim, so a
-// question asked without a readable setting describes what the default
-// would do rather than quietly promising retention; what stops a reclamation
-// the operator did not authorise is decision 2's confirmation itself, which
-// states what will be removed and which no page can answer.
-func (s *TransferService) reclaimsReplacedFragments(ctx context.Context) bool {
-	reclaiming, err := s.reclamationSetting(ctx)
-	return err != nil || reclaiming
-}
-
-// reclamationSetting is the same option read where it authorises a DELETION,
-// and here an unreadable store is not the default: the operator answered a
-// question computed from a reading that worked, and removing objects after
-// being told they would be kept is the outcome that sentence exists to
-// prevent. So the caller declines rather than guessing, and says which.
-// A service with no settings wired has no store to disagree with and takes
-// the same default the question used. The file is read strictly, because
-// Get reports an unreadable file and carries on with the defaults, and the
-// default is to reclaim.
+// reclamationSetting is the operator's setting for a replaced large object's
+// old segments, read where it permits a DELETION. An unreadable store is not
+// the default here: the default is to remove, and removing objects on a
+// guess is the wrong direction, so the caller keeps them and says why. A
+// service with no settings wired has no store to disagree with and takes the
+// default. The file is read strictly, because Get reports an unreadable file
+// and carries on with the defaults.
 func (s *TransferService) reclamationSetting(context.Context) (bool, error) {
 	if s.settings == nil {
 		return true, nil
@@ -1133,9 +1012,9 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", errors.New("preflight found problems; resolve them and retry (nothing was written)")
 	}
 	// Claimed before the selection is consumed, so a start refused for
-	// another job's sweep leaves the pick usable. An upload stages at the
-	// container root whatever its prefix (ADR 0105 decision 3).
-	if err := owner.claim(stageClaims(swiftcontrol.AccountIdentity(session.StorageURL()), req.Container, "")...); err != nil {
+	// another job's sweep leaves the pick usable. An upload writes under
+	// its destination folder (ADR 0105 decision 3, ADR 0122 decision 3).
+	if err := owner.claim(destinationClaims(swiftcontrol.AccountIdentity(session.StorageURL()), req.Container, req.Prefix)...); err != nil {
 		return "", err
 	}
 	// The start consumes the selection, so a confirmed pick cannot be
@@ -1147,17 +1026,18 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	if _, err := s.selections.takeSources(req.SelectionToken, scope); err != nil {
 		return "", err
 	}
-	// What the answered question authorises for the predecessor's segments,
-	// and the sentence it authorised it with. A start that asked nothing
-	// authorises nothing, which is right: without a live name there is no
-	// predecessor to reclaim.
-	var answered answeredFragments
+	// One read of the container's versioning decides whether the engine may
+	// remove a replaced large object's old segments, for the whole job; a
+	// read that fails keeps them.
+	observed, versioningErr := s.readVersioning(ctx, req.BookmarkID, req.Container)
+	keepsSegments, segments := true, ""
+	if versioningErr == nil {
+		keepsSegments, segments = s.keepsReplaced(ctx, req.Container, req.Prefix, observed)
+	}
 	if req.AcknowledgeOverwrite {
-		promise, err := s.confirmOverwrite(ctx, req, scope, preflight)
-		if err != nil {
+		if err := s.confirmOverwrite(ctx, req, scope, preflight, observed, versioningErr, segments); err != nil {
 			return "", err
 		}
-		answered = promise
 	}
 	resolved, origins, err := s.localSettings(req.Profile, req.Settings, req.BookmarkID)
 	if err != nil {
@@ -1168,10 +1048,15 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 	options := settings.options()
+	// The engine writes each file at its name (ADR 0122 decision 3), and
+	// removes a replaced large object's old segments only where keepsReplaced
+	// allowed it.
+	options.LiveDestination = true
+	options.KeepReplacedSegments = keepsSegments
 	// The engine's one size check after a segmented upload reads the
 	// dynamic manifest's size through a listing that can lag the last
-	// segment (F35); the commit checks the segments instead (ADR 0111
-	// decision 2).
+	// segment (F35); the store checks the segments against the static
+	// manifest instead (ADR 0111 decision 2).
 	options.IgnoreSize = preflight.LargeObjects != ""
 	if preflight.LargeObjects != "" {
 		// The job records the kind it publishes, and why (ADR 0111
@@ -1199,16 +1084,6 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 	s.runner.register(job.ID, owner.cancel)
-	// Retained staging intent makes uncertain residue visible after a
-	// crash; it does not prove that reclaiming that residue is safe.
-	if err := s.jobs.RecoveryAdd(context.WithoutCancel(ctx), jobs.RecoveryRecord{
-		JobID: job.ID, BookmarkID: req.BookmarkID, Kind: jobs.RecoveryStaging,
-		Container: req.Container, Prefix: rclone.StageNamespace + job.ID + "/",
-	}); err != nil {
-		owner.cancel()
-		s.finishLocal(context.WithoutCancel(ctx), job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "recovery store unavailable before first write: "+err.Error(), "")
-		return "", fmt.Errorf("recovery store unavailable: %w", err)
-	}
 	if err := s.startLocalAudit(ctx, job, req.BookmarkID, "transfer.upload.start"); err != nil {
 		owner.cancel()
 		return "", err
@@ -1217,7 +1092,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
-			recorder := s.uploadItemRecorder(background, job.ID, req, answered)
+			recorder := s.uploadItemRecorder(background, job.ID, req)
 			recorder.StaticManifests = func(returned bool) error {
 				s.connections.observeStaticManifests(session, returned)
 				if returned {
@@ -1229,11 +1104,11 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 				recorded.LargeObjects, recordedOrigins["largeObjects"] = string(swiftcontrol.ClassDLO), "capability"
 				return s.jobs.SetSettings(background, job.ID, effectiveJSONWithProfile(Profile(req.Profile), recorded, recordedOrigins))
 			}
-			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container, req.Prefix, job.ID,
+			report, err := local.Upload(innerCtx, session, engine, "aeronautes_dst:"+req.Container, req.Container,
 				preflight, onProgress, s.recoveryRecorder(background, job.ID, req.BookmarkID), recorder)
 			if report != nil && err == nil && len(report.Failures) == 0 {
-				// Verification does not prove cleanup completed or exclude
-				// outside references, so recovery records stay (ADR 0020).
+				// The segment paths the engine reported are this job's own;
+				// the recovery records of them stay (ADR 0020).
 				s.recordOwnership(background, req.BookmarkID, job.ID, report.CapturedPrefixes)
 			}
 			return report, err
@@ -1552,12 +1427,12 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		// overwrites reading zero for whoever wires it to a screen later.
 		//
 		// What it counts is narrower than it sounds, and the difference
-		// matters to whoever renders it: verified publications to names the
-		// preflight found live. It is not a count of proven displaced
-		// objects. A racing writer means the object a publication landed on
-		// may not be the one the preflight saw, and a publication that
-		// landed but could not be verified is not counted at all, because
-		// its outcome is unknown rather than witnessed (ADR 0081 decision 7).
+		// matters to whoever renders it: writes the engine or the store
+		// answered for, to names the preview found live. It is not a count
+		// of proven displaced objects. Another writer means the object a
+		// write landed on may not be the one the preview saw, and a write
+		// whose answer was lost is not counted at all, because its outcome
+		// is unknown.
 		counters.Overwrites = report.Replaced
 		if version == 0 {
 			counters.ObjectsFailed = int64(len(report.Failures))

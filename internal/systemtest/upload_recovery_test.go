@@ -3,7 +3,6 @@ package systemtest
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -181,24 +180,19 @@ func uploadRecoveryReopen(t *testing.T, h *Harness, jobID string, want uploadRec
 }
 
 type uploadDeleteTrace struct {
-	abortedStagePuts int
-	stagePutAborted  chan struct{}
-	mu               sync.Mutex
-	paths            []string
-	writes           []string
-	requests         int
+	abortedPuts int
+	putAborted  chan struct{}
+	mu          sync.Mutex
+	writes      []string
+	requests    int
 }
 
+// uploadSourceAbort reports whether a proxy error is the engine giving up on
+// the body it was sending to the selected-link fixture's name, which is the
+// one transport failure that fixture expects.
 func uploadSourceAbort(fault, storagePath, dest string, request *http.Request, err error) bool {
-	if fault != "source-link" || request.Method != http.MethodPut {
-		return false
-	}
-	stage, ok := strings.CutPrefix(request.URL.Path, storagePath+"/"+dest+"/.aeronautes/stage/")
-	if !ok {
-		return false
-	}
-	job, ok := strings.CutSuffix(stage, "/batch/selected-link")
-	if !ok || job == "" || strings.Contains(job, "/") {
+	if fault != "source-link" || request.Method != http.MethodPut ||
+		request.URL.Path != storagePath+"/"+dest+"/scope/selected-link" {
 		return false
 	}
 	if errors.Is(err, context.Canceled) && errors.Is(request.Context().Err(), context.Canceled) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -215,18 +209,15 @@ func (trace *uploadDeleteTrace) requestCount() int {
 	return trace.requests
 }
 
-func (trace *uploadDeleteTrace) snapshot() []string {
-	trace.mu.Lock()
-	defer trace.mu.Unlock()
-	return append([]string(nil), trace.paths...)
-}
-
 func (trace *uploadDeleteTrace) writeSnapshot() []string {
 	trace.mu.Lock()
 	defer trace.mu.Unlock()
 	return append([]string(nil), trace.writes...)
 }
 
+// uploadRecoveryProxy fronts the primary account, counts its requests and
+// keeps its mutations. The "refused-write" fault refuses the write of
+// live/001.bin, and "source-link" expects the engine to abandon a body.
 func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecoveryCase) *uploadDeleteTrace {
 	t.Helper()
 	storage, err := url.Parse(h.Primary.storageURL)
@@ -241,23 +232,16 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy := httputil.NewSingleHostReverseProxy(&target)
 	proxy.Transport = transport
-	trace := &uploadDeleteTrace{stagePutAborted: make(chan struct{}, 1)}
-	proxy.ModifyResponse = func(response *http.Response) error {
-		if test.fault == "committed-verify" && response.Request.Method == http.MethodHead && strings.HasSuffix(response.Request.URL.Path, "/live/000.bin") && response.StatusCode == http.StatusOK {
-			response.Header.Set("Content-Length", "1")
-			response.ContentLength = 1
-		}
-		return nil
-	}
+	trace := &uploadDeleteTrace{putAborted: make(chan struct{}, 1)}
 	proxy.ErrorHandler = func(w http.ResponseWriter, request *http.Request, err error) {
-		// The selected-link fixture makes rclone abort its staged body when
-		// the followed file size differs from the link's own size.
+		// The selected-link fixture makes rclone abort the body it is
+		// sending when the followed file size differs from the link's own.
 		if uploadSourceAbort(test.fault, storage.Path, dest, request, err) {
 			trace.mu.Lock()
-			trace.abortedStagePuts++
+			trace.abortedPuts++
 			trace.mu.Unlock()
 			select {
-			case trace.stagePutAborted <- struct{}{}:
+			case trace.putAborted <- struct{}{}:
 			default:
 			}
 		} else {
@@ -272,35 +256,8 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 			trace.writes = append(trace.writes, r.Method+" "+r.URL.Path)
 		}
 		trace.mu.Unlock()
-		if test.fault == "mixed" && r.Method == http.MethodPut && r.URL.Path == storage.Path+"/"+dest+"/live/001.bin" {
+		if test.fault == "refused-write" && r.Method == http.MethodPut && r.URL.Path == storage.Path+"/"+dest+"/live/001.bin" {
 			http.Error(w, "injected live write refusal", http.StatusForbidden)
-			return
-		}
-		if r.Method != http.MethodDelete || !strings.HasPrefix(r.URL.Path, storage.Path+"/"+dest+"/.aeronautes/stage/") {
-			proxy.ServeHTTP(w, r)
-			return
-		}
-		trace.mu.Lock()
-		trace.paths = append(trace.paths, r.URL.Path)
-		trace.mu.Unlock()
-		refuse := test.fault == "delete" || test.fault == "mixed" || test.fault == "first" && strings.HasSuffix(r.URL.Path, "/000.bin") || test.fault == "last" && strings.HasSuffix(r.URL.Path, fmt.Sprintf("/%03d.bin", test.count-1))
-		if refuse {
-			http.Error(w, "injected staging delete refusal", http.StatusForbidden)
-			return
-		}
-		if test.fault == "absent" || test.fault == "landed-error" {
-			// Apply the fixture deletion exactly once before changing the
-			// response; the independent witness decides whether it landed.
-			response := httptest.NewRecorder()
-			proxy.ServeHTTP(response, r)
-			if response.Code/100 != 2 {
-				t.Errorf("fixture deletion did not land: %d", response.Code)
-			}
-			if test.fault == "absent" {
-				http.Error(w, "already absent", http.StatusNotFound)
-			} else {
-				http.Error(w, "injected response failure after deletion", http.StatusForbidden)
-			}
 			return
 		}
 		proxy.ServeHTTP(w, r)
@@ -330,7 +287,11 @@ func uploadRecoveryProxy(t *testing.T, h *Harness, dest string, test uploadRecov
 	return trace
 }
 
-func uploadRecoveryVerifyObject(t *testing.T, object oracle.ObjectState, body []byte, class, segmentContainer, stageName string) []string {
+// uploadRecoveryVerifyObject checks an object against the bytes it should
+// hold and, for a dynamic large object, returns its segments' names.
+// segmentsUnder is the name the engine was given to write: the object's own
+// name for an upload, and the stage name for a copy, which still stages.
+func uploadRecoveryVerifyObject(t *testing.T, object oracle.ObjectState, body []byte, class, segmentContainer, segmentsUnder string) []string {
 	t.Helper()
 	if object.Digest != fmt.Sprintf("%x", sha256.Sum256(body)) || object.Size != int64(len(body)) || object.Class != class {
 		t.Fatalf("uploaded identity differs: %+v", object)
@@ -339,7 +300,7 @@ func uploadRecoveryVerifyObject(t *testing.T, object oracle.ObjectState, body []
 		return nil
 	}
 	container, prefix, ok := strings.Cut(object.Manifest, "/")
-	generation, rooted := strings.CutPrefix(prefix, stageName+"/")
+	generation, rooted := strings.CutPrefix(prefix, segmentsUnder+"/")
 	if !ok || container != segmentContainer || !rooted || generation == "" || strings.Contains(generation, "/") {
 		t.Fatalf("unexpected generated manifest: %q", object.Manifest)
 	}
@@ -358,6 +319,10 @@ func uploadRecoveryVerifyObject(t *testing.T, object oracle.ObjectState, body []
 	return allowed
 }
 
+// uploadRecoveryRun is what a finished upload leaves for a later process to
+// read: every file at its own name and nowhere else, one captured record for
+// each segment path the engine reported and no other recovery record (ADR
+// 0122 decisions 3 and 8), and the same durable facts after a reopen.
 func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 	t.Helper()
 	dest := h.Container(h.Primary, "upload-recovery")
@@ -390,13 +355,6 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 	seedListingLocal(t, root, "unselected", []byte("local sentinel"))
 	localBefore := snapshotListingLocal(t, root)
 	app.WireFilePicker(h.Transfer, listingFilePicker{files: paths})
-	if test.fault == "committing" || strings.HasPrefix(test.fault, "committed") {
-		kind := strings.Split(test.fault, "-")[0]
-		query := `CREATE TRIGGER refuse_upload_record BEFORE INSERT ON job_recovery WHEN NEW.kind='` + kind + `' BEGIN SELECT RAISE(ABORT, 'injected upload record refusal'); END`
-		if err := h.database.WriteTx(t.Context(), func(tx *sql.Tx) error { _, err := tx.Exec(query); return err }); err != nil {
-			t.Fatal(err)
-		}
-	}
 	trace := uploadRecoveryProxy(t, h, dest, test)
 	picked, err := h.Transfer.PickUploadFiles(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: dest, Prefix: "live/"})
 	if err != nil {
@@ -416,149 +374,71 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 	if len(state.Audit) != 1 || state.Audit[0].Resource != "job "+job.ID || state.Audit[0].Operation != "transfer.local."+job.State {
 		t.Fatalf("missing exact terminal audit: %+v", state.Audit)
 	}
-	failed, issues := int64(0), int64(0)
-	switch test.fault {
-	case "committing":
-		failed = 1
-	case "committed", "delete", "landed-error":
-		issues = int64(test.count)
-	case "committed-verify":
-		failed = 1
-		issues = 1
-	case "first", "last":
-		issues = 1
-	case "mixed":
-		failed = 1
-		issues = 1
+	wantCounters := jobs.Counters{ObjectsPlanned: int64(test.count), ObjectsCopied: int64(test.count), ObjectsVerified: int64(test.count), BytesPlanned: plannedBytes, BytesCopied: plannedBytes}
+	if job.State != "complete" || job.Counters != wantCounters || state.Audit[0].Result != "applied" || job.Error != "" {
+		t.Errorf("upload outcome differs: job=%+v audit=%+v want counters=%+v", job, state.Audit, wantCounters)
 	}
-	wantState, wantAudit := "complete", "applied"
-	if failed > 0 || issues > 0 {
-		wantState, wantAudit = "partial", "verify_mismatch"
-	}
-	wantCounters := jobs.Counters{ObjectsPlanned: int64(test.count), ObjectsCopied: int64(test.count) - failed, ObjectsVerified: int64(test.count) - failed, ObjectsFailed: failed, BytesPlanned: plannedBytes, BytesCopied: plannedBytes}
-	if failed > 0 {
-		wantCounters.BytesCopied -= int64(len(bodies[fmt.Sprintf("%03d.bin", test.count-1)]))
-	}
-	if job.State != wantState || job.Counters != wantCounters || state.Audit[0].Result != wantAudit {
-		t.Errorf("post-commit outcome differs: job=%+v audit=%+v want counters=%+v state=%s", job, state.Audit, wantCounters, wantState)
-	}
-	problems := max(failed, issues)
-	if test.fault == "mixed" {
-		problems = failed + issues
-	}
-	wantItems := jobs.ItemTotals{Items: int64(test.count), Planned: int64(test.count), Admitted: int64(test.count), Failed: failed, Problems: problems, Unresolved: problems}
+	wantItems := jobs.ItemTotals{Items: int64(test.count), Planned: int64(test.count), Admitted: int64(test.count)}
 	if !state.ItemsCaptured || state.ItemTotals != wantItems || len(state.Items) != len(paths) {
-		t.Fatalf("upload issues lost distinct item facets: captured=%t totals=%+v rows=%d want=%+v", state.ItemsCaptured, state.ItemTotals, len(state.Items), wantItems)
+		t.Fatalf("upload lost item records: captured=%t totals=%+v rows=%d want=%+v", state.ItemsCaptured, state.ItemTotals, len(state.Items), wantItems)
 	}
 	byKey := map[string]jobs.ItemRecord{}
 	for i, item := range state.Items {
 		name := fmt.Sprintf("%03d.bin", i)
 		if item.Key != "live/"+name || item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dest, Object: "live/" + name}) ||
-			item.Staging == nil || item.Staging.Object != ".aeronautes/stage/"+job.ID+"/batch/"+name || item.Execution == nil {
-			t.Fatalf("upload issue changed retained identity: %+v", item)
+			item.Staging != nil || item.Execution == nil {
+			t.Fatalf("upload changed retained identity: %+v", item)
 		}
 		byKey[item.Key] = item
 	}
 	assertUploadItemPages(t, h, job.ID, byKey, wantItems)
-	wantSummary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", failed, problems, problems)
-	if state.Audit[0].Summary != wantSummary {
-		t.Fatalf("post-commit issue audit differs from distinct item facets: %q want=%q", state.Audit[0].Summary, wantSummary)
-	}
-	if issues > 0 {
-		firstName := "000.bin"
-		if test.fault == "last" {
-			firstName = fmt.Sprintf("%03d.bin", test.count-1)
-		}
-		parts := []string{fmt.Sprintf("%d post-commit issue", issues), "live/" + firstName}
-		if strings.HasPrefix(test.fault, "committed") {
-			parts = append(parts, "commit-record", "injected upload record refusal")
-		} else {
-			parts = append(parts, "staging-cleanup", ".aeronautes/stage/"+job.ID+"/batch/"+firstName, "HTTP 403")
-		}
-		for _, part := range parts {
-			if !strings.Contains(job.Error, part) {
-				t.Errorf("post-commit issues not visible (%q): %q", part, job.Error)
-			}
-		}
-	}
-	if failed > 0 && !strings.Contains(job.Error, "transfer failures (first:") {
-		t.Errorf("transfer failure hidden: %q", job.Error)
-	}
-	if issues == 0 && failed == 0 && job.Error != "" {
-		t.Errorf("unfaulted/absent control error: %q", job.Error)
+	if wantSummary := " · item outcomes: 0 failed names, 0 conflicts, 0 refusals, 0 unresolved, 0 unverified, 0 with problems"; state.Audit[0].Summary != wantSummary {
+		t.Fatalf("terminal audit differs from the item facets: %q want=%q", state.Audit[0].Summary, wantSummary)
 	}
 	afterA, afterB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	h.AssertNoCollateral(beforeB, afterB)
 	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), nil)
-	var allowed, wantDeletes []string
-	var manifest string
+	storage, err := url.Parse(h.Primary.storageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var allowed []string
+	var wantRows []jobs.RecoveryRecord
+	wantWrites := map[string]int{}
 	for index := range test.count {
-		name := fmt.Sprintf("%03d.bin", index)
-		stageName := ".aeronautes/stage/" + job.ID + "/batch/" + name
-		live, liveFound := afterA.Containers[dest].Objects["live/"+name]
-		staged, stageFound := afterA.Containers[dest].Objects[stageName]
-		liveExpected := test.fault != "committing" && !(test.fault == "mixed" && index == 1)
-		stageExpected := test.fault == "committing" || strings.HasPrefix(test.fault, "committed") || test.fault == "delete" || test.fault == "mixed" || test.fault == "first" && index == 0 || test.fault == "last" && index == test.count-1
-		if liveFound != liveExpected || stageFound != stageExpected {
-			t.Errorf("wrong live/staging presence for %s: live=%v/%v stage=%v/%v", name, liveFound, liveExpected, stageFound, stageExpected)
+		name := "live/" + fmt.Sprintf("%03d.bin", index)
+		live, found := afterA.Containers[dest].Objects[name]
+		if !found {
+			t.Fatalf("the upload left nothing at %s", name)
 		}
-		if liveFound {
-			allowed = append(allowed, uploadRecoveryVerifyObject(t, live, bodies[name], test.class, dest+"_segments", stageName)...)
+		segments := uploadRecoveryVerifyObject(t, live, bodies[strings.TrimPrefix(name, "live/")], test.class, dest+"_segments", name)
+		allowed = append(append(allowed, dest+"/"+name), segments...)
+		wantWrites["PUT "+storage.Path+"/"+dest+"/"+name] = 1
+		for _, segment := range segments {
+			wantWrites["PUT "+storage.Path+"/"+segment] = 1
 		}
-		if stageFound {
-			allowed = append(allowed, uploadRecoveryVerifyObject(t, staged, bodies[name], test.class, dest+"_segments", stageName)...)
-		}
-		if liveFound {
-			manifest = live.Manifest
-		} else if stageFound {
-			manifest = staged.Manifest
-		}
-		if liveFound && stageFound && live.Manifest != staged.Manifest {
-			t.Errorf("live and staging manifests differ: %q != %q", live.Manifest, staged.Manifest)
-		}
-		allowed = append(allowed, dest+"/live/"+name, dest+"/"+stageName)
-		if liveExpected && !strings.HasPrefix(test.fault, "committed") {
-			storage, _ := url.Parse(h.Primary.storageURL)
-			wantDeletes = append(wantDeletes, storage.Path+"/"+dest+"/"+stageName)
+		if test.class == "dlo" {
+			container, prefix, _ := strings.Cut(live.Manifest, "/")
+			wantRows = append(wantRows, jobs.RecoveryRecord{JobID: job.ID, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryCaptured, Container: container, Prefix: prefix + "/"})
 		}
 	}
-	if !reflect.DeepEqual(trace.snapshot(), wantDeletes) {
-		t.Errorf("cleanup admission/retry differs: got=%v want=%v", trace.snapshot(), wantDeletes)
+	// Every name the upload wrote is the file's own or a segment of it, and
+	// each was written once: there is no stage name and nothing is deleted.
+	gotWrites := map[string]int{}
+	for _, write := range trace.writeSnapshot() {
+		gotWrites[write]++
+	}
+	if !reflect.DeepEqual(gotWrites, wantWrites) {
+		t.Errorf("upload mutations differ: got=%v want=%v", gotWrites, wantWrites)
 	}
 	h.AssertNoCollateral(beforeA, afterA, allowed...)
-	wantRecords := 1
-	if test.class == "dlo" {
-		wantRecords = 4
-		if test.fault == "committing" {
-			wantRecords = 2
-		}
-		if strings.HasPrefix(test.fault, "committed") {
-			wantRecords = 3
-		}
+	wantStatus := app.RecoveryStatusDTO{}
+	if len(wantRows) > 0 {
+		wantStatus = app.RecoveryStatusDTO{Jobs: 1, Records: int64(len(wantRows))}
 	}
-	if len(state.Rows) != wantRecords || state.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: int64(wantRecords)}) || job.RecoveryRecords != int64(wantRecords) {
-		t.Errorf("recovery facts/status differ: %+v", state)
-	}
-	wantRows := []jobs.RecoveryRecord{{JobID: job.ID, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dest, Prefix: ".aeronautes/stage/" + job.ID + "/"}}
-	if test.class == "dlo" {
-		container, prefix, ok := strings.Cut(manifest, "/")
-		if !ok {
-			t.Fatal("no independently verified manifest for recovery facts")
-		}
-		for _, kind := range []jobs.RecoveryKind{jobs.RecoveryCaptured, jobs.RecoveryCommitting, jobs.RecoveryCommitted} {
-			if len(wantRows) == wantRecords {
-				break
-			}
-			row := jobs.RecoveryRecord{JobID: job.ID, BookmarkID: h.Primary.BookmarkID, Kind: kind, Container: container, Prefix: prefix + "/"}
-			if kind == jobs.RecoveryCommitting {
-				row.Object = dest + "/live/000.bin"
-			}
-			wantRows = append(wantRows, row)
-		}
-	}
-	if !reflect.DeepEqual(state.Rows, wantRows) {
-		t.Errorf("durable recovery identities differ: got=%+v want=%+v", state.Rows, wantRows)
+	if !reflect.DeepEqual(state.Rows, wantRows) || state.Status != wantStatus || job.RecoveryRecords != int64(len(wantRows)) {
+		t.Errorf("durable recovery identities differ: got=%+v status=%+v want=%+v", state.Rows, state.Status, wantRows)
 	}
 	requests := trace.requestCount()
 	uploadRecoveryReopen(t, h, job.ID, state)
@@ -583,11 +463,7 @@ func TestUploadRecoveryRealSwift(t *testing.T) {
 }
 
 func uploadRecoveryCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, test := range []uploadRecoveryCase{
-		{"none", "plain", 1}, {"none", "dlo", 1}, {"committing", "dlo", 1}, {"committed", "dlo", 1}, {"committed-verify", "dlo", 1},
-		{"first", "plain", 2}, {"last", "plain", 2}, {"delete", "plain", 201}, {"delete", "dlo", 1},
-		{"absent", "plain", 1}, {"absent", "dlo", 1}, {"landed-error", "plain", 1}, {"landed-error", "dlo", 1}, {"mixed", "plain", 2},
-	} {
+	for _, test := range []uploadRecoveryCase{{"none", "plain", 2}, {"none", "dlo", 1}} {
 		t.Run(test.fault+"_"+test.class, func(t *testing.T) { uploadRecoveryRun(t, makeHarness(t), test) })
 	}
 }

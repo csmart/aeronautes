@@ -164,9 +164,9 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	inputBefore, destBefore := snapshotListingLocal(t, root), snapshotListingLocal(t, destination)
 	proxyFault := "none"
 	if fault == "error" {
-		proxyFault = "mixed"
+		proxyFault = "refused-write"
 	}
-	trace := uploadRecoveryProxy(t, h, container, uploadRecoveryCase{fault: proxyFault, class: class, count: 1})
+	trace := uploadRecoveryProxy(t, h, container, uploadRecoveryCase{fault: proxyFault})
 	var query string
 	switch fault {
 	case "counters":
@@ -181,8 +181,6 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 		query = fmt.Sprintf(`CREATE TRIGGER refuse_local_completion BEFORE INSERT ON audit_events WHEN NEW.operation='transfer.%s.start' BEGIN SELECT RAISE(ABORT,'fixture start audit refusal'); END`, direction)
 	case "planning", "running", "verifying":
 		query = fmt.Sprintf(`CREATE TRIGGER refuse_local_completion BEFORE UPDATE OF state ON jobs WHEN NEW.state='%s' BEGIN SELECT RAISE(ABORT,'fixture admission refusal'); END`, fault)
-	case "recovery":
-		query = `CREATE TRIGGER refuse_local_completion BEFORE INSERT ON job_recovery BEGIN SELECT RAISE(ABORT,'fixture recovery refusal'); END`
 	}
 	if query != "" {
 		if err := h.database.WriteTx(t.Context(), func(tx *sql.Tx) error { _, err := tx.Exec(query); return err }); err != nil {
@@ -205,7 +203,7 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 		}
 		id, startErr = h.Transfer.StartDownload(t.Context(), app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: container, Prefix: "live/", DestDirToken: picked.Token})
 	}
-	startRefused := fault == "start_audit" || fault == "recovery"
+	startRefused := fault == "start_audit"
 	if startRefused {
 		if startErr == nil || id != "" {
 			t.Fatalf("start accounting refusal ignored: %q %v", id, startErr)
@@ -309,18 +307,16 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	assertListingLocalDelta(t, inputBefore, snapshotListingLocal(t, root), nil)
 	var allowed []string
 	manifest := ""
-	if direction == "upload" && admitted {
+	// The error case's one write is refused, so it leaves nothing anywhere.
+	if direction == "upload" && admitted && fault != "error" {
 		liveName := "live/" + name
-		if fault == "error" {
-			liveName = ".aeronautes/stage/" + id + "/batch/" + name
-		}
 		object, ok := afterA.Containers[container].Objects[liveName]
 		if !ok {
 			t.Fatalf("expected exact uploaded identity missing: %s", liveName)
 		}
 		manifest = object.Manifest
 		allowed = append(allowed, container+"/"+liveName)
-		allowed = append(allowed, uploadRecoveryVerifyObject(t, object, body, class, container+"_segments", ".aeronautes/stage/"+id+"/batch/"+name)...)
+		allowed = append(allowed, uploadRecoveryVerifyObject(t, object, body, class, container+"_segments", liveName)...)
 	}
 	h.AssertNoCollateral(beforeA, afterA, allowed...)
 	if direction == "download" && admitted {
@@ -331,22 +327,15 @@ func localCompletionRun(t *testing.T, h *Harness, direction, fault, class string
 	if (!admitted || direction == "download") && len(trace.writeSnapshot()) != 0 {
 		t.Fatalf("unadmitted remote writes: %v", trace.writeSnapshot())
 	}
+	// The one recovery record an upload makes is of a segment path the
+	// engine reported, so a plain file leaves none.
 	var wantRows []jobs.RecoveryRecord
-	if direction == "upload" && fault != "recovery" {
-		wantRows = append(wantRows, jobs.RecoveryRecord{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: container, Prefix: ".aeronautes/stage/" + id + "/"})
-		if class == "dlo" {
-			segmentContainer, prefix, ok := strings.Cut(manifest, "/")
-			if !ok {
-				t.Fatal("DLO manifest missing")
-			}
-			for _, kind := range []jobs.RecoveryKind{jobs.RecoveryCaptured, jobs.RecoveryCommitting, jobs.RecoveryCommitted} {
-				row := jobs.RecoveryRecord{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: kind, Container: segmentContainer, Prefix: prefix + "/"}
-				if kind == jobs.RecoveryCommitting {
-					row.Object = container + "/live/" + name
-				}
-				wantRows = append(wantRows, row)
-			}
+	if direction == "upload" && class == "dlo" {
+		segmentContainer, prefix, ok := strings.Cut(manifest, "/")
+		if !ok {
+			t.Fatal("DLO manifest missing")
 		}
+		wantRows = append(wantRows, jobs.RecoveryRecord{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryCaptured, Container: segmentContainer, Prefix: prefix + "/"})
 	}
 	if !reflect.DeepEqual(state.Rows, wantRows) || state.Job.RecoveryRecords != int64(len(wantRows)) {
 		t.Fatalf("recovery identities differ: got=%+v want=%+v", state, wantRows)
@@ -364,7 +353,7 @@ func localCompletionCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	for _, direction := range []string{"upload", "download"} {
 		faults := []string{"control", "counters", "terminal", "audit", "planning", "running", "start_audit", "verifying"}
 		if direction == "upload" {
-			faults = append(faults, "error", "recovery")
+			faults = append(faults, "error")
 		}
 		for _, fault := range faults {
 			t.Run(direction+"_"+fault, func(t *testing.T) { localCompletionRun(t, makeHarness(t), direction, fault, "plain") })

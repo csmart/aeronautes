@@ -32,7 +32,7 @@ type uploadSourceCase struct {
 }
 
 func TestUploadSourceAbortScope(t *testing.T) {
-	const path = "/v1/AUTH_owned/destination/.aeronautes/stage/job/batch/selected-link"
+	const path = "/v1/AUTH_owned/destination/scope/selected-link"
 	for _, tc := range []struct {
 		name, fault, method, path string
 		err                       error
@@ -55,10 +55,8 @@ func TestUploadSourceAbortScope(t *testing.T) {
 		{name: "other_method", method: http.MethodDelete, err: io.ErrUnexpectedEOF},
 		{name: "other_account", path: strings.Replace(path, "AUTH_owned", "AUTH_other", 1), err: io.ErrUnexpectedEOF},
 		{name: "other_container", path: strings.Replace(path, "destination", "other", 1), err: io.ErrUnexpectedEOF},
-		{name: "live_name", path: "/v1/AUTH_owned/destination/scope/selected-link", err: io.ErrUnexpectedEOF},
+		{name: "stage_name", path: "/v1/AUTH_owned/destination/.aeronautes/stage/job/batch/selected-link", err: io.ErrUnexpectedEOF},
 		{name: "other_file", path: strings.Replace(path, "selected-link", "other", 1), err: io.ErrUnexpectedEOF},
-		{name: "empty_job", path: strings.Replace(path, "/job/", "//", 1), err: io.ErrUnexpectedEOF},
-		{name: "nested_job", path: strings.Replace(path, "/job/", "/job/extra/", 1), err: io.ErrUnexpectedEOF},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fault, method, target := tc.fault, tc.method, tc.path
@@ -181,7 +179,7 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 		wantState = "partial"
 	}
 	if saved.Job.State != wantState || saved.Job.Counters != want ||
-		(copied && saved.Job.Error != "") || (!copied && !strings.Contains(saved.Job.Error, "engine exit 6")) {
+		(copied && saved.Job.Error != "") || (!copied && !strings.Contains(saved.Job.Error, "transfer failures (first: "+name+":")) {
 		t.Fatalf("source job witness: %+v", saved.Job)
 	}
 	wantItems := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
@@ -196,8 +194,8 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: name}) || item.Execution == nil {
 		t.Fatalf("source record changed the captured identity: %+v", item)
 	}
-	if tc.native && item.Staging != nil || !tc.native && (item.Staging == nil || item.Staging.Object != ".aeronautes/stage/"+id+"/batch/"+filepath.Base(captured)) {
-		t.Fatalf("source record changed actual staging: %+v", item)
+	if item.Staging != nil {
+		t.Fatalf("an upload recorded a stage name: %+v", item)
 	}
 	if copied {
 		if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 5}) ||
@@ -205,8 +203,8 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 			t.Fatalf("source record lost copied or verified bytes: %+v", item)
 		}
 	} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
-		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeUnknown}}) || item.Verification != nil {
-		t.Fatalf("failed symlink invocation lost uncertainty or invented verification: %+v", item)
+		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIO}}) || item.Verification != nil {
+		t.Fatalf("the engine's error for the symlink lost uncertainty or invented verification: %+v", item)
 	}
 	assertUploadItemPages(t, h, id, map[string]jobs.ItemRecord{item.Key: item}, wantItems)
 	var body []byte
@@ -250,27 +248,15 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 	if err := h.database.Reader().QueryRowContext(t.Context(), "SELECT bookmark_id FROM audit_events WHERE operation=? AND resource=?", "transfer.local."+wantState, "job "+id).Scan(&bookmark); err != nil || bookmark != h.Primary.BookmarkID {
 		t.Errorf("source upload audit authority differs: %q %v", bookmark, err)
 	}
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: ".aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) || saved.Job.RecoveryRecords != 1 || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: 1}) {
-		t.Errorf("source upload recovery differs: %+v", saved)
+	if len(saved.Rows) != 0 || saved.Job.RecoveryRecords != 0 || saved.Status != (app.RecoveryStatusDTO{}) {
+		t.Errorf("an upload of a plain file left recovery facts: %+v", saved)
 	}
-	stage := "/" + dst + "/.aeronautes/stage/" + id + "/batch/" + filepath.Base(captured)
-	stagePuts, livePuts, stageDeletes := 0, 0, 0
+	// Every mutation is a PUT of the file's own name. A copied file is one
+	// PUT; the engine may send an abandoned body again within its budget.
+	puts := 0
 	for _, write := range trace.writeSnapshot() {
-		switch {
-		case strings.HasPrefix(write, "PUT ") && strings.HasSuffix(write, stage):
-			stagePuts++
-		case strings.HasPrefix(write, "PUT ") && strings.HasSuffix(write, "/"+dst+"/"+name):
-			livePuts++
-		case strings.HasPrefix(write, "DELETE ") && strings.HasSuffix(write, stage):
-			stageDeletes++
-		}
-	}
-	wantStage, wantLive := 0, 0
-	if copied {
-		wantLive = 1
-		if !tc.native {
-			wantStage = 1
+		if strings.HasPrefix(write, "PUT ") && strings.HasSuffix(write, "/"+dst+"/"+name) {
+			puts++
 		}
 	}
 	if !copied {
@@ -279,30 +265,30 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 		defer deadline.Stop()
 		for {
 			trace.mu.Lock()
-			aborted := trace.abortedStagePuts
+			aborted := trace.abortedPuts
 			trace.mu.Unlock()
-			if aborted >= stagePuts {
+			if aborted >= puts {
 				break
 			}
 			select {
-			case <-trace.stagePutAborted:
+			case <-trace.putAborted:
 			case <-deadline.C:
-				t.Fatalf("source-read aborts were not acknowledged: got=%d want=%d", aborted, stagePuts)
+				t.Fatalf("source-read aborts were not acknowledged: got=%d want=%d", aborted, puts)
 			}
 		}
 	}
 	trace.mu.Lock()
-	abortedStagePuts := trace.abortedStagePuts
+	abortedPuts := trace.abortedPuts
 	trace.mu.Unlock()
-	stageOK := stagePuts == wantStage && abortedStagePuts == 0
+	putsOK := puts == 1 && abortedPuts == 0
 	if !copied {
 		// Runner.pacingArgs supplies two low-level retries; an aborted body
 		// can be retried when rclone sees a transport failure before its size error.
 		const lowLevelRetries = 2
-		stageOK = stagePuts >= 1 && stagePuts <= 1+lowLevelRetries && abortedStagePuts == stagePuts
+		putsOK = puts >= 1 && puts <= 1+lowLevelRetries && abortedPuts == puts
 	}
-	if !stageOK || livePuts != wantLive || stageDeletes != wantStage || len(trace.writeSnapshot()) != stagePuts+wantStage+wantLive {
-		t.Errorf("actual engine stage/commit trace differs: stage_puts=%d aborted=%d live_puts=%d stage_deletes=%d writes=%v", stagePuts, abortedStagePuts, livePuts, stageDeletes, trace.writeSnapshot())
+	if !putsOK || len(trace.writeSnapshot()) != puts {
+		t.Errorf("actual upload trace differs: puts=%d aborted=%d writes=%v", puts, abortedPuts, trace.writeSnapshot())
 	}
 	if err := h.Transfer.CancelJob(t.Context(), id); err == nil {
 		t.Error("terminal source upload accepts cancellation")
@@ -323,8 +309,8 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 	if !reflect.DeepEqual(localBefore, snapshotListingLocal(t, root)) {
 		t.Error("source upload changed owned local files or links")
 	}
-	t.Logf("upload source service observation case=%s selected=%q uploaded=%q copied=%d bytes=%d stage_puts=%d live_puts=%d stage_deletes=%d aborted=%d",
-		tc.name, selected, body, saved.Job.Counters.ObjectsCopied, saved.Job.Counters.BytesCopied, stagePuts, livePuts, stageDeletes, abortedStagePuts)
+	t.Logf("upload source service observation case=%s selected=%q uploaded=%q copied=%d bytes=%d puts=%d aborted=%d",
+		tc.name, selected, body, saved.Job.Counters.ObjectsCopied, saved.Job.Counters.BytesCopied, puts, abortedPuts)
 	requests := trace.requestCount()
 	uploadRecoveryReopen(t, h, id, saved)
 	if requests != trace.requestCount() {

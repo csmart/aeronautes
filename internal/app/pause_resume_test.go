@@ -677,59 +677,6 @@ func TestAJobThisProcessDoesNotHoldRefusesPauseAndResume(t *testing.T) {
 	}
 }
 
-// ADR 0104 decision 3: the overwrite question is not asked again on a resume,
-// and it does not need to be. A name whose live object changed while the job
-// was paused is refused at its own fixed point, with both identities
-// recorded, and is not replaced.
-func TestAReplacementChangedDuringThePauseIsRefusedOnResume(t *testing.T) {
-	confirmer := &recordingOverwriteConfirmer{yes: true}
-	h, bookmark, id, names := pausedUploadOver(t, false, confirmer)
-	ctx := context.Background()
-	done, _ := executedItems(t, h, bookmark, id)
-	if len(done) != 1 {
-		t.Fatalf("paused after %d items, want the unit in hand: %v", len(done), done)
-	}
-	asked := len(confirmer.asked)
-	var changed []string
-	for _, name := range names {
-		if _, ok := done[name]; !ok {
-			seedObject(h.mock, "media", name, "written by someone else while the job was paused", nil)
-			changed = append(changed, name)
-		}
-	}
-
-	if err := h.transfer.ResumeJob(ctx, id); err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, id)
-	if job.State != "partial" || job.Counters.ObjectsCopied != 1 || job.Counters.Overwrites != 1 {
-		t.Fatalf("resumed job = %+v, want the one replacement made before the pause and no other", job)
-	}
-	if len(confirmer.asked) != asked {
-		t.Errorf("the overwrite question was asked again on the resume: %d times", len(confirmer.asked)-asked)
-	}
-	results, _ := executedItems(t, h, bookmark, id)
-	events, err := h.auditSvc.audit.List(ctx, audit.Query{Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range changed {
-		if results[name] != "conflict" {
-			t.Errorf("%s = %q, want a conflict at the fixed point", name, results[name])
-		}
-		recorded := false
-		for _, event := range events {
-			if event.Operation == "object.upload.refused" && event.Resource == "media/"+name &&
-				strings.Contains(event.Summary, "no longer holds what was acknowledged") && strings.Contains(event.Summary, "it is now") {
-				recorded = true
-			}
-		}
-		if !recorded {
-			t.Errorf("%s: the refusal is not in the trail with both identities", name)
-		}
-	}
-}
-
 // ADR 0104 decision 1: a pause asked while the job is queued takes effect at
 // its first unit boundary, when it has had the slot and before it transfers
 // anything.

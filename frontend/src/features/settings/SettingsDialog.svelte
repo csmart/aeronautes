@@ -128,11 +128,11 @@
   ];
   let boundedErrors: Partial<Record<BoundedSetting["field"], string | null>> = $state({});
 
-  // Whether an acknowledged overwrite of a large object removes the segment
-  // objects its manifest named once the replacement verifies (ADR 0081
-  // decision 5). Defaults to removing them, which is what rclone's own
-  // replacement does; the control is for the operator who shares segments
-  // between manifests and cannot accept it.
+  // Whether the transfer engine may remove a replaced large object's old
+  // segments as it writes the new object (ADR 0122 decision 3). Defaults to
+  // removing them, which is what rclone's own replacement does; the control
+  // is for the operator who shares segments between manifests and cannot
+  // accept it.
   const reclaimChecked = $derived(settings.document?.reclaimReplacedFragments ?? true);
   let reclaimError: string | null = $state(null);
 </script>
@@ -263,11 +263,12 @@
               />
             </label>
             <p class="note" id={`${id}-reclaim-note`}>
-              When an acknowledged overwrite replaces a large object, remove the segment objects its manifest named
-              once the replacement verifies; off keeps them, and a container that keeps versions keeps them either way.
+              When an upload replaces a large object, the transfer engine removes the old object's segments from the
+              destination's segments container as it writes the new one; off keeps them, and a container that keeps
+              versions keeps them either way.
             </p>
             <p class="status" id={`${id}-reclaim-status`} role="status">
-              {#if reclaimError}{reclaimError}{:else}{current.reclaimReplacedFragments ? "a replaced large object's segments are removed once the replacement verifies" : "a replaced large object's segments are kept"}{/if}
+              {#if reclaimError}{reclaimError}{:else}{current.reclaimReplacedFragments ? "a replaced large object's old segments are removed as the new object is written" : "a replaced large object's old segments are kept"}{/if}
             </p>
           </div>
         </section>

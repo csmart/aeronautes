@@ -75,20 +75,18 @@ func setBookmarkLargeObjects(t *testing.T, h *harness, kind string) {
 
 const segmentedSize = 3<<20 + 8
 
-// A segmented upload completes when the store's listing lags behind its
-// last segment, as the genuine Swift cloud's did (F35), whichever kind it
-// publishes (ADR 0111 decisions 2, 3 and 6).
-func TestSegmentedUploadCompletesUnderALaggingListing(t *testing.T) {
-	for _, kind := range []swiftcontrol.ObjectClass{swiftcontrol.ClassSLO, swiftcontrol.ClassDLO} {
-		t.Run(string(kind), func(t *testing.T) {
-			h := newHarness(t)
-			h.connect(t)
-			h.mock.ListingLag = 2
-			job, live := uploadFile(t, h, segmentedSize, TransferSettingsDTO{LargeObjects: string(kind)})
-			if job.State != "complete" || live == nil || live.Class != kind {
-				t.Fatalf("job %s %+v, live %+v", job.State, job.Counters, live)
-			}
-		})
+// A static upload does not depend on the store's listing, which lagged
+// behind the last segment on the genuine Swift cloud (F35): the manifest
+// names each segment and the store checks each one itself (ADR 0111, ADR 0122
+// decision 3). A dynamic object's length is made from that listing, by the
+// store, and is the store's to settle.
+func TestStaticUploadCompletesUnderALaggingListing(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	h.mock.ListingLag = 2
+	job, live := uploadFile(t, h, segmentedSize, TransferSettingsDTO{LargeObjects: string(swiftcontrol.ClassSLO)})
+	if job.State != "complete" || live == nil || live.Class != swiftcontrol.ClassSLO {
+		t.Fatalf("job %s %+v, live %+v", job.State, job.Counters, live)
 	}
 }
 
@@ -179,18 +177,21 @@ func manifestPuts(h *harness) int {
 
 // A store that does not return static manifests gets a dynamic upload,
 // recorded as the capability's, and the connection remembers: the next
-// preview names dynamic from the capability and the next job checks
-// nothing. A store that returns them is checked once per connection too
-// (ADR 0111 decisions 9 and 10).
+// preview names dynamic from the capability and the next job writes no
+// static manifest. A store that returns them is asked once per connection
+// too, by reading the first static manifest back at its own name (ADR 0111
+// decisions 9 and 10, ADR 0122 decision 3).
 func TestUploadLearnsWhetherTheStoreReturnsStaticManifests(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		notReturned  bool
 		kind, origin string
-		checks       int
+		// first and second are the static manifests each job writes, and
+		// reads how often the first one is read back.
+		first, second, reads int
 	}{
-		{"returned", false, "slo", "default", 1},
-		{"not returned", true, "dlo", "capability", 1},
+		{"returned", false, "slo", "default", 1, 1, 1},
+		{"not returned", true, "dlo", "capability", 1, 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -226,14 +227,17 @@ func TestUploadLearnsWhetherTheStoreReturnsStaticManifests(t *testing.T) {
 			if second := awaitTerminal(t, h, id); second.State != "complete" {
 				t.Fatalf("second job %s", second.State)
 			}
-			// The first job checked once; the second checks nothing and
-			// writes only its own live manifest when it is static.
-			wantFirst, wantSecond := tc.checks, 0
-			if tc.kind == "slo" {
-				wantFirst, wantSecond = tc.checks+1, 1
+			if second := manifestPuts(h) - first; first != tc.first || second != tc.second {
+				t.Errorf("static manifest writes: first job %d, second %d; want %d and %d", first, second, tc.first, tc.second)
 			}
-			if second := manifestPuts(h) - first; first != wantFirst || second != wantSecond {
-				t.Errorf("manifest writes: first job %d, second %d; want %d and %d", first, second, wantFirst, wantSecond)
+			reads := 0
+			for _, line := range h.mock.RequestLog() {
+				if strings.HasPrefix(line, "GET ") && strings.Contains(line, "multipart-manifest=get") {
+					reads++
+				}
+			}
+			if reads != tc.reads {
+				t.Errorf("static manifest reads = %d, want %d: the question is asked once for the connection", reads, tc.reads)
 			}
 		})
 	}
