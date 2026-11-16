@@ -250,7 +250,7 @@ func TestAcknowledgedUploadRefusesWhenTheAuthorityMovesUnderTheAnswer(t *testing
 }
 
 // Acknowledged with nothing live to replace: there is nothing to ask
-// about, so nothing is asked and every name still publishes conditionally.
+// about, so nothing is asked and no name is counted as a replacement.
 func TestAcknowledgedUploadAsksNothingWhenNothingIsLive(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
