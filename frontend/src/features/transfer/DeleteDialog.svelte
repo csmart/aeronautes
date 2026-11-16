@@ -28,7 +28,7 @@
   const mode: Mode = untrack(() => browser.deleteOpen ?? "empty");
   const jobs: Record<Mode, { heading: string; words: string }> = {
     prefix: { heading: "Delete prefix", words: "the container and prefix" },
-    empty: { heading: "Empty container", words: "the container name" },
+    empty: { heading: "Empty container", words: "“empty” and the container name" },
     delete_container: { heading: "Delete container", words: "“delete” and the container name" },
   };
   let confirmText = $state("");
@@ -85,14 +85,14 @@
 
   // What the operator types to arm the deletion, the same text the Go side
   // requires (ADR 0095 decision 7): a prefix is armed by its scope, so the
-  // typing shows which prefix was read, and an emptying by the container's
-  // name. Deleting the container has words of its own, so the name alone
-  // never destroys the container and its settings (ADR 0121 decision 3). A
-  // deletion that takes segments is armed by other words again, so the words
-  // for one never start the other (ADR 0119 decision 2).
+  // typing shows which prefix was read. Each container job is armed by its
+  // own verb and the name, so the words for emptying never destroy the
+  // container and its settings, and the bare name starts neither (ADR 0121
+  // decision 3). A deletion that takes segments is armed by other words
+  // again, so the words for one never start the other (ADR 0119 decision 2).
   function armingText(req: DeleteRequestDTO, segments: boolean): string {
     const words = req.mode === "prefix" ? `${req.container}/${req.prefix}`
-      : req.mode === "delete_container" ? `delete ${req.container}` : req.container;
+      : req.mode === "delete_container" ? `delete ${req.container}` : `empty ${req.container}`;
     return segments ? `${words} and segments` : words;
   }
 

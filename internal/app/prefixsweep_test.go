@@ -791,7 +791,7 @@ func TestEmptySweepReportsAConfigChangeAfterAPartial(t *testing.T) {
 			h.mock.SetContainerMeta("media", "Team", "changed-by-another")
 		}
 	}
-	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "media"})
+	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "empty media"})
 	if err != nil {
 		t.Fatal(err)
 	}

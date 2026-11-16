@@ -2,6 +2,8 @@
 
 **Status:** Accepted on 15 November 2026 for 0.5.0, on the operator's decision of that day during the candidate's test run: "three separate is good, do it for 0.5.0".
 Tier 1 under DESIGN §65.12, because it changes the words that arm a destructive job.
+Amended on 16 November 2026, on the operator's decision of that day: emptying has a verb of its own too, `empty ` and the container's name ("emptying a container should be empty $container_name - why would it not?").
+Decision 3, the reasons and the proof are amended below.
 **Scope:** how the bulk deletion dialog is opened and what it offers, and the confirmation `DeleteService.StartDelete` requires for the container deletion.
 The three modes, the preview, the per-name protocol, the segments option and the archive disclosure do not change ([ADR 0095](0095-prefix-deletion-by-the-per-name-protocol.md), [ADR 0102](0102-versioning-matrix-fixed-point-and-archives.md), [ADR 0119](0119-a-bulk-deletion-may-take-segments.md), [ADR 0120](0120-segments-go-by-default-and-versions-keep-them.md)).
 
@@ -35,11 +37,12 @@ An operator who meant to empty a container can delete it, with nothing they type
    A container's own menu shows "Empty container…" and "Delete container…" wherever the operator is, a folder being open included.
    A folder row's menu keeps "Delete prefix…" and does not gain the container's two.
    So a prefix deletion is never one click away from a container's deletion.
-3. **Deleting a container has its own words.**
+3. **Each container job is armed by its own verb and the name.**
    The confirmation for the container deletion is `delete ` followed by the container's name: `delete media` for the container `media`.
-   Emptying keeps the container's name, and a prefix keeps its scope.
-   With the segments option each is followed by ` and segments`, as ADR 0119 decision 2 set: `delete media and segments`.
-   `StartDelete` compares the confirmation with the words for the request it was given before it admits the job, as it does today, so the name alone never starts a container deletion and `delete media` never starts an emptying of `media`, for any caller.
+   The confirmation for an emptying is `empty ` followed by the name: `empty media` (16 November 2026; until then it was the name alone).
+   A prefix keeps its scope.
+   With the segments option each is followed by ` and segments`, as ADR 0119 decision 2 set: `delete media and segments`, `empty media and segments`.
+   `StartDelete` compares the confirmation with the words for the request it was given before it admits the job, as it does today, so the name alone starts neither container job, `empty media` never deletes `media`, and `delete media` never empties it, for any caller.
 4. **What follows in the contract.**
    ADR 0095 decision 7 is amended: the container deletion's words, and the two container jobs no longer on offer below a prefix.
    DESIGN §31 to §33, the release notes, the test plan and the journeys table follow.
@@ -49,8 +52,9 @@ An operator who meant to empty a container can delete it, with nothing they type
 **Keeping one dialog and changing only the words** was considered and not taken.
 It would close the gap in what is typed and leave the confusion the operator named: a choice of destructive jobs made inside a destructive dialog, starting on a job the operator may not have asked for.
 
-**Giving emptying a verb too**, `empty media`, was considered and not taken.
-One of the two has to differ for neither to arm the other; the deletion is the one whose consequence is wider, so it carries the extra word, and every confirmation an operator has learned for a prefix or an emptying stays as it is.
+**Giving emptying a verb too**, `empty media`, was considered and at first not taken: one of the two has to differ for neither to arm the other, and the deletion, whose consequence is wider, carried the extra word.
+The operator reversed that on 16 November 2026.
+What is typed now says the job in both cases, the two read alike, and the bare name of a container starts nothing.
 
 **`media and the container`** was considered for the words and not taken: with the segments option it reads `media and the container and segments`, and a leading verb says the job before the name.
 
@@ -58,14 +62,14 @@ One of the two has to differ for neither to arm the other; the deletion is the o
 
 Tier 1.
 
-- Go, service, on the mock, each refusal with no job row and nothing deleted: a container deletion is refused when the confirmation is the container's name alone, and starts with `delete ` and the name; an emptying is refused with the deletion's words, and starts with the name. The same holds with the segments option: `media and segments` does not delete the container `media`, `delete media and segments` does not empty it, the plain deletion's words are refused with the option, and `delete media and segments` deletes it.
+- Go, service, on the mock, each refusal with no job row and nothing deleted: a container deletion is refused when the confirmation is the container's name alone or the emptying's words, and starts with `delete ` and the name; an emptying is refused with the name alone or the deletion's words, and starts with `empty ` and the name. The same holds with the segments option: `media and segments` starts neither, `empty media and segments` does not delete the container `media`, `delete media and segments` does not empty it, the plain words of either are refused with the option, and each job's own words with ` and segments` start it.
 - Frontend, dialog: each action opens the dialog on its job, with the job named in the heading and no choice of job offered; the words asked for are each job's own, with and without the segments option.
 - Frontend, where the actions are: inside a folder the toolbar offers the prefix action alone; exactly one folder selected at a container's top offers only the prefix action; any other selection there, none, several rows or only a file, keeps the two container actions; a container's menu offers both container actions while a folder is open; a folder row's menu offers the prefix action and neither container action.
 - Browser journeys: the existing deletions of a prefix, a container and an archive take their own action and type the words the dialog asks for.
-- Retained mutants, each failing a case above: a container deletion armed by the name alone; an emptying armed by the deletion's words; the dialog opened on a job other than the action's; a choice of job offered inside the dialog; the toolbar offering a container action inside a folder.
+- Retained mutants, each failing a case above: a container deletion armed by the name alone; an emptying armed by the name alone; an emptying armed by the deletion's words; the dialog opened on a job other than the action's; a choice of job offered inside the dialog; the toolbar offering a container action inside a folder.
 
 ## What this does not do
 
 It does not change what either job does, only how each is reached and armed.
-A container named `delete x` is emptied by typing its name, which is also what deletes a container named `x`; the two are different containers, and each dialog is opened on one container and one job.
+Each dialog is opened on one container and one job, and the words name both: a container named `delete x` is emptied by `empty delete x`, which arms nothing for a container named `x`.
 The selected-set, object, marker and manifest dialogs are not changed.
