@@ -80,36 +80,3 @@ func TestSegmentedUploadKindsRealSwift(t *testing.T) {
 		})
 	}
 }
-
-// A static manifest written with the create conditional over a name that
-// exists is refused by the store, as a plain create is, which is what lets
-// the static publication keep ADR 0085's conditional create.
-func TestStaticManifestCreateIsConditionalRealSwift(t *testing.T) {
-	h := harness(t)
-	ctx := context.Background()
-	container := h.Container("slo-conditional")
-	if err := h.conn.ContainerCreate(ctx, container, nil); err != nil {
-		t.Fatal(err)
-	}
-	removeAtEnd(t, h, container)
-	segment := bytes.Repeat([]byte("s"), 1<<20)
-	tag, err := h.Session.PutObject(ctx, container, "parts/00000000", bytes.NewReader(segment), "application/octet-stream", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.Session.PutObject(ctx, container, "taken", bytes.NewReader([]byte("already here")), "text/plain", nil); err != nil {
-		t.Fatal(err)
-	}
-	segments := []swiftcontrol.StaticSegment{{Container: container, Name: "parts/00000000", ETag: tag, Bytes: int64(len(segment))}}
-	conditional := map[string]string{"If-None-Match": "*"}
-	if _, err := h.Session.PutStaticManifest(ctx, container, "taken", segments, "application/octet-stream", conditional); !swiftcontrol.IsPreconditionFailed(err) {
-		t.Fatalf("a conditional static manifest over an existing name = %v, want 412", err)
-	}
-	if _, err := h.Session.PutStaticManifest(ctx, container, "fresh", segments, "application/octet-stream", conditional); err != nil {
-		t.Fatalf("a conditional static manifest at a free name: %v", err)
-	}
-	detail, err := h.Session.ObjectDetail(ctx, container, "fresh")
-	if err != nil || detail.Class != swiftcontrol.ClassSLO {
-		t.Fatalf("the manifest written = %+v %v, want a static large object", detail, err)
-	}
-}

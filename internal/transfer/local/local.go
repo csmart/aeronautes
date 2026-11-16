@@ -45,8 +45,10 @@ type UploadItem struct {
 	Route string `json:"route"` // "rclone" | "native"
 	// Replaces marks a name the preflight found live and admitted anyway,
 	// because the caller had the operator's acknowledgement for it
-	// (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it, and
-	// only the publication of such a name may drop its conditional create.
+	// (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it. It
+	// changes nothing about the write, which carries no condition either
+	// way: the run counts such a name as a replacement once its write is
+	// answered.
 	Replaces bool `json:"replaces,omitempty"`
 }
 
@@ -59,8 +61,8 @@ type UploadPreflight struct {
 	// published as (ADR 0111): "slo" or "dlo", and empty when no file is
 	// segmented, so the dialog can name it. The app-layer bridge fills it,
 	// and ChunkBytes, from the job's and the bookmark's setting and the
-	// destination's capabilities; a caller that leaves it empty publishes
-	// what the engine staged as it was staged.
+	// destination's capabilities; a caller that leaves it empty leaves
+	// what the engine wrote as the engine wrote it.
 	LargeObjects string `json:"largeObjects"`
 	// LargeObjectsOrigin is where that choice came from, as the job
 	// records it: "default", "override" for the job's, "bookmark",
@@ -106,9 +108,10 @@ func validUploadPath(path string) bool {
 // which it refuses. Each source names its own destination under the prefix
 // and the name is taken as given, never derived from the path: a file pick
 // names its files by base name (SourcesByBaseName), a folder pick by the
-// folder and the relative path (ADR 0103 decision 4). The engine writes only
-// into the job staging namespace and each name commits natively with a
-// conditional create (§28.6, Upload).
+// folder and the relative path (ADR 0103 decision 4). This preview is the
+// only place a name is looked for: the upload then writes each file at its
+// name with no condition, so a name that becomes live after the preview is
+// written over without a question (ADR 0122 decision 3).
 func PreflightUploadSources(ctx context.Context, dst *swiftcontrol.Session, container, prefix string, sources []UploadSource) (*UploadPreflight, error) {
 	return preflightUpload(ctx, dst, container, prefix, sources, false)
 }
@@ -184,17 +187,15 @@ const livenessListingFloor = 2
 // stopped pass found is kept, and only the names it did not settle are asked
 // for by name.
 //
-// A listing is the weaker ORACLE, in both directions, and both are
-// conservative here. It can omit an object a HEAD would find, because
-// container listings lag writes; a miss leaves the publication carrying its
-// conditional, so the store refuses it and the item is a conflict rather than
-// an unasked-for replacement. It can also name an object that has since been
+// A listing is the weaker ORACLE, in both directions. It can omit an object
+// a HEAD would find, because container listings lag writes: that name is
+// taken as free, and the upload writes over what is there without having
+// asked, as it does for a name another program creates after the preview
+// (ADR 0122 decision 3). It can also name an object that has since been
 // deleted, because listings lag deletes too (DESIGN section 15.3); that name
 // is then reported as a collision that no longer exists, which refuses an
 // unacknowledged upload that would have succeeded and marks an acknowledged
-// one as replacing something that is gone. The second case publishes rather
-// than destroys, and the backend still confirms what it replaced, so neither
-// error can turn into an unconfirmed overwrite.
+// one as replacing something that is gone.
 //
 // Not knowing is never free: a listing that stops, or a HEAD that fails for
 // any reason other than not-found, refuses the preflight.
@@ -263,8 +264,7 @@ func destinationLiveness(ctx context.Context, dst *swiftcontrol.Session, contain
 	}
 	if exhausted {
 		// The prefix was enumerated whole. Absence here is the listing's
-		// answer, which a create still publishes conditionally, exactly as
-		// before.
+		// answer.
 		return wanted, nil
 	}
 	for name, live := range wanted {
