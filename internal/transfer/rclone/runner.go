@@ -67,21 +67,21 @@ func InStageNamespace(name string) bool {
 	return strings.HasPrefix(name, StageNamespace) || strings.Contains(name, "/"+StageNamespace)
 }
 
-// checkRemoteDestStaged mechanizes K-XFER-014 at the LAST boundary: a
-// REMOTE destination (our fixed remote names) must live under an
-// .aeronautes staging namespace — no caller, present or future, can
-// hand rclone a live Swift name. Local filesystem destinations
+// checkRemoteDest is the LAST boundary for a REMOTE destination (our fixed
+// remote names). A live destination is the names themselves: an upload
+// writes each file at its name (ADR 0122 decision 3). Any other must live
+// under an .aeronautes staging namespace (K-XFER-014), which a copy still
+// uses. Neither may hold a ".." segment. Local filesystem destinations
 // (downloads) are governed by the local stage-and-place path instead.
-func checkRemoteDestStaged(dst string) error {
+func checkRemoteDest(dst string, live bool) error {
 	if !strings.HasPrefix(dst, "aeronautes_") {
 		return nil
 	}
+	_, path, _ := strings.Cut(dst, ":")
+	segments := strings.Split(path, "/")
 	// The staging marker must be a real path SEGMENT, not a substring of
 	// a live user name, and must not smuggle a "\.\." escape back out of
 	// the namespace (grok follow-up 3 P2).
-	container, path, _ := strings.Cut(strings.TrimPrefix(dst, "aeronautes_"), ":")
-	_ = container
-	segments := strings.Split(path, "/")
 	staged := false
 	for i := 0; i+2 < len(segments); i++ {
 		if segments[i] == ".aeronautes" && segments[i+1] == "stage" && segments[i+2] != "" {
@@ -89,8 +89,8 @@ func checkRemoteDestStaged(dst string) error {
 			break
 		}
 	}
-	if !staged {
-		return fmt.Errorf("remote destination %q is a LIVE name: every rclone write goes through an .aeronautes/stage/<job>/ path segment and commits natively (§28.6, K-XFER-014)", dst)
+	if !live && !staged {
+		return fmt.Errorf("remote destination %q is a LIVE name: this rclone write goes through an .aeronautes/stage/<job>/ path segment and commits natively (§28.6, K-XFER-014)", dst)
 	}
 	for _, seg := range segments {
 		if seg == ".." {
@@ -145,12 +145,26 @@ type Options struct {
 	// NoGzipEncoding keeps stored representations opaque for Copy;
 	// other callers retain the child's default transport policy.
 	NoGzipEncoding bool
+	// LiveDestination says that Copy's remote destination is the names
+	// themselves, with no staging path: an upload writes each file at its
+	// name (ADR 0122 decision 3). It is false for a copy, which still
+	// stages, and has no meaning for a local destination.
+	LiveDestination bool
+	// KeepReplacedSegments refuses every DELETE the child sends to its
+	// destination. The engine, writing over a large object, deletes that
+	// object's old segments, and it does so in a container with a versions
+	// location, where the store's archived version still uses them
+	// (measured on the pinned engine). An upload sets this where the
+	// container keeps versions or the operator's setting keeps replaced
+	// segments. The engine's own removal of the segments of an upload that
+	// failed is refused with the rest, so those stay as well.
+	KeepReplacedSegments bool
 	// IgnoreSize turns off the child's one size check after a transfer.
 	// For a segmented upload that check reads the dynamic manifest's
 	// size through the segment listing, once, and a listing that lags
-	// behind the last segment fails a complete upload (F35); the upload
-	// commit checks each segment against the local file instead
-	// (ADR 0111 decision 2).
+	// behind the last segment fails a complete upload (F35); the store
+	// checks each segment against the static manifest instead (ADR 0111
+	// decision 2).
 	IgnoreSize bool
 	// ChunkSize is the §25 single knob (e.g. "5Gi"); "" leaves rclone's
 	// default in place.
@@ -289,6 +303,19 @@ func PrefixFromEvent(event Event) (SegmentPrefix, bool) {
 	return SegmentPrefix{Container: m[2], Prefix: name[:slash+1]}, true
 }
 
+// CopiedObject reports the object a child log line says the engine wrote:
+// its own line for one file it copied, new or over an existing object, named
+// as the file was listed to it. A listed file with no such line was not
+// written, whatever the child's exit status: measured against the pinned
+// engine, a listed name that is missing at the source gets no line and the
+// child still exits 0.
+func CopiedObject(event Event) (string, bool) {
+	if event.Level != "info" || event.Object == "" || !strings.HasPrefix(event.Msg, "Copied (") {
+		return "", false
+	}
+	return event.Object, true
+}
+
 // Stats is the latest progress snapshot from the child.
 type Stats struct {
 	Bytes          int64
@@ -357,7 +384,7 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	if err := checkPositionals(src, dst); err != nil {
 		return nil, err
 	}
-	if err := checkRemoteDestStaged(dst); err != nil {
+	if err := checkRemoteDest(dst, r.opts.LiveDestination); err != nil {
 		return nil, err
 	}
 	for _, name := range names {
@@ -372,7 +399,8 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	}
 	defer os.RemoveAll(workDir)
 
-	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, false, r.gatewayCapacity())
+	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst,
+		destinationRules{live: r.opts.LiveDestination, keepsObjects: r.opts.KeepReplacedSegments}, r.gatewayCapacity())
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +447,7 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	if err := checkPositionals(src, dst); err != nil {
 		return nil, err
 	}
-	if err := checkRemoteDestStaged(dst); err != nil {
+	if err := checkRemoteDest(dst, false); err != nil {
 		return nil, err
 	}
 	workDir, err := os.MkdirTemp("", "aeronautes-job-")
@@ -428,7 +456,7 @@ func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, 
 	}
 	defer os.RemoveAll(workDir)
 
-	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, true, r.gatewayCapacity())
+	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, destinationRules{exact: true}, r.gatewayCapacity())
 	if err != nil {
 		return nil, err
 	}

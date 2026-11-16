@@ -46,7 +46,7 @@ type storageGateway struct {
 
 type gatewayFactory func(context.Context, Remote, *gatewayScope, int) (*storageGateway, Remote, error)
 
-func startGateways(ctx context.Context, remotes []Remote, destination string, exact bool, capacity int) ([]Remote, func(), error) {
+func startGateways(ctx context.Context, remotes []Remote, destination string, rules destinationRules, capacity int) ([]Remote, func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -66,7 +66,7 @@ func startGateways(ctx context.Context, remotes []Remote, destination string, ex
 		case <-lifetime.Done():
 		}
 	}()
-	local, closeAll, err := startGatewaysWith(lifetime, remotes, destination, exact, capacity, newStorageGateway)
+	local, closeAll, err := startGatewaysWith(lifetime, remotes, destination, rules, capacity, newStorageGateway)
 	if err != nil {
 		cancel()
 		return nil, nil, err
@@ -74,7 +74,7 @@ func startGateways(ctx context.Context, remotes []Remote, destination string, ex
 	return local, func() { cancel(); closeAll() }, nil
 }
 
-func startGatewaysWith(ctx context.Context, remotes []Remote, destination string, exact bool, capacity int, create gatewayFactory) ([]Remote, func(), error) {
+func startGatewaysWith(ctx context.Context, remotes []Remote, destination string, rules destinationRules, capacity int, create gatewayFactory) ([]Remote, func(), error) {
 	var gateways []*storageGateway
 	closeAll := func() {
 		for _, gateway := range gateways {
@@ -89,7 +89,7 @@ func startGatewaysWith(ctx context.Context, remotes []Remote, destination string
 			return nil, nil, fmt.Errorf("gateway needs distinct fixed remote names")
 		}
 		seen[remote.Name] = true
-		scope, err := destinationScope(remote.Name, destination, exact)
+		scope, err := destinationScope(remote.Name, destination, rules)
 		if err != nil {
 			closeAll()
 			return nil, nil, err
@@ -255,7 +255,7 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		body = &gatewayBody{ReadCloser: body, controller: controller}
 	}
 	if !info && isGatewayBulk(req, g.accountPath) {
-		if g.scope == nil {
+		if g.scope == nil || g.scope.keepsObjects {
 			refuse()
 			return
 		}
@@ -273,14 +273,14 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		body = io.NopCloser(bytes.NewReader(data))
 	} else if !info {
 		relative := strings.TrimPrefix(strings.TrimPrefix(req.URL.Path, g.accountPath), "/")
-		if relative != "" && !gatewayPathSafe(relative) {
+		if relative != "" && !gatewayReadSafe(relative) {
 			refuse()
 			return
 		}
 		switch req.Method {
 		case http.MethodGet, http.MethodHead:
 		case http.MethodPut, http.MethodDelete:
-			if !g.scope.allowsWrite(req, relative) {
+			if !gatewayPathSafe(relative) || !g.scope.allowsWrite(req, relative) || (req.Method == http.MethodDelete && g.scope.keepsObjects) {
 				refuse()
 				return
 			}
