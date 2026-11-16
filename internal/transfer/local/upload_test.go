@@ -9,11 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -359,6 +361,57 @@ func TestUploadKeepsDynamicWhereStaticManifestsAreNotReturned(t *testing.T) {
 	}
 	if readLive(t, s, "media", "up/big") != "0123456789abcdefghijKLMNO" {
 		t.Fatal("the dynamic object put back does not assemble the file")
+	}
+}
+
+// The engine records a file's modification time on every object it uploads,
+// and the application's own writes of an uploaded file record the same: the
+// one PUT of a name the engine cannot carry, the static manifest written over
+// the engine's dynamic one, and the dynamic manifest put back where the store
+// does not return static ones.
+func TestTheApplicationsUploadWritesRecordTheFilesModificationTime(t *testing.T) {
+	// Seconds since the epoch in fixed point with trailing zeros dropped,
+	// which is how the engine's Swift library writes a time.
+	changed := time.Unix(1756400000, 500_000_000)
+	const want = "1756400000.5"
+	for _, tc := range []struct {
+		name, prefix, object string
+		static, notReturned  bool
+	}{
+		{name: "a name the engine cannot carry", prefix: "line\n/", object: "line\n/big"},
+		{name: "a static manifest", prefix: "up/", object: "up/big", static: true},
+		{name: "a dynamic manifest put back", prefix: "up/", object: "up/big", static: true, notReturned: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := segmentMock()
+			mock.ManifestsNotReturned = tc.notReturned
+			s := servedSession(t, mock)
+			if err := s.Authenticate(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			path := writeFile(t, t.TempDir(), "big", "0123456789abcdefghijKLMNO")
+			if err := os.Chtimes(path, changed, changed); err != nil {
+				t.Fatal(err)
+			}
+			preflight, err := PreflightUpload(t.Context(), s, "media", tc.prefix, []string{path})
+			if err != nil || preflight.Rejected() {
+				t.Fatalf("preflight: %+v %v", preflight, err)
+			}
+			if tc.static {
+				preflight.LargeObjects, preflight.ChunkBytes = string(swiftcontrol.ClassSLO), 10
+			}
+			report, err := Upload(t.Context(), s, &segmentingEngine{session: s, chunk: 10}, "aeronautes_dst:media", "media", preflight, nil, nil)
+			if err != nil || report.Done != 1 {
+				t.Fatalf("report = %+v, %v", report, err)
+			}
+			detail, err := s.ObjectDetail(t.Context(), "media", tc.object)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := detail.Meta["Mtime"]; got != want {
+				t.Fatalf("%s (%s) records modification time %q, want %q", tc.object, detail.Class, got, want)
+			}
+		})
 	}
 }
 

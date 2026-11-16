@@ -302,6 +302,19 @@ func heldDigest(file io.ReadSeeker) (string, error) {
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
+// modTimeHeader is the metadata header under which the engine records a
+// file's modification time on every object it uploads, read from the file
+// for the application's own writes: an uploaded object says when its file
+// last changed whichever route wrote it.
+func modTimeHeader(path string) (name, value string, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", "", err
+	}
+	name, value = swiftcontrol.EngineModTime(info.ModTime())
+	return name, value, nil
+}
+
 // nativeUpload sends a file whose name the engine cannot carry as one PUT
 // that declares the file's digest, which the store checks against the bytes
 // that arrive (ADR 0122 decision 3). It sends no create-only condition and
@@ -313,7 +326,11 @@ func nativeUpload(ctx context.Context, dst *swiftcontrol.Session, container stri
 	if err != nil {
 		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-digest", err)
 	}
-	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", map[string]string{"ETag": declared}); err != nil {
+	mtime, modified, err := modTimeHeader(item.Path)
+	if err != nil {
+		return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-mtime", err)
+	}
+	if _, err := dst.PutObject(ctx, container, item.Name, file, "application/octet-stream", map[string]string{"ETag": declared, mtime: modified}); err != nil {
 		if swiftcontrol.IsDeclaredDigestRefused(err) {
 			return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeUnverified, "native-put",
 				fmt.Errorf("the file changed under the upload or its bytes did not survive the network: the store refused them against the declared digest %s: %w", declared, err))

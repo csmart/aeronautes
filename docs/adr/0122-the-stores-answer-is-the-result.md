@@ -77,6 +77,10 @@ The operator ran rclone alone against the same store and saw what it does: each 
    So an upload decides once, at its start, from one read of the container: where it keeps versions of either kind, where the operator's setting keeps replaced segments, and where that setting cannot be read, the engine's deletes are refused and the old segments stay.
    The acknowledgement states which of these holds, and an upload that replaces nothing by its preview is started on the same decision.
    The cost is that the engine's own removal of the segments of an upload that failed is refused with the rest, so those stay as well, as decision 8 already allows.
+   **The file's modification time.**
+   The engine records a file's modification time on every object it writes, in the metadata key `Mtime`, as it does when used alone; the staged route's publishing request did not carry it.
+   The application's own writes of an uploaded file set the same key from the file: the one PUT of a name the engine cannot carry, the static manifest, and a dynamic manifest put back.
+   An uploaded object therefore carries it whichever route wrote it.
    **What a running upload holds.**
    An upload claims the folder it writes under, in the container and in its segments container, in place of a stage root ([ADR 0105](0105-concurrent-jobs.md) decision 3): a deletion of ours that would sweep there, or that names an object there, is refused while the upload is alive, and an upload into a folder a sweep of ours holds is refused.
 4. **A copy writes each object at its name**, on the same terms.

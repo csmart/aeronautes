@@ -60,6 +60,13 @@ type StaticSegment struct {
 	Bytes           int64
 }
 
+// EngineModTime is the metadata header, and its value for t, under which the
+// transfer engine records a file's modification time on every object it
+// uploads.
+func EngineModTime(t time.Time) (header, value string) {
+	return "X-Object-Meta-Mtime", swift.TimeToFloatString(t)
+}
+
 // PutStaticManifest writes a static large object (?multipart-manifest=put)
 // naming each segment by path, entity tag and size, in order. The store
 // checks every named segment against its entry and refuses the whole
