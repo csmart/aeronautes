@@ -20,28 +20,14 @@
   let disposed = false;
   const terminal = (state: string) => ["complete", "partial", "cancelled", "failed"].includes(state);
   // Every deletion job's items are deletion members (ADR 0093 decision 4,
-  // ADR 0095): one outcome each, with what the verifying read observed, and
-  // no destination.
+  // ADR 0095): one outcome each, and no destination.
   const deletionTypes = ["delete_selected", "delete_prefix", "empty_container", "delete_container", "delete_segments"];
   const deletion = $derived(deletionTypes.includes(job.type));
 
-  // An object's identity in words: its class, bytes and entity tag.
-  function identity(what: { class: string; length: number; etag: string }): string {
-    return `a ${what.class} of ${what.length} bytes${what.etag ? ` with entity tag ${what.etag}` : ""}`;
-  }
-
-  // The identity a member's comparison was made against, when it was not
-  // simply the listing: a row listed as zero bytes or as a static large
-  // object is read first (ADR 0093 decision 3).
-  function laterBaseline(item: JobItemDTO): string {
-    if (!item.baseline || (item.listedBytes !== 0 && !item.listedSlo)) return "";
-    return ` Its listing could not say what it held, so it was read first and compared as ${identity(item.baseline)}.`;
-  }
-
-  // A member's one line (ADR 0093 decision 5): the outcome word from its
-  // execution record, and what a read found at the name, never a plain
-  // deletion when something stands there and both identities for a member
-  // changed since it was listed.
+  // A member's one line: the store's answer to its DELETE, in a word and,
+  // where the store refused or did not answer, with the status it gave (ADR
+  // 0122 decision 6). A member issued with nothing recorded may have been
+  // sent and is said to be unresolved.
   function deletionWords(item: JobItemDTO): { text: string; problem: boolean } {
     const ex = item.execution;
     if (!ex) {
@@ -52,25 +38,11 @@
     const diagnostic = ex.code ? ` (${ex.stage}: ${ex.code}${ex.httpStatus ? `, HTTP ${ex.httpStatus}` : ""})` : "";
     switch (ex.result) {
       case "deleted":
-        if (item.successor?.present) {
-          return {
-            text: `Deleted, but something stands at the name now: ${identity(item.successor)}. It may be an archived predecessor or a concurrent write; what this delete did to it is not observed.${laterBaseline(item)}`,
-            problem: true,
-          };
-        }
-        return { text: `Deleted; the verifying read found nothing at the name.${laterBaseline(item)}`, problem: false };
+        return { text: "Deleted.", problem: false };
       case "unverified":
-        return { text: `Unverified: the name may still hold what was shown${diagnostic}.${laterBaseline(item)}`, problem: true };
-      case "conflict": {
-        const expected = item.baseline ? identity(item.baseline) : `${item.listedBytes} bytes with entity tag ${item.listedEtag}`;
-        const found = item.successor?.role === "comparison" && item.successor.present ? `; found ${identity(item.successor)}` : "";
-        return { text: `Changed since it was listed: expected ${expected}${found}; left as it is${diagnostic}.`, problem: true };
-      }
-      case "refused":
-        if (ex.code === "link") {
-          return { text: "Refused: the name holds a symbolic link, whose identity is its target's, and a link is not deleted; left as it is.", problem: true };
-        }
-        return { text: `Refused; left as it is${diagnostic}.`, problem: true };
+        return { text: `Unknown: the store did not answer the DELETE, or answered with a server error, so nothing says whether it was deleted${diagnostic}.`, problem: true };
+      case "failed":
+        return { text: `Refused by the store; left as it is${diagnostic}.`, problem: true };
       case "not_attempted":
         return { text: "Not attempted.", problem: false };
       default:
@@ -172,7 +144,7 @@
       <div><dt>Conflicts</dt><dd>{totals.conflicts}</dd></div>
       <div><dt>Refused</dt><dd>{totals.refused}</dd></div>
       <div><dt>Unresolved effects</dt><dd>{totals.unresolved}</dd></div>
-      <div><dt>{deletion ? "Unverified deletions" : "Unverified copies"}</dt><dd>{totals.unverified}</dd></div>
+      <div><dt>{deletion ? "Unknown deletions" : "Unverified copies"}</dt><dd>{totals.unverified}</dd></div>
       {#if deletion}
         <div><dt>Issued</dt><dd>{totals.issued}</dd></div>
         <div><dt>Deleted</dt><dd>{totals.deleted}</dd></div>

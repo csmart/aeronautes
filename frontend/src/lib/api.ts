@@ -216,18 +216,14 @@ export interface Api {
   containerDetail(name: string, bookmarkId: string): Promise<ContainerDetailDTO>;
   sloManifest(container: string, name: string, bookmarkId: string): Promise<SLOManifestDTO>;
   dloSegments(manifest: string, bookmarkId: string): Promise<DLOSegmentsDTO>;
-  /** Deletes ONE manifest the operator was shown, manifest-only, under the
-   * scope its detail was read under; contentFingerprint is that detail's
-   * identity and the delete is refused when the name no longer holds it. A
-   * manifest of the same kind still observed afterwards is unverified, and
-   * any other successor is reported (ADR 0094). */
-  deleteManifest(scope: ListingScope, container: string, name: string, contentFingerprint: string): Promise<MutationResultDTO>;
-  /** Deletes ONE plain object the operator was shown, under the scope its
-   * detail was read under; contentFingerprint is that detail's identity and
-   * the delete is refused when the name no longer holds it. The result
-   * carries the literal successor the verifying read observed, when any
-   * (ADR 0092). */
-  deleteObject(scope: ListingScope, container: string, name: string, contentFingerprint: string): Promise<MutationResultDTO>;
+  /** Deletes ONE manifest by its name, manifest-only, so its segments stay,
+   * under the scope its detail was read under. The store's answer to the
+   * DELETE is the result (ADR 0122 decision 6). */
+  deleteManifest(scope: ListingScope, container: string, name: string): Promise<MutationResultDTO>;
+  /** Deletes ONE object by its name, under the scope its detail was read
+   * under. The store's answer to the DELETE is the result: nothing is read
+   * before it or after it (ADR 0122 decision 6). */
+  deleteObject(scope: ListingScope, container: string, name: string): Promise<MutationResultDTO>;
   capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     scope: ListingScope,
@@ -252,11 +248,9 @@ export interface Api {
   updateTempUrlKey(scope: ListingScope, edit: TempURLKeyEditDTO): Promise<MutationResultDTO>;
   createContainer(scope: ListingScope, create: ContainerCreateDTO): Promise<ContainerDetailDTO>;
   createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
-  /** Deletes ONE directory marker the operator was shown, the prefix
-   * detail's own object, under the scope that detail was read under;
-   * contentFingerprint is that object's identity, and the marker rule is
-   * required beside it (ADR 0094). The objects under the prefix are untouched. */
-  deleteMarker(scope: ListingScope, container: string, prefix: string, contentFingerprint: string): Promise<MutationResultDTO>;
+  /** Deletes ONE directory marker, the prefix's own object, under the scope
+   * its detail was read under. The objects under the prefix are untouched. */
+  deleteMarker(scope: ListingScope, container: string, prefix: string): Promise<MutationResultDTO>;
   auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
   /** Archive the trail under these filters to a file the operator chooses
@@ -354,10 +348,8 @@ export const liveApi: Api = {
   containerDetail: (name, bookmarkId) => InspectorService.Container(bookmarkId, name),
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
-  deleteManifest: (scope, container, name, contentFingerprint) =>
-    MutateService.DeleteManifest(scope, container, name, contentFingerprint),
-  deleteObject: (scope, container, name, contentFingerprint) =>
-    MutateService.DeleteObject(scope, container, name, contentFingerprint),
+  deleteManifest: (scope, container, name) => MutateService.DeleteManifest(scope, container, name),
+  deleteObject: (scope, container, name) => MutateService.DeleteObject(scope, container, name),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
   updateObjectMetadata: (scope, container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),
@@ -368,8 +360,7 @@ export const liveApi: Api = {
   updateTempUrlKey: (scope, edit) => MutateService.UpdateTempURLKey(scope, edit),
   createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
   createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
-  deleteMarker: (scope, container, prefix, contentFingerprint) =>
-    MutateService.DeleteMarker(scope, container, prefix, contentFingerprint),
+  deleteMarker: (scope, container, prefix) => MutateService.DeleteMarker(scope, container, prefix),
   auditRecent: async (limit, bookmarkId) =>
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],

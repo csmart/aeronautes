@@ -104,21 +104,11 @@ func TestShutdownWorkWaitsForEveryMutateStoreWrite(t *testing.T) {
 			return err
 		}},
 		{"DeleteMarker", "DELETE", "folder-marker/", func(h *harness) error {
-			ctx := context.Background()
-			shown, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "folder-marker/")
-			if err != nil {
-				return err
-			}
-			_, err = h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/", shown.SelfObject.ContentFingerprint)
+			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/")
 			return err
 		}},
 		{"DeleteManifest", "DELETE", "external-dlo", func(h *harness) error {
-			ctx := context.Background()
-			shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
-			if err != nil {
-				return err
-			}
-			_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shown.ContentFingerprint)
+			_, err := h.mutate.DeleteManifest(context.Background(), h.portrait(), "fixtures", "external-dlo")
 			return err
 		}},
 	} {
@@ -153,15 +143,11 @@ func mutateStoreWrites(h *harness) []mutateWrite {
 			return err
 		}},
 		{"DeleteMarker", func() error {
-			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/", "after-drain")
+			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/")
 			return err
 		}},
 		{"DeleteManifest", func() error {
-			// A literal identity, as the cases above pass an empty conflict
-			// base: this list runs after the drain and must issue no store
-			// request at all, so reading the object's real identity here
-			// would be the test making the request it then complains about.
-			_, err := h.mutate.DeleteManifest(context.Background(), h.portrait(), "fixtures", "external-dlo", "after-drain")
+			_, err := h.mutate.DeleteManifest(context.Background(), h.portrait(), "fixtures", "external-dlo")
 			return err
 		}},
 	}

@@ -80,12 +80,13 @@ describe("the inspector's delete affordance", () => {
 });
 
 describe("the object delete dialog", () => {
-  it("sends one request with the scope and identity it was opened for, then closes on a plain success", async () => {
+  it("sends one request with the scope and name it was opened for, says a later write is what goes, then closes", async () => {
     const f = await dialog();
+    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("if something else has written to it since you looked, that is what goes");
     f.fake.deleteObject = vi.fn(async () => applied);
     click(button("Delete object", f.root));
     await settle();
-    expect(f.fake.deleteObject).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "empty-object", f.detail.contentFingerprint);
+    expect(f.fake.deleteObject).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "empty-object");
     expect(f.done).toHaveBeenCalledOnce();
   });
 
@@ -98,31 +99,16 @@ describe("the object delete dialog", () => {
     expect(f.fake.deleteObject).not.toHaveBeenCalled();
   });
 
-  it("shows a refused delete with both identities and stays open", async () => {
+  it("shows the store's refusal and stays open", async () => {
     const f = await dialog();
     f.fake.deleteObject = vi.fn(async () => {
-      throw new Error("fixtures/normal/hello.txt is not what you were shown: it now reports a plain of 40 bytes with entity tag ffff, so nothing was deleted (expected identity shown-id, found other-id)");
+      throw new Error("object delete refused by the store with HTTP 403; nothing was deleted");
     });
     click(button("Delete object", f.root));
     await settle();
-    expect(f.root.textContent).toContain("expected identity shown-id, found other-id");
+    expect(f.root.textContent).toContain("refused by the store with HTTP 403; nothing was deleted");
     expect(f.done).not.toHaveBeenCalled();
     expect(labels(f.root)).toContain("Delete object");
-  });
-
-  it("shows an observed successor instead of a plain success", async () => {
-    const f = await dialog();
-    const successor: ObjectDetailDTO = { ...f.detail, contentLength: 3, etag: "900150983cd24fb0d6963f7d28e17f72", contentFingerprint: "other" };
-    f.fake.deleteObject = vi.fn(async () => ({ ...applied, objectAfter: successor }));
-    click(button("Delete object", f.root));
-    await settle();
-    expect(f.root.textContent).toContain("Something stands at the name now");
-    expect(f.root.textContent).toContain("900150983cd24fb0d6963f7d28e17f72");
-    expect(f.root.textContent).toContain("archived predecessor or a concurrent write");
-    expect(labels(f.root)).not.toContain("Delete object");
-    expect(f.done).not.toHaveBeenCalled();
-    click(button("Close", f.root));
-    expect(f.done).toHaveBeenCalledOnce();
   });
 
   it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {
@@ -214,24 +200,6 @@ describe("the Delete key", () => {
     await screen([]);
     expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
     expect(api.deleteObject).not.toHaveBeenCalled();
-  });
-
-  it("keeps an observed successor on screen through the refresh that follows the delete", async () => {
-    await screen(["Object deletion"]);
-    api.deleteObject = vi.fn(async (scope, container, name) => {
-      const before = await api.objectDetail(container, name, scope.bookmarkId);
-      return { ...applied, objectAfter: { ...before, contentLength: 3, etag: "successor-etag", contentFingerprint: "successor" } };
-    });
-    const dialog = document.querySelector<HTMLElement>('[aria-label="Delete object"]')!;
-    click(button("Delete object", dialog));
-    await settle();
-    expect(api.deleteObject).toHaveBeenCalledOnce();
-    expect(document.querySelector('[aria-label="Delete object"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("Something stands at the name now");
-    expect(document.body.textContent).toContain("successor-etag");
-    click(button("Close", document.querySelector<HTMLElement>('[aria-label="Delete object"]')!));
-    await settle();
-    expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
   });
 
   it("closes through the refresh after a plain success and the row is gone", async () => {

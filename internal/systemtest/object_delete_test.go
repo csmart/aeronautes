@@ -2,21 +2,21 @@ package systemtest
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/mutationfacts"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
 
 func TestObjectDeleteMock(t *testing.T)  { testObjectDelete(t, findMockHarness(t)) }
 func TestObjectDeleteSwift(t *testing.T) { testObjectDelete(t, New(t)) }
 
-// testObjectDelete produces ADR 0092's three required cells through the public
-// service: the deletion of one plain object with every neighbour unchanged, a
-// refusal that destroys nothing, and an identity conflict that destroys
-// nothing. The oracle is an independent before and after snapshot.
+// testObjectDelete produces the object deletion's two required cells through
+// the public service (ADR 0122 decision 6): the deletion of one object by its
+// name with every neighbour unchanged, and a refusal that destroys nothing.
+// It also shows what the deletion no longer refuses: a link is deleted as
+// the link it is, and an object another writer replaced after it was shown
+// is deleted. The oracle is an independent before and after snapshot.
 func testObjectDelete(t *testing.T, h *Harness) {
 	t.Helper()
 	ctx := context.Background()
@@ -39,12 +39,8 @@ func testObjectDelete(t *testing.T, h *Harness) {
 		secondaryBefore = h.Snapshot(h.Secondary, c)
 	}
 
-	// Happy: exactly the inspected object is gone.
-	shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "target.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := h.DeleteObject(ctx, c, "target.txt", shown.ContentFingerprint)
+	// Happy: exactly the named object is gone.
+	rec := h.DeleteObject(ctx, c, "target.txt")
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
 	}
@@ -69,53 +65,49 @@ func testObjectDelete(t *testing.T, h *Harness) {
 		}
 	}
 	// The durable record of the success: one applied fact and one audit event
-	// for this resource, each carrying the transaction identifiers it saw.
-	// The DELETE's own transaction identifier is recorded beside the comparison
-	// HEAD's: a list with one identifier would prove only that the HEAD's
-	// survived.
-	if facts := deleteFactsFor(t, h, c+"/target.txt"); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
+	// for this resource, each carrying the DELETE's transaction identifier.
+	if facts := deleteFactsFor(t, h, c+"/target.txt"); len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 1 {
 		t.Fatalf("applied fact = %+v", facts)
 	}
-	if events := deleteEventsFor(t, h, c+"/target.txt"); len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 2 {
+	if events := deleteEventsFor(t, h, c+"/target.txt"); len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 1 {
 		t.Fatalf("applied event = %+v", events)
 	}
 	rec.CreditApplied()
 
-	// Refusal: a symlink is refused in the form this fixture produces, and a
-	// blank identity is refused before anything is read; neither destroys.
-	linkShown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "link.txt")
-	if err != nil {
-		t.Fatal(err)
+	// A link is deleted as the link it is, and its target stays.
+	if linked := h.DeleteObject(ctx, c, "link.txt"); linked.Err() != nil || linked.Outcome() != "applied" {
+		t.Fatalf("deleting the link: outcome %q err %v", linked.Outcome(), linked.Err())
 	}
-	refusedLink := h.DeleteObject(ctx, c, "link.txt", linkShown.ContentFingerprint)
-	if refusedLink.Err() == nil {
-		t.Fatal("deleting through a symlink was not refused")
+	afterLink := h.Snapshot(h.Primary, c)
+	if _, still := afterLink.Containers[c].Objects["link.txt"]; still {
+		t.Fatal("link.txt still listed after its delete")
 	}
-	refusedBlank := h.DeleteObject(ctx, c, "target2.txt", "")
-	if refusedBlank.Err() == nil {
-		t.Fatal("a blank identity was not refused")
+	if b, a := after.Containers[c].Objects["target2.txt"], afterLink.Containers[c].Objects["target2.txt"]; a.Digest != b.Digest {
+		t.Fatalf("the link's target changed: %+v -> %+v", b, a)
 	}
-	afterRefusals := h.Snapshot(h.Primary, c)
-	if d := diffOf(after, afterRefusals); !d.Empty() {
-		t.Fatalf("a refused delete changed state:\n%s", d)
-	}
-	refusedLink.CreditRefusal()
 
-	// Conflict: the name changed between the display and the request.
-	racyShown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "racy.txt")
-	if err != nil {
+	// An object another writer replaced after it was shown is deleted: the
+	// last request to a name wins.
+	if _, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "racy.txt"); err != nil {
 		t.Fatal(err)
 	}
 	h.Seed(h.Primary, c, "racy.txt", []byte("second, and longer"), text)
-	replaced := h.Snapshot(h.Primary, c)
-	conflicted := h.DeleteObject(ctx, c, "racy.txt", racyShown.ContentFingerprint)
-	var conflict *swiftcontrol.IdentityConflictError
-	if !errors.As(conflicted.Err(), &conflict) || conflicted.Outcome() != "conflict" {
-		t.Fatalf("err = %v outcome = %q, want an identity conflict", conflicted.Err(), conflicted.Outcome())
+	if replaced := h.DeleteObject(ctx, c, "racy.txt"); replaced.Err() != nil || replaced.Outcome() != "applied" {
+		t.Fatalf("deleting the replaced object: outcome %q err %v", replaced.Outcome(), replaced.Err())
 	}
-	afterConflict := h.Snapshot(h.Primary, c)
-	if d := diffOf(replaced, afterConflict); !d.Empty() {
-		t.Fatalf("a conflicting delete changed state:\n%s", d)
+	afterReplaced := h.Snapshot(h.Primary, c)
+	if _, still := afterReplaced.Containers[c].Objects["racy.txt"]; still {
+		t.Fatal("racy.txt still listed after its delete")
 	}
-	conflicted.CreditConflict()
+
+	// Refusal: an empty name would address the container itself, and is
+	// refused before any request; nothing is destroyed.
+	refused := h.DeleteObject(ctx, c, "")
+	if refused.Err() == nil {
+		t.Fatal("an empty object name was not refused")
+	}
+	if d := diffOf(afterReplaced, h.Snapshot(h.Primary, c)); !d.Empty() {
+		t.Fatalf("a refused delete changed state:\n%s", d)
+	}
+	refused.CreditRefusal()
 }

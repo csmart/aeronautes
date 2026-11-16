@@ -272,17 +272,6 @@ func (s *Session) rawHead(ctx context.Context, credentials StorageCredentials, c
 	return d, resp.Header, resp.StatusCode, nil
 }
 
-// identityComparable reports whether a HEAD response carried the two fields
-// a plain object's identity is compared by: a parseable Content-Length and a
-// non-empty entity tag. A response missing either must not be compared,
-// because the zero values would make an unchanged object look different.
-func identityComparable(headers http.Header) bool {
-	if _, err := strconv.ParseInt(headers.Get("Content-Length"), 10, 64); err != nil {
-		return false
-	}
-	return headers.Get("Etag") != ""
-}
-
 // DynamicSegments is the segment container and prefix a dynamic manifest
 // names. The X-Object-Manifest value is percent-encoded, as the engine and
 // other clients write it, and Swift's dynamic large object middleware

@@ -28,7 +28,7 @@ const copyPlan: CopyPlanDTO = {
   versionedDestination: false, largeObjectsAsDlo: false,
 };
 const deletePlan: DeletePreviewDTO = {
-  objects: 1, bytes: 5, possibleManifests: 0, laterBaselineRows: 0, requestCost: 2, strategy: "current deletion",
+  objects: 1, bytes: 5, possibleManifests: 0, requestCost: 1, strategy: "current deletion",
   archiveOf: [], archiveUnestablished: "",
 };
 
@@ -450,15 +450,15 @@ it("Copy adopts the saved default profile when the settings arrive after it open
   expect(f.api.planCopy).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ profile: "aggressive" }));
 });
 
-it("the delete preview states the per-name request cost and the later-baseline rows", async () => {
+it("the delete preview states one request for each object and that a later write is what goes", async () => {
   const f = show("delete");
   f.deletes.length = 0;
   f.preview();
-  f.deletes[0].resolve({ ...deletePlan, objects: 12, bytes: 1000, possibleManifests: 2, laterBaselineRows: 2, requestCost: 26, strategy: "per-name-verified" });
+  f.deletes[0].resolve({ ...deletePlan, objects: 12, bytes: 1000, possibleManifests: 2, requestCost: 12, strategy: "per-name" });
   await settle();
-  const cost = f.root.querySelector(".cost")!.textContent!;
-  expect(cost).toContain("26 requests");
-  expect(cost).toContain("2 of these rows take that extra read");
+  const cost = f.root.querySelector(".cost")!.textContent!.replace(/\s+/g, " ");
+  expect(cost).toContain("Each object is deleted by one request: 12 requests");
+  expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("if something else has written to a name since this preview, that is what goes");
 });
 
 // ADR 0102 decision 3: the dialog says whose archive the container is, from the

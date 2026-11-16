@@ -96,10 +96,10 @@
         {/if}
         <p class="keeps">{versioningSentence(facts)}</p>
         <p class="keeps">
-          An object listed with a size is deleted only if it still matches its listing; one that changed since is left
-          as it is and recorded as changed. A row listed as zero bytes or as a static large object cannot say what it
-          holds, so it is read again first and what that read finds is what is deleted, a marker or a manifest included
-          and a link refused. The delete cannot see a change that lands after its last look. A selection holds at most
+          Each selected name is deleted by one request, whatever it holds when that request arrives: if something
+          else has written to a name since it was listed, that is what goes. A manifest is deleted without its
+          segments, and a link as the link it is. The store's answer to each request is its result, and nothing is
+          read again to check it. A selection holds at most
           {op.ceiling.toLocaleString("en-US")} objects; the ceiling is set in Settings.
         </p>
         <label class="confirm">

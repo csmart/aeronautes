@@ -11,9 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"errors"
 	"fmt"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"io"
 	"net/http"
 	"os"
@@ -354,6 +352,24 @@ func (r *Receipt) CreditCancelled() {
 	r.emit("cancel", "job "+r.jobID+" cancelled")
 }
 
+// CreditCancelledBetweenMembers emits a cancel claim for a deletion job that
+// was cancelled after it had begun, validating from THIS receipt's terminal
+// job that it ended partial saying it was cancelled, with at least one member
+// admitted and never issued. A deletion that sends nothing before its first
+// DELETE has no earlier moment to be cancelled at.
+func (r *Receipt) CreditCancelledBetweenMembers() {
+	r.h.T.Helper()
+	if r.err != nil || r.jobID == "" || scenariocontract.All()[r.action].Kind != scenariocontract.Job {
+		r.h.T.Fatalf("CreditCancelledBetweenMembers %s: not an admitted job (%v)", r.action, r.err)
+	}
+	job := r.h.AwaitJob(r.jobID)
+	totals, rec := r.h.JobItemTotals(r.h.ctx, r.jobID)
+	if rec.Err() != nil || job.State != "partial" || !strings.HasPrefix(job.Error, "cancelled after ") || totals.Issued >= totals.Admitted {
+		r.h.T.Fatalf("CreditCancelledBetweenMembers %s: job %s is %q (%s) with totals %+v, %v", r.action, r.jobID, job.State, job.Error, totals, rec.Err())
+	}
+	r.emit("cancel", fmt.Sprintf("job %s %s with %d members never issued", r.jobID, job.Error, totals.Admitted-totals.Issued))
+}
+
 // CreditJobConflict emits a conflict claim for a JOB action whose members are
 // items, validating from THIS receipt's terminal job that at least one member
 // was recorded as changed since it was listed and left untouched.
@@ -514,41 +530,22 @@ func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, bas
 	return &Receipt{h: h, action: "MutateService.UpdateObjectMetadata", outcome: result.Outcome, err: err}
 }
 
-// DeleteObject deletes one plain object the operator was shown (ADR 0092); the
-// identity conflict arrives as an error with no DTO, as the manifest deletion's
-// does, so the receipt names that outcome itself.
-func (h *Harness) DeleteObject(ctx context.Context, container, name, contentFingerprint string) *Receipt {
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), container, name, contentFingerprint)
-	outcome := result.Outcome
-	var conflict *swiftcontrol.IdentityConflictError
-	if errors.As(err, &conflict) {
-		outcome = "conflict"
-	}
-	return &Receipt{h: h, action: "MutateService.DeleteObject", outcome: outcome, err: err}
+// DeleteObject deletes one object by its name (ADR 0122 decision 6).
+func (h *Harness) DeleteObject(ctx context.Context, container, name string) *Receipt {
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), container, name)
+	return &Receipt{h: h, action: "MutateService.DeleteObject", outcome: result.Outcome, err: err}
 }
 
-// DeleteMarker deletes one directory marker the operator was shown (ADR 0094
-// decision 2), the prefix detail's own object, by the same shape as DeleteObject.
-func (h *Harness) DeleteMarker(ctx context.Context, container, prefix, contentFingerprint string) *Receipt {
-	result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), container, prefix, contentFingerprint)
-	outcome := result.Outcome
-	var conflict *swiftcontrol.IdentityConflictError
-	if errors.As(err, &conflict) {
-		outcome = "conflict"
-	}
-	return &Receipt{h: h, action: "MutateService.DeleteMarker", outcome: outcome, err: err}
+// DeleteMarker deletes one directory marker, the prefix's own object.
+func (h *Harness) DeleteMarker(ctx context.Context, container, prefix string) *Receipt {
+	result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), container, prefix)
+	return &Receipt{h: h, action: "MutateService.DeleteMarker", outcome: result.Outcome, err: err}
 }
 
-// DeleteManifest deletes one manifest the operator was shown, manifest-only
-// (ADR 0094 decision 3), by the same shape as DeleteObject.
-func (h *Harness) DeleteManifest(ctx context.Context, container, name, contentFingerprint string) *Receipt {
-	result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), container, name, contentFingerprint)
-	outcome := result.Outcome
-	var conflict *swiftcontrol.IdentityConflictError
-	if errors.As(err, &conflict) {
-		outcome = "conflict"
-	}
-	return &Receipt{h: h, action: "MutateService.DeleteManifest", outcome: outcome, err: err}
+// DeleteManifest deletes one manifest, manifest-only.
+func (h *Harness) DeleteManifest(ctx context.Context, container, name string) *Receipt {
+	result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), container, name)
+	return &Receipt{h: h, action: "MutateService.DeleteManifest", outcome: result.Outcome, err: err}
 }
 
 // account provisions a test account. It returns an error rather than

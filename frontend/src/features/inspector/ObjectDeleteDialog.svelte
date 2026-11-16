@@ -1,23 +1,21 @@
-<!-- The shown-object delete confirm for a plain object (ADR 0092 decision 5)
-  and a directory marker (ADR 0094 decision 5): it binds the exact identity it
-  opened for, says what the delete does to the content at this name under the
-  container's versioning mode, and when the verifying read observed something
-  at the name afterwards it shows that instead of a plain success. -->
+<!-- The delete confirm for one object (ADR 0092 decision 5) and for a
+  directory marker (ADR 0094 decision 5): it binds the exact name it opened
+  for, and says what the delete does to the content at this name under the
+  container's versioning mode. The store's answer to the DELETE is the result
+  (ADR 0122 decision 6). -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { ContainerSettingsDTO, ObjectDetailDTO } from "../../lib/api";
+  import type { ContainerSettingsDTO } from "../../lib/api";
   import { formatBytes } from "../../lib/format";
   import { versioningSentence } from "./versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
   // The operation is owned by the browser state (ADR 0092 decision 5): it was
-  // captured when the dialog opened and it outlives the listing refresh that
-  // follows a success, so the successor the verifying read observed is still
-  // here to show. Opening without an operation is a programming error the
-  // screen's mount condition prevents.
+  // captured when the dialog opened. Opening without an operation is a
+  // programming error the screen's mount condition prevents.
   // svelte-ignore state_referenced_locally
   const op = browser.objectDelete!;
 
@@ -26,7 +24,6 @@
   let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
 
   const pending = $derived(op.status === "pending");
-  const observed = $derived(op.status === "done" ? op.result?.objectAfter ?? null : null);
   const current = $derived(browser.objectDeleteCurrent());
 
   // A view that moved while the operation is still pending abandons it,
@@ -49,12 +46,6 @@
   const marker = $derived(op.kind === "marker" || (op.detail.contentLength === 0 && op.detail.contentType === "application/directory"));
   const noun = $derived(op.kind === "marker" ? "marker" : "object");
 
-  function kindOf(d: ObjectDetailDTO): string {
-    if (d.symlinkTarget) return "symlink";
-    if (d.class !== "plain") return `${d.class.toUpperCase()} manifest`;
-    return "plain object";
-  }
-
   // Confirmation waits for the versioning consequence to be known or
   // explicitly unknown, so the warning a versions location needs is on
   // screen before the request can leave.
@@ -64,62 +55,45 @@
     if (!canConfirm) return;
     await browser.runObjectDelete();
     const settled = browser.objectDelete;
-    if (settled === op && op.status === "done" && !op.result?.objectAfter) onClose();
+    if (settled === op && op.status === "done") onClose();
   }
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <div class="dialog" role="alertdialog" aria-label={`Delete ${noun}`} aria-modal="true" tabindex="-1"
     use:trapFocus={onClose}>
-    <h2 class="title">{observed ? "Deleted" : `Delete ${noun}`}</h2>
+    <h2 class="title">Delete {noun}</h2>
     <div class="body">
-      {#if observed}
+      {#if op.kind === "marker"}
         <p class="what">
-          <span class="type-mono">{op.name}</span> no longer holds what you were shown.
-        </p>
-        <p class="keeps warn">
-          <strong>Something stands at the name now:</strong> a {kindOf(observed)} of
-          {formatBytes(observed.contentLength)}{observed.etag ? ` with entity tag ${observed.etag}` : ""}{observed.symlinkTarget
-            ? `, pointing at ${observed.symlinkTarget}`
-            : ""}. It may be the archived predecessor or a concurrent write; what this delete did to it is not
-          observed.
+          The marker object at <span class="type-mono">{op.name}</span> will be deleted, and only it.
         </p>
       {:else}
-        {#if op.kind === "marker"}
-          <p class="what">
-            The marker object at <span class="type-mono">{op.name}</span> will be deleted, and only it.
-          </p>
-        {:else}
-          <p class="what">
-            <span class="type-mono">{op.name}</span> will be deleted: {formatBytes(op.detail.contentLength)},
-            entity tag <span class="type-mono">{op.detail.etag}</span>.
-          </p>
-        {/if}
-        {#if browser.segmentStoreCaution}
-          <p class="keeps warn">{browser.segmentStoreCaution}</p>
-        {/if}
-        <p class="keeps">{versioningSentence(facts)}</p>
-        {#if marker}
-          <p class="keeps">This is a directory marker: the objects under it stay, and the folder remains implied by them.</p>
-        {/if}
-        <p class="keeps">
-          The delete is refused if the object changes before it runs; it cannot see a change that lands after its
-          last look.
+        <p class="what">
+          <span class="type-mono">{op.name}</span> will be deleted: {formatBytes(op.detail.contentLength)},
+          entity tag <span class="type-mono">{op.detail.etag}</span>.
         </p>
       {/if}
+      {#if browser.segmentStoreCaution}
+        <p class="keeps warn">{browser.segmentStoreCaution}</p>
+      {/if}
+      <p class="keeps">{versioningSentence(facts)}</p>
+      {#if marker}
+        <p class="keeps">This is a directory marker: the objects under it stay, and the folder remains implied by them.</p>
+      {/if}
+      <p class="keeps">
+        The name is deleted as it stands when the request arrives: if something else has written to it since
+        you looked, that is what goes.
+      </p>
       {#if op.error}
         <p class="error callout danger" role="alert">{op.error}</p>
       {/if}
     </div>
     <div class="actions">
-      {#if observed}
-        <button class="primary" onclick={onClose}>Close</button>
-      {:else}
-        <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
-        <button class="danger" onclick={confirm} disabled={!canConfirm}>
-          {op.status === "running" ? "Deleting…" : `Delete ${noun}`}
-        </button>
-      {/if}
+      <button class="secondary" onclick={onClose} disabled={op.status === "running"}>Cancel</button>
+      <button class="danger" onclick={confirm} disabled={!canConfirm}>
+        {op.status === "running" ? "Deleting…" : `Delete ${noun}`}
+      </button>
     </div>
   </div>
 </div>
@@ -199,14 +173,6 @@
     font-size: var(--text-sm);
     border-radius: var(--radius-control);
     cursor: pointer;
-  }
-
-  /* A finished dialog's Close is its next step, highlighted as in the copy
-    and transfer dialogs; anything beside it stays plain. */
-  .primary {
-    color: var(--color-bg);
-    background: var(--color-accent);
-    border: 1px solid var(--color-accent);
   }
 
   .secondary {

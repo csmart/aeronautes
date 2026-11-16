@@ -318,18 +318,14 @@
           strategy <span class="type-mono">{preview.strategy}</span>
         </p>
         <p class="cost">
-          Each object is compared then deleted, and a row that cannot say what it holds is read once
-          more first: <strong>{preview.requestCost}</strong> requests{preview.laterBaselineRows > 0
-            ? ` (${preview.laterBaselineRows} of these rows take that extra read)`
-            : ""}, not counting this listing, any retries, the final check or each member's own
-          verifying read.
+          Each object is deleted by one request: <strong>{preview.requestCost}</strong> requests, not
+          counting the listings.
         </p>
         <p class="keeps">
-          An object listed with a size is deleted only if it still matches that listing; one that
-          changed since is left and recorded. A row listed as zero bytes or as a static large object
-          is read once more first, and what that read then holds is what is deleted, a directory
-          marker or a manifest included. A link is refused and left, never followed. Each name is
-          requested once by this job; whatever is still listed after that is left for a fresh run.
+          Every name listed here when the job runs is deleted, whatever it then holds: if something
+          else has written to a name since this preview, that is what goes. The store's answer to
+          each request is its result, and nothing is read again to check it. A link is deleted as
+          the link it is, never followed. Each name is requested once by this job.
         </p>
         <p class="keeps">{versioningSentence(facts)}</p>
         {#if archiveSentence}
@@ -367,9 +363,10 @@
                 Each large object's segments are deleted after it: the ones a static manifest lists, or everything
                 under the prefix a dynamic manifest names. Nothing here can show that another object does not use
                 the same segments; one that does will lose its data. How many segments there are is not known until
-                each large object is read. Every segment is compared then deleted like any other object and listed
-                in the job. Segments that cannot be bounded safely are kept, as when a dynamic manifest's prefix is
-                wider than what is being deleted here, and the job then ends partial and says why.
+                each large object is read, which costs one more request for each row that may be one. Every segment
+                is deleted like any other object and listed in the job. Segments that cannot be bounded safely are
+                kept, as when a dynamic manifest's prefix is wider than what is being deleted here, and the job then
+                ends partial and says why.
               </p>
             {/if}
           {:else if whySegmentsStay(facts)}

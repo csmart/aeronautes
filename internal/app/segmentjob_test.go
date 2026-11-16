@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -226,16 +227,17 @@ func TestSegmentJobIsRefusedWhereVersionsAreKept(t *testing.T) {
 	}
 }
 
-// ADR 0095 decision 8: a static manifest whose graph is swapped for one of
-// equal assembled identity between the review and the execution is refused,
-// the job failed, nothing deleted and its segments untouched.
-func TestSegmentJobRefusesAnEqualTagGraphSwap(t *testing.T) {
+// ADR 0122 decision 6: the job deletes the manifest and the segments the
+// operator reviewed, which come with the request and are not read again. A
+// manifest another writer replaced after the review, here with one that
+// names another object, is deleted, the reviewed segment is deleted, and the
+// object the replacement names is left alone.
+func TestSegmentJobDeletesTheSegmentsTheOperatorReviewed(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	seedSLO(h, "media", "swap.slo", "parts", map[string]string{"job/cc/000001": "0123456789"})
 	seedObject(h.mock, "parts", "other/keep", "unrelated!", nil)
 	reviewed := reviewOf(t, service, bookmark, "media", "swap.slo")
-	// Swap the graph for a different segment, keeping the SLO etag unchanged.
 	swapped := fmt.Sprintf(`[{"name":"/parts/other/keep","hash":"%s","bytes":9}]`, md5hex("unrelated!"))
 	h.mock.PutObject("media", "swap.slo", swifttest.Object{
 		Bytes: 20, SLO: true, SLOEtag: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
@@ -248,26 +250,14 @@ func TestSegmentJobRefusesAnEqualTagGraphSwap(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "failed" {
-		t.Fatalf("job = %+v, want failed for the swapped graph", job)
+	if job.State != "complete" {
+		t.Fatalf("job = %+v, want complete", job)
 	}
-	if !segmentReadable(t, h, bookmark, "media", "swap.slo") {
-		t.Fatal("the swapped manifest was deleted")
+	if segmentReadable(t, h, bookmark, "media", "swap.slo") || segmentReadable(t, h, bookmark, "parts", "job/cc/000001") {
+		t.Fatal("the manifest or its reviewed segment is still there")
 	}
-	if !segmentReadable(t, h, bookmark, "parts", "job/cc/000001") || !segmentReadable(t, h, bookmark, "parts", "other/keep") {
-		t.Fatal("a segment was deleted despite the refusal")
-	}
-	item := itemsOf(t, h, jobID)["media/swap.slo"]
-	if item.Execution == nil || item.Execution.Result != jobs.ItemConflict {
-		t.Fatalf("manifest item = %+v, want a conflict", item)
-	}
-	// The conflict keeps the identity the operator reviewed as its baseline,
-	// not the later startup read (ADR 0095 decision 8).
-	if item.Baseline == nil || item.Baseline.Class != "slo" || item.Baseline.Length != 20 {
-		t.Fatalf("the reviewed identity was not kept on the conflict: %+v", item.Baseline)
-	}
-	if item.Successor == nil || item.Successor.Role != "comparison" {
-		t.Fatalf("the found identity was not kept on the conflict: %+v", item.Successor)
+	if !segmentReadable(t, h, bookmark, "parts", "other/keep") {
+		t.Fatal("an object the operator did not review was deleted")
 	}
 }
 
@@ -621,25 +611,17 @@ func TestSegmentJobDisclosesTheDeletedManifestWhenALaterWriteFails(t *testing.T)
 	}
 }
 
-// ADR 0095 decision 4: when the manifest is not deleted, the static segments
-// admitted before any effect are never issued, so each must be recorded not
-// attempted before the job finishes rather than left as a phantom unresolved
-// effect the terminal job can no longer settle. An execution-time graph read
-// that returns a partial response refuses the manifest after review.
+// ADR 0095 decision 4: when the manifest is not deleted, here because the
+// store refuses its DELETE, the static segments admitted before any effect
+// are never issued, so each must be recorded not attempted before the job
+// finishes rather than left as a phantom unresolved effect the terminal job
+// can no longer settle.
 func TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted(t *testing.T) {
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	seedSLO(h, "media", "big.slo", "parts", map[string]string{"job/aa/000001": "0123456789", "job/aa/000002": "abcdefghij"})
-	seedObject(h.mock, "parts", "other/keep", "unrelated!", nil)
 	reviewed := reviewOf(t, service, bookmark, "media", "big.slo")
-	// The graph is swapped for a different segment after review, keeping the SLO
-	// etag, so the execution-time comparison refuses the manifest as changed and
-	// no segment is attempted; its two reviewed segments were admitted up front.
-	swapped := fmt.Sprintf(`[{"name":"/parts/other/keep","hash":"%s","bytes":9}]`, md5hex("unrelated!"))
-	h.mock.PutObject("media", "big.slo", swifttest.Object{
-		Bytes: 20, SLO: true, SLOEtag: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
-		SLOManifestJSON: swapped, ContentType: "application/octet-stream",
-	})
+	h.mock.RefuseObjectDELETE("media", "big.slo", http.StatusForbidden)
 	jobID, err := service.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Name: "big.slo", Confirm: "big.slo", Force: true, Reviewed: reviewed,
 	})
@@ -647,7 +629,7 @@ func TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted(t *testing
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "failed" {
+	if job.State != "failed" || !strings.Contains(job.Error, "the store refused to delete the manifest") {
 		t.Fatalf("job = %+v, want failed with the manifest refused", job)
 	}
 	if !segmentReadable(t, h, bookmark, "media", "big.slo") {
@@ -659,7 +641,7 @@ func TestSegmentJobSettlesAdmittedSegmentsWhenTheManifestIsNotDeleted(t *testing
 		}
 	}
 	// Every admitted member is settled, with no phantom unresolved or unsettled
-	// effect: the manifest a conflict, both reviewed segments not attempted.
+	// effect: the manifest failed, both reviewed segments not attempted.
 	totals, err := h.jobsSvc.ItemTotals(ctx, bookmark, jobID)
 	if err != nil {
 		t.Fatal(err)

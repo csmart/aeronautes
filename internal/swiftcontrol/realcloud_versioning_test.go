@@ -7,7 +7,7 @@
 // state that matrix as fact, so a real store must be shown to agree with it.
 // Each mode gets a fresh owner container and a fresh archive container with
 // random names; the matrix is written once, overwritten once and deleted
-// through DeletePlainObject, and the name and the archive are read after
+// through DeleteName, and the name and the archive are read after
 // every step, bodies included, so what the archive holds is stated from
 // content. A backend whose /info does not allow a mode skips that mode: the
 // editor never offers it there. Cleanup removes only what this run created
@@ -123,40 +123,29 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, mode swiftcontrol.
 	expectArchive(t, ctx, s, archive, first)
 	t.Logf("after two writes: the name serves the second body, the archive holds the first")
 
-	// The delete goes through the product's protocol, whose literal read
-	// afterwards reports a successor at the name when there is one.
-	current, err := s.ObjectDetail(ctx, owner, name)
+	// The delete goes through the product's route, one DELETE whose answer
+	// is the result; what then stands at the name is read here.
+	del, err := s.DeleteName(ctx, owner, name)
 	if err != nil {
-		fail("ObjectDetail before the delete", err)
+		fail("DeleteName", err)
 	}
-	del, err := s.DeletePlainObject(ctx, owner, name, current.ContentFingerprint())
-	if err != nil {
-		fail("DeletePlainObject", err)
-	}
-	if !del.Accepted || del.Outcome != swiftcontrol.UpdateApplied {
-		t.Fatalf("DeletePlainObject: accepted=%v outcome=%s", del.Accepted, del.Outcome)
+	if del.Outcome != swiftcontrol.UpdateApplied || del.Gone {
+		t.Fatalf("DeleteName: outcome=%s gone=%v", del.Outcome, del.Gone)
 	}
 	switch mode {
 	case swiftcontrol.VersioningVersionsLocation:
 		// The second body is destroyed, the archived first body moves back to
-		// the name and the archive empties; the route reports that successor.
-		if del.After == nil {
-			t.Fatalf("the delete should leave the archived predecessor at the name; the read saw absence")
-		}
+		// the name and the archive empties.
 		expectCurrent(t, ctx, s, owner, name, first)
 		expectArchive(t, ctx, s, archive)
-		t.Logf("delete reverted the name to the first body (successor reported, length %d) and emptied the archive", del.After.ContentLength)
+		t.Logf("delete reverted the name to the first body and emptied the archive")
 
-		restored, err := s.ObjectDetail(ctx, owner, name)
+		again, err := s.DeleteName(ctx, owner, name)
 		if err != nil {
-			fail("ObjectDetail of the restored body", err)
+			fail("DeleteName of the restored body", err)
 		}
-		again, err := s.DeletePlainObject(ctx, owner, name, restored.ContentFingerprint())
-		if err != nil {
-			fail("DeletePlainObject of the restored body", err)
-		}
-		if !again.Accepted || again.Outcome != swiftcontrol.UpdateApplied || again.After != nil {
-			t.Fatalf("second delete: accepted=%v outcome=%s successor=%v", again.Accepted, again.Outcome, again.After != nil)
+		if again.Outcome != swiftcontrol.UpdateApplied || again.Gone {
+			t.Fatalf("second delete: outcome=%s gone=%v", again.Outcome, again.Gone)
 		}
 		expectAbsent(t, ctx, s, owner, name)
 		expectArchive(t, ctx, s, archive)
@@ -164,9 +153,6 @@ func measureLegacyMode(t *testing.T, s *swiftcontrol.Session, mode swiftcontrol.
 	case swiftcontrol.VersioningHistoryLocation:
 		// Both bodies end in the archive with a zero-byte deletion marker, and
 		// the name stops resolving.
-		if del.After != nil {
-			t.Fatalf("the delete should leave the name absent; the read saw a successor of length %d", del.After.ContentLength)
-		}
 		expectAbsent(t, ctx, s, owner, name)
 		expectArchive(t, ctx, s, archive, first, second, "")
 		t.Logf("delete moved the second body to the archive beside the first and wrote a marker")

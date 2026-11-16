@@ -286,13 +286,13 @@ describe("large-object read semantics (§65.3)", () => {
     expect(s.entries).toHaveLength(3);
   });
 
-  it("refuses to manifest-delete a plain object", async () => {
+  it("deletes the name it is given and takes the answer", async () => {
     const s = await connected();
     await s.openContainer("fixtures");
     s.select(s.entries.findIndex((e) => e.name === "empty-object"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
-    await expect(s.deleteManifest("fixtures", "empty-object", s.objectDetail!)).rejects.toThrow(/plain/);
-    expect(s.entries.some((e) => e.name === "empty-object")).toBe(true);
+    await expect(s.deleteObject("fixtures", "empty-object", s.objectDetail!)).resolves.toMatchObject({ outcome: "applied" });
+    expect(s.entries.some((e) => e.name === "empty-object")).toBe(false);
   });
 });
 

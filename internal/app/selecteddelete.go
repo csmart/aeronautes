@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
@@ -50,7 +49,7 @@ func WireDeleteSettings(s *DeleteService, settings *SettingsService) {
 }
 
 // StartSelectedDelete deletes the selected objects as one job whose members
-// are each deleted exactly, by the verified per-name protocol (ADR 0093).
+// are each deleted by one DELETE of the name (ADR 0093, ADR 0122 decision 6).
 // The request is refused before any job row when the scope is empty or has
 // moved, when it names no member, a prefix row, an empty or repeated name,
 // or more members than the selection ceiling, or when the typed confirmation
@@ -154,10 +153,10 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 }
 
 // runSelectedDelete is the job goroutine: each member in turn, its issued mark
-// before its final HEAD, the protocol under a context cancellation does not
-// reach, and its outcome recorded with what the verifying read observed;
-// cancellation lands between members, and a record that cannot be written
-// stops the job with no later member touched (ADR 0093 decisions 3 and 4).
+// before its DELETE, the request under a context cancellation does not
+// reach, and the store's answer recorded as its outcome; cancellation lands
+// between members, and a record that cannot be written stops the job with no
+// later member touched (ADR 0093 decision 4, ADR 0122 decision 6).
 func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID string, session *swiftcontrol.Session) {
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
@@ -180,13 +179,10 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 			recordingLost = fmt.Sprintf("the issued mark for %q could not be written, so it and every later member were not attempted: %v", member.Name, err)
 			break
 		}
-		// The member's own requests run to their end whatever the job's
-		// context does: cancellation lands between members, never inside the
-		// comparison, the DELETE and the verifying read.
-		result, err := session.DeleteMember(background, req.Container, swiftcontrol.MemberRow{
-			Name: member.Name, Bytes: member.Bytes, ETag: member.ETag, SLOListed: member.SLOListed})
-		observation, successor, baseline := selectedMemberOutcome(result, err)
-		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, successor, baseline); recErr != nil {
+		// The member's request runs to its answer whatever the job's context
+		// does: cancellation lands between members, never inside a DELETE.
+		observation := memberOutcome(session.DeleteName(background, req.Container, member.Name))
+		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, nil, nil); recErr != nil {
 			recordingLost = fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was touched: %v", member.Name, recErr)
 			break
 		}
@@ -212,15 +208,12 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 	s.finishSelected(background, jobID, req, bookmarkID, state, reason)
 }
 
-// selectedEnd derives the terminal state from the members (ADR 0093
-// decision 4): complete when every member was deleted; partial whenever a
-// DELETE was sent and the job is not complete, because an uncertain effect
-// is never presented as no effect; cancelled only before any DELETE was
-// sent, whatever refusals preceded it; failed when nothing was sent because
-// every member was refused or changed since listed. A DELETE was sent for
-// every member deleted, unverified or failed by the store's answer, and may
-// have been for one issued and never settled; each member is counted once,
-// by its own outcome, and never through a facet that overlaps another.
+// selectedEnd derives the terminal state from the members' answers: complete
+// when every member was deleted; cancelled when the job was stopped before
+// any DELETE was sent; partial otherwise, because some members are gone and
+// some are not, or not known to be. A DELETE was sent for every member
+// deleted, unverified or failed, and may have been for one issued and never
+// settled; each member is counted once, by its own outcome.
 func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled bool) (jobs.State, string) {
 	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
 	if err != nil {
@@ -234,10 +227,10 @@ func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled
 		return jobs.StatePartial, fmt.Sprintf("cancelled after %d of %d members were requested, %d deleted", sent, totals.Admitted, totals.Deleted)
 	case totals.Deleted == totals.Admitted:
 		return jobs.StateComplete, ""
-	case sent == 0:
-		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: every member was refused or changed since listed (%d refused, %d changed)", totals.Refused, totals.Conflicts)
+	case totals.Deleted == 0 && totals.Unverified == 0:
+		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: the store refused all %d members", totals.Failed)
 	default:
-		return jobs.StatePartial, fmt.Sprintf("%d of %d members deleted; %d refused, %d changed since listed, %d failed, %d unverified", totals.Deleted, totals.Admitted, totals.Refused, totals.Conflicts, totals.Failed, totals.Unverified)
+		return jobs.StatePartial, fmt.Sprintf("%d of %d members deleted; %d failed, %d unknown", totals.Deleted, totals.Admitted, totals.Failed, totals.Unverified)
 	}
 }
 
@@ -293,57 +286,33 @@ func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req Se
 	}
 }
 
-// selectedMemberOutcome classifies one member's attempt into the ledger's
-// words (ADR 0093 decision 4), each with the baseline its comparison was made
-// against: deleted with what the literal read observed; unverified with the
-// same; changed since listed as a conflict with what the comparison found as
-// the successor that stopped it; a store answer that refused the DELETE as
-// failed; and a refusal of ours before any DELETE, a link, a missing name or
-// a read that could not be made, as refused.
-func selectedMemberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) (jobs.ItemObservation, *jobs.ItemSuccessor, *jobs.MemberBaseline) {
-	baseline := memberBaseline(result)
-	var conflict *swiftcontrol.IdentityConflictError
-	var refusal *swiftcontrol.ShownRefusalError
+// memberOutcome puts the store's answer to one member's DELETE in the
+// ledger's words (ADR 0122 decision 6): accepted, or already gone, is
+// deleted; no answer or a server error is unverified, because nothing says
+// what it did; any other answer is a failure with the store's status, and
+// deleted nothing.
+func memberOutcome(result *swiftcontrol.ObjectDeleteResult, err error) jobs.ItemObservation {
 	var se *swiftcontrol.SwiftError
 	switch {
 	case err == nil:
-		return jobs.ItemObservation{Result: jobs.ItemDeleted, Effect: jobs.EffectReportedApplied}, observedSuccessor(result), baseline
+		return jobs.ItemObservation{Result: jobs.ItemDeleted, Effect: jobs.EffectReportedApplied}
 	case errors.Is(err, swiftcontrol.ErrUnverifiedDelete):
-		diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageVerification, Code: jobs.CodeUnverified}
-		return jobs.ItemObservation{Result: jobs.ItemUnverified, Effect: jobs.EffectUnresolved, Diagnostic: diagnostic}, observedSuccessor(result), baseline
-	case errors.As(err, &conflict):
-		found := &jobs.ItemSuccessor{Present: true, Class: conflict.FoundClass, Length: conflict.FoundLength, ETag: conflict.FoundETag, Role: jobs.SuccessorComparison}
-		return jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeConflict}}, found, baseline
-	case errors.As(err, &refusal) && refusal.Link:
-		// A link at the read that fixes the member's baseline: refused with
-		// its kind, the fact the record needs to say why nothing was deleted
-		// (ADR 0093 decision 4); the target is never named.
-		return jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeLink}}, nil, baseline
-	case result != nil && result.Requested && errors.As(err, &se):
-		// The DELETE left and the store answered with something other than
-		// success: a client-side refusal, a refused token or a status outside
-		// success such as a redirect. The member failed at its request, and
-		// a request was sent whatever the answer (ADR 0093 decision 4).
+		return jobs.ItemObservation{Result: jobs.ItemUnverified, Effect: jobs.EffectUnresolved,
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeUnverified, HTTPStatus: statusOf(result)}}
+	case errors.As(err, &se):
 		return jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: itemCodeOf(se.Kind), HTTPStatus: se.HTTPStatus}}, nil, baseline
-	default:
-		diagnostic := jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeUnsupported}
-		if errors.As(err, &se) {
-			diagnostic.Code, diagnostic.HTTPStatus = itemCodeOf(se.Kind), se.HTTPStatus
-		}
-		return jobs.ItemObservation{Result: jobs.ItemRefused, Effect: jobs.EffectNotAttempted, Diagnostic: diagnostic}, nil, baseline
+			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: itemCodeOf(se.Kind), HTTPStatus: se.HTTPStatus}}
 	}
+	return jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
+		Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeUnknown}}
 }
 
-// memberBaseline is the identity the member's comparison was made against,
-// as the session reports it; nil when the member never reached a comparison.
-func memberBaseline(result *swiftcontrol.ObjectDeleteResult) *jobs.MemberBaseline {
-	if result == nil || result.Baseline == nil {
-		return nil
+// statusOf is the store's status for a DELETE that was answered, 0 otherwise.
+func statusOf(result *swiftcontrol.ObjectDeleteResult) int {
+	if result == nil {
+		return 0
 	}
-	return &jobs.MemberBaseline{Class: string(result.Baseline.Class), Length: result.Baseline.ContentLength, ETag: strings.Trim(result.Baseline.ETag, `"`)}
+	return result.Status
 }
 
 func itemCodeOf(kind swiftcontrol.ErrorKind) jobs.ItemCode {
@@ -363,24 +332,4 @@ func itemCodeOf(kind swiftcontrol.ErrorKind) jobs.ItemCode {
 	default:
 		return jobs.CodeUnknown
 	}
-}
-
-// observedSuccessor is what the literal read found at the name after the
-// DELETE: an observed absence, the object now there, or nothing when the
-// read could not be made or no DELETE was issued.
-func observedSuccessor(result *swiftcontrol.ObjectDeleteResult) *jobs.ItemSuccessor {
-	if result == nil || result.TransIDs == nil || result.AfterRead != nil {
-		return nil
-	}
-	if result.After == nil {
-		if !result.Accepted && result.Outcome == "" {
-			return nil
-		}
-		return &jobs.ItemSuccessor{}
-	}
-	class := string(result.After.Class)
-	if result.After.SymlinkTarget != "" {
-		class = "symlink"
-	}
-	return &jobs.ItemSuccessor{Present: true, Class: class, Length: result.After.ContentLength, ETag: strings.Trim(result.After.ETag, `"`)}
 }

@@ -207,11 +207,11 @@ func runOracle(t *testing.T, label, backend string, c realcloud.Cloud) {
 	}
 	t.Logf("GET body round-trips (%d bytes)", len(got))
 
-	res, err := s.DeletePlainObject(ctx, probe, objName, detail.ContentFingerprint())
+	res, err := s.DeleteName(ctx, probe, objName)
 	if err != nil {
-		fail("DeletePlainObject", err)
+		fail("DeleteName", err)
 	}
-	t.Logf("DELETE outcome=%v accepted=%v", res.Outcome, res.Accepted)
+	t.Logf("DELETE outcome=%v status=%d", res.Outcome, res.Status)
 	if _, err := s.ObjectDetail(ctx, probe, objName); err == nil {
 		t.Errorf("object still present after delete")
 	}

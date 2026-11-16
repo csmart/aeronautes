@@ -688,28 +688,14 @@ export function newFakeApi(): Api {
       return { prefix, markerBacked: true, selfObject: objectDetailOf(container, prefix), scope: { ...scope } };
     },
 
-    deleteMarker: async (scope, container, prefix, contentFingerprint): Promise<MutationResultDTO> => {
+    // The three single deletions delete the name and take the answer (ADR
+    // 0122 decision 6): whatever the name holds goes, and a name that is
+    // already gone is the outcome asked for.
+    deleteMarker: async (scope, container, prefix): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
-      if (contentFingerprint === "") {
-        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
-      }
-      const stored = findObject(container, prefix);
-      if (!stored) {
-        record("marker.delete", `${container}/${prefix}`, "failed");
-        throw new Error("no marker object at this prefix");
-      }
-      if (stored.bytes !== 0 || stored.contentType !== "application/directory") {
-        record("marker.delete", `${container}/${prefix}`, "failed");
-        throw new Error(`the object at ${container}/${prefix} is not a directory marker (${stored.contentType}, ${stored.bytes} bytes); refusing to delete it through the marker path`);
-      }
-      const detail = objectDetailOf(container, prefix);
-      if (detail.contentFingerprint !== contentFingerprint) {
-        record("marker.delete", `${container}/${prefix}`, "conflict");
-        throw new Error(`${container}/${prefix} is not what you were shown: it now reports a plain of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
-      }
-      objects[container] = objects[container].filter((o) => o.name !== prefix);
+      objects[container] = (objects[container] ?? []).filter((o) => o.name !== prefix);
       record("marker.delete", `${container}/${prefix}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
     dloSegments: async (manifest, bookmarkId) => {
@@ -741,50 +727,18 @@ export function newFakeApi(): Api {
       };
     },
 
-    deleteManifest: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
+    deleteManifest: async (scope, container, name): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
-      if (contentFingerprint === "") {
-        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
-      }
-      const detail = objectDetailOf(container, name);
-      if (detail.class === "plain") {
-        record("manifest.delete", `${container}/${name}`, "failed");
-        throw new Error(`${container}/${name} is a plain object, not a manifest; the manifest-only delete refuses it`);
-      }
-      if (detail.followedSymlink || detail.symlinkTarget) {
-        record("manifest.delete", `${container}/${name}`, "failed");
-        throw new Error(`${container}/${name} is a symlink: the identity shown is its target's`);
-      }
-      if (detail.contentFingerprint !== contentFingerprint) {
-        record("manifest.delete", `${container}/${name}`, "conflict");
-        throw new Error(`${container}/${name} is not what you were shown: it now reports a ${detail.class} of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
-      }
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("manifest.delete", `${container}/${name}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
-    deleteObject: async (scope, container, name, contentFingerprint): Promise<MutationResultDTO> => {
+    deleteObject: async (scope, container, name): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
-      if (contentFingerprint === "") {
-        throw new Error("deleting needs the content identity the caller was shown; a delete that cannot say what it meant to destroy is refused");
-      }
-      const detail = objectDetailOf(container, name);
-      if (detail.class !== "plain") {
-        record("object.delete", `${container}/${name}`, "failed");
-        throw new Error(`${container}/${name} is a ${detail.class} manifest, not a plain object; the manifest deletion owns it`);
-      }
-      if (detail.followedSymlink || detail.symlinkTarget) {
-        record("object.delete", `${container}/${name}`, "failed");
-        throw new Error(`${container}/${name} is a symlink: the identity shown is its target's`);
-      }
-      if (detail.contentFingerprint !== contentFingerprint) {
-        record("object.delete", `${container}/${name}`, "conflict");
-        throw new Error(`${container}/${name} is not what you were shown: it now reports a plain of ${detail.contentLength} bytes with entity tag ${detail.etag}, so nothing was deleted (expected identity ${contentFingerprint}, found ${detail.contentFingerprint})`);
-      }
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("object.delete", `${container}/${name}`, "applied");
-      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake", "txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
+      return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
     auditRecent: async (limit, bookmarkId) => {
@@ -1048,9 +1002,8 @@ export function newFakeApi(): Api {
       objects: 42,
       bytes: 9_000_000,
       possibleManifests: 2,
-      laterBaselineRows: 2,
-      requestCost: 86,
-      strategy: "per-name-verified",
+      requestCost: 42,
+      strategy: "per-name",
       archiveOf: [],
       archiveUnestablished: "",
     }),

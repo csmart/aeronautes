@@ -351,10 +351,10 @@ func reviewedMembership(detail *swiftcontrol.ObjectDetail, manifest *swiftcontro
 // (ADR 0095 decision 8). It is always gated on the Backstage force with the
 // typed object name, because ownership evidence is advisory until a live
 // reverse-reference scan exists. The job owns the reviewed graph the request
-// carries: it deletes the manifest by the reviewed-manifest protocol, which
-// refuses a graph swap or a moved namespace, and only after that is durably
-// recorded deleted does it delete the segments by the per-name protocol. The
-// result is the job id; the drawer shows the manifest and each segment.
+// carries: it deletes the name, whatever then holds it, and only after the
+// store's answer is durably recorded as deleted does it delete the reviewed
+// segments, one DELETE each (ADR 0122 decision 6). The result is the job id;
+// the drawer shows the manifest and each segment.
 func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req SegmentsDeleteRequestDTO) (string, error) {
 	if err := refuseIfDeferred("DeleteService.DeleteManifestWithSegments"); err != nil {
 		return "", err
@@ -422,8 +422,7 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		}
 	}
 	// The manifest member records the identity the operator reviewed, not the
-	// later startup read, so a conflict keeps the approved identity (ADR 0095
-	// decision 8).
+	// later startup read (ADR 0095 decision 8).
 	job.manifestListed = jobs.ItemIntent{
 		ItemIdentity: jobs.ItemIdentity{Key: req.Container + "/" + req.Name, Source: jobs.ItemLocation{
 			Kind: jobs.ItemSwift, BookmarkID: req.BookmarkID, Container: req.Container, Object: req.Name}},

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -35,9 +34,10 @@ func refuseSegmentsWhereVersionsAreKept(ctx context.Context, session *swiftcontr
 
 // largeObject deletes one row of the scope together with its segments, when
 // the row is a large object whose segments the rules can bound: the manifest
-// first, bound to the graph read here, and the segments only once that
-// deletion is recorded (ADR 0119 decisions 4 and 5). It runs on the goroutine
-// that reads the listing, so its admissions never race the listing's.
+// first, and the segments it named, read here once, only when the store's
+// answer to its DELETE is recorded as deleted (ADR 0119 decisions 4 and 5,
+// ADR 0122 decision 6). It runs on the goroutine that reads the listing, so
+// its admissions never race the listing's.
 //
 // handled is false for every other row, a plain object, a marker, a link, a
 // row that cannot be read, and a large object whose segments are left; the
@@ -49,7 +49,7 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 	}
 	detail, err := r.session.ObjectDetail(ctx, m.container, m.name)
 	if err != nil || detail.FollowedSymlink || detail.SymlinkTarget != "" {
-		// The member protocol reads the row itself and records what it finds.
+		// The row is queued as an ordinary member, deleted by its name.
 		return false, false
 	}
 	var manifest *swiftcontrol.SLOManifest
@@ -71,26 +71,13 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			if holder, staged := r.s.runner.stagedByLiveJob(account, entry.Container, entry.Object); staged {
 				return r.leave(ctx, m, "a segment of it is in the staging area of "+holder)
 			}
-			segment := sweepMember{container: entry.Container, name: entry.Object, bytes: entry.Size, etag: entry.ETag, recorded: true}
+			segment := sweepMember{container: entry.Container, name: entry.Object, bytes: entry.Size, etag: entry.ETag}
 			if !seen[segment.key()] {
 				seen[segment.key()] = true
 				segments = append(segments, segment)
 			}
 		}
 	case swiftcontrol.ClassDLO:
-		// A dynamic manifest's length and entity tag are made from its
-		// segments, so one read or compared while this job's workers delete
-		// them would be refused as changed by the job's own doing. Its
-		// segments can be rows of the scope, or the entries of a static
-		// manifest this job has already deleted. The members in flight
-		// settle first, and the manifest is read again as it then stands,
-		// while nothing else of this sweep is running (ADR 0119 decision 4,
-		// ADR 0120 decision 6).
-		r.inflight.Wait()
-		detail, err = r.session.ObjectDetail(ctx, m.container, m.name)
-		if err != nil || detail.FollowedSymlink || detail.SymlinkTarget != "" || detail.Class != swiftcontrol.ClassDLO {
-			return false, false
-		}
 		var segPrefix string
 		var ok bool
 		segContainer, segPrefix, ok = swiftcontrol.DynamicSegments(detail.Manifest)
@@ -127,30 +114,26 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 	default:
 		return false, false
 	}
-	reviewed, err := reviewedMembership(detail, manifest)
-	if err != nil {
-		return r.leave(ctx, m, err.Error())
-	}
 	// A static object's segments are admitted before its manifest is
 	// requested, and only the ones the job does not already hold: a segment
 	// another manifest of this job named, or one that is also a row of the
 	// scope, is requested once (decision 6).
-	segments, _, readErr, latched := r.admitRows(background, segments)
+	segments, readErr, latched := r.admitRows(background, segments)
 	if latched {
 		return true, false
 	}
 	if readErr != nil {
 		return r.leave(ctx, m, readErr.Error())
 	}
-	observation, lost := r.s.deleteReviewedMember(background, r.session, r.jobID, m.container, m.name, reviewed)
+	observation, lost := r.s.deleteManifestMember(background, r.session, r.jobID, m.container, m.name)
 	if lost != "" {
 		r.latch(lost)
 		return true, false
 	}
 	r.settled(background, observation)
 	if observation.Result != jobs.ItemDeleted {
-		// A manifest that was refused, had changed, failed or is unverified is
-		// not consent to remove what it may still name (decision 5).
+		// A manifest the store refused to delete, or gave no answer for, may
+		// still name its segments, so they stay (decision 5).
 		for _, segment := range segments {
 			r.notAttempted(background, segment)
 		}
@@ -226,15 +209,6 @@ func (r *prefixSweep) sweepNamespace(ctx, background context.Context, m sweepMem
 		return true
 	case counts.listErr != nil:
 		r.leave(background, m, "the listing of its segments stopped, so not all of them were deleted: "+counts.listErr.Error())
-	default:
-		// The namespace's members grow from its listing, so their records
-		// alone cannot say that a name the listing omitted is gone.
-		remaining, err := deletion.VerifyPrefixEmpty(background, r.session, segContainer, namespace)
-		if err != nil {
-			r.leave(background, m, "its segments could not be verified gone: "+err.Error())
-		} else if remaining > 0 {
-			r.leave(background, m, "a name still answers under its segments")
-		}
 	}
 	return false
 }
@@ -270,24 +244,18 @@ func (r *prefixSweep) segmentsLeft() string {
 	return fmt.Sprintf("the segments of %d large object(s) were left or not all deleted; the first: %s", r.leftCount, r.leftFirst)
 }
 
-// deleteReviewedMember issues one manifest member of a job and records its
-// outcome: the manifest protocol bound to the graph that was read for it,
-// with that graph's identity as the member's baseline (ADR 0095 decision 8).
-// It returns the outcome, or the reason a record could not be written; the
-// caller then stops, because a manifest with only an issued mark is
-// unresolved and none of its segments may be attempted.
-func (s *DeleteService) deleteReviewedMember(ctx context.Context, session *swiftcontrol.Session, jobID, container, name string, reviewed ReviewedMembershipDTO) (jobs.ItemObservation, string) {
+// deleteManifestMember sends one manifest member's DELETE and records the
+// store's answer as its outcome. It returns the outcome, or the reason a
+// record could not be written; the caller then stops, because a manifest
+// with only an issued mark is unresolved and none of its segments may be
+// attempted.
+func (s *DeleteService) deleteManifestMember(ctx context.Context, session *swiftcontrol.Session, jobID, container, name string) (jobs.ItemObservation, string) {
 	key := container + "/" + name
 	if err := s.jobs.MarkIssued(ctx, jobID, key); err != nil {
 		return jobs.ItemObservation{}, fmt.Sprintf("the manifest's issued mark could not be written: %v", err)
 	}
-	result, err := session.DeleteReviewedManifest(ctx, container, name, toReviewedManifest(reviewed))
-	observation, successor, _ := selectedMemberOutcome(result, err)
-	baseline := &jobs.MemberBaseline{Class: reviewed.Class, Length: reviewed.Length, ETag: reviewed.ETag}
-	if observation.Result == jobs.ItemNotAttempted {
-		baseline = nil
-	}
-	if recErr := s.jobs.RecordDeletion(ctx, jobID, key, observation, successor, baseline); recErr != nil {
+	observation := memberOutcome(session.DeleteName(ctx, container, name))
+	if recErr := s.jobs.RecordDeletion(ctx, jobID, key, observation, nil, nil); recErr != nil {
 		return observation, fmt.Sprintf("the manifest's outcome could not be recorded after its request: %v", recErr)
 	}
 	return observation, ""

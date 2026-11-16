@@ -6,15 +6,15 @@ import (
 
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 // segmentJob deletes a manifest and its segments as one job (ADR 0095
-// decision 8): the manifest member first, by the reviewed-manifest protocol,
-// and the segments only after the manifest's deletion is durably recorded.
-// The reviewed graph comes from the request, never resolved again here.
+// decision 8): the manifest first, and the segments only after the store's
+// answer to its DELETE is durably recorded as deleted. The segments are the
+// ones the operator reviewed, which come with the request and are never
+// read again here (ADR 0122 decision 6).
 type segmentJob struct {
 	s          *DeleteService
 	jobID      string
@@ -65,10 +65,8 @@ func (j *segmentJob) run(ctx context.Context) {
 		j.finish(background, jobs.StateCancelled, "", admitted)
 		return
 	}
-	// Phase 1: the manifest member, bound to the reviewed graph. Its baseline
-	// is the identity the operator reviewed, so a conflict keeps the expected
-	// and observed identities (ADR 0095 decision 8).
-	observation, lost := j.s.deleteReviewedMember(background, j.session, j.jobID, j.container, j.name, j.reviewed)
+	// Phase 1: the manifest.
+	observation, lost := j.s.deleteManifestMember(background, j.session, j.jobID, j.container, j.name)
 	if lost != "" {
 		// Boundary one, when it is the outcome that was lost: the manifest's
 		// own outcome could not be recorded after its DELETE. Only the issued
@@ -78,15 +76,15 @@ func (j *segmentJob) run(ctx context.Context) {
 		return
 	}
 	if observation.Result != jobs.ItemDeleted {
-		// A manifest refused or changed since reviewed ends the job failed with
-		// nothing deleted; one whose DELETE failed or is unverified ends it
-		// partial with every segment untouched, because an unconfirmed manifest
-		// deletion is not consent to remove what it may still reference.
+		// A manifest the store refused to delete ends the job failed with
+		// nothing deleted; one whose DELETE got no answer ends it partial with
+		// every segment untouched, because a manifest that may still be there
+		// may still name them.
 		// The static segments were admitted before any effect, so each one,
 		// never issued, is settled not attempted (ADR 0095 decision 4) before
 		// the job finishes, rather than left as a phantom unresolved effect the
-		// terminal job can no longer settle; the manifest's own refused,
-		// conflict or uncertain outcome already stands.
+		// terminal job can no longer settle; the manifest's own outcome
+		// already stands.
 		var segmentKeys []string
 		for _, key := range admittedKeys {
 			if key != j.manifestKey() {
@@ -96,11 +94,10 @@ func (j *segmentJob) run(ctx context.Context) {
 		if !j.settleNotAttempted(background, segmentKeys) {
 			return
 		}
-		switch observation.Result {
-		case jobs.ItemConflict, jobs.ItemRefused:
-			j.finish(background, jobs.StateFailed, "the manifest changed since it was reviewed or was refused; nothing was deleted", admitted)
-		default:
-			j.finish(background, jobs.StatePartial, "the manifest's deletion was not confirmed; its segments were left untouched", admitted)
+		if observation.Result == jobs.ItemFailed {
+			j.finish(background, jobs.StateFailed, "the store refused to delete the manifest; nothing was deleted", admitted)
+		} else {
+			j.finish(background, jobs.StatePartial, "the store did not answer the manifest's DELETE; its segments were left untouched", admitted)
 		}
 		return
 	}
@@ -173,9 +170,9 @@ func (j *segmentJob) admit(ctx context.Context) (int64, []string, bool) {
 }
 
 // deleteSegments deletes the segment members after the manifest: the reviewed
-// entries for a static large object, or the namespace for a dynamic one,
-// through the same per-name protocol the bulk sweep uses. It reports whether
-// a cancellation ended it.
+// entries for a static large object, or the namespace for a dynamic one, by
+// the sweep the bulk deletion runs. It reports whether a cancellation ended
+// it.
 func (j *segmentJob) deleteSegments(ctx, background context.Context) (bool, error) {
 	if j.reviewed.Class == string(swiftcontrol.ClassDLO) {
 		sweep := &prefixSweep{s: j.s, jobID: j.jobID, bookmarkID: j.bookmarkID, container: j.segContainer, prefix: j.namespace, session: j.session}
@@ -205,9 +202,8 @@ func (j *segmentJob) deleteSegments(ctx, background context.Context) (bool, erro
 			j.lost(background, fmt.Sprintf("the issued mark for segment %q could not be written: %v", key, err))
 			return false, nil
 		}
-		result, err := j.session.DeleteMember(background, entry.Container, swiftcontrol.MemberRow{Name: entry.Object, Bytes: entry.Size, ETag: entry.ETag})
-		observation, successor, baseline := selectedMemberOutcome(result, err)
-		if recErr := j.s.jobs.RecordDeletion(background, j.jobID, key, observation, successor, baseline); recErr != nil {
+		observation := memberOutcome(j.session.DeleteName(background, entry.Container, entry.Object))
+		if recErr := j.s.jobs.RecordDeletion(background, j.jobID, key, observation, nil, nil); recErr != nil {
 			// Boundary two: a later write failed after the manifest's deleted
 			// outcome committed. That record stands; the job is unavailable.
 			j.lost(background, fmt.Sprintf("a segment's outcome could not be recorded after its request: %v", recErr))
@@ -226,28 +222,16 @@ func (j *segmentJob) segmentEnd(ctx context.Context, cancelled bool, listErr err
 	if err != nil {
 		return jobs.StatePartial, "the members' records could not be read: " + err.Error()
 	}
-	breakdown := fmt.Sprintf("the manifest is gone; %d of %d members deleted; %d refused, %d changed since reviewed, %d failed, %d unverified",
-		totals.Deleted, totals.Admitted, totals.Refused, totals.Conflicts, totals.Failed, totals.Unverified)
+	breakdown := fmt.Sprintf("the manifest is gone; %d of %d members deleted; %d failed, %d unknown",
+		totals.Deleted, totals.Admitted, totals.Failed, totals.Unverified)
 	if cancelled {
 		return jobs.StatePartial, "cancelled after the manifest was deleted; " + breakdown
 	}
 	// A dynamic sweep that could not read its namespace listing has not swept
-	// it, so its ledger totals cannot establish an empty namespace; the job is
-	// partial with the deleted manifest disclosed (ADR 0095 decision 8).
+	// it; the job is partial with the deleted manifest disclosed (ADR 0095
+	// decision 8).
 	if listErr != nil {
 		return jobs.StatePartial, "the manifest is gone, but the segment listing stopped, so the namespace was not fully swept: " + listErr.Error() + "; " + breakdown
-	}
-	// For a dynamic manifest the namespace is verified empty before the job
-	// claims complete, because the reviewed members grow from the listing and
-	// their totals alone cannot say an unlisted name is gone.
-	if j.reviewed.Class == string(swiftcontrol.ClassDLO) {
-		remaining, err := deletion.VerifyPrefixEmpty(ctx, j.session, j.segContainer, j.namespace)
-		if err != nil {
-			return jobs.StatePartial, "the manifest is gone, but its namespace could not be verified empty: " + err.Error() + "; " + breakdown
-		}
-		if remaining > 0 {
-			return jobs.StatePartial, "the manifest is gone, but a name still answers under its namespace; " + breakdown
-		}
 	}
 	if totals.Deleted == totals.Admitted {
 		return jobs.StateComplete, ""
@@ -282,15 +266,4 @@ func (j *segmentJob) finish(ctx context.Context, state jobs.State, message strin
 	if err != nil {
 		applog.Errorf("job %s terminal outcome was not saved: %v", j.jobID, err)
 	}
-}
-
-func toReviewedManifest(dto ReviewedMembershipDTO) swiftcontrol.ReviewedManifest {
-	reviewed := swiftcontrol.ReviewedManifest{
-		Class: swiftcontrol.ObjectClass(dto.Class), Fingerprint: dto.Fingerprint, Namespace: dto.Namespace,
-	}
-	for _, entry := range dto.Entries {
-		reviewed.Entries = append(reviewed.Entries, swiftcontrol.ReviewedEntry{
-			Container: entry.Container, Object: entry.Object, Size: entry.Size, ETag: entry.ETag})
-	}
-	return reviewed
 }

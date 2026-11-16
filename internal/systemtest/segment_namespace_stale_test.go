@@ -37,8 +37,7 @@ type segmentFront struct {
 // which the route issues only after consuming the whole preflight, so it
 // is a point strictly between preflight and sweep. afterListing runs
 // once when the first listing of the segment container has been proxied,
-// which is inside the preflight and therefore before the identity
-// recheck.
+// which is inside the preflight and therefore before any DELETE.
 func segmentFrontFor(t *testing.T, h *Harness, segments string,
 	afterDelete, afterListing func(), failListing bool) *segmentFront {
 	t.Helper()
@@ -209,18 +208,17 @@ func TestSegmentSweepRefusesAnUnreadableListing(t *testing.T) {
 	}
 }
 
-// The preflight issues a listing, so it must not sit between the final
-// identity recheck and the DELETE: that would widen the window the
-// recheck exists to close. Replacing the selected manifest while the
-// preflight is in flight must therefore refuse, with nothing removed.
-func TestSegmentDeleteRefusesAnIdentityMovedDuringThePreflight(t *testing.T) {
+// Replacing the selected manifest while the preflight is in flight does not
+// stop the job (ADR 0122 decision 6): the name is deleted whatever now holds
+// it, the segments the operator reviewed are deleted after it, and the job
+// completes. The refusal earlier builds made here is gone.
+func TestSegmentDeleteTakesANameReplacedDuringThePreflight(t *testing.T) {
 	h := New(t)
 	ctx := context.Background()
 	segments, aliases := seedSubject(t, h, "job1")
 
 	// Review the original graph on the real store before the proxy moves
-	// the selected name; the request carries that graph, and the job's own
-	// recheck (ADR 0095 decision 8) is what must catch the move.
+	// the selected name; the request carries that graph.
 	req := subjectRequest(h, aliases)
 	req.Reviewed = h.ReviewSegmentMembership(ctx, aliases, "subject.bin")
 
@@ -235,23 +233,24 @@ func TestSegmentDeleteRefusesAnIdentityMovedDuringThePreflight(t *testing.T) {
 	before := h.SnapshotNamespace(h.Primary)
 	rec := h.DeleteManifestWithSegments(ctx, req)
 	if rec.Err() != nil {
-		t.Fatalf("the job did not start; the reviewed graph matched at startup: %v", rec.Err())
+		t.Fatalf("the job did not start: %v", rec.Err())
 	}
-	job := h.AwaitJob(rec.JobID())
-	if job.State != "failed" {
-		t.Fatalf("the selected manifest was replaced during the preflight but the job did not fail: state %q, error %q", job.State, job.Error)
+	if job := h.AwaitJob(rec.JobID()); job.State != "complete" {
+		t.Fatalf("job = %+v, want complete", job)
 	}
-	if !strings.Contains(job.Error, "reviewed") {
-		t.Errorf("job failure %q does not name the reviewed-graph change", job.Error)
+	gone := []string{aliases + "/subject.bin", segments + "/job1/00000000", segments + "/job1/00000001"}
+	after := h.SnapshotNamespace(h.Primary)
+	if _, still := after.Containers[aliases].Objects["subject.bin"]; still {
+		t.Fatal("the replaced name is still there")
 	}
-	// The fixture itself rewrote the selected name, so that one object is
-	// the approved change; nothing else may have moved, and in particular
-	// no segment may have been removed.
-	h.AssertNoCollateral(before, h.SnapshotNamespace(h.Primary), aliases+"/subject.bin")
+	if left := len(after.Containers[segments].Objects); left != 0 {
+		t.Fatalf("%d reviewed segment(s) left", left)
+	}
+	h.AssertNoCollateral(before, after, gone...)
 	front.mu.Lock()
 	defer front.mu.Unlock()
-	if len(front.deletes) > 0 {
-		t.Errorf("a refused identity change still issued %d delete(s): %v", len(front.deletes), front.deletes)
+	if len(front.deletes) != len(gone) {
+		t.Errorf("deletes = %v, want one for the name and one for each reviewed segment", front.deletes)
 	}
 }
 

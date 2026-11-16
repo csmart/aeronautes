@@ -10,11 +10,10 @@ import (
 // On the owned Swift, through the public marker and manifest deletions
 // (ADR 0094 proof): a versions location restores the archived plain
 // predecessor when the marker or the manifest at the name is deleted, and
-// gives it up from the archive, so the delete is applied with that
-// predecessor observed as the successor; a history location takes the deleted
-// content into its archive and the name stops resolving, so the delete is
-// applied with an observed absence and the archive grown. Children, segments
-// and neighbours stay as they were.
+// gives it up from the archive; a history location takes the deleted content
+// into its archive and the name stops resolving. Either way the store
+// accepted the one DELETE, so the delete is applied. Children, segments and
+// neighbours stay as they were.
 func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 	h := New(t)
 	ctx := context.Background()
@@ -43,17 +42,17 @@ func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 		if err != nil || marker.SelfObject == nil || !marker.MarkerBacked {
 			t.Fatalf("marker detail = %+v, %v", marker, err)
 		}
-		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/", marker.SelfObject.ContentFingerprint)
-		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.ContentLength != 3 || result.ObjectAfter.Class != "plain" {
-			t.Fatalf("marker: result = %+v, err = %v; want applied with the restored predecessor observed", result, err)
+		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/")
+		if err != nil || result.Outcome != "applied" {
+			t.Fatalf("marker: result = %+v, err = %v; want applied", result, err)
 		}
 		shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "video.dlo")
 		if err != nil || shown.Class != "dlo" {
 			t.Fatalf("manifest detail = %+v, %v", shown, err)
 		}
-		result, err = h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "video.dlo", shown.ContentFingerprint)
-		if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil || result.ObjectAfter.ContentLength != 3 || result.ObjectAfter.Class != "plain" {
-			t.Fatalf("manifest: result = %+v, err = %v; want applied with the restored predecessor observed", result, err)
+		result, err = h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "video.dlo")
+		if err != nil || result.Outcome != "applied" {
+			t.Fatalf("manifest: result = %+v, err = %v; want applied", result, err)
 		}
 		after := h.Snapshot(h.Primary, c)
 		for name, want := range map[string]int64{"dir/": 3, "video.dlo": 3} {
@@ -74,7 +73,7 @@ func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 		}
 		for operation, name := range map[string]string{"marker.delete": "dir/", "manifest.delete": "video.dlo"} {
 			facts := factsFor(t, h, operation, c+"/"+name)
-			if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
+			if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) != 1 {
 				t.Fatalf("%s: facts = %+v", operation, facts)
 			}
 		}
@@ -95,17 +94,13 @@ func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 		if err != nil || marker.SelfObject == nil {
 			t.Fatalf("marker detail = %+v, %v", marker, err)
 		}
-		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/", marker.SelfObject.ContentFingerprint)
-		if err != nil || result.Outcome != "applied" || result.ObjectAfter != nil {
-			t.Fatalf("marker: result = %+v, err = %v; want applied with an observed absence", result, err)
+		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/")
+		if err != nil || result.Outcome != "applied" {
+			t.Fatalf("marker: result = %+v, err = %v; want applied", result, err)
 		}
-		shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "video.dlo")
-		if err != nil {
-			t.Fatal(err)
-		}
-		result, err = h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "video.dlo", shown.ContentFingerprint)
-		if err != nil || result.Outcome != "applied" || result.ObjectAfter != nil {
-			t.Fatalf("manifest: result = %+v, err = %v; want applied with an observed absence", result, err)
+		result, err = h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "video.dlo")
+		if err != nil || result.Outcome != "applied" {
+			t.Fatalf("manifest: result = %+v, err = %v; want applied", result, err)
 		}
 		after := h.Snapshot(h.Primary, c)
 		for _, name := range []string{"dir/", "video.dlo"} {

@@ -371,10 +371,11 @@ func (w *world) stored(a *account, container, prefix string) map[string][32]byte
 	return out
 }
 
-// settled repeats a check that reads a listing until it reports no problem
-// or a minute passes, and returns the last problem. Listings are eventually
-// consistent (AGENTS.md: verify with bounded retries), so the first read can
-// lag behind a write that has already completed.
+// settled repeats a check that reads the store until it reports no problem
+// or a minute passes, and returns the last problem. Listings, and a deleted
+// container's own answer, are eventually consistent (AGENTS.md: verify with
+// bounded retries), so the first read can lag behind a write that has
+// already completed.
 func (w *world) settled(check func() string) string {
 	deadline := time.Now().Add(time.Minute)
 	for {

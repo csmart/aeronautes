@@ -316,13 +316,6 @@ func deletePass(ctx, admissionCtx context.Context, session *swiftcontrol.Session
 	return errors.Join(accounting.problem(), listErr, ctx.Err())
 }
 
-// VerifyPrefixEmpty is the postcondition the verified per-name sweep shares
-// with this executor (ADR 0095 decision 5): how many rows still answer under
-// the scope, zero or one, after bounded retries.
-func VerifyPrefixEmpty(ctx context.Context, session *swiftcontrol.Session, container, prefix string) (int64, error) {
-	return verifyPrefixEmpty(ctx, session, container, prefix)
-}
-
 // verifyPrefixEmpty is the §32 low-cost postcondition: one-row listing
 // with bounded retries for listing consistency (§15.3). Returns how
 // many rows still answer (0 or 1 — it never rescans the namespace).
@@ -351,30 +344,6 @@ func verifyPrefixEmpty(ctx context.Context, session *swiftcontrol.Session, conta
 		}
 	}
 	return remaining, nil
-}
-
-// VerifyContainerGone is the postcondition of a container deletion: whether
-// the container has stopped answering, looked for with the same bounded
-// retries the prefix postcondition uses (§15.3). A store's replicas can lag
-// a DELETE the store has accepted, so one HEAD straight after it can still
-// answer; a job that asked once reported a deleted container as left
-// standing (seen on a real cloud, 0.5.0 candidate). A HEAD that fails for
-// any other reason counts as an answer, since the job cannot then say the
-// container is gone.
-func VerifyContainerGone(ctx context.Context, session *swiftcontrol.Session, container string) bool {
-	for attempt := 0; ; attempt++ {
-		if _, err := session.ContainerDetail(ctx, container); swiftcontrol.IsNotFound(err) {
-			return true
-		}
-		if attempt == 4 {
-			return false
-		}
-		select {
-		case <-time.After(300 * time.Millisecond):
-		case <-ctx.Done():
-			return false
-		}
-	}
 }
 
 // ContainerConfig is the §33 preserved surface an Empty Container run

@@ -3,8 +3,8 @@ package systemtest
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -13,19 +13,18 @@ import (
 
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/mutationfacts"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-// The public-service proof ADR 0092 requires beyond the credited cells: the
-// refusals for every kind the action must not touch, the literal objects it
-// does delete, a conflict with both identities on record, and the measured
-// versions-location restoration on the owned Swift.
+// The public-service proof beyond the credited cells (ADR 0122 decision 6):
+// the deletion deletes the name whatever kind of object holds it, the literal
+// objects it deletes, the record it leaves, and the measured versions-location
+// restoration on the owned Swift.
 
 var textType = map[string]string{"Content-Type": "text/plain"}
 
 // literalHeadStatus HEADs a name without following a link or expanding a
-// manifest, through the raw client, so a refused member can be shown intact
-// where a logical read would follow or fail.
+// manifest, through the raw client, so what is stored at a name can be shown
+// present or gone where a logical read would follow or fail.
 func literalHeadStatus(t *testing.T, h *Harness, a *Account, container, name string) int {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodHead,
@@ -82,21 +81,20 @@ func deleteEventsFor(t *testing.T, h *Harness, resource string) []app.AuditEvent
 	return out
 }
 
-func TestObjectDeleteRefusesManifestsAndLinksMock(t *testing.T) {
-	testObjectDeleteRefusesManifestsAndLinks(t, findMockHarness(t))
+func TestObjectDeleteDeletesManifestsAndLinksMock(t *testing.T) {
+	testObjectDeleteDeletesManifestsAndLinks(t, findMockHarness(t))
 }
-func TestObjectDeleteRefusesManifestsAndLinksSwift(t *testing.T) {
-	testObjectDeleteRefusesManifestsAndLinks(t, New(t))
+func TestObjectDeleteDeletesManifestsAndLinksSwift(t *testing.T) {
+	testObjectDeleteDeletesManifestsAndLinks(t, New(t))
 }
 
-// A manifest of either kind and a link in either representation are refused
-// through the public service and left intact. The mock represents a
-// cross-account link unfollowed with its target header; a real Swift follows
-// it or answers with its own error; both refuse.
-func testObjectDeleteRefusesManifestsAndLinks(t *testing.T, h *Harness) {
+// The deletion deletes the name it is given, whatever holds it. A manifest of
+// either kind is deleted manifest-only, so its segment stays; a link in
+// either representation is deleted as the link it is, so its target stays.
+func testObjectDeleteDeletesManifestsAndLinks(t *testing.T, h *Harness) {
 	t.Helper()
 	ctx := context.Background()
-	c := h.Container(h.Primary, "refuse")
+	c := h.Container(h.Primary, "kinds")
 	segment := []byte("segment")
 	h.Seed(h.Primary, c, "segs/0001", segment, textType)
 	h.rawPut(h.Primary, "/"+c+"/video.dlo", nil, map[string]string{"X-Object-Manifest": c + "/segs/", "Content-Type": "video/mp4"})
@@ -107,44 +105,41 @@ func testObjectDeleteRefusesManifestsAndLinks(t *testing.T, h *Harness) {
 	members := map[string]string{"video.dlo": c, "backup.slo": c, "link.txt": c}
 	// The cross-account link lives in its own container: a logical read of it
 	// may fail on a real Swift, which would break the snapshot of the others.
+	var far string
 	if h.Secondary != nil {
-		sc := h.Container(h.Secondary, "far")
+		far = h.Container(h.Secondary, "far")
 		lc := h.Container(h.Primary, "links")
-		h.Seed(h.Secondary, sc, "far.txt", []byte("far"), textType)
+		h.Seed(h.Secondary, far, "far.txt", []byte("far"), textType)
 		h.rawPut(h.Primary, "/"+lc+"/far-link", nil, map[string]string{
-			"X-Symlink-Target": sc + "/far.txt", "X-Symlink-Target-Account": path.Base(h.Secondary.storageURL)})
+			"X-Symlink-Target": far + "/far.txt", "X-Symlink-Target-Account": path.Base(h.Secondary.storageURL)})
 		members["far-link"] = lc
 	}
 	before := h.Snapshot(h.Primary, c)
-	var credited bool
 	for name, container := range members {
-		identity := "any"
-		if shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, container, name); err == nil {
-			identity = shown.ContentFingerprint
+		rec := h.DeleteObject(ctx, container, name)
+		if rec.Err() != nil || rec.Outcome() != "applied" {
+			t.Fatalf("%s: outcome %q err %v", name, rec.Outcome(), rec.Err())
 		}
-		rec := h.DeleteObject(ctx, container, name, identity)
-		if rec.Err() == nil {
-			t.Fatalf("%s was not refused", name)
-		}
-		if status := literalHeadStatus(t, h, h.Primary, container, name); status != http.StatusOK {
-			t.Fatalf("%s is no longer stored after a refused delete: literal HEAD %d", name, status)
-		}
-		if !credited {
-			rec.CreditRefusal()
-			credited = true
+		if status := literalHeadStatus(t, h, h.Primary, container, name); status != http.StatusNotFound {
+			t.Fatalf("%s is still stored after its delete: literal HEAD %d", name, status)
 		}
 	}
-	// Nothing in the container changed: the namespace oracle compares content,
-	// metadata and the segment the manifests reference.
-	if d := diffOf(before, h.Snapshot(h.Primary, c)); !d.Empty() {
-		t.Fatalf("refused deletes changed the container:\n%s", d)
+	after := h.Snapshot(h.Primary, c)
+	for _, kept := range []string{"segs/0001", "plain.txt"} {
+		if b, a := before.Containers[c].Objects[kept], after.Containers[c].Objects[kept]; a.Digest != b.Digest || a.Size != b.Size {
+			t.Fatalf("%s changed: %+v -> %+v", kept, b, a)
+		}
+	}
+	if far != "" {
+		if status := literalHeadStatus(t, h, h.Secondary, far, "far.txt"); status != http.StatusOK {
+			t.Fatalf("the cross-account link's target: literal HEAD %d", status)
+		}
 	}
 	if h.MockPrimary != nil {
-		// Object DELETEs under this container; the harness's own fixture
-		// containers come and go through the same log.
+		// The segment-expanding DELETE is never sent.
 		for _, line := range h.MockPrimary.RequestLog() {
-			if strings.HasPrefix(line, "DELETE ") && strings.Contains(line, "/"+c+"/") {
-				t.Fatalf("a refused delete sent a DELETE: %s", line)
+			if strings.HasPrefix(line, "DELETE ") && strings.Contains(line, "multipart-manifest=delete") {
+				t.Fatalf("a segment-expanding DELETE was sent: %s", line)
 			}
 		}
 	}
@@ -167,14 +162,7 @@ func testObjectDeleteLiteralObjects(t *testing.T, h *Harness) {
 	h.Seed(h.Primary, c, "dir/child.txt", []byte("a child survives"), textType)
 	before := h.Snapshot(h.Primary, c)
 	for _, name := range []string{"empty", "dir/"} {
-		shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if shown.Class != "plain" || shown.ContentLength != 0 {
-			t.Fatalf("%s shown as %s of %d bytes", name, shown.Class, shown.ContentLength)
-		}
-		rec := h.DeleteObject(ctx, c, name, shown.ContentFingerprint)
+		rec := h.DeleteObject(ctx, c, name)
 		if rec.Err() != nil || rec.Outcome() != "applied" {
 			t.Fatalf("%s: outcome %q err %v", name, rec.Outcome(), rec.Err())
 		}
@@ -192,73 +180,49 @@ func testObjectDeleteLiteralObjects(t *testing.T, h *Harness) {
 	h.AssertNoCollateral(before, after, c+"/empty", c+"/dir/")
 }
 
-func TestObjectDeleteConflictIsRecordedMock(t *testing.T) {
-	testObjectDeleteConflictIsRecorded(t, findMockHarness(t))
-}
-func TestObjectDeleteConflictIsRecordedSwift(t *testing.T) {
-	testObjectDeleteConflictIsRecorded(t, New(t))
-}
+func TestObjectDeleteIsRecordedMock(t *testing.T)  { testObjectDeleteIsRecorded(t, findMockHarness(t)) }
+func TestObjectDeleteIsRecordedSwift(t *testing.T) { testObjectDeleteIsRecorded(t, New(t)) }
 
-// A replacement of the same length and another entity tag is refused with both
-// identities in the durable fact and the audit event, and a successful delete
-// leaves a fact and an event carrying transaction identifiers.
-func testObjectDeleteConflictIsRecorded(t *testing.T, h *Harness) {
+// A deletion leaves a fact and an event that carry the DELETE's transaction
+// identifier and say what the store answered: accepted for an object that
+// was there, and already gone for one that was not, which is counted with
+// the deleted and is not a failure.
+func testObjectDeleteIsRecorded(t *testing.T, h *Harness) {
 	t.Helper()
 	ctx := context.Background()
 	c := h.Container(h.Primary, "record")
-	h.Seed(h.Primary, c, "racy.txt", []byte("first"), textType)
 	h.Seed(h.Primary, c, "plain.txt", []byte("plain"), textType)
-	shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "racy.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.Seed(h.Primary, c, "racy.txt", []byte("fresh"), textType)
-	replaced := h.Snapshot(h.Primary, c)
 
-	rec := h.DeleteObject(ctx, c, "racy.txt", shown.ContentFingerprint)
-	var conflict *swiftcontrol.IdentityConflictError
-	if !errors.As(rec.Err(), &conflict) || rec.Outcome() != "conflict" {
-		t.Fatalf("err = %v outcome = %q, want a same-length conflict", rec.Err(), rec.Outcome())
-	}
-	if d := diffOf(replaced, h.Snapshot(h.Primary, c)); !d.Empty() {
-		t.Fatalf("a conflicting delete changed state:\n%s", d)
-	}
-	resource := c + "/racy.txt"
-	facts := deleteFactsFor(t, h, resource)
-	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeConflict ||
-		!strings.Contains(facts[0].Summary, shown.ContentFingerprint) || !strings.Contains(facts[0].Summary, conflict.Found) {
-		t.Fatalf("conflict fact = %+v", facts)
-	}
-	events := deleteEventsFor(t, h, resource)
-	if len(events) != 1 || events[0].Result != "conflict" || !strings.Contains(events[0].Summary, conflict.Found) || len(events[0].TransIDs) == 0 {
-		t.Fatalf("conflict event = %+v", events)
-	}
-	rec.CreditConflict()
-
-	plain, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "plain.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	applied := h.DeleteObject(ctx, c, "plain.txt", plain.ContentFingerprint)
+	applied := h.DeleteObject(ctx, c, "plain.txt")
 	if applied.Err() != nil || applied.Outcome() != "applied" {
 		t.Fatalf("plain delete: %q %v", applied.Outcome(), applied.Err())
 	}
-	resource = c + "/plain.txt"
-	facts = deleteFactsFor(t, h, resource)
-	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 2 {
+	resource := c + "/plain.txt"
+	facts := deleteFactsFor(t, h, resource)
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || distinctIDs(facts[0].TransIDs) < 1 {
 		t.Fatalf("applied fact = %+v", facts)
 	}
-	events = deleteEventsFor(t, h, resource)
-	if len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 2 || !strings.Contains(events[0].Summary, "nothing observed") {
+	events := deleteEventsFor(t, h, resource)
+	if len(events) != 1 || events[0].Result != "applied" || distinctIDs(events[0].TransIDs) < 1 || !strings.Contains(events[0].Summary, "the store accepted the DELETE") {
 		t.Fatalf("applied event = %+v", events)
 	}
 	applied.CreditApplied()
+
+	again := h.DeleteObject(ctx, c, "plain.txt")
+	if again.Err() != nil || again.Outcome() != "applied" {
+		t.Fatalf("deleting a name that is already gone: %q %v", again.Outcome(), again.Err())
+	}
+	events = deleteEventsFor(t, h, resource)
+	if len(events) != 2 || events[0].Result != "applied" || !strings.Contains(events[0].Summary, "already gone") {
+		t.Fatalf("events after the second delete = %+v", events)
+	}
 }
 
 // On the owned Swift, a versions location restores the archived predecessor
 // when the current object is deleted and gives it up from the archive, as the
-// measurement of 27 October 2026 recorded. The delete is applied with the
-// predecessor observed as the successor, never as a plain deletion.
+// measurement of 27 October 2026 recorded. The deletion is reported applied,
+// which it is: the store accepted it, and what the store then puts at the
+// name is the store's own doing, which the delete dialog says beforehand.
 func TestObjectDeleteVersionsLocationRestoresThePredecessorSwift(t *testing.T) {
 	h := New(t)
 	ctx := context.Background()
@@ -270,32 +234,22 @@ func TestObjectDeleteVersionsLocationRestoresThePredecessorSwift(t *testing.T) {
 	if n := len(h.Snapshot(h.Primary, archive).Containers[archive].Objects); n != 1 {
 		t.Fatalf("archive holds %d objects before the delete, want the predecessor", n)
 	}
-	shown, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, "v.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if shown.ContentLength != 6 {
-		t.Fatalf("shown %d bytes, want the second version", shown.ContentLength)
-	}
 
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "v.txt", shown.ContentFingerprint)
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "v.txt")
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("result = %+v, err = %v", result, err)
 	}
-	if result.ObjectAfter == nil || result.ObjectAfter.ContentLength != 3 {
-		t.Fatalf("the restored predecessor was not observed as the successor: %+v", result.ObjectAfter)
-	}
 	after := h.Snapshot(h.Primary, c)
-	sum := md5.Sum([]byte("one"))
+	sum := sha256.Sum256([]byte("one"))
 	restored, ok := after.Containers[c].Objects["v.txt"]
-	if !ok || restored.Size != 3 || !strings.EqualFold(strings.Trim(result.ObjectAfter.ETag, `"`), hex.EncodeToString(sum[:])) {
+	if !ok || restored.Size != 3 || restored.Digest != hex.EncodeToString(sum[:]) {
 		t.Fatalf("the name holds %+v after the delete, want the first version", restored)
 	}
 	if n := len(h.Snapshot(h.Primary, archive).Containers[archive].Objects); n != 0 {
 		t.Fatalf("archive holds %d objects after the delete, want none: the predecessor moved back", n)
 	}
 	facts := deleteFactsFor(t, h, c+"/v.txt")
-	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied || !strings.Contains(facts[0].Summary, "archived predecessor") {
+	if len(facts) != 1 || facts[0].Outcome != mutationfacts.OutcomeApplied {
 		t.Fatalf("fact = %+v", facts)
 	}
 }

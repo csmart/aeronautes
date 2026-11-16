@@ -273,13 +273,10 @@ describe("production modal ownership", () => {
     const reply = deferred<Awaited<ReturnType<Api["deleteManifest"]>>>(); api.deleteManifest = vi.fn(() => reply.promise);
     await untick(f.dialog);
     click(button("Delete manifest only", f.dialog)); await settle();
-    // The third argument is what the dialog was SHOWN, so it is compared with
-    // the detail the fake served for this object rather than with a literal: a
-    // dialog passing any constant would satisfy a literal and defeat ADR 0085.
+    // The scope is the one the dialog's detail was read under, so it is
+    // compared with the detail the fake served for this object.
     const shownDetail = await api.objectDetail("fixtures", "external-dlo", "bm-1");
-    expect(shownDetail.contentFingerprint).toBeTruthy();
-    expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith(
-      shownDetail.scope, "fixtures", "external-dlo", shownDetail.contentFingerprint);
+    expect(api.deleteManifest).toHaveBeenCalledExactlyOnceWith(shownDetail.scope, "fixtures", "external-dlo");
     // The segment checkbox (bulk delete returned on 1 November 2026) is the
     // first focusable control while the confirm button is busy, so Tab lands
     // on it inside the modal; the window-level Escape then routes here.

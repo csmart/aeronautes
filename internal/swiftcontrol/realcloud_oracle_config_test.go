@@ -46,9 +46,7 @@ func teardownProbe(s *swiftcontrol.Session, container, objName string, created b
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if d, err := s.ObjectDetail(ctx, container, objName); err == nil {
-		_, _ = s.DeletePlainObject(ctx, container, objName, d.ContentFingerprint())
-	}
+	_, _ = s.DeleteName(ctx, container, objName)
 	_ = s.DeleteContainer(ctx, container)
 }
 

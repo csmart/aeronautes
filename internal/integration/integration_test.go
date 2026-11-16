@@ -546,18 +546,7 @@ func TestContainerMutationRealSwift(t *testing.T) {
 	if _, err := h.Session.CreateMarker(ctx, name, "suit/"); err == nil {
 		t.Error("CreateMarker over a real object must refuse")
 	}
-	suit, err := h.Session.ObjectDetail(ctx, name, "suit/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.Session.DeleteMarkerObject(ctx, name, "suit/", suit.ContentFingerprint()); err == nil {
-		t.Error("DeleteMarkerObject over a real object must refuse")
-	}
-	shown, err := h.Session.PrefixDetail(ctx, name, "photos/")
-	if err != nil || shown.SelfObject == nil {
-		t.Fatalf("marker detail = %+v, %v", shown, err)
-	}
-	if _, err := h.Session.DeleteMarkerObject(ctx, name, "photos/", shown.SelfObject.ContentFingerprint()); err != nil {
+	if _, err := h.Session.DeleteName(ctx, name, "photos/"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.Session.ObjectDetail(ctx, name, "photos/a.jpg"); err != nil {
@@ -618,11 +607,7 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 	dloSegments := countSegments(segStore)
-	shownDLO, err := h.Session.ObjectDetail(ctx, fixtures, "del-dlo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-dlo", shownDLO.ContentFingerprint()); err != nil {
+	if _, err := h.Session.DeleteName(ctx, fixtures, "del-dlo"); err != nil {
 		t.Fatal(err)
 	}
 	if got := countSegments(segStore); got != dloSegments {
@@ -636,27 +621,11 @@ func TestManifestOnlyDeleteRealSwift(t *testing.T) {
 		t.Fatal(err)
 	}
 	sloSegments := countSegments(sloParts)
-	shownSLO, err := h.Session.ObjectDetail(ctx, fixtures, "del-slo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "del-slo", shownSLO.ContentFingerprint()); err != nil {
+	if _, err := h.Session.DeleteName(ctx, fixtures, "del-slo"); err != nil {
 		t.Fatal(err)
 	}
 	if got := countSegments(sloParts); got != sloSegments {
 		t.Fatalf("SLO segments = %d after manifest delete, want %d", got, sloSegments)
-	}
-
-	// A plain object refuses and survives.
-	shownPlain, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.Session.DeleteManifestObject(ctx, fixtures, "tagged.txt", shownPlain.ContentFingerprint()); err == nil {
-		t.Fatal("plain object accepted by manifest-only delete")
-	}
-	if _, err := h.Session.ObjectDetail(ctx, fixtures, "tagged.txt"); err != nil {
-		t.Errorf("refused object was deleted: %v", err)
 	}
 }
 
