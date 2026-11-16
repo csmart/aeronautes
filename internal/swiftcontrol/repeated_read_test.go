@@ -2,6 +2,7 @@ package swiftcontrol
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -109,12 +110,8 @@ func TestALiteralHeadDroppedInTransitIsSentOnceMore(t *testing.T) {
 func TestADeleteDroppedInTransitIsNotSentAgain(t *testing.T) {
 	ctx := context.Background()
 	store, session := newDroppingStore(t)
-	shown, err := session.LiteralObjectHead(ctx, "box", "thing")
-	if err != nil {
-		t.Fatal(err)
-	}
 	store.dropping(func(method string, _ int) bool { return method == http.MethodDelete })
-	if _, err := session.DeletePlainObject(ctx, "box", "thing", shown.ContentFingerprint()); err == nil {
+	if _, err := session.DeleteName(ctx, "box", "thing"); !errors.Is(err, ErrUnverifiedDelete) {
 		t.Fatal("a dropped delete reported no failure")
 	}
 	if got := store.count(http.MethodDelete); got != 1 {

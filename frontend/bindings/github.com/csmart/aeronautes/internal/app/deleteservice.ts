@@ -32,10 +32,10 @@ export function CheckSegmentOwnership(req: $models.SegmentsDeleteRequestDTO): $C
  * (ADR 0095 decision 8). It is always gated on the Backstage force with the
  * typed object name, because ownership evidence is advisory until a live
  * reverse-reference scan exists. The job owns the reviewed graph the request
- * carries: it deletes the manifest by the reviewed-manifest protocol, which
- * refuses a graph swap or a moved namespace, and only after that is durably
- * recorded deleted does it delete the segments by the per-name protocol. The
- * result is the job id; the drawer shows the manifest and each segment.
+ * carries: it deletes the name, whatever then holds it, and only after the
+ * store's answer is durably recorded as deleted does it delete the reviewed
+ * segments, one DELETE each (ADR 0122 decision 6). The result is the job id;
+ * the drawer shows the manifest and each segment.
  */
 export function DeleteManifestWithSegments(req: $models.SegmentsDeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1751193110, req);
@@ -51,10 +51,9 @@ export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromis
 
 /**
  * StartDelete validates the typed confirmation and launches the job: a
- * verified per-name sweep over the scope whose members are durable items of
- * the job (ADR 0095). The three modes share it; the empty mode compares the
- * container's configuration before and after, and the delete-container mode
- * deletes the container only after a complete sweep.
+ * per-name sweep over the scope whose members are durable items of the job
+ * (ADR 0095, ADR 0122 decision 6). The three modes share it; the
+ * delete-container mode deletes the container only after a complete sweep.
  */
 export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(1302339297, req);
@@ -62,7 +61,7 @@ export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<
 
 /**
  * StartSelectedDelete deletes the selected objects as one job whose members
- * are each deleted exactly, by the verified per-name protocol (ADR 0093).
+ * are each deleted by one DELETE of the name (ADR 0093, ADR 0122 decision 6).
  * The request is refused before any job row when the scope is empty or has
  * moved, when it names no member, a prefix row, an empty or repeated name,
  * or more members than the selection ceiling, or when the typed confirmation

@@ -2146,47 +2146,35 @@ export class BrowserState {
 
   /** Delete ONLY the named manifest object (§60 Phase 4's low-risk
    * delete): segments survive; the working list refreshes. The dialog
-   * passes the exact identity it displayed — never the live index.
-   *
-   * baseContent extends that principle from the name to what the name held:
-   * it is the ContentFingerprint of the detail this view showed, and the
-   * service refuses the delete when the object no longer matches it
-   * (ADR 0085). It narrows the window between being shown an object and
-   * destroying it; it does not close it, and nothing here may be presented as
-   * proof that no one else is writing. */
+   * passes the exact name it displayed, never the live index, and the
+   * request names the scope the detail was read under (ADR 0079). The
+   * store's answer is the result (ADR 0122 decision 6). */
   async deleteManifest(container: string, name: string, detail: ObjectDetailDTO, ownsView = () => true): Promise<MutationResultDTO> {
     if (!container || !name) {
       throw new Error("no object identity");
-    }
-    if (!detail.contentFingerprint) {
-      throw new Error("no content identity for the object being deleted");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
-    const result = await this.#api.deleteManifest(detail.scope, container, name, detail.contentFingerprint);
+    const result = await this.#api.deleteManifest(detail.scope, container, name);
     await this.audit.loadRecent();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
   }
 
-  /** Delete ONE plain object the operator was shown (ADR 0092). The request
-   * names the scope the detail was read under (ADR 0079) and carries that
-   * detail's content identity; the listing refreshes afterwards, and the
-   * caller shows any successor the result reports. */
+  /** Delete ONE object by its name (ADR 0092, ADR 0122 decision 6). The
+   * request names the scope the detail was read under (ADR 0079); the
+   * listing refreshes afterwards. */
   async deleteObject(container: string, name: string, detail: ObjectDetailDTO, ownsView = () => true): Promise<MutationResultDTO> {
     if (!container || !name) {
       throw new Error("no object identity");
-    }
-    if (!detail.contentFingerprint) {
-      throw new Error("no content identity for the object being deleted");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
-    const result = await this.#api.deleteObject(detail.scope, container, name, detail.contentFingerprint);
+    const result = await this.#api.deleteObject(detail.scope, container, name);
     await this.audit.loadRecent();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
@@ -2410,9 +2398,8 @@ export class BrowserState {
   }
 
   /** Delete ONLY the marker object the current prefix detail showed (ADR
-   * 0094): the request names the scope that detail was read under and the
-   * identity of its own object, the marker rule is required beside it, and
-   * the working list refreshes. */
+   * 0094): the request names the scope that detail was read under, and the
+   * working list refreshes. */
   async deleteMarker(prefix: string, ownsView = () => true): Promise<MutationResultDTO> {
     const container = this.containerName;
     const identity = this.detailIdentity;
@@ -2422,13 +2409,13 @@ export class BrowserState {
       || this.connecting || !this.connectedBookmarkId) {
       throw new Error("no current prefix detail selected — reload before deleting a marker");
     }
-    if (!detail.selfObject?.contentFingerprint) {
+    if (!detail.selfObject) {
       throw new Error("no marker object was shown at this prefix");
     }
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const parent = this.prefix;
-    const result = await this.#api.deleteMarker(detail.scope, container, prefix, detail.selfObject.contentFingerprint);
+    const result = await this.#api.deleteMarker(detail.scope, container, prefix);
     await this.audit.loadRecent();
     if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
     return result;

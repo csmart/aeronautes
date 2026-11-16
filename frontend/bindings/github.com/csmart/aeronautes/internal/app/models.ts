@@ -692,13 +692,12 @@ export interface DeletePreviewDTO {
     "possibleManifests": number;
 
     /**
-     * LaterBaselineRows is how many rows take a HEAD of their own before
-     * their comparison, the zero-byte and SLO-listed ones, and RequestCost
-     * the object requests the sweep makes for the scope before listing,
-     * retries or verification: two per member plus one per such row (ADR
-     * 0085, ADR 0095 decision 7).
+     * RequestCost is the object requests the sweep makes for the scope,
+     * not counting its listings: one DELETE for each member (ADR 0122
+     * decision 6). A sweep that takes segments also reads each possible
+     * manifest once and deletes the segments it finds, which a listing
+     * cannot count beforehand.
      */
-    "laterBaselineRows": number;
     "requestCost": number;
 
     /**

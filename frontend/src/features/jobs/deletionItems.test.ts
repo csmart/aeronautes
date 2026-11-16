@@ -54,38 +54,29 @@ async function show(api: Api) {
   flushSync();
 }
 
-it("shows each member's outcome and what its verifying read observed", async () => {
+it("shows each member's outcome as the store's answer to its DELETE", async () => {
   const api = newFakeApi();
   const items = [
-    member("gone", { execution: observation("deleted", "reported_applied"), successor: { present: false, class: "", length: 0, etag: "", role: "after", createdAt: "" } }),
-    member("replaced", { execution: observation("deleted", "reported_applied"), successor: { present: true, class: "plain", length: 3, etag: "abc123", role: "after", createdAt: "" } }),
-    member("lost", { execution: observation("unverified", "unresolved", "verification", "unverified") }),
-    member("changed", { execution: observation("conflict", "not_attempted", "source_read", "conflict"),
-      successor: { present: true, class: "plain", length: 40, etag: "ffff", role: "comparison", createdAt: "" } }),
-    member("link", { baseline: null, execution: observation("refused", "not_attempted", "source_read", "link") }),
-    member("later", { issuedAt: "", execution: observation("not_attempted", "not_attempted") }),
-    member("in-flight", {}),
-    member("never", { issuedAt: "" }),
-    member("read-first", { listedBytes: 0, listedEtag: "d41d8cd98f00b204e9800998ecf8427e", baseline: { class: "dlo", length: 2048, etag: "e1e1" },
-      execution: observation("deleted", "reported_applied"), successor: { present: false, class: "", length: 0, etag: "", role: "after", createdAt: "" } }),
+    member("gone", { baseline: null, execution: observation("deleted", "reported_applied") }),
+    member("lost", { baseline: null, execution: observation("unverified", "unresolved", "commit", "unverified") }),
+    member("refused", { baseline: null, execution: observation("failed", "not_attempted", "commit", "forbidden", 403) }),
+    member("later", { baseline: null, issuedAt: "", execution: observation("not_attempted", "not_attempted") }),
+    member("in-flight", { baseline: null }),
+    member("never", { baseline: null, issuedAt: "" }),
   ];
   api.jobItems = async () => ({ status: "available", items, nextCursor: "" });
   api.jobItemTotals = async () => totals;
   await show(api);
-  await vi.waitFor(() => expect(document.querySelectorAll(".item-record")).toHaveLength(9));
+  await vi.waitFor(() => expect(document.querySelectorAll(".item-record")).toHaveLength(6));
   const outcome = (index: number) => document.querySelectorAll(".item-record")[index].querySelector(".outcome")?.textContent?.replace(/\s+/g, " ").trim();
-  expect(outcome(0)).toBe("Outcome: Deleted; the verifying read found nothing at the name.");
-  expect(outcome(1)).toContain("Deleted, but something stands at the name now: a plain of 3 bytes with entity tag abc123");
-  expect(outcome(1)).toContain("not observed");
-  expect(outcome(2)).toBe("Outcome: Unverified: the name may still hold what was shown (verification: unverified).");
-  expect(outcome(3)).toBe("Outcome: Changed since it was listed: expected a plain of 10 bytes with entity tag 5eb63bbbe01eeed093cb22bb8f5acdc3; found a plain of 40 bytes with entity tag ffff; left as it is (source_read: conflict).");
-  expect(outcome(4)).toBe("Outcome: Refused: the name holds a symbolic link, whose identity is its target's, and a link is not deleted; left as it is.");
+  expect(outcome(0)).toBe("Outcome: Deleted.");
+  expect(outcome(1)).toBe("Outcome: Unknown: the store did not answer the DELETE, or answered with a server error, so nothing says whether it was deleted (commit: unverified).");
+  expect(outcome(2)).toBe("Outcome: Refused by the store; left as it is (commit: forbidden, HTTP 403).");
+  expect(outcome(3)).toBe("Outcome: Not attempted.");
+  expect(outcome(4)).toBe("Outcome: Unresolved: issued with no outcome recorded, so its DELETE may have been sent.");
   expect(outcome(5)).toBe("Outcome: Not attempted.");
-  expect(outcome(6)).toBe("Outcome: Unresolved: issued with no outcome recorded, so its DELETE may have been sent.");
-  expect(outcome(7)).toBe("Outcome: Not attempted.");
-  expect(outcome(8)).toBe("Outcome: Deleted; the verifying read found nothing at the name. Its listing could not say what it held, so it was read first and compared as a dlo of 2048 bytes with entity tag e1e1.");
   const problems = [...document.querySelectorAll(".item-record")].map((record) => record.querySelector(".outcome .problem") !== null);
-  expect(problems).toEqual([false, true, true, true, true, false, true, false, false]);
+  expect(problems).toEqual([false, true, true, false, true, false]);
   const body = document.body.textContent ?? "";
   expect(body).not.toContain("Destination");
   expect(body).not.toContain("Unverified copy");
@@ -94,8 +85,8 @@ it("shows each member's outcome and what its verifying read observed", async () 
   expect(total("Deleted")).toBe("2");
   expect(total("Issued")).toBe("7");
   expect(total("Issued without an outcome")).toBe("1");
-  expect(document.querySelectorAll(".item-record")[3].textContent).toContain("Listed entity tag: 5eb63bbbe01eeed093cb22bb8f5acdc3");
-  expect(total("Unverified deletions")).toBe("1");
+  expect(document.querySelectorAll(".item-record")[2].textContent).toContain("Listed entity tag: 5eb63bbbe01eeed093cb22bb8f5acdc3");
+  expect(total("Unknown deletions")).toBe("1");
   expect(total("Unverified copies")).toBeUndefined();
   expect(document.querySelector(".job .operation")?.textContent).toBe("Delete selected");
   expect(document.querySelector(".job .counts")?.textContent?.replace(/\s+/g, " ").trim()).toBe("7/8 processed · 2 deleted");

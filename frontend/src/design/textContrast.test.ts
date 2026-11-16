@@ -85,8 +85,6 @@ const pairs: Pair[] = [
   ["local transfer primary label", "LocalTransferDialog.svelte", "footer .primary", "footer .primary"],
   ["selected delete close label", "SelectedDeleteDialog.svelte", ".primary", ".primary"],
   ["selection warning go-on label", "SelectionFolderWarning.svelte", ".primary", ".primary"],
-  ["object delete close label", "ObjectDeleteDialog.svelte", ".primary", ".primary"],
-  ["manifest delete close label", "ManifestDeleteDialog.svelte", ".primary", ".primary"],
   ["manifest force label", "ManifestDeleteDialog.svelte", ".danger", ".danger"],
   ["object delete label", "ObjectDeleteDialog.svelte", ".danger", ".danger"],
   ["selected delete label", "SelectedDeleteDialog.svelte", ".danger", ".danger"],

@@ -1,9 +1,9 @@
 <!-- The manifest-only delete confirm (§60 Phase 4, ADR 0094 decision 5):
-  owned by the browser state so its outcome survives the refresh that follows,
-  it binds the identity it opened for, says exactly what dies and exactly what
-  survives and where, waits for the container's versioning facts before it can
-  be confirmed, and shows what the verifying read observed afterwards instead
-  of a plain success. The with-segments option is the force-gated Backstage
+  owned by the browser state, it binds the name it opened for, says exactly
+  what dies and exactly what survives and where, and waits for the
+  container's versioning facts before it can be confirmed. The store's answer
+  to the DELETE is the result (ADR 0122 decision 6). The with-segments option
+  is the force-gated Backstage
   override bulk deletion offers. It is ticked to start with where the
   container keeps no versions and is not offered where it does (ADR 0120);
   its ownership check is asked only while that option is taken, never for
@@ -12,17 +12,16 @@
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount, onDestroy, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { ContainerSettingsDTO, ObjectDetailDTO, SegmentOwnershipDTO } from "../../lib/api";
+  import type { ContainerSettingsDTO, SegmentOwnershipDTO } from "../../lib/api";
   import { v1Offers } from "../../lib/v1.svelte";
-  import { formatBytes } from "../../lib/format";
   import { versioningSentence, whySegmentsStay } from "./versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
   const confirmId = $props.id();
 
-  // The operation was captured when the dialog opened and outlives the
-  // listing refresh that follows a success (ADR 0092 decision 5). Opening
-  // without one is a programming error the screen's mount condition prevents.
+  // The operation was captured when the dialog opened (ADR 0092 decision 5).
+  // Opening without one is a programming error the screen's mount condition
+  // prevents.
   // svelte-ignore state_referenced_locally
   const op = browser.objectDelete!;
   // svelte-ignore state_referenced_locally
@@ -55,7 +54,6 @@
   onDestroy(() => { live = false; });
 
   const pending = $derived(op.status === "pending");
-  const observed = $derived(op.status === "done" ? op.result?.objectAfter ?? null : null);
   const current = $derived(browser.objectDeleteCurrent());
 
   // A view that moved while the operation is still pending abandons it, as
@@ -109,12 +107,6 @@
       && (!withSegments || (!!ownership && confirmText === op.name && !segmentsBusy)),
   );
 
-  function kindOf(d: ObjectDetailDTO): string {
-    if (d.symlinkTarget) return "symlink";
-    if (d.class !== "plain") return `${d.class.toUpperCase()} manifest`;
-    return "plain object";
-  }
-
   async function confirm() {
     if (!canConfirm) return;
     if (withSegments) {
@@ -135,102 +127,89 @@
     }
     await browser.runObjectDelete();
     const settled = browser.objectDelete;
-    if (settled === op && op.status === "done" && !op.result?.objectAfter) onClose();
+    if (settled === op && op.status === "done") onClose();
   }
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <div class="dialog" role="alertdialog" aria-label="Delete manifest" aria-modal="true" tabindex="-1"
     use:trapFocus={onClose}>
-    <h2 class="title">{observed ? "Deleted" : `Delete ${op.detail.class.toUpperCase()} manifest`}</h2>
+    <h2 class="title">Delete {op.detail.class.toUpperCase()} manifest</h2>
     <div class="body">
-      {#if observed}
-        <p class="what">
-          <span class="type-mono">{op.name}</span> no longer holds what you were shown.
-        </p>
-        <p class="keeps warn">
-          <strong>Something stands at the name now:</strong> a {kindOf(observed)} of
-          {formatBytes(observed.contentLength)}{observed.etag ? ` with entity tag ${observed.etag}` : ""}{observed.symlinkTarget
-            ? `, pointing at ${observed.symlinkTarget}`
-            : ""}. It may be the archived predecessor or a concurrent write; what this delete did to it is not
-          observed.
-        </p>
-      {:else}
-        <p class="what">
-          The {op.detail.class.toUpperCase()} manifest you were shown at <span class="type-mono">{op.name}</span> will be
-          deleted; what then stands at the name, if anything, follows how this container keeps versions.
-        </p>
-        {#if browser.segmentStoreCaution}
-          <p class="keeps warn">{browser.segmentStoreCaution}</p>
-        {/if}
-        {#if !withSegments}
-          <p class="keeps">
-            <strong>{inlineEntries === null
-              ? "Referenced segment objects survive."
-              : inlineEntries > 0
-                ? "Referenced segment objects survive; inline data does not."
-                : "Every referenced segment object survives."}</strong> The data remains at
-            <span class="type-mono">{segmentsAt}</span> and becomes orphaned unless another manifest
-            references it.
-          </p>
-          {#if inlineEntries === null}
-            <p class="keeps warn">
-              <strong>Whether this manifest holds inline data is unknown here:</strong> the checks
-              that would answer it are not available in this build. Inline data lives only inside
-              the manifest itself, so any of it this manifest holds is destroyed with it.
-            </p>
-          {:else if inlineEntries > 0}
-            <p class="keeps warn">
-              <strong>{inlineEntries} inline data entr{inlineEntries === 1 ? "y" : "ies"}
-              will be destroyed:</strong> inline data lives only inside the manifest itself and
-              cannot survive its deletion.
-            </p>
-          {/if}
-        {/if}
-        <p class="keeps">{versioningSentence(facts)}</p>
+      <p class="what">
+        The {op.detail.class.toUpperCase()} manifest you were shown at <span class="type-mono">{op.name}</span> will be
+        deleted; what then stands at the name, if anything, follows how this container keeps versions.
+      </p>
+      {#if browser.segmentStoreCaution}
+        <p class="keeps warn">{browser.segmentStoreCaution}</p>
+      {/if}
+      {#if !withSegments}
         <p class="keeps">
-          The delete is refused if the manifest changes before it runs; it cannot see a change that lands after
-          its last look, and a manifest of the same kind found afterwards leaves the outcome unverified.
+          <strong>{inlineEntries === null
+            ? "Referenced segment objects survive."
+            : inlineEntries > 0
+              ? "Referenced segment objects survive; inline data does not."
+              : "Every referenced segment object survives."}</strong> The data remains at
+          <span class="type-mono">{segmentsAt}</span> and becomes orphaned unless another manifest
+          references it.
         </p>
-
-        {#if offerSegments}
-          <label class="segments-opt">
-            <input
-              type="checkbox"
-              checked={withSegments}
-              onchange={(e) => (segmentsChosen = e.currentTarget.checked)}
-              disabled={segmentsBusy || !current}
-            />
-            <span>
-              Also delete the segments
-              {#if ownership}
-                ({ownership.target})
-                {#if ownership.proven}
-                  — evidence suggests <strong class="proven">likely this app's</strong> (ownership record)
-                {/if}
-              {:else if withSegments && ownership === null && !segmentsError}
-                — checking which segments this manifest owns…
-              {/if}
-            </span>
-          </label>
-          {#if withSegments}
-            <p class="force-warn">
-              Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
-              can identify likely-owned segments but cannot yet prove that no other object references
-              them, so this always requires explicit confirmation.
-              <label for={confirmId}>Type the object name to arm it:</label>
-            </p>
-            <input
-              id={confirmId}
-              class="force-confirm type-mono"
-              bind:value={confirmText}
-              placeholder={op.name}
-              disabled={segmentsBusy || !current}
-            />
-          {/if}
-        {:else if v1Offers.bulkDelete && whyKept}
-          <p class="keeps">Its segments cannot be deleted with it here: {whyKept}</p>
+        {#if inlineEntries === null}
+          <p class="keeps warn">
+            <strong>Whether this manifest holds inline data is unknown here:</strong> the checks
+            that would answer it are not available in this build. Inline data lives only inside
+            the manifest itself, so any of it this manifest holds is destroyed with it.
+          </p>
+        {:else if inlineEntries > 0}
+          <p class="keeps warn">
+            <strong>{inlineEntries} inline data entr{inlineEntries === 1 ? "y" : "ies"}
+            will be destroyed:</strong> inline data lives only inside the manifest itself and
+            cannot survive its deletion.
+          </p>
         {/if}
+      {/if}
+      <p class="keeps">{versioningSentence(facts)}</p>
+      <p class="keeps">
+        The name is deleted as it stands when the request arrives: if something else has written to it since
+        you looked, that is what goes.
+      </p>
+
+      {#if offerSegments}
+        <label class="segments-opt">
+          <input
+            type="checkbox"
+            checked={withSegments}
+            onchange={(e) => (segmentsChosen = e.currentTarget.checked)}
+            disabled={segmentsBusy || !current}
+          />
+          <span>
+            Also delete the segments
+            {#if ownership}
+              ({ownership.target})
+              {#if ownership.proven}
+                — evidence suggests <strong class="proven">likely this app's</strong> (ownership record)
+              {/if}
+            {:else if withSegments && ownership === null && !segmentsError}
+              — checking which segments this manifest owns…
+            {/if}
+          </span>
+        </label>
+        {#if withSegments}
+          <p class="force-warn">
+            Deleting backing segments is a <strong>Backstage override</strong>. Ownership evidence
+            can identify likely-owned segments but cannot yet prove that no other object references
+            them, so this always requires explicit confirmation.
+            <label for={confirmId}>Type the object name to arm it:</label>
+          </p>
+          <input
+            id={confirmId}
+            class="force-confirm type-mono"
+            bind:value={confirmText}
+            placeholder={op.name}
+            disabled={segmentsBusy || !current}
+          />
+        {/if}
+      {:else if v1Offers.bulkDelete && whyKept}
+        <p class="keeps">Its segments cannot be deleted with it here: {whyKept}</p>
       {/if}
       {#if op.error}
         <p class="error callout danger" role="alert">{op.error}</p>
@@ -240,18 +219,14 @@
       {/if}
     </div>
     <div class="actions">
-      {#if observed}
-        <button class="primary" onclick={onClose}>Close</button>
-      {:else}
-        <button class="secondary" onclick={onClose} disabled={op.status === "running" || segmentsBusy}>Cancel</button>
-        <button class="danger" onclick={confirm} disabled={!canConfirm}>
-          {op.status === "running" || segmentsBusy
-            ? "Deleting…"
-            : withSegments
-              ? "Delete manifest + segments"
-              : "Delete manifest only"}
-        </button>
-      {/if}
+      <button class="secondary" onclick={onClose} disabled={op.status === "running" || segmentsBusy}>Cancel</button>
+      <button class="danger" onclick={confirm} disabled={!canConfirm}>
+        {op.status === "running" || segmentsBusy
+          ? "Deleting…"
+          : withSegments
+            ? "Delete manifest + segments"
+            : "Delete manifest only"}
+      </button>
     </div>
   </div>
 </div>
@@ -365,14 +340,6 @@
     font-size: var(--text-sm);
     border-radius: var(--radius-control);
     cursor: pointer;
-  }
-
-  /* A finished dialog's Close is its next step, highlighted as in the copy
-    and transfer dialogs; anything beside it stays plain. */
-  .primary {
-    color: var(--color-bg);
-    background: var(--color-accent);
-    border: 1px solid var(--color-accent);
   }
 
   .secondary {

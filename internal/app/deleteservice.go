@@ -8,7 +8,6 @@ import (
 
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/evidence"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -72,13 +71,12 @@ type DeletePreviewDTO struct {
 	// is manifest-only unless the request takes segments, so their
 	// segments (if any) will otherwise remain as recoverable orphans.
 	PossibleManifests int64 `json:"possibleManifests"`
-	// LaterBaselineRows is how many rows take a HEAD of their own before
-	// their comparison, the zero-byte and SLO-listed ones, and RequestCost
-	// the object requests the sweep makes for the scope before listing,
-	// retries or verification: two per member plus one per such row (ADR
-	// 0085, ADR 0095 decision 7).
-	LaterBaselineRows int64 `json:"laterBaselineRows"`
-	RequestCost       int64 `json:"requestCost"`
+	// RequestCost is the object requests the sweep makes for the scope,
+	// not counting its listings: one DELETE for each member (ADR 0122
+	// decision 6). A sweep that takes segments also reads each possible
+	// manifest once and deletes the segments it finds, which a listing
+	// cannot count beforehand.
+	RequestCost int64 `json:"requestCost"`
 	// Strategy is what execution would select right now.
 	Strategy string `json:"strategy"`
 	// ArchiveOf names the containers whose versions or history location is
@@ -164,10 +162,7 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 			}
 		}
 	}
-	// ADR 0085's cost, stated before the job: one HEAD and one DELETE per
-	// member, and a baseline HEAD for each row that cannot say what it holds.
-	preview.LaterBaselineRows = preview.PossibleManifests
-	preview.RequestCost = 2*preview.Objects + preview.LaterBaselineRows
+	preview.RequestCost = preview.Objects
 	// Whose archive this is, which the operator cannot see from inside it.
 	// The owners are stored names on a sentence the operator reads before
 	// destroying, so they are sanitised and bounded here, as the archive
@@ -181,20 +176,15 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 	return preview, nil
 }
 
-// sweepStrategy and sweepVerifyPolicy name, in the job's effective
-// configuration, what a bulk deletion runs (ADR 0095 decisions 1 and 5):
-// the verified per-name protocol over listing passes, and the one-row
-// postcondition after bounded retries.
-const (
-	sweepStrategy     = "per-name-verified"
-	sweepVerifyPolicy = "prefix limit=1 empty after ≤3 passes"
-)
+// sweepStrategy names, in the job's effective configuration, what a bulk
+// deletion runs (ADR 0095 decision 1, ADR 0122 decision 6): one DELETE for
+// each name the listing passes show.
+const sweepStrategy = "per-name"
 
 // StartDelete validates the typed confirmation and launches the job: a
-// verified per-name sweep over the scope whose members are durable items of
-// the job (ADR 0095). The three modes share it; the empty mode compares the
-// container's configuration before and after, and the delete-container mode
-// deletes the container only after a complete sweep.
+// per-name sweep over the scope whose members are durable items of the job
+// (ADR 0095, ADR 0122 decision 6). The three modes share it; the
+// delete-container mode deletes the container only after a complete sweep.
 func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (string, error) {
 	if err := refuseIfDeferred("DeleteService.StartDelete"); err != nil {
 		return "", err
@@ -247,11 +237,11 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobType, ItemRecordsVersion: 1,
 		Source: req.Container + "/" + req.Prefix, Destination: "(deleted)", SourceBookmarkID: req.BookmarkID, Engine: "native",
-		// §32/§45: the strategy and the postcondition are the job's effective
-		// configuration, never a silent shortcut. They are part of the row
-		// from its creation, so a destructive job cannot exist without them.
-		Settings: fmt.Sprintf(`{"strategy":%q,"verify":%q,"passes":%d,"workers":%d,"segments":%t}`,
-			sweepStrategy, sweepVerifyPolicy, sweepPasses, sweepWorkers, req.Segments),
+		// §32/§45: the strategy is the job's effective configuration, never a
+		// silent shortcut. It is part of the row from its creation, so a
+		// destructive job cannot exist without it.
+		Settings: fmt.Sprintf(`{"strategy":%q,"passes":%d,"workers":%d,"segments":%t}`,
+			sweepStrategy, sweepPasses, sweepWorkers, req.Segments),
 	})
 	if err != nil {
 		return "", err
@@ -269,30 +259,15 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 }
 
 // runSweepJob is the job goroutine: the listing passes over the scope, then
-// the terminal state from the members and the postcondition, then the mode's
-// own step (ADR 0095 decisions 5 and 6). A lost record leaves the job open
-// with its status unavailable, as the selected set's does.
+// the terminal state from the members' answers, then the mode's own step
+// (ADR 0095 decisions 5 and 6, ADR 0122 decision 6). A lost record leaves
+// the job open with its status unavailable, as the selected set's does.
 func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session, owner *jobOwner) {
 	background := context.WithoutCancel(ctx)
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Transition(background, jobID, state); err != nil {
 			applog.Errorf("job %s: %v", jobID, err)
 		}
-	}
-	// §33 acceptance baseline for the container-preserving mode; a
-	// cancellation this early requested nothing.
-	var before *swiftcontrol.ContainerDetail
-	if req.Mode == ModeEmpty {
-		detail, err := session.ContainerDetail(ctx, req.Container)
-		if ctx.Err() != nil {
-			s.finishSweep(background, jobID, req, jobs.StateCancelled, "", 0)
-			return
-		}
-		if err != nil {
-			s.finishSweep(background, jobID, req, jobs.StateFailed, "container baseline: "+err.Error(), 0)
-			return
-		}
-		before = detail
 	}
 	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: req.BookmarkID, container: req.Container, prefix: req.Prefix, session: session,
 		segments: req.Segments, owner: owner}
@@ -303,15 +278,14 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 	}
 	if lost != "" {
 		// The ledger's own latch: the job stays open with its status
-		// unavailable, no postcondition is run and no container is deleted
-		// (ADR 0095 decision 4).
+		// unavailable, and no container is deleted (ADR 0095 decision 4).
 		s.runner.release(jobID)
 		s.runner.record(background, req.BookmarkID, "delete."+string(req.Mode)+".unavailable",
 			req.Container+"/"+req.Prefix, "job "+jobID+" · "+lost, audit.ResultUnverified)
 		applog.Warnf("job %s: %s", jobID, lost)
 		return
 	}
-	state, reason := s.sweepEnd(background, jobID, req, session, sweep)
+	state, reason := s.sweepEnd(background, jobID, sweep)
 	// A job asked for segments that left some has not done all it was asked,
 	// so it is partial and, in the delete-container mode, leaves the
 	// container standing (ADR 0119 decision 7).
@@ -321,27 +295,6 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 			reason = left
 		} else {
 			reason += "; " + left
-		}
-	}
-	// Emptying a container compares its configuration before and after
-	// whenever the sweep reached a terminal with an effect, complete or
-	// partial, so a change an external writer made during a partial sweep is
-	// still reported (ADR 0095 decision 6). The lost path returned above, so
-	// an accounting failure never reaches this follow-up verification.
-	if req.Mode == ModeEmpty && before != nil && (state == jobs.StateComplete || state == jobs.StatePartial) {
-		configProblem := ""
-		if after, err := session.ContainerDetail(background, req.Container); err != nil {
-			configProblem = "config re-check failed: " + err.Error()
-		} else if diff := deletion.SnapshotConfig(before).Diff(deletion.SnapshotConfig(after)); diff != "" {
-			configProblem = "container config changed during empty: " + diff
-		}
-		if configProblem != "" {
-			state = jobs.StatePartial
-			if reason == "" {
-				reason = configProblem
-			} else {
-				reason += "; " + configProblem
-			}
 		}
 	}
 	if req.Mode == ModeDeleteContainer {
@@ -358,12 +311,10 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 				state, reason = jobs.StatePartial, "cancelled after the objects were deleted and before the container was"
 			}
 		case state == jobs.StateComplete:
-			// Only a complete sweep with an empty postcondition deletes the
+			// Only a sweep whose every member was deleted goes on to the
 			// container; anything less leaves it standing (decision 6).
-			if err := session.DeleteContainer(background, req.Container); err != nil {
-				state, reason = jobs.StatePartial, "container delete: "+err.Error()
-			} else if !deletion.VerifyContainerGone(background, session, req.Container) {
-				state, reason = jobs.StatePartial, "container still answers after DELETE"
+			if left := containerDeleteLeft(session.DeleteContainer(background, req.Container)); left != "" {
+				state, reason = jobs.StatePartial, left
 			}
 		}
 	}
@@ -373,6 +324,24 @@ func (s *DeleteService) runSweepJob(ctx context.Context, jobID string, req Delet
 		}
 	}
 	s.finishSweep(background, jobID, req, state, reason, sweep.counts().admitted)
+}
+
+// containerDeleteLeft takes the store's answer to a container's DELETE (ADR
+// 0122 decision 6). It is empty when the container is gone: the store
+// accepted the DELETE, or answered that there is no such container. Otherwise
+// it says why the container may still stand: the store refused, as it does
+// for a container that still holds something, or did not answer.
+func containerDeleteLeft(err error) string {
+	var se *swiftcontrol.SwiftError
+	switch {
+	case err == nil, swiftcontrol.IsNotFound(err):
+		return ""
+	case errors.As(err, &se) && se.Kind == swiftcontrol.KindConflict:
+		return "the objects listed were deleted, and the store refused to delete the container because it is not empty; run the deletion again"
+	case errors.As(err, &se) && se.HTTPStatus != 0 && se.HTTPStatus < 500:
+		return fmt.Sprintf("the objects were deleted, and the store refused to delete the container with HTTP %d", se.HTTPStatus)
+	}
+	return "the objects were deleted, and the store did not answer the container's DELETE or answered with a server error, so nothing says whether the container was deleted: " + err.Error()
 }
 
 // deletionRequested reports how many members had a destructive request sent,
@@ -388,25 +357,21 @@ func (s *DeleteService) deletionRequested(ctx context.Context, jobID string) int
 	return totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
 }
 
-// sweepEnd derives the terminal state from the members and the postcondition
-// (ADR 0095 decision 5): complete only when every member issued was deleted
-// and the scope lists nothing; partial whenever a DELETE was sent and the
-// job is not complete; cancelled only before any DELETE; failed when nothing
-// was sent, because every member was refused or changed, because the
-// listing or the scope could not be read before any request, or because the
-// scope held a name this job never listed. Each member is counted once by
-// its own outcome. The postcondition runs to its end whatever the job's
-// context does now: the sweep's requests are over and this is their
-// evidence.
-func (s *DeleteService) sweepEnd(ctx context.Context, jobID string, req DeleteRequestDTO, session *swiftcontrol.Session, sweep *prefixSweep) (jobs.State, string) {
+// sweepEnd derives the terminal state from the members' answers (ADR 0095
+// decision 5, ADR 0122 decision 6): complete when every member admitted was
+// deleted; cancelled when the job was stopped before any DELETE; failed when
+// the listing could not be read before any request, or the store refused
+// every member; partial otherwise. Each member is counted once by its own
+// outcome. The scope is not listed again to see what stands there: a name
+// the listing never showed was never asked for.
+func (s *DeleteService) sweepEnd(ctx context.Context, jobID string, sweep *prefixSweep) (jobs.State, string) {
 	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
 	if err != nil {
 		return jobs.StatePartial, "the members' records could not be read: " + err.Error()
 	}
 	counts := sweep.counts()
 	sent := totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
-	breakdown := fmt.Sprintf("%d of %d members deleted; %d refused, %d changed since listed, %d failed, %d unverified",
-		totals.Deleted, totals.Admitted, totals.Refused, totals.Conflicts, totals.Failed, totals.Unverified)
+	breakdown := fmt.Sprintf("%d of %d members deleted; %d failed, %d unknown", totals.Deleted, totals.Admitted, totals.Failed, totals.Unverified)
 	switch {
 	case counts.cancelled && sent == 0:
 		return jobs.StateCancelled, ""
@@ -416,23 +381,10 @@ func (s *DeleteService) sweepEnd(ctx context.Context, jobID string, req DeleteRe
 		return jobs.StateFailed, "the listing could not be read before any request: " + counts.listErr.Error()
 	case counts.listErr != nil:
 		return jobs.StatePartial, "the listing stopped: " + counts.listErr.Error() + "; " + breakdown
-	}
-	remaining, err := deletion.VerifyPrefixEmpty(ctx, session, req.Container, req.Prefix)
-	switch {
-	case err != nil && sent == 0:
-		return jobs.StateFailed, "the scope could not be verified and no request was sent: " + err.Error()
-	case err != nil:
-		return jobs.StatePartial, "the scope could not be verified: " + err.Error() + "; " + breakdown
-	case sent == 0 && totals.Admitted > 0:
-		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: every member was refused or changed since listed (%d refused, %d changed)", totals.Refused, totals.Conflicts)
-	case remaining > 0 && totals.Admitted == 0:
-		return jobs.StateFailed, fmt.Sprintf("no request was sent and the scope was not empty at verification (%d row sampled): a name this job never listed stands under it; run the deletion again for fresh authority", remaining)
-	case remaining > 0 && counts.heldAgain > 0:
-		return jobs.StatePartial, fmt.Sprintf("%s; %d names still listed after this job's only request for them were not requested again", breakdown, counts.heldAgain)
-	case remaining > 0:
-		return jobs.StatePartial, breakdown + "; a name this job never listed stood under the scope at verification; run the deletion again for fresh authority"
 	case totals.Deleted == totals.Admitted:
 		return jobs.StateComplete, ""
+	case totals.Deleted == 0 && totals.Unverified == 0:
+		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: the store refused all %d members", totals.Failed)
 	default:
 		return jobs.StatePartial, breakdown
 	}

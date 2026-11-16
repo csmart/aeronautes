@@ -588,35 +588,19 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 	if !created.MarkerBacked {
 		t.Errorf("created = %+v", created)
 	}
-	marker, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "newdir/")
-	if err != nil || marker.SelfObject == nil {
-		t.Fatalf("marker detail = %+v, %v", marker, err)
-	}
-	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "newdir/", marker.SelfObject.ContentFingerprint); err != nil {
+	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "newdir/"); err != nil {
 		t.Fatal(err)
-	}
-	// A real object in a folder's clothing is refused by the marker rule
-	// whatever identity is stated, and the refusal is audited as a failure.
-	suit, err := h.inspector.Prefix(ctx, h.bookmarkID(), "fixtures", "fake/")
-	if err != nil || suit.SelfObject == nil {
-		t.Fatalf("folder-suit detail = %+v, %v", suit, err)
-	}
-	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "fake/", suit.SelfObject.ContentFingerprint); err == nil {
-		t.Fatal("folder-suit delete must refuse")
 	}
 
 	events, _ := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 5)
-	if len(events) != 3 {
-		t.Fatalf("audit events = %d, want 3", len(events))
+	if len(events) != 2 {
+		t.Fatalf("audit events = %d, want 2", len(events))
 	}
-	if events[0].Operation != "marker.delete" || events[0].Result != "failed" {
-		t.Errorf("refusal audit = %+v", events[0])
+	if events[0].Operation != "marker.delete" || events[0].Result != "applied" {
+		t.Errorf("delete audit = %+v", events[0])
 	}
-	if events[1].Operation != "marker.delete" || events[1].Result != "applied" {
-		t.Errorf("delete audit = %+v", events[1])
-	}
-	if events[2].Operation != "marker.create" || events[2].Result != "applied" {
-		t.Errorf("create audit = %+v", events[2])
+	if events[1].Operation != "marker.create" || events[1].Result != "applied" {
+		t.Errorf("create audit = %+v", events[1])
 	}
 }
 
@@ -641,21 +625,7 @@ func TestDeleteManifestService(t *testing.T) {
 	h.connect(t)
 	ctx := context.Background()
 
-	// A plain object refuses and audits as failed. Its own identity is
-	// supplied, so the refusal is the class guard rather than a mismatch.
-	plain, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "empty-object", plain.ContentFingerprint); err == nil {
-		t.Fatal("plain object accepted")
-	}
-
-	shownDLO, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	deleted, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shownDLO.ContentFingerprint)
+	deleted, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,10 +649,7 @@ func TestDeleteManifestService(t *testing.T) {
 	if events[0].Operation != "manifest.delete" || events[0].Result != "applied" {
 		t.Errorf("audit[0] = %+v", events[0])
 	}
-	if events[1].Operation != "manifest.delete" || events[1].Result != "failed" {
-		t.Errorf("audit[1] = %+v", events[1])
-	}
-	if !strings.Contains(events[0].Summary, "segments remain at external-dlo-segments/wedding-video/") {
+	if !strings.Contains(events[0].Summary, "deleted manifest; segments remain") {
 		t.Errorf("summary = %q", events[0].Summary)
 	}
 }
@@ -917,13 +884,9 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 	t.Run("a completed delete that could not be recorded is residue", func(t *testing.T) {
 		h := newHarness(t)
 		h.connect(t)
-		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
-		if err != nil {
-			t.Fatal(err)
-		}
 		refuseSQL(t, h, refuseAuditInserts)
 
-		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", shown.ContentFingerprint)
+		_, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo")
 		if !errors.Is(err, errManifestDeleteResidue) {
 			t.Fatalf("err = %v, want residue", err)
 		}
@@ -934,18 +897,13 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 	})
 
 	t.Run("a refusal that could not be recorded stays a refusal", func(t *testing.T) {
-		h := newHarness(t)
-		h.connect(t)
-		other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
-		if err != nil {
-			t.Fatal(err)
-		}
+		h := forbiddenDeletes(t, "external-dlo")
 		refuseSQL(t, h, refuseAuditInserts)
 
-		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", other.ContentFingerprint)
-		var conflict *swiftcontrol.IdentityConflictError
-		if !errors.As(err, &conflict) {
-			t.Fatalf("err = %T %v, want the identity conflict to survive the join", err, err)
+		_, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo")
+		var refused *swiftcontrol.SwiftError
+		if !errors.As(err, &refused) || refused.Kind != swiftcontrol.KindForbidden {
+			t.Fatalf("err = %T %v, want the store's refusal to survive the join", err, err)
 		}
 		if !strings.Contains(err.Error(), "the outcome could not be recorded") {
 			t.Errorf("err = %v, want it to say the refusal went unrecorded", err)
@@ -957,119 +915,37 @@ func TestDeleteManifestSaysWhatAnUnrecordedOutcomeIs(t *testing.T) {
 			t.Errorf("a refused delete removed the object anyway: %v", err)
 		}
 	})
-
-	t.Run("a class refusal that could not be recorded is not residue either", func(t *testing.T) {
-		h := newHarness(t)
-		h.connect(t)
-		plain, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object")
-		if err != nil {
-			t.Fatal(err)
-		}
-		refuseSQL(t, h, refuseAuditInserts)
-
-		// The protocol knows a refusal from a DELETE that may have landed, so
-		// an unrecorded class refusal stays a refusal that says it went
-		// unrecorded, and the object is still there.
-		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "empty-object", plain.ContentFingerprint)
-		if err == nil || !strings.Contains(err.Error(), "not a manifest") || !strings.Contains(err.Error(), "the outcome could not be recorded") {
-			t.Fatalf("err = %v, want the class refusal with its unrecorded outcome", err)
-		}
-		if errors.Is(err, errManifestDeleteResidue) {
-			t.Errorf("nothing was deleted, so it is not residue: %v", err)
-		}
-		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "empty-object"); err != nil {
-			t.Errorf("a refused delete removed the object anyway: %v", err)
-		}
-	})
 }
 
-// A name is not a secret because it contains a word that often guards one. The
-// audit filter withholds the whole sentence of a secret-bearing SUMMARY — so a
-// summary built out of an object's own name hands a perfectly valid object the
-// power to blank the prose of its own destructive record. These are the two
-// summaries this path composes, and both keep their identities.
-func TestDeleteManifestRecordsNamesTheFilterWouldReject(t *testing.T) {
+// A name is not a secret because it contains a word that often guards one.
+// The audit filter withholds the whole sentence of a secret-bearing SUMMARY,
+// so a summary built out of an object's own name would hand a perfectly valid
+// object the power to blank the prose of its own destructive record. The
+// name is therefore the event's resource and never part of the summary.
+func TestDeleteManifestRecordsANameTheFilterWouldReject(t *testing.T) {
 	ctx := context.Background()
-
-	// The literal the filter refuses, named once so these cases cannot drift
-	// apart from internal/audit's list.
 	const refused = "password"
 	if audit.SummaryRefusal(refused) == "" {
 		t.Fatalf("this test needs a substring the audit filter refuses; %q is not one", refused)
 	}
-
-	t.Run("a refusal for an object whose own name the filter would reject", func(t *testing.T) {
-		h := newHarness(t)
-		h.mock.PutObject("fixtures", refused+"-manifest", swifttest.Object{
-			Bytes: 4_000_000, ETag: "b1946ac92492d2347c6235b4d2611184", Manifest: "plain-segments/v",
-		})
-		h.connect(t)
-
-		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", refused+"-manifest")
-		if err != nil {
-			t.Fatal(err)
-		}
-		other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", refused+"-manifest", other.ContentFingerprint)
-		var conflict *swiftcontrol.IdentityConflictError
-		if !errors.As(err, &conflict) {
-			t.Fatalf("refusal = %T %v, want an identity conflict", err, err)
-		}
-
-		e := soleManifestDeleteEvent(t, h, ctx)
-		if string(e.Result) != "conflict" {
-			t.Errorf("recorded result = %q, want conflict", e.Result)
-		}
-		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
-			if !strings.Contains(e.Summary, want) {
-				t.Errorf("the record omits an identity: %q lacks %s", e.Summary, want)
-			}
-		}
-		// The name is retained, in the field that is not filtered.
-		if !strings.Contains(e.Resource, refused+"-manifest") {
-			t.Errorf("the record does not name the object: resource = %q", e.Resource)
-		}
-		if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", refused+"-manifest"); err != nil {
-			t.Errorf("a refused delete removed the object anyway: %v", err)
-		}
+	h := newHarness(t)
+	h.mock.PutObject("fixtures", refused+"-manifest", swifttest.Object{
+		Bytes: 4_000_000, ETag: "b1946ac92492d2347c6235b4d2611184", Manifest: refused + "-segments/v",
 	})
-
-	t.Run("a completed delete whose segment prefix the filter would reject", func(t *testing.T) {
-		h := newHarness(t)
-		// The prefix is the DLO's own X-Object-Manifest value, so it is a name
-		// this code does not control either.
-		h.mock.PutObject("fixtures", "ordinary-manifest", swifttest.Object{
-			Bytes: 4_000_000, ETag: "b1946ac92492d2347c6235b4d2611184", Manifest: refused + "-segments/v",
-		})
-		h.connect(t)
-
-		shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "ordinary-manifest")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "ordinary-manifest", shown.ContentFingerprint); err != nil {
-			t.Fatalf("a matching identity was refused: %v", err)
-		}
-
-		e := soleManifestDeleteEvent(t, h, ctx)
-		if string(e.Result) != "applied" {
-			t.Errorf("recorded result = %q, want applied", e.Result)
-		}
-		// The prose loses the prefix; the event does not lose the delete.
-		if strings.Contains(e.Summary, refused) {
-			t.Errorf("the summary carries the refused prefix, so this record only exists by luck: %q", e.Summary)
-		}
-		if !strings.Contains(e.Summary, "withholds") {
-			t.Errorf("the record does not say the prefix was withheld: %q", e.Summary)
-		}
-		if !strings.Contains(e.Resource, "ordinary-manifest") {
-			t.Errorf("the record does not name the object: resource = %q", e.Resource)
-		}
-	})
+	h.connect(t)
+	if _, err := h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", refused+"-manifest"); err != nil {
+		t.Fatal(err)
+	}
+	e := soleManifestDeleteEvent(t, h, ctx)
+	if string(e.Result) != "applied" {
+		t.Errorf("recorded result = %q, want applied", e.Result)
+	}
+	if strings.Contains(e.Summary, refused) {
+		t.Errorf("the summary carries the name, so this record only exists by luck: %q", e.Summary)
+	}
+	if !strings.Contains(e.Resource, refused+"-manifest") {
+		t.Errorf("the record does not name the object: resource = %q", e.Resource)
+	}
 }
 
 // soleManifestDeleteEvent returns the one manifest.delete event, failing when
@@ -1091,66 +967,4 @@ func soleManifestDeleteEvent(t *testing.T, h *harness, ctx context.Context) Audi
 		t.Fatalf("manifest.delete events = %d, want exactly 1: %+v", len(found), events)
 	}
 	return found[0]
-}
-
-func TestDeleteManifestRefusalRecordsBothIdentities(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	ctx := context.Background()
-
-	shown, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// An identity from a different object: what a replacement between the
-	// display and the request would leave behind.
-	other, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-slo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if other.ContentFingerprint == shown.ContentFingerprint {
-		t.Fatal("the fixture no longer distinguishes these two objects")
-	}
-
-	_, err = h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo", other.ContentFingerprint)
-	if err == nil {
-		t.Fatal("a delete was accepted for an identity the name does not hold")
-	}
-	var conflict *swiftcontrol.IdentityConflictError
-	if !errors.As(err, &conflict) {
-		t.Fatalf("refusal = %T %v, want an identity conflict a caller can recognise", err, err)
-	}
-	if conflict.Expected != other.ContentFingerprint || conflict.Found != shown.ContentFingerprint {
-		t.Errorf("conflict carried expected %s found %s, want %s and %s",
-			conflict.Expected, conflict.Found, other.ContentFingerprint, shown.ContentFingerprint)
-	}
-
-	// Nothing was deleted.
-	if _, err := h.inspector.Object(ctx, h.bookmarkID(), "fixtures", "external-dlo"); err != nil {
-		t.Errorf("a refused delete removed the object anyway: %v", err)
-	}
-
-	events, err := h.auditSvc.RecentFor(ctx, h.bookmarkID(), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found bool
-	for _, e := range events {
-		if e.Operation != "manifest.delete" {
-			continue
-		}
-		found = true
-		if string(e.Result) != "conflict" {
-			t.Errorf("recorded result = %q, want conflict", e.Result)
-		}
-		for _, want := range []string{other.ContentFingerprint, shown.ContentFingerprint} {
-			if !strings.Contains(e.Summary, want) {
-				t.Errorf("the record omits an identity: %q lacks %s", e.Summary, want)
-			}
-		}
-		break
-	}
-	if !found {
-		t.Fatalf("no manifest.delete was recorded: %+v", events)
-	}
 }

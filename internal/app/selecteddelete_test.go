@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/csmart/aeronautes/internal/jobs"
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
@@ -118,14 +119,15 @@ func TestSelectedDeleteRefusesBeforeAnyJobRow(t *testing.T) {
 	}
 }
 
-// ADR 0093 decision 3: every member is deleted exactly, with its own
-// comparison HEAD, one DELETE and the literal read, the manifests
-// manifest-only, and nothing beside them touched.
+// ADR 0093 decision 3 with ADR 0122 decision 6: every member is deleted by
+// one DELETE of its own, with no read of the name before or after, the
+// manifests manifest-only, and nothing beside them touched.
 func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 	h, service := selectedHarness(t)
 	ctx := context.Background()
 	names := []string{"normal/hello.txt", "empty-object", "external-dlo", "external-slo"}
 	rows := rowsOf(t, h, names...)
+	startedAt := len(h.mock.RequestLog())
 	jobID, err := service.StartSelectedDelete(ctx, selectedRequest(h, rows))
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +136,8 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 	if job.State != "complete" || job.Type != "delete_selected" || job.Counters.ObjectsDeleted != 4 || job.Counters.ObjectsPlanned != 4 {
 		t.Fatalf("job = %+v", job)
 	}
+	// The job's own requests, before this test reads anything back.
+	wire := h.mock.RequestLog()[startedAt:]
 	session := h.transfer.connections.sessions[h.bookmarkID()].session
 	for _, name := range names {
 		if _, err := session.ObjectDetail(ctx, "fixtures", name); err == nil {
@@ -154,23 +158,26 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 	items := itemsOf(t, h, jobID)
 	for _, name := range names {
 		item := items[name]
-		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() || item.Successor == nil || item.Successor.Present {
+		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() || item.Successor != nil || item.Baseline != nil {
 			t.Fatalf("%s: item = %+v", name, item)
+		}
+		if requests := requestsFor(wire, "fixtures", name); len(requests) != 1 || requests[0] != "DELETE" {
+			t.Fatalf("%s: requests = %v, want one plain DELETE and no read", name, requests)
 		}
 	}
 	// The drawer reads the same facts through the service: each member's
-	// issued mark and the empty successor its verifying read observed, and
-	// the deletion totals beside the transfer ones.
+	// issued mark, its outcome and what it was listed with, and the deletion
+	// totals beside the transfer ones.
 	page, err := h.jobsSvc.Items(ctx, h.bookmarkID(), jobID, "", 100)
 	if err != nil || page.Status != "available" || len(page.Items) != 4 {
 		t.Fatalf("items page = %+v, %v", page, err)
 	}
 	for _, item := range page.Items {
-		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor == nil || item.Successor.Present || item.Successor.Role != "after" {
+		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor != nil || item.Baseline != nil {
 			t.Fatalf("item DTO %s = %+v", item.Key, item)
 		}
-		if item.Baseline == nil || item.Baseline.Class == "" || item.ListedETag == "" {
-			t.Fatalf("item DTO %s lost its listed facts or baseline: %+v", item.Key, item)
+		if item.ListedETag == "" {
+			t.Fatalf("item DTO %s lost its listed facts: %+v", item.Key, item)
 		}
 	}
 	if totals, err := h.jobsSvc.ItemTotals(ctx, h.bookmarkID(), jobID); err != nil || totals.Issued != 4 || totals.Deleted != 4 {
@@ -192,55 +199,35 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 	}
 }
 
-// ADR 0093 decisions 3 and 4: a member found changed since it was listed
-// keeps the identity it expected and the one it found, both readable from
-// the drawer's page, and no DELETE is issued for it.
-func TestSelectedDeleteChangedMemberKeepsBothIdentities(t *testing.T) {
+// The old refusals are gone, not merely untested: a member another writer
+// replaced after it was listed, and one that is a link, are deleted like
+// every other, the link as the link it is, and the job is complete.
+func TestSelectedDeleteDeletesWhateverTheNamesHold(t *testing.T) {
 	h, service := selectedHarness(t)
-	rows := rowsOf(t, h, "normal/hello.txt")
-	const replacementETag = "00000000000000000000000000000040"
-	h.mock.PutObject("fixtures", rows[0].Name, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: replacementETag})
-	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
+	ctx := context.Background()
+	h.mock.PutObject("fixtures", "link.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/empty-object"})
+	rows := rowsOf(t, h, "link.txt", "normal/hello.txt")
+	// The listed object is replaced after the rows were taken.
+	h.mock.PutObject("fixtures", "normal/hello.txt", swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+	jobID, err := service.StartSelectedDelete(ctx, selectedRequest(h, rows))
 	if err != nil {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "failed" || len(deletesUnder(h, "fixtures")) != 0 {
-		t.Fatalf("expected a settled conflict without a DELETE: job=%+v requests=%v", job, deletesUnder(h, "fixtures"))
+	if job.State != "complete" || job.Counters.ObjectsDeleted != 2 {
+		t.Fatalf("job = %+v", job)
 	}
-	page, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), jobID, "", 100)
-	if err != nil || len(page.Items) != 1 {
-		t.Fatalf("items = %+v, %v", page, err)
+	session := h.transfer.connections.sessions[h.bookmarkID()].session
+	for _, name := range []string{"link.txt", "normal/hello.txt"} {
+		if _, err := session.LiteralObjectHead(ctx, "fixtures", name); !swiftcontrol.IsNotFound(err) {
+			t.Fatalf("%s is still there: %v", name, err)
+		}
 	}
-	item := page.Items[0]
-	if item.Execution == nil || item.Execution.Result != "conflict" || item.ListedETag != rows[0].ETag || item.ListedBytes != rows[0].Bytes {
-		t.Fatalf("the listed facts were not kept: %+v", item)
+	if _, err := session.ObjectDetail(ctx, "fixtures", "empty-object"); err != nil {
+		t.Fatalf("the link's target was touched: %v", err)
 	}
-	if item.Baseline == nil || item.Baseline.Class != "plain" || item.Baseline.Length != rows[0].Bytes || item.Baseline.ETag != rows[0].ETag {
-		t.Fatalf("the identity expected was not kept: %+v", item.Baseline)
-	}
-	if item.Successor == nil || item.Successor.Role != "comparison" || !item.Successor.Present || item.Successor.Class != "plain" || item.Successor.Length != 40 || item.Successor.ETag != replacementETag {
-		t.Fatalf("the identity found was not kept: %+v", item.Successor)
-	}
-}
-
-// ADR 0093 decision 3: an ordinary member replaced by a link is changed since
-// it was listed, a conflict naming the link, and the link is left untouched.
-func TestSelectedDeleteTreatsALinkAtAnOrdinaryMemberAsChanged(t *testing.T) {
-	h, service := selectedHarness(t)
-	rows := rowsOf(t, h, "normal/hello.txt")
-	h.mock.PutObject("fixtures", rows[0].Name, swifttest.Object{SymlinkTarget: "fixtures/implied/child.txt"})
-	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = awaitTerminal(t, h, jobID)
-	item := itemsOf(t, h, jobID)[rows[0].Name]
-	if got := len(deletesUnder(h, "fixtures")); got != 0 {
-		t.Fatalf("sent %d DELETEs for the changed member", got)
-	}
-	if item.Execution == nil || item.Execution.Result != jobs.ItemConflict || item.Successor == nil || item.Successor.Class != "symlink" || item.Successor.Role != jobs.SuccessorComparison {
-		t.Fatalf("an ordinary row replaced by a link was not recorded as changed since listed: %+v successor=%+v", item, item.Successor)
+	if deletes := deletesUnder(h, "fixtures"); len(deletes) != 2 {
+		t.Fatalf("DELETEs = %v, want one for each member", deletes)
 	}
 }
 
@@ -260,8 +247,8 @@ func TestSelectedDeleteKeepsItsSettledCountWhenComplete(t *testing.T) {
 }
 
 // ADR 0093 decision 4: a DELETE the store answered with a status outside
-// success, a redirect here, was a request all the same; the member failed at
-// its request and the job is partial, never failed as if nothing was sent.
+// success, a redirect here, is a refusal recorded with that status at the
+// request; with every member refused, the job failed and deleted nothing.
 func TestSelectedDeleteCountsARedirectedDeleteAsARequest(t *testing.T) {
 	h := newHarness(t)
 	var deletes atomic.Int64
@@ -287,8 +274,8 @@ func TestSelectedDeleteCountsARedirectedDeleteAsARequest(t *testing.T) {
 	if deletes.Load() != 1 {
 		t.Fatalf("the response gate saw %d DELETEs, want exactly one", deletes.Load())
 	}
-	if job.State != "partial" || item.Execution == nil || item.Execution.Result != jobs.ItemFailed || item.Execution.Diagnostic.Stage != jobs.StageCommit || item.Execution.Diagnostic.HTTPStatus != 307 {
-		t.Fatalf("an issued DELETE became a pre-request refusal: job=%+v execution=%+v", job, item.Execution)
+	if job.State != "failed" || !strings.Contains(job.Error, "the store refused all 1 members") || item.Execution == nil || item.Execution.Result != jobs.ItemFailed || item.Execution.Diagnostic.Stage != jobs.StageCommit || item.Execution.Diagnostic.HTTPStatus != 307 {
+		t.Fatalf("job=%+v execution=%+v, want a failed job and the member failed at its request with HTTP 307", job, item.Execution)
 	}
 }
 
@@ -300,16 +287,12 @@ func TestSelectedDeleteCountsAnUnverifiedMemberOnceWhenCancelled(t *testing.T) {
 	rows := rowsOf(t, h, "normal/hello.txt", "empty-object")
 	h.mock.DropNextObjectDELETE()
 	ready := make(chan string, 1)
-	heads := 0
-	h.mock.AfterRequest = func(method, path string) {
-		// The second HEAD of the first member is its literal read after the
-		// lost DELETE; the cancellation lands then, before the next member.
-		if method == "HEAD" && strings.HasSuffix(path, "/fixtures/normal/hello.txt") {
-			heads++
-			if heads == 2 {
-				if err := h.transfer.CancelJob(context.Background(), <-ready); err != nil {
-					t.Error(err)
-				}
+	h.mock.BeforeRequest = func(method, path string) {
+		// The cancellation lands as the first member's DELETE arrives, whose
+		// reply is then lost, and before the next member.
+		if method == "DELETE" && strings.HasSuffix(path, "/fixtures/normal/hello.txt") {
+			if err := h.transfer.CancelJob(context.Background(), <-ready); err != nil {
+				t.Error(err)
 			}
 		}
 	}
@@ -355,124 +338,52 @@ func TestSelectedDeleteUsesTheSelectionCeilingSetting(t *testing.T) {
 	}
 }
 
-// ADR 0093 decision 3, the exception the confirmation names: a row listed
-// as zero bytes cannot say what it holds, so its baseline is a HEAD taken
-// first, and what that read finds is what is deleted, here a replacement
-// written after the listing. This is the protocol as decided, not a defect.
-func TestSelectedDeleteAdoptsALaterBaselineForARowThatCannotSay(t *testing.T) {
-	h, service := selectedHarness(t)
-	rows := rowsOf(t, h, "empty-object")
-	if rows[0].Bytes != 0 {
-		t.Fatal("the fixture was not listed as zero bytes")
-	}
-	h.mock.PutObject("fixtures", "empty-object", swifttest.Object{Bytes: 31, ContentType: "text/plain", ETag: "00000000000000000000000000000031"})
-	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "complete" || job.Counters.ObjectsDeleted != 1 || len(deletesUnder(h, "fixtures")) != 1 {
-		t.Fatalf("the later-baseline rule was not exercised: %+v", job)
-	}
-	if _, err := h.inspector.Object(t.Context(), h.bookmarkID(), "fixtures", "empty-object"); err == nil {
-		t.Fatal("the replacement was not deleted")
-	}
-	item := itemsOf(t, h, jobID)["empty-object"]
-	if item.Baseline == nil || item.Baseline.Length != 31 || item.Baseline.ETag != "00000000000000000000000000000031" {
-		t.Fatalf("the record does not say the member was compared as the replacement: %+v", item.Baseline)
-	}
-}
-
-// ADR 0093 decision 4: a member refused because the read that fixes its
-// baseline found a link is refused with its kind, readable from the drawer's
-// page without another read, and neither the link nor its target is touched.
-func TestSelectedDeleteRefusesALinkAtTheLaterBaselineWithItsKind(t *testing.T) {
-	h, service := selectedHarness(t)
-	h.mock.PutObject("fixtures", "choice.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/normal/hello.txt"})
-	rows := rowsOf(t, h, "choice.txt")
-	if rows[0].Bytes != 0 {
-		t.Fatalf("the fixture must take a later baseline: %+v", rows[0])
-	}
-	jobID, err := service.StartSelectedDelete(t.Context(), selectedRequest(h, rows))
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := awaitTerminal(t, h, jobID)
-	if job.State != "failed" || len(deletesUnder(h, "fixtures")) != 0 {
-		t.Fatalf("the refusal sent a DELETE or did not settle: job=%+v deletes=%v", job, deletesUnder(h, "fixtures"))
-	}
-	session := h.transfer.connections.sessions[h.bookmarkID()].session
-	if _, err := session.LiteralObjectHead(t.Context(), "fixtures", "choice.txt"); err != nil {
-		t.Fatalf("the refused link disappeared: %v", err)
-	}
-	if _, err := session.ObjectDetail(t.Context(), "fixtures", "normal/hello.txt"); err != nil {
-		t.Fatalf("the link's target disappeared: %v", err)
-	}
-	page, err := h.jobsSvc.Items(t.Context(), h.bookmarkID(), jobID, "", 100)
-	if err != nil || len(page.Items) != 1 || page.Items[0].Execution == nil {
-		t.Fatalf("items = %+v, %v", page, err)
-	}
-	item := page.Items[0]
-	if item.Execution.Result != "refused" || item.Execution.Code != "link" || item.Execution.Stage != "source_read" || item.Baseline != nil {
-		t.Fatalf("the public record does not say a link was found: %+v", item.Execution)
-	}
-}
-
-// Members the protocol refuses or finds changed do not stop the job: each
-// lands as its own word and the others are deleted, and the job is partial.
+// A member the store refuses does not stop the job: it is recorded failed
+// with the store's status, the others are deleted, and the job is partial.
 func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
 	h, service := selectedHarness(t)
 	ctx := context.Background()
-	h.mock.PutObject("fixtures", "link.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/normal/hello.txt"})
-	rows := rowsOf(t, h, "link.txt", "normal/hello.txt", "empty-object")
-	// The listed object is replaced after the rows were taken.
-	h.mock.PutObject("fixtures", "normal/hello.txt", swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+	rows := rowsOf(t, h, "normal/hello.txt", "empty-object", "implied/child.txt")
+	h.mock.RefuseObjectDELETE("fixtures", "empty-object", http.StatusForbidden)
 	jobID, err := service.StartSelectedDelete(ctx, selectedRequest(h, rows))
 	if err != nil {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "partial" || job.Counters.ObjectsDeleted != 1 || !strings.Contains(job.Error, "1 refused, 1 changed since listed") {
+	if job.State != "partial" || job.Counters.ObjectsDeleted != 2 || !strings.Contains(job.Error, "2 of 3 members deleted; 1 failed, 0 unknown") {
 		t.Fatalf("job = %+v", job)
 	}
 	items := itemsOf(t, h, jobID)
-	if items["link.txt"].Execution == nil || items["link.txt"].Execution.Result != jobs.ItemRefused || items["link.txt"].Execution.Diagnostic.Code != jobs.CodeLink {
-		t.Fatalf("link item = %+v", items["link.txt"])
+	if refused := items["empty-object"].Execution; refused == nil || refused.Result != jobs.ItemFailed || refused.Diagnostic.Code != jobs.CodeForbidden || refused.Diagnostic.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("refused item = %+v", items["empty-object"])
 	}
-	if items["normal/hello.txt"].Execution == nil || items["normal/hello.txt"].Execution.Result != jobs.ItemConflict {
-		t.Fatalf("replaced item = %+v", items["normal/hello.txt"])
-	}
-	if items["empty-object"].Execution == nil || items["empty-object"].Execution.Result != jobs.ItemDeleted {
-		t.Fatalf("deleted item = %+v", items["empty-object"])
+	for _, name := range []string{"normal/hello.txt", "implied/child.txt"} {
+		if items[name].Execution == nil || items[name].Execution.Result != jobs.ItemDeleted {
+			t.Fatalf("%s: item = %+v", name, items[name])
+		}
 	}
 	session := h.transfer.connections.sessions[h.bookmarkID()].session
-	if d, err := session.ObjectDetail(ctx, "fixtures", "normal/hello.txt"); err != nil || d.ContentLength != 40 {
-		t.Fatalf("the replaced object was touched: %+v, %v", d, err)
-	}
-	if deletes := deletesUnder(h, "fixtures"); len(deletes) != 1 {
-		t.Fatalf("DELETEs = %v, want only the deleted member's", deletes)
+	if _, err := session.ObjectDetail(ctx, "fixtures", "empty-object"); err != nil {
+		t.Fatalf("the refused object is gone: %v", err)
 	}
 }
 
-// ADR 0093 decision 4: nothing deleted because every member was refused or
-// changed since listed is a failed job that says so, not a cancellation and
-// not a completion.
-func TestSelectedDeleteFailsWhenNothingWasSent(t *testing.T) {
+// Nothing deleted because the store refused every member is a failed job
+// that says so, not a cancellation and not a completion.
+func TestSelectedDeleteFailsWhenTheStoreRefusesEveryMember(t *testing.T) {
 	h, service := selectedHarness(t)
 	ctx := context.Background()
-	h.mock.PutObject("fixtures", "link.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/normal/hello.txt"})
-	rows := rowsOf(t, h, "link.txt", "normal/hello.txt")
-	h.mock.PutObject("fixtures", "normal/hello.txt", swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
+	rows := rowsOf(t, h, "normal/hello.txt", "empty-object")
+	for _, row := range rows {
+		h.mock.RefuseObjectDELETE("fixtures", row.Name, http.StatusForbidden)
+	}
 	jobID, err := service.StartSelectedDelete(ctx, selectedRequest(h, rows))
 	if err != nil {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "failed" || !strings.Contains(job.Error, "nothing was deleted") || job.Counters.ObjectsDeleted != 0 {
+	if job.State != "failed" || !strings.Contains(job.Error, "nothing was deleted: the store refused all 2 members") || job.Counters.ObjectsDeleted != 0 {
 		t.Fatalf("job = %+v", job)
-	}
-	if deletes := deletesUnder(h, "fixtures"); len(deletes) != 0 {
-		t.Fatalf("DELETEs = %v, want none", deletes)
 	}
 }
 
@@ -489,7 +400,7 @@ func TestSelectedDeleteLostReplyIsUnverifiedAndPartial(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "partial" || !strings.Contains(job.Error, "1 unverified") {
+	if job.State != "partial" || !strings.Contains(job.Error, "1 unknown") {
 		t.Fatalf("job = %+v", job)
 	}
 	items := itemsOf(t, h, jobID)
@@ -504,7 +415,7 @@ func TestSelectedDeleteLostReplyIsUnverifiedAndPartial(t *testing.T) {
 
 // ADR 0093 decision 4: cancellation lands between members. The member in
 // flight finishes, the later ones are recorded as not attempted, and the
-// job is partial after a DELETE was sent and cancelled when none was.
+// job is partial because a DELETE was sent.
 func TestSelectedDeleteCancelsBetweenMembers(t *testing.T) {
 	ctx := context.Background()
 	t.Run("after a DELETE", func(t *testing.T) {
@@ -541,41 +452,6 @@ func TestSelectedDeleteCancelsBetweenMembers(t *testing.T) {
 		}
 		if deletes := deletesUnder(h, "fixtures"); len(deletes) != 1 {
 			t.Fatalf("DELETEs = %v, want one", deletes)
-		}
-	})
-	t.Run("before any DELETE", func(t *testing.T) {
-		h, service := selectedHarness(t)
-		h.mock.PutObject("fixtures", "link.txt", swifttest.Object{Bytes: 0, ContentType: "text/plain", SymlinkTarget: "fixtures/normal/hello.txt"})
-		rows := rowsOf(t, h, "link.txt", "normal/hello.txt")
-		ready := make(chan string, 1)
-		cancelled := false
-		h.mock.AfterRequest = func(method, path string) {
-			// The link's later-baseline HEAD is the first request of the job.
-			if method == "HEAD" && strings.HasSuffix(path, "/fixtures/link.txt") && !cancelled {
-				cancelled = true
-				if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
-					t.Error(err)
-				}
-			}
-		}
-		jobID, err := service.StartSelectedDelete(ctx, selectedRequest(h, rows))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ready <- jobID
-		job := awaitTerminal(t, h, jobID)
-		if job.State != "cancelled" || job.Counters.ObjectsDeleted != 0 {
-			t.Fatalf("job = %+v", job)
-		}
-		items := itemsOf(t, h, jobID)
-		if items["link.txt"].Execution == nil || items["link.txt"].Execution.Result != jobs.ItemRefused {
-			t.Fatalf("link item = %+v", items["link.txt"])
-		}
-		if items["normal/hello.txt"].Execution == nil || items["normal/hello.txt"].Execution.Result != jobs.ItemNotAttempted {
-			t.Fatalf("later member = %+v", items["normal/hello.txt"])
-		}
-		if deletes := deletesUnder(h, "fixtures"); len(deletes) != 0 {
-			t.Fatalf("DELETEs = %v, want none", deletes)
 		}
 	})
 }

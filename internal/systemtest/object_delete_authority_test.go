@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/mutationfacts"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
 func TestObjectDeleteEmptyNameCannotDeleteTheContainerMock(t *testing.T) {
@@ -45,19 +44,16 @@ func testObjectDeleteEmptyName(t *testing.T, h *Harness) {
 	if _, err := h.Inspector.Object(ctx, h.Primary.BookmarkID, c, ""); err == nil {
 		t.Fatal("the inspector answered an empty object name")
 	}
-	// The identity a container HEAD would have supplied: plain, zero bytes,
-	// empty entity tag. It is detection input, never a capability.
-	identity := (&swiftcontrol.ObjectDetail{Class: swiftcontrol.ClassPlain}).ContentFingerprint()
 	// The three shown-object deletions share one service path, and each is
 	// refused the same way (ADR 0094 decision 1).
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "", identity)
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "")
 	if err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty object name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
-	if result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "", identity); err == nil || result.Outcome == "applied" {
+	if result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, ""); err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty marker name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
-	if result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "", identity); err == nil || result.Outcome == "applied" {
+	if result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, ""); err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty manifest name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
 	if status := headStatus(); status/100 != 2 {

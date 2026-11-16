@@ -34,8 +34,8 @@ const (
 	// whose members are the reviewed manifest and segments (ADR 0095
 	// decision 8).
 	TypeDeleteSegments Type = "delete_segments"
-	// TypeDeleteSelected deletes the selected objects one by one with the
-	// verified per-name protocol and keeps its members as items (ADR 0093).
+	// TypeDeleteSelected deletes the selected objects one by one and keeps
+	// its members as items (ADR 0093).
 	TypeDeleteSelected Type = "delete_selected"
 )
 

@@ -342,32 +342,20 @@ func TestMarkers(t *testing.T) {
 		t.Error("marker without trailing delimiter accepted")
 	}
 
-	// A folder-suit real object must be neither overwritten nor deleted
-	// through the marker path.
+	// A folder-suit real object must not be overwritten by a marker.
 	if _, err := conn.ObjectPut(ctx, "media", "suit/", strings.NewReader("real data"), true, "", "text/plain", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateMarker(ctx, "media", "suit/"); err == nil || errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("CreateMarker over real object = %v, want refusal", err)
 	}
-	suit, err := s.ObjectDetail(ctx, "media", "suit/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.DeleteMarkerObject(ctx, "media", "suit/", suit.ContentFingerprint()); err == nil {
-		t.Error("DeleteMarkerObject deleted a folder-suit real object")
-	}
 
 	// Delete: marker goes, children survive.
 	if _, err := conn.ObjectPut(ctx, "media", "photos/a.jpg", strings.NewReader("x"), true, "", "image/jpeg", nil); err != nil {
 		t.Fatal(err)
 	}
-	shown, err := s.PrefixDetail(ctx, "media", "photos/")
-	if err != nil || shown.SelfObject == nil {
-		t.Fatalf("marker detail = %+v, %v", shown, err)
-	}
-	result, err := s.DeleteMarkerObject(ctx, "media", "photos/", shown.SelfObject.ContentFingerprint())
-	if err != nil || result.Outcome != UpdateApplied {
+	result, err := s.DeleteName(ctx, "media", "photos/")
+	if err != nil || result.Outcome != UpdateApplied || result.Gone {
 		t.Fatalf("result = %+v, %v", result, err)
 	}
 	after, err := s.PrefixDetail(ctx, "media", "photos/")
@@ -381,10 +369,10 @@ func TestMarkers(t *testing.T) {
 		t.Errorf("child object lost with the marker: %v", err)
 	}
 
-	// Deleting an implied prefix's marker is not-found, not silent success.
-	var se *SwiftError
-	if _, err := s.DeleteMarkerObject(ctx, "media", "photos/", shown.SelfObject.ContentFingerprint()); !errors.As(err, &se) || se.Kind != KindNotFound {
-		t.Errorf("delete implied marker = %v, want not_found", err)
+	// An implied prefix has no marker: the store answers not found, which
+	// the deletion reports as already gone.
+	if result, err := s.DeleteName(ctx, "media", "photos/"); err != nil || !result.Gone {
+		t.Errorf("delete of an implied prefix's marker = %+v, %v, want already gone", result, err)
 	}
 }
 

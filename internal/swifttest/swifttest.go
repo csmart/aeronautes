@@ -158,6 +158,9 @@ type Server struct {
 	// dropNextObjectPOST closes the POST connection without a response,
 	// so the caller sees a transport failure after the request left.
 	dropNextObjectPOST bool
+	// refusedDELETEs are the objects, as "container/name", whose DELETE is
+	// answered with the status given and applies nothing.
+	refusedDELETEs map[string]int
 	// dropNextObjectDELETE applies the next object DELETE and then closes the
 	// connection without a response, so the client has a request that
 	// landed and no answer for it (ADR 0092's lost-reply case).
@@ -1416,6 +1419,22 @@ func (s *Server) DropNextObjectDELETE() {
 	s.mu.Unlock()
 }
 
+// RefuseObjectDELETE makes every DELETE of one object answer with status and
+// apply nothing, as a store that refuses the request does. A status of 0
+// lifts the refusal.
+func (s *Server) RefuseObjectDELETE(container, name string, status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if status == 0 {
+		delete(s.refusedDELETEs, container+"/"+name)
+		return
+	}
+	if s.refusedDELETEs == nil {
+		s.refusedDELETEs = map[string]int{}
+	}
+	s.refusedDELETEs[container+"/"+name] = status
+}
+
 // RemoveObject deletes a stored object directly, as another writer would.
 func (s *Server) RemoveObject(container, name string) {
 	s.mu.Lock()
@@ -1423,6 +1442,13 @@ func (s *Server) RemoveObject(container, name string) {
 	if c, ok := s.containers[container]; ok {
 		delete(c.objects, name)
 	}
+}
+
+// RemoveContainer deletes a stored container directly, as another writer would.
+func (s *Server) RemoveContainer(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.containers, name)
 }
 
 // SetObjectPOSTStatus makes the next object POST return status without writing.
@@ -1487,9 +1513,16 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request, container,
 			return
 		}
 		s.mu.Lock()
+		refused := s.refusedDELETEs[container+"/"+name]
 		drop := s.dropNextObjectDELETE
-		s.dropNextObjectDELETE = false
+		if refused == 0 {
+			s.dropNextObjectDELETE = false
+		}
 		s.mu.Unlock()
+		if refused != 0 {
+			w.WriteHeader(refused)
+			return
+		}
 		if drop {
 			s.deleteObject(&discardResponse{}, container, name)
 			if hj, ok := w.(http.Hijacker); ok {

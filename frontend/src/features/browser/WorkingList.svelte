@@ -225,13 +225,13 @@
         {#if rowDelete}
           <!-- One selected row's own deletion, as the Delete key and the
             inspector open it, so a single file is deleted from here too. -->
-          <button class="find danger" title="Delete only the selected row, checked against what was listed" onclick={() => openSelectionDelete(browser)}>
+          <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
             {rowDelete.label}
           </button>
         {:else if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
           <button
             class="find danger"
-            title="Delete the selected objects as one job: an object listed with a size is checked against its listing, a zero-byte or SLO-listed row is read again first; prefix rows are left out"
+            title="Delete the selected objects as one job, one request each; prefix rows are left out"
             onclick={() => browser.openSelectedDelete()}
           >
             Delete selected…

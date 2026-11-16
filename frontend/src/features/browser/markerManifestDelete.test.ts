@@ -94,17 +94,17 @@ describe("the inspector's marker affordance", () => {
 });
 
 describe("the marker delete dialog", () => {
-  it("binds the marker's own identity, says only the marker goes, and sends one request", async () => {
+  it("binds the marker's own name, says only the marker goes, and sends one request", async () => {
     const f = await markerDialog();
     expect(f.root.textContent).toContain("The marker object at folder-marker/ will be deleted, and only it.");
     expect(f.root.textContent).toContain("the objects under it stay");
     f.fake.deleteMarker = vi.fn(async () => applied);
     // The request names the scope the prefix detail was read under and the
-    // identity of its own object; the view moves on after the success.
+    // prefix; the view moves on after the success.
     const scope = f.browser.prefixDetail!.scope;
     click(button("Delete marker", f.root));
     await settle();
-    expect(f.fake.deleteMarker).toHaveBeenCalledExactlyOnceWith(scope, "fixtures", "folder-marker/", f.detail.contentFingerprint);
+    expect(f.fake.deleteMarker).toHaveBeenCalledExactlyOnceWith(scope, "fixtures", "folder-marker/");
     expect(f.done).toHaveBeenCalledOnce();
   });
 
@@ -128,13 +128,13 @@ describe("the marker delete dialog", () => {
     expect(f.fake.deleteMarker).toHaveBeenCalledOnce();
   });
 
-  it("shows a refused delete with both identities and stays open", async () => {
+  it("shows the store's refusal and stays open", async () => {
     const f = await markerDialog();
     f.fake.deleteMarker = vi.fn(async () => {
-      throw new Error("fixtures/folder-marker/ is not what you were shown: it now reports a plain of 9 bytes with entity tag ffff, so nothing was deleted (expected identity shown-id, found other-id)");
+      throw new Error("marker delete refused by the store with HTTP 403; nothing was deleted");
     });
     click(button("Delete marker", f.root)); await settle();
-    expect(f.root.textContent).toContain("expected identity shown-id, found other-id");
+    expect(f.root.textContent).toContain("refused by the store with HTTP 403; nothing was deleted");
     expect(f.done).not.toHaveBeenCalled();
     expect(labels(f.root)).toContain("Delete marker");
   });
@@ -147,16 +147,6 @@ describe("the marker delete dialog", () => {
     expect(f.fake.deleteMarker).not.toHaveBeenCalled();
   });
 
-  it("shows an observed successor instead of a plain success", async () => {
-    const f = await markerDialog();
-    const successor: ObjectDetailDTO = { ...f.detail, contentLength: 9, etag: "900150983cd24fb0d6963f7d28e17f72", contentFingerprint: "other" };
-    f.fake.deleteMarker = vi.fn(async () => ({ ...applied, objectAfter: successor }));
-    click(button("Delete marker", f.root)); await settle();
-    expect(f.root.textContent).toContain("Something stands at the name now");
-    expect(f.root.textContent).toContain("900150983cd24fb0d6963f7d28e17f72");
-    expect(labels(f.root)).not.toContain("Delete marker");
-    expect(f.done).not.toHaveBeenCalled();
-  });
 });
 
 describe("the manifest delete dialog", () => {
@@ -202,7 +192,7 @@ describe("the manifest delete dialog", () => {
     click(option); await settle();
     click(button("Delete manifest only", f.root)); await settle();
     expect(f.fake.deleteManifestWithSegments).not.toHaveBeenCalled();
-    expect(f.fake.deleteManifest).toHaveBeenCalledExactlyOnceWith(detail.scope, "fixtures", "external-dlo", detail.contentFingerprint);
+    expect(f.fake.deleteManifest).toHaveBeenCalledExactlyOnceWith(detail.scope, "fixtures", "external-dlo");
     expect(done).toHaveBeenCalledOnce();
   });
 
@@ -224,18 +214,6 @@ describe("the manifest delete dialog", () => {
     expect(f.root.textContent).toContain(`Its segments cannot be deleted with it here: ${reason}`);
     expect(f.fake.checkSegmentOwnership).not.toHaveBeenCalled();
     expect(button("Delete manifest only", f.root).disabled).toBe(false);
-  });
-
-  it("shows an observed successor instead of a plain success", async () => {
-    const f = await manifestDialog();
-    const successor: ObjectDetailDTO = { ...f.detail, class: "plain", manifest: "", contentLength: 17, etag: "00000000000000000000000000000017", contentFingerprint: "other" };
-    f.fake.deleteManifest = vi.fn(async () => ({ ...applied, objectAfter: successor }));
-    click(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!); await settle();
-    click(button("Delete manifest only", f.root)); await settle();
-    expect(f.root.textContent).toContain("Something stands at the name now");
-    expect(f.root.textContent).toContain("plain object");
-    expect(labels(f.root)).not.toContain("Delete manifest only");
-    expect(f.done).not.toHaveBeenCalled();
   });
 
   it("closes without a request when the selection moves", async () => {

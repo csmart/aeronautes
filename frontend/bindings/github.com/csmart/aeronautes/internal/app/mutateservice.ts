@@ -46,39 +46,31 @@ export function CreateMarker(scope: $models.ListingScopeDTO, container: string, 
 }
 
 /**
- * DeleteManifest deletes ONE dynamic or static large-object manifest the
- * operator was shown, manifest-only: the segments stay by construction (§60
- * Phase 4). It is the plain-object protocol with the class inverted (ADR
- * 0094 decision 3), and a manifest of the same kind still observed at the
- * name afterwards is unverified rather than compared.
+ * DeleteManifest deletes ONE dynamic or static large-object manifest,
+ * manifest-only: the DELETE is the plain one, so every segment stays (§60
+ * Phase 4).
  */
-export function DeleteManifest(scope: $models.ListingScopeDTO, container: string, name: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(4014894181, scope, container, name, contentFingerprint);
+export function DeleteManifest(scope: $models.ListingScopeDTO, container: string, name: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(4014894181, scope, container, name);
 }
 
 /**
- * DeleteMarker deletes ONE directory marker the operator was shown, the
- * prefix detail's own zero-byte object, by the plain-object protocol plus
- * the marker rule (ADR 0094 decision 2): the comparison HEAD must show the
- * identity shown AND a zero-byte object of the directory content type, so
- * a real object in a folder's clothing never leaves through this path. The
- * objects under the prefix are never read or touched.
+ * DeleteMarker deletes ONE directory marker, the zero-byte object at a
+ * prefix's own name. The objects under the prefix are never read or touched.
  */
-export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, prefix: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(1622704602, scope, container, prefix, contentFingerprint);
+export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, prefix: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(1622704602, scope, container, prefix);
 }
 
 /**
- * DeleteObject deletes ONE plain object the operator was shown (ADR 0092).
- * It is bound to the portrait the inspector's detail was read under
- * (ADR 0079), carries the content identity that detail showed, records its
- * intent before the store is asked and its outcome with the audit event in
- * one transaction (ADR 0058), and returns the literal successor the
- * verifying read observed so the interface can show it. Manifests, the
- * marker journey on a prefix row and symlinks keep their own paths.
+ * DeleteObject deletes ONE object by its name. It is bound to the portrait
+ * the inspector's detail was read under (ADR 0079), records its intent
+ * before the store is asked and its outcome with the audit event in one
+ * transaction (ADR 0058), and reports the store's answer: nothing is read
+ * before the DELETE or after it (ADR 0122 decision 6).
  */
-export function DeleteObject(scope: $models.ListingScopeDTO, container: string, name: string, contentFingerprint: string): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(259793559, scope, container, name, contentFingerprint);
+export function DeleteObject(scope: $models.ListingScopeDTO, container: string, name: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(259793559, scope, container, name);
 }
 
 /**

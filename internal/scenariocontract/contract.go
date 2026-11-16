@@ -131,12 +131,16 @@ var inventory = map[string]Action{
 	"MutateService.CreateDestinationContainer": {Kind: Mutate},
 	"MutateService.UpdateContainer":            {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	"MutateService.CreateMarker":               {Kind: Mutate},
-	"MutateService.DeleteMarker":               {Kind: Destructive},
-	"MutateService.DeleteManifest":             {Kind: Destructive},
-	"MutateService.DeleteObject":               {Kind: Destructive},
-	"MutateService.UpdateObjectMetadata":       {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
-	"MutateService.UpdateAccountMetadata":      {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
-	"MutateService.UpdateTempURLKey":           {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	// ADR 0122 decision 6: a deletion sends the name's DELETE and takes the
+	// store's answer. Nothing is compared before it, so these three have no
+	// conflict to cover: their contract is the deletion and the store's
+	// refusal of it.
+	"MutateService.DeleteMarker":          {Kind: Destructive, Scenarios: []string{"happy", "refusal"}},
+	"MutateService.DeleteManifest":        {Kind: Destructive, Scenarios: []string{"happy", "refusal"}},
+	"MutateService.DeleteObject":          {Kind: Destructive, Scenarios: []string{"happy", "refusal"}},
+	"MutateService.UpdateObjectMetadata":  {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.UpdateAccountMetadata": {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
+	"MutateService.UpdateTempURLKey":      {Kind: Mutate, Scenarios: []string{"happy", "refusal", "conflict"}},
 	// AuditService
 	"AuditService.Recent":      {Kind: Read, Scenarios: []string{"refusal"}},
 	"AuditService.RecentFor":   {Kind: Read},
@@ -184,15 +188,16 @@ var inventory = map[string]Action{
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
 	// ADR 0093 decision 6 and ADR 0095 decision 9: a deletion job never
-	// retries a destructive request, so it has no retry scenario; its real
-	// contract is the five below. The bulk deletion became this job in ADR
-	// 0095.
-	"DeleteService.StartDelete":         {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
-	"DeleteService.StartSelectedDelete": {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
+	// retries a destructive request, so it has no retry scenario. ADR 0122
+	// decision 6: it compares no member with its listing, so it has no
+	// conflict either; its real contract is the four below. The bulk
+	// deletion became this job in ADR 0095.
+	"DeleteService.StartDelete":         {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial"}},
+	"DeleteService.StartSelectedDelete": {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial"}},
 	// ADR 0095 decision 8 made DeleteManifestWithSegments a job that owns the
-	// reviewed manifest and its segments; decision 9 drops its retry for the
-	// same reason, so its contract is the five a deletion job keeps.
-	"DeleteService.DeleteManifestWithSegments": {Kind: Job, Scenarios: []string{"happy", "refusal", "conflict", "cancel", "partial"}},
+	// reviewed manifest and its segments; its contract is the four a
+	// deletion job keeps.
+	"DeleteService.DeleteManifestWithSegments": {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial"}},
 	// JobService
 	"JobService.Get":            {Kind: Read},
 	"JobService.List":           {Kind: Read},

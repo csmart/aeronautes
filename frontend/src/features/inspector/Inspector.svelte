@@ -129,9 +129,8 @@ import { isLink } from "../browser/browserState.svelte";
       </p>
       {#if v1Offers.objectDelete && objects.length > 0}
         <p class="teach">
-          Delete selected… in the working list deletes the objects as one job: an object listed with a size is checked
-          against its listing, a row listed as zero bytes or as a static large object is read again first and what that
-          read finds is deleted; prefix rows are left out.
+          Delete selected… in the working list deletes the objects as one job, one request each, whatever each name
+          holds when its request arrives; prefix rows are left out.
         </p>
       {/if}
     </section>

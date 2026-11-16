@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
 
@@ -36,9 +37,9 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if preview.Objects != 3 || preview.Bytes != 10 || preview.PossibleManifests != 1 {
 		t.Fatalf("preview = %+v", preview)
 	}
-	// ADR 0095 decision 7: the cost is stated before the job, two requests
-	// per member and one more for each row that takes a later baseline.
-	if preview.Strategy != "per-name-verified" || preview.LaterBaselineRows != 1 || preview.RequestCost != 7 {
+	// ADR 0095 decision 7 with ADR 0122 decision 6: the cost is stated
+	// before the job, one request for each member.
+	if preview.Strategy != "per-name" || preview.RequestCost != 3 {
 		t.Errorf("strategy and cost = %+v", preview)
 	}
 	// ADR 0102 decision 3: nobody archives into this container, and the scan
@@ -149,7 +150,7 @@ func TestDeletePrefixJob(t *testing.T) {
 	if job.Counters.ObjectsPlanned == 0 || job.Counters.ObjectsCopied != job.Counters.ObjectsPlanned {
 		t.Errorf("counters = %+v", job.Counters)
 	}
-	if !strings.Contains(job.Settings, "per-name-verified") || !strings.Contains(job.Settings, "limit=1") {
+	if !strings.Contains(job.Settings, `"strategy":"per-name"`) {
 		t.Errorf("effective config = %q", job.Settings)
 	}
 	// Survivors: kept.txt and the sibling manifest, still assembling.
@@ -230,36 +231,108 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	}
 }
 
-// A store whose replicas lag can still answer for a container a moment
-// after accepting its DELETE. The job looks again within a bound and reports
-// the container deleted; one that answers throughout that bound is partial
-// and says why.
-func TestDeleteContainerLooksAgainForALaggingStore(t *testing.T) {
+// ADR 0122 decision 6: the store's answer to the container's DELETE is the
+// result. A store whose replicas lag goes on answering for the container
+// after accepting its DELETE, however long: the job is complete, and the
+// container is not looked for.
+func TestDeleteContainerTakesTheStoresAnswer(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "one.txt", "1", nil)
+	h.mock.LagDeletedContainers(1000)
+	jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	if job.State != "complete" || job.Error != "" || job.Counters.ObjectsDeleted != 1 {
+		t.Fatalf("job = %+v, want complete with one object deleted", job)
+	}
+	wire := h.mock.RequestLog()
+	deleted := false
+	for _, line := range wire {
+		switch {
+		case line == "DELETE /v1/AUTH_test/media":
+			deleted = true
+		case deleted && strings.Contains(line, "/v1/AUTH_test/media"):
+			t.Fatalf("the container was asked for after its DELETE: %s", line)
+		}
+	}
+	if !deleted {
+		t.Fatal("the container's DELETE was not sent")
+	}
+}
+
+// A container that still holds something is refused by the store, which the
+// job reports as that: here a name written after the last listing.
+func TestDeleteContainerReportsTheStoresRefusalOfANonEmptyContainer(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "one.txt", "1", nil)
+	// The writer lands after the sweep's last listing, as the container's
+	// own DELETE arrives.
+	h.mock.BeforeRequest = func(method, path string) {
+		if method == "DELETE" && path == "/v1/AUTH_test/media" {
+			seedObject(h.mock, "media", "late.txt", "late", nil)
+		}
+	}
+	jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	h.mock.BeforeRequest = nil
+	if job.State != "partial" || !strings.Contains(job.Error, "the store refused to delete the container because it is not empty") || job.Counters.ObjectsDeleted != 1 {
+		t.Fatalf("job = %+v, want partial with the store's refusal", job)
+	}
+	if !stillReadable(t, h, "media", "late.txt") {
+		t.Fatal("the late object is gone")
+	}
+}
+
+// A container another writer deleted as its DELETE arrived is already gone,
+// which is the outcome asked for: the job is complete.
+func TestDeleteContainerTakesNotFoundAsAlreadyGone(t *testing.T) {
+	h, service, bookmark := deleteHarness(t)
+	h.mock.AddContainer("media", "standard")
+	seedObject(h.mock, "media", "one.txt", "1", nil)
+	h.mock.BeforeRequest = func(method, path string) {
+		if method == "DELETE" && path == "/v1/AUTH_test/media" {
+			h.mock.RemoveContainer("media")
+		}
+	}
+	jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, jobID)
+	h.mock.BeforeRequest = nil
+	if job.State != "complete" || job.Error != "" {
+		t.Fatalf("job = %+v, want complete", job)
+	}
+}
+
+// The other answers to a container's DELETE leave the job partial, and say
+// which they were: a refusal with the store's status, or no answer.
+func TestContainerDeleteLeftSaysWhatTheStoreAnswered(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		lag           int
-		state, reason string
+		name string
+		err  error
+		want string
 	}{
-		{"answers twice more", 2, "complete", ""},
-		{"answers throughout", 1000, "partial", "container still answers after DELETE"},
+		{"forbidden", &swiftcontrol.SwiftError{Kind: swiftcontrol.KindForbidden, HTTPStatus: 403}, "refused to delete the container with HTTP 403"},
+		{"server error", &swiftcontrol.SwiftError{Kind: swiftcontrol.KindServer, HTTPStatus: 503}, "nothing says whether the container was deleted"},
+		{"no answer", &swiftcontrol.SwiftError{Kind: swiftcontrol.KindNetwork}, "nothing says whether the container was deleted"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, service, bookmark := deleteHarness(t)
-			h.mock.AddContainer("media", "standard")
-			seedObject(h.mock, "media", "one.txt", "1", nil)
-			h.mock.LagDeletedContainers(tc.lag)
-			jobID, err := service.StartDelete(context.Background(), DeleteRequestDTO{
-				BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "delete media",
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			job := awaitTerminal(t, h, jobID)
-			if job.State != tc.state || job.Error != tc.reason {
-				t.Fatalf("job ended %q with %q, want %q with %q", job.State, job.Error, tc.state, tc.reason)
-			}
-			if job.Counters.ObjectsDeleted != 1 {
-				t.Fatalf("objects deleted = %d, want 1", job.Counters.ObjectsDeleted)
+			if got := containerDeleteLeft(tc.err); !strings.Contains(got, tc.want) {
+				t.Fatalf("left = %q, want it to say %q", got, tc.want)
 			}
 		})
 	}

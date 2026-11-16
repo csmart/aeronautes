@@ -89,7 +89,7 @@ func TestLargeObjectsUnderAHistoryLocationSwift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "big.slo", shown.ContentFingerprint)
+	result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, "big.slo")
 	if err != nil || result.Outcome != "applied" || result.ObjectAfter != nil {
 		t.Fatalf("manifest only: result = %+v, err = %v; want applied with the name gone", result, err)
 	}

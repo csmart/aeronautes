@@ -44,12 +44,12 @@ func deleteJourney(w *world, a *account, round int) {
 	}
 	scope := w.scope(a)
 
-	// One object, as the inspector's Delete does.
-	shown, err := w.inspector.Object(w.ctx, a.bookmarkID, c, "a.txt")
-	if err != nil {
+	// One object, as the inspector's Delete does: the detail is read to be
+	// shown, and the name is deleted.
+	if _, err := w.inspector.Object(w.ctx, a.bookmarkID, c, "a.txt"); err != nil {
 		t.Fatalf("inspect: %s", failure(err))
 	}
-	result, err := w.mutate.DeleteObject(w.ctx, scope, c, "a.txt", shown.ContentFingerprint)
+	result, err := w.mutate.DeleteObject(w.ctx, scope, c, "a.txt")
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("delete one object: %s outcome %v", failure(err), result.Outcome)
 	}
@@ -84,8 +84,16 @@ func deleteJourney(w *world, a *account, round int) {
 		t.Fatalf("delete the container: %s", failure(err))
 	}
 	w.ended("delete container", w.await(a, id), "complete")
-	if _, err := a.check.ContainerDetail(w.ctx, c); !swiftcontrol.IsNotFound(err) {
-		t.Fatalf("the deleted container still answers: %s", failure(err))
+	// The store accepted the container's DELETE, and its replicas can go on
+	// answering for a moment. The application takes the store's answer and
+	// does not wait that out, so this check does.
+	if problem := w.settled(func() string {
+		if _, err := a.check.ContainerDetail(w.ctx, c); !swiftcontrol.IsNotFound(err) {
+			return "the deleted container still answers: " + failure(err)
+		}
+		return ""
+	}); problem != "" {
+		t.Fatal(problem)
 	}
 }
 
