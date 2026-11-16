@@ -316,6 +316,30 @@ func CopiedObject(event Event) (string, bool) {
 	return event.Object, true
 }
 
+// Answers is what the engine said about the objects of one copy, by the name
+// each was listed to it under: the ones it reported writing, and the error it
+// reported for one it could not write.
+type Answers struct {
+	Copied  map[string]bool
+	Refused map[string]string
+}
+
+func NewAnswers() Answers {
+	return Answers{Copied: map[string]bool{}, Refused: map[string]string{}}
+}
+
+// Hear takes one child log event. An object's first error line is the one
+// kept.
+func (a Answers) Hear(event Event) {
+	if name, ok := CopiedObject(event); ok {
+		a.Copied[name] = true
+		return
+	}
+	if event.Level == "error" && event.Object != "" && a.Refused[event.Object] == "" {
+		a.Refused[event.Object] = event.Msg
+	}
+}
+
 // Stats is the latest progress snapshot from the child.
 type Stats struct {
 	Bytes          int64
