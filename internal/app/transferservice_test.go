@@ -52,6 +52,9 @@ type httpEngine struct {
 	chunk    int
 	n        int
 	captured []rclone.SegmentPrefix
+	// said is how the file being transferred reports itself: set for each
+	// name of a Copy, nil for a CopyTo.
+	said func(level, msg string)
 }
 
 // Tests must observe engine entry before changing a planned namespace or
@@ -186,8 +189,12 @@ func (e *httpEngine) segmented(ctx context.Context, dstSpec string, body []byte,
 	}
 	for i := 0; i*e.chunk < len(body); i++ {
 		end := min((i+1)*e.chunk, len(body))
-		if err := put(fmt.Sprintf("%s/%s%08d", segContainer, prefix, i), body[i*e.chunk:end]); err != nil {
+		segment := fmt.Sprintf("%s%08d", prefix, i)
+		if err := put(segContainer+"/"+segment, body[i*e.chunk:end]); err != nil {
 			return err
+		}
+		if e.said != nil {
+			e.said("debug", fmt.Sprintf("Uploading segment file %q into %q", segment, segContainer))
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, dstBase+"/"+escapePath(dstPath), nil)
@@ -225,8 +232,19 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 		}
 	}
 	for _, name := range names {
+		// The engine says where it puts a file's segments and which files
+		// it wrote, by the name each was listed under; an upload takes its
+		// word for both (ADR 0122 decision 7).
+		e.said = func(level, msg string) {
+			if onEvent != nil {
+				onEvent(rclone.Event{Level: level, Object: name, Msg: msg})
+			}
+		}
 		if err := e.transfer(ctx, src+"/"+name, dst+"/"+name); err != nil {
 			return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
+		}
+		if localPath(src) && !localPath(dst) {
+			e.said("info", "Copied (new)")
 		}
 	}
 	result := &rclone.Result{SegmentPrefixes: e.captured}
@@ -239,6 +257,7 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 func localPath(spec string) bool { return strings.HasPrefix(spec, "/") }
 
 func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	e.said = nil
 	if err := e.transfer(ctx, src, dst); err != nil {
 		return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
 	}

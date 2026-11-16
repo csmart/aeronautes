@@ -74,7 +74,7 @@ func TestUploadRefusesExistingRepresentations(t *testing.T) {
 					t.Fatalf("existing %s was not refused: %+v, %v", class, preflight, err)
 				}
 				engine := &countedUploadEngine{inner: &fsEngine{s}}
-				if report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", prefix, "refused-upload", preflight, nil, nil); err == nil || report != nil || engine.calls != 0 {
+				if report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight, nil, nil); err == nil || report != nil || engine.calls != 0 {
 					t.Errorf("refused upload executed: %+v, %v, calls=%d", report, err, engine.calls)
 				}
 				if diff := oracle.Diff(before, uploadSnapshot(t, witness)); !diff.Empty() {
@@ -85,7 +85,10 @@ func TestUploadRefusesExistingRepresentations(t *testing.T) {
 	}
 }
 
-func TestNativeUploadPreservesPostPreflightWriter(t *testing.T) {
+// ADR 0122: a name another writer created after the preview is written over,
+// and the upload reports success; the refusal earlier builds made here is
+// gone, and nothing but the one name changes.
+func TestNativeUploadWritesOverAPostPreflightWriter(t *testing.T) {
 	s, mock := session(t)
 	path := writeFile(t, t.TempDir(), "object", "new local content")
 	preflight, err := PreflightUpload(t.Context(), s, "media", "line\n/", []string{path})
@@ -97,11 +100,17 @@ func TestNativeUploadPreservesPostPreflightWriter(t *testing.T) {
 	witness := uploadWitness(t, mock)
 	before := uploadSnapshot(t, witness)
 	engine := &countedUploadEngine{inner: &fsEngine{s}}
-	report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", "line\n/", "native-upload", preflight, nil, nil)
-	if err != nil || report.Done != 0 || len(report.Failures) != 1 || report.Failures[0].Name != "line\n/object" || engine.calls != 0 {
-		t.Errorf("native conditional conflict was not reported: %+v, %v, calls=%d", report, err, engine.calls)
+	report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight, nil, nil)
+	if err != nil || report.Done != 1 || len(report.Failures) != 0 || engine.calls != 0 {
+		t.Fatalf("report = %+v, %v, engine calls = %d; want the one file done by the application's own PUT", report, err, engine.calls)
 	}
-	if diff := oracle.Diff(before, uploadSnapshot(t, witness)); !diff.Empty() {
-		t.Errorf("native upload replaced a concurrent writer: %s", diff)
+	after := uploadSnapshot(t, witness)
+	if got := after.Containers["media"].Objects["line\n/object"]; got.Digest != fmt.Sprintf("%x", sha256.Sum256([]byte("new local content"))) {
+		t.Fatalf("the name holds %+v, want the uploaded file", got)
+	}
+	delete(before.Containers["media"].Objects, "line\n/object")
+	delete(after.Containers["media"].Objects, "line\n/object")
+	if diff := oracle.Diff(before, after); !diff.Empty() {
+		t.Errorf("the upload changed something else: %s", diff)
 	}
 }

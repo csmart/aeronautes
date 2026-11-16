@@ -1096,7 +1096,9 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	h := harness(t)
 	ctx := context.Background()
 
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	// The upload's engine writes each file at its name (ADR 0122 decision
+	// 3); the setting means nothing for the download's local destination.
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1122,7 +1124,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	if err != nil || preflight.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, preflight)
 	}
-	report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", "it-up-job", preflight, nil, nil)
+	report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, preflight, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

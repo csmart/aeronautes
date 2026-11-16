@@ -24,7 +24,8 @@ func TestEncodedDynamicManifestRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	ctx := context.Background()
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
+	// An upload's engine writes each file at its name (ADR 0122 decision 3).
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,7 @@ func TestEncodedDynamicManifestRealSwift(t *testing.T) {
 	if err != nil || preflight.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, preflight)
 	}
-	if report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", "it-encoded", preflight, nil, nil); err != nil || report.Done != 1 {
+	if report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, preflight, nil, nil); err != nil || report.Done != 1 {
 		t.Fatalf("upload: %v %+v", err, report)
 	}
 	live, err := h.Session.ObjectDetail(ctx, container, "up/"+name)

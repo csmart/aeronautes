@@ -60,19 +60,25 @@ func retainedSnapshot(t *testing.T, witness *oracle.Oracle) *oracle.AccountSnaps
 	return snapshot
 }
 
-func TestUploadRetainsFinalSweepResidue(t *testing.T) {
+// ADR 0122 decision 3: an upload of a plain file writes its own name and
+// nothing else. There is no stage object, no recovery record, and nothing
+// outside the name changes.
+func TestUploadOfAPlainFileChangesOnlyItsOwnName(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	h.connect(t)
 	bookmark := h.transfer.connections.ActiveBookmarkID()
 	h.mock.AddContainer("uploads", "standard")
 	h.mock.AddContainer("unrelated", "standard")
-	block := newEngineBarrier(t)
-	h.installEngine(block)
+	h.installEngine(nil)
 	file := filepath.Join(t.TempDir(), "new.txt")
 	if err := os.WriteFile(file, []byte("new upload"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	seedObject(h.mock, "uploads", "beside.txt", "already here", nil)
+	seedObject(h.mock, "unrelated", "keep", "unchanged", nil)
+	witness := retentionOracle(t, h.mock)
+	before := retainedSnapshot(t, witness)
 	h.transfer.setFilePicker(fakePicker{files: []string{file}})
 	picked, err := h.transfer.PickUploadFiles(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "uploads"})
 	if err != nil {
@@ -82,30 +88,17 @@ func TestUploadRetainsFinalSweepResidue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { block.unblock(); awaitTerminal(t, h, id) })
-	block.waitUntilEntered(t)
-	prefix := ".aeronautes/stage/" + id + "/batch/residue/"
-	seedObject(h.mock, "uploads", prefix+"00000000", "outside live bytes", nil)
-	h.mock.PutObject("unrelated", "alias", swifttest.Object{Manifest: "uploads/" + prefix})
-	seedObject(h.mock, "unrelated", "keep", "unchanged", nil)
-	witness := retentionOracle(t, h.mock)
-	before := retainedSnapshot(t, witness)
-	facts := retainedRows(t, h.db)
-	if len(facts) != 1 || facts[0].Kind != jobs.RecoveryStaging {
-		t.Fatalf("missing initial recovery intent: %+v", facts)
-	}
-	block.unblock()
 	job := awaitTerminal(t, h, id)
 	if job.State != "complete" || job.Counters.ObjectsCopied != 1 {
 		t.Fatalf("upload = %+v", job)
 	}
-	if got := retainedRows(t, h.db); !reflect.DeepEqual(got, facts) {
-		t.Errorf("completed upload changed recovery evidence: %+v", got)
+	if rows := retainedRows(t, h.db); len(rows) != 0 {
+		t.Errorf("an upload of a plain file left recovery records: %+v", rows)
 	}
 	delta := oracle.Diff(before, retainedSnapshot(t, witness))
 	want := oracle.Delta{AddedObjects: []oracle.ObjectChange{{Container: "uploads", Object: "new.txt"}}}
 	if !reflect.DeepEqual(delta, want) {
-		t.Fatalf("upload cleanup changed outside data: %s", delta)
+		t.Fatalf("the upload changed more than its own name: %s", delta)
 	}
 }
 

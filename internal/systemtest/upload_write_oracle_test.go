@@ -12,9 +12,9 @@ import (
 // inferred from whichever attempts a runner happened to make.
 //
 // PR 182's first attempt failed because this comparison demanded that the
-// ENGINE write each staged object exactly once, which the engine's own
-// retry budget contradicts. These cases fix what it now demands: exactly
-// once for the mutations this application issues, and between one and the
+// ENGINE write each object exactly once, which the engine's own retry
+// budget contradicts. These cases fix what it now demands: exactly once
+// for the mutations this application issues, and between one and the
 // engine's budget for the ones the engine issues.
 // The bound itself, pinned against the measurement rather than against the
 // expression that computes it: if either retry layer's number changes, this
@@ -25,26 +25,20 @@ func TestUploadWriteOracleBoundMatchesTheMeasuredLifecycle(t *testing.T) {
 			rclone.DefaultLowLevelRetries)
 	}
 	if got := maxEngineWritesPerIdentity(); got != 4 {
-		t.Fatalf("one staged object can be written at most 4 times across a job, 2 attempts in each of 2 child runs; the oracle allows %d", got)
+		t.Fatalf("one name can be written at most 4 times across a job, 2 attempts in each of 2 child runs; the oracle allows %d", got)
 	}
 }
 
 func TestUploadWriteOracle(t *testing.T) {
 	const prefix = "/v1/AUTH_test/media/"
-	const id = "jobid"
 	paths := []string{"/local/a.bin", "/local/z-engine.bin"}
 	sound := func() map[string]int {
 		return map[string]int{
-			"PUT " + prefix + "scope/a.bin":                                        1,
-			"PUT " + prefix + "scope/z-engine.bin":                                 1,
-			"PUT " + prefix + ".aeronautes/stage/" + id + "/batch/a.bin":           1,
-			"PUT " + prefix + ".aeronautes/stage/" + id + "/batch/z-engine.bin":    1,
-			"DELETE " + prefix + ".aeronautes/stage/" + id + "/batch/z-engine.bin": 1,
+			"PUT " + prefix + "scope/a.bin":        1,
+			"PUT " + prefix + "scope/z-engine.bin": 1,
 		}
 	}
-	staged := "PUT " + prefix + ".aeronautes/stage/" + id + "/batch/a.bin"
-	live := "PUT " + prefix + "scope/a.bin"
-	deleted := "DELETE " + prefix + ".aeronautes/stage/" + id + "/batch/z-engine.bin"
+	written := "PUT " + prefix + "scope/a.bin"
 
 	for _, tc := range []struct {
 		name    string
@@ -60,30 +54,28 @@ func TestUploadWriteOracle(t *testing.T) {
 		// measured against rclone v1.74.3; four is that budget twice
 		// over, because uploadRun.copy runs the engine again after an
 		// authentication-shaped failure; five is past both.
-		{"the engine retrying one staged upload is sound", func(m map[string]int) { m[staged] = 2 }, ""},
-		{"one staged upload written once in each of two child runs is sound",
-			func(m map[string]int) { m[staged] = 3 }, ""},
+		{"the engine retrying one upload is sound", func(m map[string]int) { m[written] = 2 }, ""},
+		{"one name written once in each of two child runs is sound",
+			func(m map[string]int) { m[written] = 3 }, ""},
 		{"both retry layers together at their limit is sound",
-			func(m map[string]int) { m[staged] = 4 }, ""},
+			func(m map[string]int) { m[written] = 4 }, ""},
 		{"one write past both retry layers is not",
-			func(m map[string]int) { m[staged] = 5 }, "outside the engine's budget"},
-		{"the engine skipping a staged upload is not",
-			func(m map[string]int) { delete(m, staged) }, "never wrote a staged object"},
-		// The half that must stay exact: this application publishes each
-		// object once and deletes each staged object once.
-		{"publishing the same object twice is not",
-			func(m map[string]int) { m[live] = 2 }, "own mutations differ"},
-		{"deleting the staged object twice is not",
-			func(m map[string]int) { m[deleted] = 2 }, "own mutations differ"},
-		{"publishing an object nobody asked for is not",
-			func(m map[string]int) { m["PUT "+prefix+"scope/intruder.bin"] = 1 }, "own mutations differ"},
-		{"not publishing at all is not",
-			func(m map[string]int) { delete(m, live) }, "own mutations differ"},
+			func(m map[string]int) { m[written] = 5 }, "outside the engine's budget"},
+		{"the engine skipping a file is not",
+			func(m map[string]int) { delete(m, written) }, "never wrote a name it was given"},
+		// The half that must stay exact: an upload writes each file at its
+		// own name and makes no other mutation (ADR 0122 decision 3).
+		{"writing a stage name is not",
+			func(m map[string]int) { m["PUT "+prefix+".aeronautes/stage/jobid/batch/a.bin"] = 1 }, "other than the engine's own"},
+		{"deleting a name is not",
+			func(m map[string]int) { m["DELETE "+prefix+"scope/a.bin"] = 1 }, "other than the engine's own"},
+		{"writing a name nobody asked for is not",
+			func(m map[string]int) { m["PUT "+prefix+"scope/intruder.bin"] = 1 }, "other than the engine's own"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := sound()
 			tc.alter(got)
-			problems := uploadWriteProblems(got, prefix, id, false, paths)
+			problems := uploadWriteProblems(got, prefix, false, paths)
 			joined := strings.Join(problems, "; ")
 			if tc.wantFor == "" {
 				if len(problems) != 0 {
@@ -98,23 +90,20 @@ func TestUploadWriteOracle(t *testing.T) {
 	}
 }
 
-// The native route stages only the one name the engine handles, so the
-// other items must show no staged write at all and none is demanded.
-func TestUploadWriteOracleNativeRouteStagesOnlyTheEnginesName(t *testing.T) {
+// A name the engine cannot carry is this application's own PUT, so it is
+// demanded exactly once and the engine's budget does not excuse a second.
+func TestUploadWriteOracleNativeNameIsWrittenExactlyOnce(t *testing.T) {
 	const prefix = "/v1/AUTH_test/media/"
-	const id = "jobid"
 	paths := []string{"/local/a.bin", "/local/z-engine.bin"}
 	got := map[string]int{
-		"PUT " + prefix + "scope/a.bin":                                        1,
-		"PUT " + prefix + "scope/z-engine.bin":                                 1,
-		"PUT " + prefix + ".aeronautes/stage/" + id + "/batch/z-engine.bin":    1,
-		"DELETE " + prefix + ".aeronautes/stage/" + id + "/batch/z-engine.bin": 1,
+		"PUT " + prefix + "scope/a.bin":        1,
+		"PUT " + prefix + "scope/z-engine.bin": 1,
 	}
-	if problems := uploadWriteProblems(got, prefix, id, true, paths); len(problems) != 0 {
+	if problems := uploadWriteProblems(got, prefix, true, paths); len(problems) != 0 {
 		t.Fatalf("a native upload's own mutations were refused: %s", strings.Join(problems, "; "))
 	}
-	got["PUT "+prefix+".aeronautes/stage/"+id+"/batch/a.bin"] = 1
-	if problems := uploadWriteProblems(got, prefix, id, true, paths); len(problems) == 0 {
-		t.Fatal("a native item staged behind the engine's back was accepted")
+	got["PUT "+prefix+"scope/a.bin"] = 2
+	if problems := uploadWriteProblems(got, prefix, true, paths); len(problems) == 0 {
+		t.Fatal("a native name written twice was accepted")
 	}
 }

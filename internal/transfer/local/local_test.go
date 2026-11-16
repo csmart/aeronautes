@@ -113,6 +113,11 @@ func (e *fsEngine) Copy(ctx context.Context, src, dst string, names []string, on
 			if _, err := e.session.PutObject(ctx, dstC, dstP+name, bytes.NewReader(data), "application/octet-stream", nil); err != nil {
 				return &rclone.Result{ExitCode: 1}, nil
 			}
+			// The engine says which file it wrote, and an upload takes
+			// its word for each one.
+			if onEvent != nil {
+				onEvent(rclone.Event{Level: "info", Object: name, Msg: "Copied (new)"})
+			}
 		case !srcLocal && dstLocal: // download
 			body, _, err := e.session.OpenObject(ctx, srcC, srcP+name)
 			if err != nil {
@@ -173,7 +178,7 @@ func TestPreflightUploadProblems(t *testing.T) {
 	}
 
 	// Execution refuses a rejected preflight outright.
-	if _, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "docs/", "test-job", report, nil, nil); err == nil {
+	if _, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", report, nil, nil); err == nil {
 		t.Error("rejected preflight executed")
 	}
 }
@@ -243,7 +248,7 @@ func TestUploadExecutes(t *testing.T) {
 	if err != nil || report.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, report.Problems)
 	}
-	result, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", "up/", "test-job", report, nil, nil)
+	result, err := Upload(ctx, s, &fsEngine{s}, "aeronautes_dst:media", "media", report, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,11 +411,9 @@ func TestDirMarkerEscapesAndAncestorConflicts(t *testing.T) {
 	}
 }
 
-func TestLocalUploadNeverTargetsLiveName(t *testing.T) {
-	// The local analogue of TestEngineNeverReceivesLiveNames: reverting
-	// Upload to a live destination would make the runner refuse — this
-	// records the engine destinations and asserts every one is staging-
-	// scoped.
+// ADR 0122 decision 3: the engine is pointed at the destination folder itself,
+// so every file is written at its own name; there is no stage name.
+func TestLocalUploadGivesTheEngineTheDestinationItself(t *testing.T) {
 	s, mock := session(t)
 	mock.AddContainer("dst", "standard")
 	dir := t.TempDir()
@@ -422,16 +425,11 @@ func TestLocalUploadNeverTargetsLiveName(t *testing.T) {
 		t.Fatalf("preflight: %v %+v", err, pre)
 	}
 	rec := &recordingLocalEngine{inner: &fsEngine{s}}
-	if _, err := Upload(context.Background(), s, rec, "aeronautes_dst:dst", "dst", "up/", "job-x", pre, nil, nil); err != nil {
+	if _, err := Upload(context.Background(), s, rec, "aeronautes_dst:dst", "dst", pre, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(rec.dsts) == 0 {
-		t.Fatal("engine never invoked")
-	}
-	for _, dst := range rec.dsts {
-		if !strings.Contains(dst, "/.aeronautes/stage/") {
-			t.Errorf("upload engine received a live destination %q", dst)
-		}
+	if len(rec.dsts) != 1 || rec.dsts[0] != "aeronautes_dst:dst/up" {
+		t.Fatalf("engine destinations = %q, want the destination folder once", rec.dsts)
 	}
 }
 

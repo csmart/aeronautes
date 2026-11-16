@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swifttest"
 )
@@ -121,11 +120,11 @@ func refusedForStage(t *testing.T, h *harness, what, holder string, rows int, er
 }
 
 // ADR 0105 decision 3 at the service boundary: while an upload is alive, paused
-// included, no sweep of ours starts over its stage, in the container or in its
-// segments container, and no deletion of named objects names a staged object;
-// deletions beside the stage start; and the claim leaves when the upload's
-// body has returned.
-func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
+// included, no sweep of ours starts over the folder it writes under, in the
+// container or in its segments container, and no deletion of named objects
+// names an object there; deletions beside it start; and the claim leaves when
+// the upload's body has returned.
+func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 	h, bookmark, id, _ := pausedUpload(t, false)
 	del := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
 	ctx := context.Background()
@@ -134,13 +133,14 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 	seedObject(h.mock, "media", "kept.txt", "kept", nil)
 	seedObject(h.mock, "media", "logs/old", "old", nil)
 	rows := jobCount(t, h)
-	staged := ".aeronautes/stage/" + id + "/batch/"
+	// The upload writes under inbox/ (ADR 0122 decision 3).
+	writing := "inbox/"
 
 	for _, req := range []DeleteRequestDTO{
 		{Container: "media", Mode: ModeEmpty},
 		{Container: "media", Mode: ModeDeleteContainer},
-		{Container: "media", Mode: ModePrefix, Prefix: ".aeronautes/"},
-		{Container: "media", Mode: ModePrefix, Prefix: staged},
+		{Container: "media", Mode: ModePrefix, Prefix: writing},
+		{Container: "media", Mode: ModePrefix, Prefix: writing + "photos/"},
 		{Container: "media_segments", Mode: ModeEmpty},
 	} {
 		req.BookmarkID, req.Confirm = bookmark, deleteConfirmation(req)
@@ -148,14 +148,14 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 		refusedForStage(t, h, string(req.Mode)+" of "+req.Container+"/"+req.Prefix, id, rows, err)
 	}
 	_, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "2",
-		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "object", Name: staged + "photos/.hidden"}}})
-	refusedForStage(t, h, "a selected set naming a staged object", id, rows, err)
+		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "object", Name: writing + "photos/.hidden"}}})
+	refusedForStage(t, h, "a selected set naming an object the upload is writing", id, rows, err)
 
 	// A deletion of a manifest with its segments is refused on each of its
 	// three grounds: a dynamic object whose segment namespace lies under the
-	// stage root in the segments container, as every large object this
-	// application uploaded has it; a static object one of whose reviewed
-	// entries is a staged name; and a manifest that is itself a staged name.
+	// upload's folder in the segments container, where the engine puts a
+	// large object's segments; a static object one of whose reviewed entries
+	// is a name under that folder; and a manifest that is itself one.
 	static := func(name, segContainer, segment string) {
 		seedObject(h.mock, segContainer, segment, "0123456789", nil)
 		h.mock.PutObject("media", name, swifttest.Object{
@@ -163,19 +163,19 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 			SLOManifestJSON: fmt.Sprintf(`[{"name":"/%s/%s","hash":"%s","bytes":10}]`, segContainer, segment, md5hex("0123456789")),
 		})
 	}
-	seedObject(h.mock, "media_segments", ".aeronautes/stage/earlier/batch/big/000000", "segment", nil)
-	h.mock.PutObject("media", "big.bin", swifttest.Object{Manifest: "media_segments/.aeronautes/stage/earlier/batch/big/"})
-	static("big.slo", "media", staged+"part")
+	seedObject(h.mock, "media_segments", writing+"big/2026-11-16-000000-run/000000", "segment", nil)
+	h.mock.PutObject("media", "big.bin", swifttest.Object{Manifest: "media_segments/" + writing + "big/2026-11-16-000000-run/"})
+	static("big.slo", "media", writing+"part")
 	h.mock.AddContainer("parts", "standard")
-	static(staged+"held.slo", "parts", "x/000001")
-	for _, name := range []string{"big.bin", "big.slo", staged + "held.slo"} {
+	static(writing+"held.slo", "parts", "x/000001")
+	for _, name := range []string{"big.bin", "big.slo", writing + "held.slo"} {
 		_, err := del.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: name,
 			Confirm: name, Force: true, Reviewed: reviewOf(t, del, bookmark, "media", name)})
 		refusedForStage(t, h, "a segment deletion of "+name, id, rows, err)
 	}
 
-	// Beside the stage: a prefix that does not cover it, another container,
-	// and a selected set of ordinary names all start.
+	// Beside it: a prefix that does not cover it, another container, and a
+	// selected set of names elsewhere all start.
 	for _, req := range []DeleteRequestDTO{
 		{Container: "media", Mode: ModePrefix, Prefix: "logs/"},
 		{Container: "other", Mode: ModeEmpty},
@@ -183,7 +183,7 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 		req.BookmarkID, req.Confirm = bookmark, deleteConfirmation(req)
 		started, err := del.StartDelete(ctx, req)
 		if err != nil {
-			t.Fatalf("%s of %s/%s beside the stage was refused: %v", req.Mode, req.Container, req.Prefix, err)
+			t.Fatalf("%s of %s/%s beside the upload was refused: %v", req.Mode, req.Container, req.Prefix, err)
 		}
 		awaitTerminal(t, h, started)
 	}
@@ -216,11 +216,11 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 
 // The other direction: while a sweep holds its claim, a copy whose stage would
 // lie inside it is refused, through the bookmark the sweep uses and through a
-// second bookmark that reaches the same account by another host name; a
-// transfer whose stage is beside the sweep starts. Two accounts whose
-// identifiers differ are covered by TestScopeClaimOverlap: the fixture store
-// gives every account one identifier.
-func TestNoTransferStagesInsideALiveSweep(t *testing.T) {
+// second bookmark that reaches the same account by another host name, and so
+// is an upload into the swept folder; an upload beside the sweep starts. Two
+// accounts whose identifiers differ are covered by TestScopeClaimOverlap: the
+// fixture store gives every account one identifier.
+func TestNoTransferWritesInsideALiveSweep(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
 	h.installEngine(nil)
@@ -264,15 +264,22 @@ func TestNoTransferStagesInsideALiveSweep(t *testing.T) {
 		DestBookmarkID: alias.ID, DestContainer: "media", DestPrefix: "scope/in/"})
 	refusedForStage(t, h, "a copy through an alias of the account", sweep, rows, err)
 
-	// An upload stages at the container root, beside a sweep of scope/.
+	// An upload writes under its destination folder: into the swept prefix
+	// it is refused, and beside it it starts.
 	h.transfer.setFilePicker(&directoryPicker{dir: uploadFolder(t)})
-	picked, err := h.transfer.PickUploadDirectory(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/"})
-	if err != nil || picked == nil || picked.Token == "" {
-		t.Fatalf("pick = %+v, %v", picked, err)
+	picked := func(prefix string) string {
+		t.Helper()
+		pick, err := h.transfer.PickUploadDirectory(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: prefix})
+		if err != nil || pick == nil || pick.Token == "" {
+			t.Fatalf("pick = %+v, %v", pick, err)
+		}
+		return pick.Token
 	}
-	uploadID, err := h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/", SelectionToken: picked.Token})
+	_, err = h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/", SelectionToken: picked("scope/")})
+	refusedForStage(t, h, "an upload into the swept prefix", sweep, rows, err)
+	uploadID, err := h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "beside/", SelectionToken: picked("beside/")})
 	if err != nil {
-		t.Fatalf("an upload whose stage is beside the sweep was refused: %v", err)
+		t.Fatalf("an upload beside the sweep was refused: %v", err)
 	}
 
 	letGo()
@@ -336,159 +343,12 @@ func TestAnUploadRefusedForASweepKeepsItsSelection(t *testing.T) {
 	}
 }
 
-// ADR 0105 decision 3: an ordinary live object can name segments that lie in
-// the stage directory of another job that is still alive. Replacing that
-// object does not reclaim them: they are kept and recorded as kept with the
-// job named. The same replacement with no such job removes them, which
-// TestReclamationRemovesTheRecordedSegments shows for segments elsewhere.
-func TestReclamationKeepsSegmentsInAnotherLiveJobsStage(t *testing.T) {
-	for _, alive := range []bool{true, false} {
-		t.Run(map[bool]string{true: "the staging job is alive", false: "no job holds that stage"}[alive], func(t *testing.T) {
-			f := newOverwriteFixture(t)
-			const other = "0f1e2d3c4b5a6978"
-			parts, _ := seedStaticLargeObjectOver(t, f.h, "replaceable", "live/taken", ".aeronautes/stage/"+other+"/batch/live/taken")
-			f.tag = f.liveTag(t)
-			wireReclamation(t, f.h, true)
-			f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
-			if alive {
-				// Another transfer into the container, admitted and named as a
-				// launched job is, holding its stage claim.
-				runner := f.h.transfer.runner
-				owner, _, err := runner.admit(t.Context())
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer owner.finishStart()
-				if err := owner.claim(stageClaims("auth_test", "replaceable", "")...); err != nil {
-					t.Fatal(err)
-				}
-				runner.mu.Lock()
-				owner.jobID = other
-				runner.mu.Unlock()
-			}
-			id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if job := awaitTerminal(t, f.h, id); job.State != "complete" {
-				t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
-			}
-			left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts))
-			event := reclaimEvent(t, f.h)
-			if event == nil {
-				t.Fatal("the replacement left no reclamation record")
-			}
-			if !alive {
-				if left != 0 || event.Result != audit.ResultApplied {
-					t.Fatalf("with no job holding the stage: %d segments left, record %+v", left, event)
-				}
-				return
-			}
-			if left != len(parts) {
-				t.Fatalf("%d of %d segments in a live job's stage were removed", len(parts)-left, len(parts))
-			}
-			for _, want := range []string{"removed none", "2 of the segments it named are in the staging area of job " + other, "still running"} {
-				if !strings.Contains(event.Summary, want) {
-					t.Errorf("the record does not say %q: %s", want, event.Summary)
-				}
-			}
-		})
-	}
-}
-
-// When the kept segments lie in the stages of two live jobs, the record names
-// both, with how many are in each.
-func TestReclamationNamesEveryJobWhoseStageItKept(t *testing.T) {
-	f := newOverwriteFixture(t)
-	const one, two = "0f1e2d3c4b5a6978", "8796a5b4c3d2e1f0"
-	parts, _ := seedStaticLargeObjectParts(t, f.h, "replaceable", "live/taken",
-		".aeronautes/stage/"+one+"/batch/live/taken/0000001", ".aeronautes/stage/"+two+"/batch/live/taken/0000002")
-	f.tag = f.liveTag(t)
-	wireReclamation(t, f.h, true)
-	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
-	runner := f.h.transfer.runner
-	for _, id := range []string{one, two} {
-		owner, _, err := runner.admit(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer owner.finishStart()
-		if err := owner.claim(stageClaims("auth_test", "replaceable", "")...); err != nil {
-			t.Fatal(err)
-		}
-		runner.mu.Lock()
-		owner.jobID = id
-		runner.mu.Unlock()
-	}
-	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job := awaitTerminal(t, f.h, id); job.State != "complete" {
-		t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
-	}
-	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", partNames(parts)); left != len(parts) {
-		t.Fatalf("%d of %d segments in live jobs' stages were removed", len(parts)-left, len(parts))
-	}
-	event := reclaimEvent(t, f.h)
-	if event == nil {
-		t.Fatal("the replacement left no reclamation record")
-	}
-	for _, want := range []string{"2 of the segments it named are in the staging areas of jobs that are still running", "1 in that of job " + one, "1 in that of job " + two} {
-		if !strings.Contains(event.Summary, want) {
-			t.Errorf("the record does not say %q: %s", want, event.Summary)
-		}
-	}
-}
-
-// A dynamic large object names every object under its prefix, and its
-// inventory is a listing taken when the replacement is about to publish. By
-// then this upload has staged its own segments, so a predecessor whose prefix
-// covers this job's stage directory would list them, and reclaiming them would
-// destroy the object the job had just published. Two things stand in the way.
-// Staging under that prefix changes what the predecessor is, so the
-// replacement is refused at its last observation and nothing is reclaimed:
-// that is this test. And reclamation keeps a segment in any live job's stage
-// directory, the reclaiming job's own included, for a store whose reads
-// disagree: TestASegmentInAnyLiveJobsStageIsKept states that rule on its own.
-func TestAPredecessorCoveringTheJobsOwnStageIsNotReplaced(t *testing.T) {
-	f := newOverwriteFixture(t)
-	ctx := t.Context()
-	f.h.installChunkingEngine(nil, 8)
-	f.h.mock.AddContainer("replaceable_segments", "standard")
-	old := []string{"old/000000", "old/000001"}
-	for _, name := range old {
-		seedObject(f.h.mock, "replaceable_segments", name, "old bytes", nil)
-	}
-	// The whole segments container is this object's prefix.
-	f.h.mock.PutObject("replaceable", "live/taken", swifttest.Object{Manifest: "replaceable_segments/"})
-	f.tag = f.liveTag(t)
-	wireReclamation(t, f.h, true)
-	f.h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: true})
-
-	id, err := f.h.transfer.StartUpload(ctx, f.request(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job := awaitTerminal(t, f.h, id); job.State != "partial" || job.Counters.Overwrites != 0 {
-		t.Fatalf("the replacement = %s %+v; want it refused and the other file published", job.State, job.Counters)
-	}
-	session := f.h.transfer.connections.sessions[f.bookmark].session
-	if detail, err := session.ObjectDetail(ctx, "replaceable", "live/taken"); err != nil || detail.Manifest != "replaceable_segments/" {
-		t.Fatalf("the predecessor is no longer at the name: %+v %v", detail, err)
-	}
-	if left := survivors(t, f.h, f.bookmark, "replaceable_segments", old); left != len(old) {
-		t.Errorf("%d of the predecessor's %d segments were removed though it was not replaced", len(old)-left, len(old))
-	}
-	if event := reclaimEvent(t, f.h); event != nil {
-		t.Errorf("a refused replacement left a reclamation record: %+v", event)
-	}
-}
-
-// The second guard, at the rule itself: a name in a live job's own stage
-// directory is that job's, whichever job asks, and a name under the stage root
-// that is in no live job's directory is nobody's.
-func TestASegmentInAnyLiveJobsStageIsKept(t *testing.T) {
+// The rule a sweep that takes segments asks of each segment: a name in a live
+// staged job's own stage directory is that job's, and a name under the stage
+// root that is in no live job's directory is nobody's; a name under the
+// folder a live upload is writing into is that upload's, in the container
+// and in its segments container alike.
+func TestASegmentALiveJobIsWritingIsKept(t *testing.T) {
 	h := newHarness(t)
 	runner := h.transfer.runner
 	owner, _, err := runner.admit(t.Context())
@@ -510,6 +370,31 @@ func TestASegmentInAnyLiveJobsStageIsKept(t *testing.T) {
 		holder, held := runner.stagedByLiveJob("auth_test", "media_segments", name)
 		if held != want || held && holder != "job 0f1e2d3c4b5a6978" {
 			t.Errorf("%s: held by %q = %v, want %v", name, holder, held, want)
+		}
+	}
+	uploading, _, err := runner.admit(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer uploading.finishStart()
+	if err := uploading.claim(destinationClaims("auth_test", "photos", "holiday/")...); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	uploading.jobID = "1a2b3c4d5e6f7089"
+	runner.mu.Unlock()
+	for _, tc := range []struct {
+		container, name string
+		want            bool
+	}{
+		{"photos_segments", "holiday/big.mov/2026-11-16-000000-run/00000000", true},
+		{"photos", "holiday/small.jpg", true},
+		{"photos_segments", "work/big.mov/2026-11-16-000000-run/00000000", false},
+		{"other_segments", "holiday/big.mov/2026-11-16-000000-run/00000000", false},
+	} {
+		holder, held := runner.stagedByLiveJob("auth_test", tc.container, tc.name)
+		if held != tc.want || held && holder != "job 1a2b3c4d5e6f7089" {
+			t.Errorf("%s/%s: held by %q = %v, want %v", tc.container, tc.name, holder, held, tc.want)
 		}
 	}
 }

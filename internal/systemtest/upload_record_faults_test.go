@@ -20,6 +20,9 @@ import (
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
 
+// uploadRecordFault uploads three plain files from one folder while one of
+// the job's item records cannot be written. A native mode sends each name
+// itself, one at a time; an engine mode gives the engine the whole folder.
 func uploadRecordFault(t *testing.T, h *Harness, mode string) {
 	t.Helper()
 	dst := h.Container(h.Primary, "upload-record-fault")
@@ -96,8 +99,7 @@ func uploadRecordFault(t *testing.T, h *Harness, mode string) {
 			t.Fatalf("invoked upload lacks acknowledged admissions: %+v %v", page, err)
 		}
 		for _, item := range page.Items {
-			if !item.Admitted || item.Execution != nil || item.Verification != nil ||
-				!native && (item.Staging == nil || witness.Containers[dst].Objects[item.Staging.Object].Size != 5) {
+			if !item.Admitted || item.Execution != nil || item.Verification != nil || item.Staging != nil {
 				t.Fatalf("upload lost admission before response: %+v", item)
 			}
 		}
@@ -136,17 +138,17 @@ func assertUploadRecordFault(t *testing.T, h *Harness, mode, id, dst, prefix str
 	wantState := "partial"
 	want := jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3}
 	done := int64(1)
-	if native && !control || mode == "staged_admission" {
+	if native && !control || mode == "engine_admission" {
 		want.Items, want.Planned, want.Admitted = 1, 1, 1
 	}
 	switch mode {
-	case "staged_admission":
+	case "engine_admission":
 		wantState, done, want.Problems = "failed", 0, 1
-	case "native_execution", "staged_execution":
+	case "native_execution", "engine_execution":
 		want.Unresolved = want.Items
-	case "native_verification", "staged_verification":
+	case "native_verification", "engine_verification":
 		want.Unresolved, want.Unverified = want.Items-1, 1
-	case "native_control", "staged_control":
+	case "native_control", "engine_control":
 		wantState, done = "complete", 3
 	}
 	counters := jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 15, ObjectsCopied: done, ObjectsVerified: done, BytesCopied: done * 5}
@@ -164,8 +166,8 @@ func assertUploadRecordFault(t *testing.T, h *Harness, mode, id, dst, prefix str
 			!item.Planned || !item.Admitted || item.ListedBytes != 5 {
 			t.Fatalf("upload fault lost exact selection: %+v", item)
 		}
-		if native && item.Staging != nil || !native && (item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: ".aeronautes/stage/" + id + "/batch/" + filepath.Base(paths[i])})) {
-			t.Fatalf("upload fault changed staging identity: %+v", item)
+		if item.Staging != nil {
+			t.Fatalf("an upload recorded a stage name: %+v", item)
 		}
 		assertUploadFaultObservation(t, item, mode, i)
 	}
@@ -183,12 +185,11 @@ func assertUploadRecordFault(t *testing.T, h *Harness, mode, id, dst, prefix str
 	if err := h.database.Reader().QueryRow("SELECT bookmark_id FROM audit_events WHERE id=?", saved.Audit[0].ID).Scan(&bookmark); err != nil || bookmark != h.Primary.BookmarkID {
 		t.Fatalf("upload fault changed audit authority: %q %v", bookmark, err)
 	}
-	wantRows := []jobs.RecoveryRecord{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: ".aeronautes/stage/" + id + "/"}}
-	if !reflect.DeepEqual(saved.Rows, wantRows) {
-		t.Fatalf("upload item failure cleared recovery intent: %+v", saved.Rows)
+	if len(saved.Rows) != 0 {
+		t.Fatalf("an upload of plain files left recovery records: %+v", saved.Rows)
 	}
 	assertUploadFaultAvailability(t, h, id, control)
-	assertUploadFaultEffects(t, h, mode, id, dst, prefix, native, paths, beforeA, beforeB, trace)
+	assertUploadFaultEffects(t, h, mode, dst, prefix, native, paths, beforeA, beforeB, trace)
 	if err := h.database.WriteTx(t.Context(), func(tx *sql.Tx) error { _, err := tx.Exec("DROP TRIGGER IF EXISTS refuse_upload_item"); return err }); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +208,7 @@ func assertUploadRecordFault(t *testing.T, h *Harness, mode, id, dst, prefix str
 
 func assertUploadFaultObservation(t *testing.T, item jobs.ItemRecord, mode string, index int) {
 	t.Helper()
-	if mode == "staged_admission" {
+	if mode == "engine_admission" {
 		if item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted,
 			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIncomplete}}) || item.Verification != nil {
 			t.Fatalf("undispatched upload lost its not-attempted fact: %+v", item)
@@ -253,7 +254,7 @@ func assertUploadFaultAvailability(t *testing.T, h *Harness, id string, control 
 	}
 }
 
-func assertUploadFaultEffects(t *testing.T, h *Harness, mode, id, dst, prefix string, native bool, paths []string,
+func assertUploadFaultEffects(t *testing.T, h *Harness, mode, dst, prefix string, native bool, paths []string,
 	beforeA, beforeB *oracle.AccountSnapshot, trace *uploadDeleteTrace) {
 	t.Helper()
 	storage, err := url.Parse(h.Primary.storageURL)
@@ -264,24 +265,17 @@ func assertUploadFaultEffects(t *testing.T, h *Harness, mode, id, dst, prefix st
 	var allowed []string
 	writes := map[string]int{}
 	for i, path := range paths {
-		if mode == "staged_admission" {
+		if mode == "engine_admission" {
 			break
 		}
-		name := filepath.Base(path)
-		live := prefix + name
-		stage := ".aeronautes/stage/" + id + "/batch/" + name
-		if !native {
-			writes["PUT "+storage.Path+"/"+dst+"/"+stage] = 1
-			if !control && i != 0 {
-				allowed = append(allowed, dst+"/"+stage)
-			}
-		}
-		if control || i == 0 {
+		// The engine has the whole folder before any outcome is recorded,
+		// so all three names are written by the time a record is refused.
+		// The application sends a native name itself and stops after the
+		// first.
+		if control || !native || i == 0 {
+			live := prefix + filepath.Base(path)
 			writes["PUT "+storage.Path+"/"+dst+"/"+live] = 1
 			allowed = append(allowed, dst+"/"+live)
-			if !native {
-				writes["DELETE "+storage.Path+"/"+dst+"/"+stage] = 1
-			}
 		}
 	}
 	observed := map[string]int{}
@@ -303,7 +297,7 @@ func assertUploadFaultEffects(t *testing.T, h *Harness, mode, id, dst, prefix st
 }
 
 func uploadRecordFaultCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, mode := range []string{"native_admission", "staged_admission", "native_execution", "staged_execution", "native_verification", "staged_verification", "native_control", "staged_control"} {
+	for _, mode := range []string{"native_admission", "engine_admission", "native_execution", "engine_execution", "native_verification", "engine_verification", "native_control", "engine_control"} {
 		t.Run(mode, func(t *testing.T) { uploadRecordFault(t, makeHarness(t), mode) })
 	}
 }

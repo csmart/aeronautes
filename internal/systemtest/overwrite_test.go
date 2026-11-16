@@ -6,27 +6,23 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
-	"github.com/csmart/aeronautes/internal/audit"
-	"github.com/csmart/aeronautes/internal/db"
-	"github.com/csmart/aeronautes/internal/jobs"
 )
 
-// Maintained regressions for ADR 0081 through the public service, on both
-// fixtures: what an acknowledged overwrite replaces, what it refuses, what
-// it records about what was there, and what it leaves alone.
+// Maintained regressions for an acknowledged overwrite through the public
+// service, on both fixtures: what it asks, what it replaces, what it refuses
+// and what it leaves alone (ADR 0081 decisions 2 to 4, ADR 0122 decision 3).
 //
-// The contract's answer is that a replaced large object's fragments are
-// recorded before the replacement and then reclaimed once it verifies,
-// which is what rclone's own replacement does, with an option for the
-// operator who cannot accept the consequence. That consequence — an outside
-// reference over the predecessor's published prefix loses its backing data —
-// is a case here rather than a sentence, in both directions of the option.
+// A replaced large object's old segments are removed by the transfer engine
+// as it writes the new object, which is what rclone does when used alone,
+// with an option for the operator who cannot accept the consequence. That
+// consequence — an outside reference over the predecessor's segments loses
+// its backing data — is a case here rather than a sentence, in both
+// directions of the option.
 
 // relabel renames a bookmark through the public service, the way the
 // operator would, so a confirmation is exercised against a label the
@@ -109,48 +105,6 @@ func liveETag(t *testing.T, h *Harness, container, name string) string {
 	return strings.Trim(detail.ETag, `"`)
 }
 
-// replacementRecord is the one audit row a replacement leaves.
-func replacementRecord(t *testing.T, h *Harness, resource string) audit.Event {
-	t.Helper()
-	events, err := audit.NewStore(h.database).List(t.Context(), audit.Query{Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found []audit.Event
-	for _, event := range events {
-		if event.Operation == "object.upload.replace" && event.Resource == resource {
-			found = append(found, event)
-		}
-	}
-	if len(found) != 1 {
-		t.Fatalf("a replacement of %s left %d records: %+v", resource, len(found), events)
-	}
-	return found[0]
-}
-
-// reclamationRecord is the one audit row a reclamation leaves for a name,
-// or nothing when the run reclaimed nothing for it.
-func reclamationRecord(t *testing.T, h *Harness, resource string) *audit.Event {
-	t.Helper()
-	events, err := audit.NewStore(h.database).List(t.Context(), audit.Query{Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found []audit.Event
-	for _, event := range events {
-		if event.Operation == "object.upload.reclaim" && event.Resource == resource {
-			found = append(found, event)
-		}
-	}
-	if len(found) > 1 {
-		t.Fatalf("a replacement of %s left %d reclamation records: %+v", resource, len(found), found)
-	}
-	if len(found) == 0 {
-		return nil
-	}
-	return &found[0]
-}
-
 // setReclamation moves the operator's option the way the settings page
 // does, through the service the shell wires.
 func setReclamation(t *testing.T, h *Harness, on bool) {
@@ -170,82 +124,51 @@ func TestOverwriteRealSwift(t *testing.T) { overwriteCases(t, New) }
 
 func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	t.Helper()
-	// ADR 0102 decision 2: the container starts keeping versions while the
-	// operator is answering, so the statement the question made is no longer
-	// what the container reports at the fixed point. The replacement is refused
-	// with the live object untouched, nothing is archived, and the record
-	// carries both statements.
-	t.Run("refuses a replacement when the container's versioning changes during the dialog", func(t *testing.T) {
+	// ADR 0122 decision 1: another writer changes the name while the operator
+	// is answering, which is after the preview and before the request. The
+	// upload writes over what that writer left and reports success, because
+	// the last write to a name wins and nothing compares the name with what
+	// the question was composed from.
+	t.Run("writes over a name another writer changed during the dialog", func(t *testing.T) {
 		h := makeHarness(t)
-		container := h.Container(h.Primary, "overwrite-mode-change")
-		archive := h.Container(h.Primary, "overwrite-mode-archive")
+		container := h.Container(h.Primary, "overwrite-other-writer")
 		h.Seed(h.Primary, container, "live/taken", []byte("the bytes already there"), nil)
-		priorTag := liveETag(t, h, container, "live/taken")
 
+		const sent, others = "the bytes this job sent", "the bytes another writer sent"
 		confirmer := &serviceConfirmer{yes: true, before: func() {
-			h.rawPut(h.Primary, "/"+container, nil, map[string]string{"X-Versions-Location": archive})
+			h.rawPut(h.Primary, "/"+container+"/live/taken", []byte(others), nil)
 		}}
 		app.WireOverwriteConfirmer(h.Transfer, confirmer)
 		if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
 			t.Fatal(err)
 		}
 		path := filepath.Join(t.TempDir(), "taken")
-		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(sent), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
 		if err != nil {
 			t.Fatalf("a confirmed replacement was refused at the start: %v", err)
 		}
-		h.AwaitJob(id)
-		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
-		if err != nil {
-			t.Fatal(err)
+		job := h.AwaitJob(id)
+		if job.State != "complete" || job.Counters.ObjectsCopied != 1 || job.Counters.Overwrites != 1 || job.Counters.ObjectsFailed != 0 {
+			t.Fatalf("a replacement of a name another writer changed = %s %+v; want complete with one name replaced", job.State, job.Counters)
 		}
-		if job.Counters.Overwrites != 0 || job.Counters.ObjectsCopied != 0 {
-			t.Fatalf("the replacement published under a changed statement: %s %+v", job.State, job.Counters)
+		if len(confirmer.questions()) != 1 {
+			t.Fatalf("the confirmation was asked %d times", len(confirmer.questions()))
 		}
-		if now := liveETag(t, h, container, "live/taken"); now != priorTag {
-			t.Fatal("the object was replaced")
-		}
-		if n := len(h.Snapshot(h.Primary, archive).Containers[archive].Objects); n != 0 {
-			t.Fatalf("the refused replacement archived %d objects", n)
-		}
-		asked := confirmer.questions()
-		if len(asked) != 1 || !strings.Contains(asked[0].Versioning, "none") {
-			t.Fatalf("the question did not state the versioning it was answered under: %+v", asked)
-		}
-		events, err := audit.NewStore(h.database).List(t.Context(), audit.Query{Limit: 100})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var record *audit.Event
-		for i, event := range events {
-			if event.Operation == "object.upload.refused" && event.Resource == container+"/live/taken" {
-				record = &events[i]
-			}
-		}
-		if record == nil {
-			t.Fatalf("the refusal left no record of the two statements: %+v", events)
-		}
-		if record.Result != audit.ResultConflict {
-			t.Errorf("the record is not a conflict: %+v", record)
-		}
-		for _, want := range []string{"none: what is replaced is not kept", "versions_location", archive} {
-			if !strings.Contains(record.Summary, want) {
-				t.Errorf("the record does not carry %q: %q", want, record.Summary)
-			}
+		if now := liveETag(t, h, container, "live/taken"); now != md5of(sent) {
+			t.Fatalf("the name holds %s, want this job's bytes %s (the other writer's are %s)", now, md5of(sent), md5of(others))
 		}
 	})
 
-	t.Run("replaces a plain object and records what it saw", func(t *testing.T) {
+	t.Run("replaces a plain object", func(t *testing.T) {
 		h := makeHarness(t)
 		container := h.Container(h.Primary, "overwrite-plain")
 		other := h.Container(h.Secondary, "overwrite-untouched")
 		h.Seed(h.Primary, container, "live/taken", []byte("the bytes already there"), nil)
 		h.Seed(h.Secondary, other, "keep", []byte("other account sentinel"), nil)
 		beforeB := h.SnapshotNamespace(h.Secondary)
-		priorTag := liveETag(t, h, container, "live/taken")
 
 		confirmer := &serviceConfirmer{yes: true}
 		app.WireOverwriteConfirmer(h.Transfer, confirmer)
@@ -253,7 +176,8 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			t.Fatal(err)
 		}
 		path := filepath.Join(t.TempDir(), "taken")
-		if err := os.WriteFile(path, []byte("the bytes this job sent"), 0o600); err != nil {
+		const sent = "the bytes this job sent"
+		if err := os.WriteFile(path, []byte(sent), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
@@ -266,43 +190,40 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			t.Fatal(err)
 		}
 		if job.State != "complete" || job.Counters.ObjectsCopied != 1 || job.Counters.Overwrites != 1 {
-			t.Fatalf("the replacement did not publish or was not counted: %s %+v", job.State, job.Counters)
+			t.Fatalf("the replacement was not written or was not counted: %s %+v", job.State, job.Counters)
 		}
-		if now := liveETag(t, h, container, "live/taken"); now == priorTag {
-			t.Fatal("the object was not replaced")
+		if now := liveETag(t, h, container, "live/taken"); now != md5of(sent) {
+			t.Fatalf("the name holds %s, want the bytes this job sent %s", now, md5of(sent))
 		}
-		// The question named what the backend resolved, and the record
-		// names what was there rather than what replaced it.
+		// The question named what the backend resolved.
 		asked := confirmer.questions()
 		if len(asked) != 1 || asked[0].Container != container || len(asked[0].Names) != 1 ||
 			asked[0].Names[0] != "live/taken" {
 			t.Fatalf("the confirmation did not name the resolved plan: %+v", asked)
 		}
-		record := replacementRecord(t, h, container+"/live/taken")
-		if record.Result != audit.ResultObserved || !strings.Contains(record.Summary, priorTag) ||
-			!strings.Contains(record.Summary, "may not be that one") {
-			t.Fatalf("the record does not name what was seen: %+v", record)
-		}
-		// A plain replacement inventories no fragments and touches no
-		// segment container.
-		if strings.Contains(record.Summary, "segment") {
-			t.Errorf("a plain replacement claimed a fragment inventory: %q", record.Summary)
-		}
 		h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 	})
 
-	// ADR 0081 decision 5, in both directions of the operator's option. The
-	// fixture is the exposure itself: two outside objects over EXACTLY the
-	// segments the predecessor published in its own header, which anything
-	// that could read the predecessor could have made. Reclaiming takes
-	// their backing data with it, and that is the accepted consequence
-	// rather than a surprise; turning the option off is what preserves them.
+	// ADR 0122 decision 3, in both directions of the operator's option, and
+	// on both sides of where the engine may delete. The fixture is the
+	// exposure itself: two outside objects over EXACTLY the segments the
+	// predecessor published in its own header, which anything that could read
+	// the predecessor could have made. The engine's removal takes their
+	// backing data with it, and that is the accepted consequence rather than
+	// a surprise; turning the option off preserves them, and so does keeping
+	// the segments outside the folder being uploaded to, where the engine may
+	// not delete. The manifest names its prefix with a trailing slash, as
+	// python-swiftclient writes it.
 	for _, mode := range []struct {
-		name     string
-		reclaims bool
+		name string
+		// under is where the predecessor's segments lie in the segments
+		// container, and removed whether the engine takes them.
+		under             string
+		reclaims, removed bool
 	}{
-		{name: "reclaims a replaced manifest's fragments", reclaims: true},
-		{name: "retains a replaced manifest's fragments when the option is off"},
+		{name: "removes a replaced manifest's segments under the upload's folder", under: "live/taken/run/", reclaims: true, removed: true},
+		{name: "keeps a replaced manifest's segments when the option is off", under: "live/taken/run/"},
+		{name: "keeps a replaced manifest's segments that lie outside the upload's folder", under: "subject/run/", reclaims: true},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
 			h := makeHarness(t)
@@ -310,19 +231,19 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			segments := container + "_segments"
 			h.rawPut(h.Primary, "/"+segments, nil, nil)
 			t.Cleanup(func() { h.purge(h.Primary, segments) })
-			h.Seed(h.Primary, segments, "subject/run/0001", []byte("01234567"), nil)
-			h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
+			h.Seed(h.Primary, segments, mode.under+"0001", []byte("01234567"), nil)
+			h.Seed(h.Primary, segments, mode.under+"0002", []byte("89abcdef"), nil)
 			h.Seed(h.Primary, container, "live/taken", nil,
-				map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+				map[string]string{"X-Object-Manifest": segments + "/" + mode.under})
 			// The static alias names the segment identities one by one, so it
 			// shares them rather than holding private copies: an alias over
 			// its own copies would survive the deletion of every part it was
 			// supposed to be sharing and would prove nothing either way.
 			h.Seed(h.Primary, container, "outside/alias", nil,
-				map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+				map[string]string{"X-Object-Manifest": segments + "/" + mode.under})
 			h.SeedSLO(h.Primary, container, "outside/slo", `[`+
-				`{"path":"`+segments+`/subject/run/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
-				`{"path":"`+segments+`/subject/run/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
+				`{"path":"`+segments+`/`+mode.under+`0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
+				`{"path":"`+segments+`/`+mode.under+`0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
 			setReclamation(t, h, mode.reclaims)
 
 			confirmer := &serviceConfirmer{yes: true}
@@ -344,13 +265,13 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				t.Fatal(err)
 			}
 			if job.State != "complete" || job.Counters.Overwrites != 1 {
-				t.Fatalf("the manifest replacement did not publish: %s %+v", job.State, job.Counters)
+				t.Fatalf("the manifest replacement was not written: %s %+v", job.State, job.Counters)
 			}
 			// The operator was told which way it would go before answering.
 			asked := confirmer.questions()
-			wantSaid := "will be REMOVED once the replacement is verified"
+			wantSaid := "the transfer engine REMOVES its old segments under live/ in " + segments
 			if !mode.reclaims {
-				wantSaid = "will be KEPT, because reclaiming is turned off"
+				wantSaid = "are KEPT, because reclaiming is turned off"
 			}
 			if len(asked) != 1 || !strings.Contains(asked[0].Fragments, wantSaid) {
 				t.Fatalf("the question did not say %q: %+v", wantSaid, asked)
@@ -358,36 +279,13 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 
 			// What the store holds now, by identity rather than by listing:
 			// a container listing lags a delete either way (DESIGN §15.3).
-			for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+			for _, name := range []string{mode.under + "0001", mode.under + "0002"} {
 				_, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name)
 				switch {
-				case mode.reclaims && err == nil:
-					t.Errorf("a reclaimed segment is still an object: %s", name)
-				case !mode.reclaims && err != nil:
-					t.Errorf("a retained segment was removed: %s: %v", name, err)
-				}
-			}
-			record := replacementRecord(t, h, container+"/live/taken")
-			for _, want := range []string{"2 segments", "listing may undercount", "recording them removes none of them"} {
-				if !strings.Contains(record.Summary, want) {
-					t.Errorf("the record does not say %q: %q", want, record.Summary)
-				}
-			}
-			// And the reclamation's own record, which is where the outcome
-			// lives because the observation above cannot know it.
-			reclaimed := reclamationRecord(t, h, container+"/live/taken")
-			if reclaimed == nil {
-				t.Fatal("the replacement left no record of what it did with the segments")
-			}
-			if mode.reclaims {
-				if reclaimed.Result != audit.ResultApplied ||
-					!strings.Contains(reclaimed.Summary, "reported 2 segment objects the replaced manifest named as gone") {
-					t.Errorf("the reclamation is not recorded as a complete removal of both: %+v", reclaimed)
-				}
-			} else {
-				if reclaimed.Result != audit.ResultObserved ||
-					!strings.Contains(reclaimed.Summary, "turned off") {
-					t.Errorf("the record does not say the option stopped it: %+v", reclaimed)
+				case mode.removed && err == nil:
+					t.Errorf("a segment the question said would be removed is still an object: %s", name)
+				case !mode.removed && err != nil:
+					t.Errorf("a segment the question said would be kept was removed: %s: %v", name, err)
 				}
 			}
 
@@ -405,16 +303,16 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				if name == "outside/slo" && h.MockPrimary != nil {
 					continue
 				}
-				if mode.reclaims && assembled {
-					t.Errorf("the segments were reported removed but %s still assembles them", name)
+				if mode.removed && assembled {
+					t.Errorf("the question said the segments would be removed but %s still assembles them", name)
 				}
-				if !mode.reclaims && !assembled {
+				if !mode.removed && !assembled {
 					t.Errorf("an outside reference lost its backing data: %s: %q %v", name, body, err)
 				}
 			}
 			// Either way nothing removed the outside manifests themselves,
 			// and the static one still names the segment identities it was
-			// written with: only what was recorded for THIS name can go.
+			// written with: only the replaced name's own segments can go.
 			for _, name := range []string{"outside/alias", "outside/slo"} {
 				if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, container, name); err != nil {
 					t.Errorf("an outside manifest was removed: %s: %v", name, err)
@@ -424,53 +322,23 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			if err != nil {
 				t.Fatalf("the outside manifest could not be read: %v", err)
 			}
-			for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+			for _, name := range []string{mode.under + "0001", mode.under + "0002"} {
 				if !strings.Contains(string(manifest), segments+"/"+name) {
 					t.Errorf("the outside manifest no longer names %s: %s", name, manifest)
-				}
-			}
-
-			// The durable record names those segments, after the job is
-			// terminal and again through a store opened on the same file that
-			// never saw them written. A listing names objects and nothing
-			// about how the manifest referenced them, so each listed member
-			// is recorded as a whole one.
-			want := []jobs.ItemFragment{
-				{Container: segments, Object: "subject/run/0001", Shape: jobs.FragmentWhole},
-				{Container: segments, Object: "subject/run/0002", Shape: jobs.FragmentWhole},
-			}
-			for _, source := range []struct {
-				name  string
-				store *jobs.Store
-			}{
-				{"the running store", h.jobStore},
-				{"a reopened store", reopenedJobs(t, h)},
-			} {
-				read, ok, err := source.store.ReadPredecessor(t.Context(), id, "live/taken")
-				if err != nil || !ok {
-					t.Fatalf("%s: read back: ok=%v %v", source.name, ok, err)
-				}
-				if !reflect.DeepEqual(read.Fragments, want) {
-					t.Errorf("%s names %+v, not the segments the manifest named %+v", source.name, read.Fragments, want)
-				}
-				if read.Prefix != segments+"/subject/run/" || read.Exact || read.Counted != 2 {
-					t.Errorf("%s does not describe a listed prefix: %+v", source.name, read)
 				}
 			}
 		})
 	}
 
-	// ADR 0081 decision 5's proof list wants BOTH large-object shapes on the
-	// owned store, and a static manifest is the one whose entries are exact:
-	// its inventory is the manifest's own list rather than a prefix listing,
-	// so what is reclaimed is what the record named and nothing is inferred
-	// from a prefix. A review asked for this route by name.
+	// The other large-object shape. A static manifest names its segments one
+	// by one, so the engine removes the ones the replaced manifest listed and
+	// infers nothing from a prefix.
 	for _, mode := range []struct {
 		name     string
 		reclaims bool
 	}{
-		{name: "reclaims a replaced static manifest's segments", reclaims: true},
-		{name: "retains a replaced static manifest's segments when the option is off"},
+		{name: "removes a replaced static manifest's segments", reclaims: true},
+		{name: "keeps a replaced static manifest's segments when the option is off"},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
 			h := makeHarness(t)
@@ -478,13 +346,13 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			segments := container + "_segments"
 			h.rawPut(h.Primary, "/"+segments, nil, nil)
 			t.Cleanup(func() { h.purge(h.Primary, segments) })
-			h.Seed(h.Primary, segments, "parts/0001", []byte("01234567"), nil)
-			h.Seed(h.Primary, segments, "parts/0002", []byte("89abcdef"), nil)
+			h.Seed(h.Primary, segments, "live/taken/parts/0001", []byte("01234567"), nil)
+			h.Seed(h.Primary, segments, "live/taken/parts/0002", []byte("89abcdef"), nil)
 			// The predecessor is the static manifest itself, not an alias
 			// over somebody else's segments.
 			h.SeedSLO(h.Primary, container, "live/taken", `[`+
-				`{"path":"`+segments+`/parts/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
-				`{"path":"`+segments+`/parts/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
+				`{"path":"`+segments+`/live/taken/parts/0001","etag":"`+md5of("01234567")+`","size_bytes":8},`+
+				`{"path":"`+segments+`/live/taken/parts/0002","etag":"`+md5of("89abcdef")+`","size_bytes":8}]`)
 			setReclamation(t, h, mode.reclaims)
 
 			confirmer := &serviceConfirmer{yes: true}
@@ -506,46 +374,18 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				t.Fatal(err)
 			}
 			if job.State != "complete" || job.Counters.Overwrites != 1 {
-				t.Fatalf("the static replacement did not publish: %s %+v", job.State, job.Counters)
+				t.Fatalf("the static replacement was not written: %s %+v", job.State, job.Counters)
 			}
-			// The manifest's own entries are exact, and the record says so.
-			read, ok, err := h.jobStore.ReadPredecessor(t.Context(), id, "live/taken")
-			if err != nil || !ok {
-				t.Fatalf("read back: ok=%v %v", ok, err)
-			}
-			want := []jobs.ItemFragment{
-				{Container: segments, Object: "parts/0001", Shape: jobs.FragmentWhole},
-				{Container: segments, Object: "parts/0002", Shape: jobs.FragmentWhole},
-			}
-			if !reflect.DeepEqual(read.Fragments, want) {
-				t.Fatalf("the record names %+v, not the manifest's entries %+v", read.Fragments, want)
-			}
-			if !read.Exact || read.Prefix != "" || read.Counted != 2 {
-				t.Errorf("a static manifest's record does not describe an exact list: %+v", read)
-			}
-			for _, name := range []string{"parts/0001", "parts/0002"} {
+			for _, name := range []string{"live/taken/parts/0001", "live/taken/parts/0002"} {
 				_, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name)
 				switch {
 				case mode.reclaims && err == nil:
-					t.Errorf("a reclaimed segment is still an object: %s", name)
+					t.Errorf("a segment the replaced manifest named is still an object: %s", name)
 				case !mode.reclaims && err != nil:
-					t.Errorf("a retained segment was removed: %s: %v", name, err)
+					t.Errorf("a segment the option keeps was removed: %s: %v", name, err)
 				}
 			}
-			reclaimed := reclamationRecord(t, h, container+"/live/taken")
-			if reclaimed == nil {
-				t.Fatal("the replacement left no record of what it did with the segments")
-			}
-			if mode.reclaims {
-				if reclaimed.Result != audit.ResultApplied ||
-					!strings.Contains(reclaimed.Summary, "reported 2 segment objects") {
-					t.Errorf("the reclamation is not recorded as a complete removal of both: %+v", reclaimed)
-				}
-			} else if reclaimed.Result != audit.ResultObserved ||
-				!strings.Contains(reclaimed.Summary, "turned off") {
-				t.Errorf("the record does not say the option stopped it: %+v", reclaimed)
-			}
-			// The new object is readable either way: reclaiming the
+			// The new object is readable either way: removing the
 			// predecessor's parts does not touch what replaced it.
 			body, err := rawGet(h.Primary, "/"+container+"/live/taken", "")
 			if err != nil || string(body) != "the bytes this job sent" {
@@ -554,13 +394,12 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		})
 	}
 
-	// ADR 0081 decision 5 rule 2: a container that keeps versions keeps the
-	// replaced object, and a replaced manifest's segments are that retained
-	// version's. Reclaiming them would empty a version the store is holding
-	// on the operator's behalf, so the mode wins over the option, and the
-	// mode is read at reclamation time rather than taken from the sentence
-	// the operator was shown.
-	t.Run("skips reclamation where the container keeps versions", func(t *testing.T) {
+	// ADR 0122 decision 3: a container that keeps versions keeps the replaced
+	// object, and a replaced manifest's segments are that retained version's.
+	// Removing them would empty a version the store is holding on the
+	// operator's behalf, so the mode wins over the option. The upload reads
+	// the mode once, at its start, and the question states what it decided.
+	t.Run("keeps a replaced manifest's segments where the container keeps versions", func(t *testing.T) {
 		h := makeHarness(t)
 		archive := h.Container(h.Primary, "reclaim-archive")
 		container := h.Container(h.Primary, "reclaim-versioned")
@@ -575,11 +414,12 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		segments := container + "_segments"
 		h.rawPut(h.Primary, "/"+segments, nil, nil)
 		t.Cleanup(func() { h.purge(h.Primary, segments) })
-		h.Seed(h.Primary, segments, "subject/run/0001", []byte("01234567"), nil)
-		h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
+		h.Seed(h.Primary, segments, "live/taken/run/0001", []byte("01234567"), nil)
+		h.Seed(h.Primary, segments, "live/taken/run/0002", []byte("89abcdef"), nil)
 		h.Seed(h.Primary, container, "live/taken", nil,
-			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
-		// The option is ON, so what stops this is the mode and nothing else.
+			map[string]string{"X-Object-Manifest": segments + "/live/taken/run/"})
+		// The option is ON and the segments lie where the engine may delete,
+		// so what stops this is the mode and nothing else.
 		setReclamation(t, h, true)
 
 		confirmer := &serviceConfirmer{yes: true}
@@ -601,23 +441,16 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			t.Fatal(err)
 		}
 		if job.State != "complete" || job.Counters.Overwrites != 1 {
-			t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+			t.Fatalf("the replacement was not written: %s %+v", job.State, job.Counters)
 		}
-		for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+		for _, name := range []string{"live/taken/run/0001", "live/taken/run/0002"} {
 			if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name); err != nil {
-				t.Errorf("a retained version's segment was reclaimed: %s: %v", name, err)
+				t.Errorf("a retained version's segment was removed: %s: %v", name, err)
 			}
-		}
-		reclaimed := reclamationRecord(t, h, container+"/live/taken")
-		if reclaimed == nil {
-			t.Fatal("the replacement left no record of what it did with the segments")
-		}
-		if reclaimed.Result != audit.ResultObserved || !strings.Contains(reclaimed.Summary, "keeps versions") {
-			t.Errorf("the record does not say the archive stopped it: %+v", reclaimed)
 		}
 		// And the operator was told the same thing before answering.
 		if asked := confirmer.questions(); len(asked) != 1 ||
-			!strings.Contains(asked[0].Fragments, "none will be removed, because the container keeps versions") {
+			!strings.Contains(asked[0].Fragments, "are KEPT, because the container keeps versions") {
 			t.Fatalf("the question did not say the segments would be kept: %+v", asked)
 		}
 	})
@@ -715,156 +548,108 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		}
 	})
 
-	// ADR 0081 decision 7's narrower promise, exercised rather than
-	// asserted: an unchanged predecessor is promised only where the
-	// replacement was not attempted or is proven refused. Where it may have
-	// landed, or did land and could not then be verified, the record says
-	// so and claims no rollback.
+	// ADR 0122 decision 2 keeps "unknown" as an outcome: a write whose
+	// answer never arrived may have landed, so the record says the outcome
+	// is unknown and claims nothing about what was there before.
 	//
-	// Both shapes need a store that misbehaves at an exact protocol point —
-	// a response lost after the write applied, and a read that fails only
-	// after it — so they run on the in-process fixture. Nothing about them
-	// is a refusal: the point is an outcome that is unknown.
-	t.Run("claims no rollback where a replacement may have landed", func(t *testing.T) {
-		for _, tc := range []struct {
-			name string
-			// arm installs the fault; stage is where the route must say the
-			// outcome became unknown.
-			arm   func(h *Harness, container string)
-			stage string
-		}{
-			{name: "the publication's response is lost", stage: "commit",
-				arm: func(h *Harness, container string) {
-					h.MockPrimary.DropNextObjectPUTResponse(container, "live/taken")
-				}},
-			{name: "verification fails after it landed", stage: "verification",
-				arm: func(h *Harness, container string) {
-					// Armed at the exact point the publication is served, so
-					// the reads before it are untouched.
-					h.MockPrimary.AfterRequest = func(method, path string) {
-						if method == "PUT" && strings.HasSuffix(path, "/live/taken") {
-							h.MockPrimary.FailNextObjectHEADs(1)
-						}
-					}
-				}},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				h := makeHarness(t)
-				if h.MockPrimary == nil {
-					t.Skip("a lost response and a read that fails only after a write need the in-process store")
-				}
-				container := h.Container(h.Primary, "overwrite-unresolved")
-				segments := container + "_segments"
-				h.rawPut(h.Primary, "/"+segments, nil, nil)
-				t.Cleanup(func() { h.purge(h.Primary, segments) })
-				h.Seed(h.Primary, segments, "subject/run/0001", []byte("01234567"), nil)
-				h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
-				h.Seed(h.Primary, container, "live/taken", nil,
-					map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
-				priorTag := liveETag(t, h, container, "live/taken")
+	// It needs a store that loses a response after the write applied, so it
+	// runs on the in-process fixture.
+	t.Run("claims no rollback where a replacement's answer is lost", func(t *testing.T) {
+		h := makeHarness(t)
+		if h.MockPrimary == nil {
+			t.Skip("a response lost after the write applied needs the in-process store")
+		}
+		container := h.Container(h.Primary, "overwrite-unresolved")
+		segments := container + "_segments"
+		h.rawPut(h.Primary, "/"+segments, nil, nil)
+		t.Cleanup(func() { h.purge(h.Primary, segments) })
+		h.Seed(h.Primary, segments, "subject/run/0001", []byte("01234567"), nil)
+		h.Seed(h.Primary, segments, "subject/run/0002", []byte("89abcdef"), nil)
+		h.Seed(h.Primary, container, "live/taken", nil,
+			map[string]string{"X-Object-Manifest": segments + "/subject/run/"})
+		priorTag := liveETag(t, h, container, "live/taken")
 
-				app.WireOverwriteConfirmer(h.Transfer, &serviceConfirmer{yes: true})
-				if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
-					t.Fatal(err)
-				}
-				path := filepath.Join(t.TempDir(), "taken")
-				const sent = "the bytes this job sent"
-				if err := os.WriteFile(path, []byte(sent), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				tc.arm(h, container)
-				id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
-				if err != nil {
-					t.Fatalf("a confirmed replacement was refused before it was attempted: %v", err)
-				}
-				h.AwaitJob(id)
-				job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
-				if err != nil {
-					t.Fatal(err)
-				}
-				// Neither shape may be reported as a clean success, and
-				// neither may be reported as having left the predecessor.
-				if job.State == "complete" {
-					t.Errorf("an unverified replacement was reported complete: %+v", job.Counters)
-				}
-				if job.Counters.ObjectsVerified != 0 {
-					t.Errorf("an unverified replacement was counted as verified: %+v", job.Counters)
-				}
-				// Neither is counted as an overwrite. The counter counts
-				// VERIFIED publications, and on both shapes the publication
-				// is unverified even though one of them landed, which is
-				// exactly why the counter is not a count of displaced
-				// objects.
-				if job.Counters.Overwrites != 0 {
-					t.Errorf("an unverified replacement was counted: %+v", job.Counters)
-				}
-				for _, forbidden := range []string{"unchanged", "rolled back", "rollback", "left as it was", "restored"} {
-					if strings.Contains(strings.ToLower(job.Error), forbidden) {
-						t.Errorf("the job claims %q about the predecessor: %q", forbidden, job.Error)
-					}
-				}
+		app.WireOverwriteConfirmer(h.Transfer, &serviceConfirmer{yes: true})
+		if _, err := h.Browse.Connect(t.Context(), h.Primary.BookmarkID); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "taken")
+		const sent = "the bytes this job sent"
+		if err := os.WriteFile(path, []byte(sent), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h.MockPrimary.DropNextObjectPUTResponse(container, "live/taken")
+		id, err := overwriteStart(t, h, container, "live/", []string{path}, true)
+		if err != nil {
+			t.Fatalf("a confirmed replacement was refused before it was attempted: %v", err)
+		}
+		h.AwaitJob(id)
+		job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// It may not be reported as a clean success, and it may not be
+		// reported as having left the predecessor.
+		if job.State == "complete" {
+			t.Errorf("a replacement with no answer was reported complete: %+v", job.Counters)
+		}
+		if job.Counters.ObjectsVerified != 0 {
+			t.Errorf("a replacement with no answer was counted as verified: %+v", job.Counters)
+		}
+		// It is not counted as an overwrite either. The counter counts
+		// answered writes, which is why it is not a count of displaced
+		// objects: this one landed.
+		if job.Counters.Overwrites != 0 {
+			t.Errorf("a replacement with no answer was counted: %+v", job.Counters)
+		}
+		for _, forbidden := range []string{"unchanged", "rolled back", "rollback", "left as it was", "restored"} {
+			if strings.Contains(strings.ToLower(job.Error), forbidden) {
+				t.Errorf("the job claims %q about the predecessor: %q", forbidden, job.Error)
+			}
+		}
 
-				// What the store actually holds, read independently: on both
-				// shapes the write reached it, so the predecessor is gone and
-				// nothing may say otherwise.
-				body, err := rawGet(h.Primary, "/"+container+"/live/taken", "")
-				if err != nil || string(body) != sent {
-					t.Errorf("the live object is neither what was sent nor readable: %q %v", body, err)
-				}
-				if now := liveETag(t, h, container, "live/taken"); now == priorTag {
-					t.Error("the fixture did not land the write it was supposed to lose the answer to")
-				}
-				// And its segments are all still there, because nothing in
-				// this route removes one whatever the outcome was.
-				for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
-					if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name); err != nil {
-						t.Errorf("an unresolved replacement removed a segment: %s: %v", name, err)
-					}
-				}
+		// What the store actually holds, read independently: the write
+		// reached it, so the predecessor is gone and nothing may say
+		// otherwise.
+		body, err := rawGet(h.Primary, "/"+container+"/live/taken", "")
+		if err != nil || string(body) != sent {
+			t.Errorf("the live object is neither what was sent nor readable: %q %v", body, err)
+		}
+		if now := liveETag(t, h, container, "live/taken"); now == priorTag {
+			t.Error("the fixture did not land the write it was supposed to lose the answer to")
+		}
+		// And its segments are all still there: the engine removes a
+		// replaced object's segments only after a write it saw answered.
+		for _, name := range []string{"subject/run/0001", "subject/run/0002"} {
+			if _, err := h.Inspector.Object(t.Context(), h.Primary.BookmarkID, segments, name); err != nil {
+				t.Errorf("an unresolved replacement removed a segment: %s: %v", name, err)
+			}
+		}
 
-				// The stored item outcome says the effect is unresolved, which
-				// is the whole of what this contract promises here.
-				page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 10)
-				if err != nil || page.Status != "available" || len(page.Items) != 1 {
-					t.Fatalf("items: %+v %v", page, err)
-				}
-				item := page.Items[0]
-				if item.Execution == nil {
-					t.Fatalf("the item has no execution outcome: %+v", item)
-				}
-				// Unresolved, not not_attempted: a write whose answer is
-				// unknown must never be reported as one that did not happen,
-				// which is the only claim about the predecessor this contract
-				// makes here.
-				if item.Execution.Result != "failed" || item.Execution.Effect != "unresolved" {
-					t.Errorf("the outcome does not say it is unknown: %+v", item.Execution)
-				}
-				if item.Execution.Stage != tc.stage {
-					t.Errorf("the outcome became unknown at %q, not %q", item.Execution.Stage, tc.stage)
-				}
-				if item.Verification != nil && item.Verification.Result == "verified" {
-					t.Errorf("an unverified item carries a verification: %+v", item.Verification)
-				}
-
-				// The predecessor record was written before any of this, and
-				// it still names what was there.
-				read, ok, err := h.jobStore.ReadPredecessor(t.Context(), id, "live/taken")
-				if err != nil || !ok || read.Named != 2 || read.ETag != priorTag {
-					t.Fatalf("the record of what was there did not survive: %+v ok=%v %v", read, ok, err)
-				}
-				record := replacementRecord(t, h, container+"/live/taken")
-				if !strings.Contains(record.Summary, "may not be that one") {
-					t.Errorf("the record reads as an outcome rather than an observation: %q", record.Summary)
-				}
-			})
+		// The stored item outcome says the effect is unresolved, which is
+		// the whole of what this contract promises here.
+		page, err := h.Jobs.Items(t.Context(), h.Primary.BookmarkID, id, "", 10)
+		if err != nil || page.Status != "available" || len(page.Items) != 1 {
+			t.Fatalf("items: %+v %v", page, err)
+		}
+		item := page.Items[0]
+		if item.Execution == nil {
+			t.Fatalf("the item has no execution outcome: %+v", item)
+		}
+		// Unresolved, not not_attempted: a write whose answer is unknown
+		// must never be reported as one that did not happen. The engine
+		// sent it, so the engine's error is where it became unknown.
+		if item.Execution.Result != "failed" || item.Execution.Effect != "unresolved" || item.Execution.Stage != "engine" {
+			t.Errorf("the outcome does not say it became unknown in the engine: %+v", item.Execution)
+		}
+		if item.Verification != nil {
+			t.Errorf("an item with no answer carries a second record: %+v", item.Verification)
 		}
 	})
 
 	// ADR 0081 decision 8 and its required proof: on a container carrying a
 	// legacy versioning mode the confirmation names that mode and the
-	// archive container, an archived entry exists afterwards, and the
-	// record does not offer the container's versioning state as evidence
-	// about anything.
+	// archive container, and an archived entry exists afterwards.
 	t.Run("names a legacy versioning mode and its archive", func(t *testing.T) {
 		h := makeHarness(t)
 		archive := h.Container(h.Primary, "overwrite-archive")
@@ -901,7 +686,7 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 			t.Fatal(err)
 		}
 		if job.State != "complete" {
-			t.Fatalf("the replacement did not publish: %s %+v", job.State, job.Counters)
+			t.Fatalf("the replacement was not written: %s %+v", job.State, job.Counters)
 		}
 		asked := confirmer.questions()
 		if len(asked) != 1 {
@@ -929,17 +714,6 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 		}
 		if !strings.Contains(string(listing), "live/taken") {
 			t.Fatalf("the replaced object was not archived: %q", listing)
-		}
-		// And the record still says only what it observed: the versioning
-		// state is not offered as evidence about references.
-		record := replacementRecord(t, h, container+"/live/taken")
-		if !strings.Contains(record.Summary, priorTag) || !strings.Contains(record.Summary, "may not be that one") {
-			t.Errorf("the record does not name what was seen: %q", record.Summary)
-		}
-		for _, forbidden := range []string{"version", "archive", "recover"} {
-			if strings.Contains(strings.ToLower(record.Summary), forbidden) {
-				t.Errorf("the record offers the container's versioning as evidence: %q", record.Summary)
-			}
 		}
 	})
 
@@ -985,16 +759,4 @@ func overwriteCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 func md5of(content string) string {
 	sum := md5.Sum([]byte(content))
 	return hex.EncodeToString(sum[:])
-}
-
-// reopenedJobs opens the harness's database file again, so a durable record
-// is read through a store that never saw it written.
-func reopenedJobs(t *testing.T, h *Harness) *jobs.Store {
-	t.Helper()
-	reopened, err := db.Open(t.Context(), h.statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = reopened.Close() })
-	return jobs.NewStore(reopened)
 }

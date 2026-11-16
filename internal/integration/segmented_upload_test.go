@@ -25,7 +25,8 @@ func TestSegmentedUploadKindsRealSwift(t *testing.T) {
 	}
 	h := harness(t)
 	ctx := context.Background()
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", IgnoreSize: true, Retries: 1, LowLevelRetries: 2})
+	// An upload's engine writes each file at its name (ADR 0122 decision 3).
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, IgnoreSize: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestSegmentedUploadKindsRealSwift(t *testing.T) {
 				t.Fatalf("preflight: %v %+v", err, preflight)
 			}
 			preflight.LargeObjects, preflight.ChunkBytes = string(kind), 1<<20
-			report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, "up/", "it-"+string(kind), preflight, nil, nil)
+			report, err := localtransfer.Upload(ctx, h.Session, engine, "aeronautes_dst:"+container, container, preflight, nil, nil)
 			if err != nil || report.Done != 1 || len(report.Failures) != 0 {
 				t.Fatalf("upload: %v %+v", err, report)
 			}

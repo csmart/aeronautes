@@ -32,14 +32,14 @@ func TestUploadItemRecordingCost(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, UploadRequestDTO{BookmarkID: "captured", Container: "media"}, answeredFragments{})
+	recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, UploadRequestDTO{BookmarkID: "captured", Container: "media"})
 	const count = 201
 	root := t.TempDir()
 	started := time.Now()
 	for i := range count {
 		name := fmt.Sprintf("source-%04d", i)
 		item := local.UploadItem{Path: filepath.Join(root, name), Name: "live/" + name, Size: 5}
-		if err := recorder.Admit(local.UploadAdmission{Item: item, StagingObject: "stage/" + name}); err != nil {
+		if err := recorder.Admit(local.UploadAdmission{Item: item}); err != nil {
 			t.Fatal(err)
 		}
 		if err := recorder.Execute(item, transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 5}); err != nil {
@@ -67,8 +67,8 @@ func TestUploadItemRecordingCost(t *testing.T) {
 
 func TestUploadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 	for _, phase := range []string{"admit", "execute", "verify"} {
-		for _, fault := range []string{"key", "path", "relative", "destination", "container", "bookmark", "bytes", "staging"} {
-			if phase != "admit" && (fault == "bytes" || fault == "staging") {
+		for _, fault := range []string{"key", "path", "relative", "destination", "container", "bookmark", "bytes"} {
+			if phase != "admit" && fault == "bytes" {
 				continue
 			}
 			t.Run(phase+"_"+fault, func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestUploadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					t.Fatal(err)
 				}
 				req := UploadRequestDTO{BookmarkID: "captured", Container: "media"}
-				admission := local.UploadAdmission{Item: local.UploadItem{Path: filepath.Join(t.TempDir(), "source"), Name: "scope/source", Size: 5}, StagingObject: "stage/source"}
+				admission := local.UploadAdmission{Item: local.UploadItem{Path: filepath.Join(t.TempDir(), "source"), Name: "scope/source", Size: 5}}
 				switch fault {
 				case "key":
 					admission.Item.Name = "invalid\xff"
@@ -94,8 +94,6 @@ func TestUploadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					req.BookmarkID = ""
 				case "bytes":
 					admission.Item.Size = -1
-				case "staging":
-					admission.StagingObject = "invalid\xff"
 				}
 				if err := h.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 					for _, table := range []string{"job_items", "job_item_observations"} {
@@ -107,7 +105,7 @@ func TestUploadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, req, answeredFragments{})
+				recorder := h.transfer.uploadItemRecorder(t.Context(), job.ID, req)
 				switch phase {
 				case "admit":
 					err = recorder.Admit(admission)

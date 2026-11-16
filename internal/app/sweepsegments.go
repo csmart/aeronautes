@@ -69,7 +69,7 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 		seen := map[string]bool{}
 		for _, entry := range entries {
 			if holder, staged := r.s.runner.stagedByLiveJob(account, entry.Container, entry.Object); staged {
-				return r.leave(ctx, m, "a segment of it is in the staging area of "+holder)
+				return r.leave(ctx, m, "a segment of it is where "+holder+" is writing")
 			}
 			segment := sweepMember{container: entry.Container, name: entry.Object, bytes: entry.Size, etag: entry.ETag}
 			if !seen[segment.key()] {
@@ -109,7 +109,7 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 				outside.count, segContainer, namespace))
 		}
 		if err := r.claimSegmentContainer(segContainer); err != nil {
-			return r.leave(ctx, m, "another job is staging into the container that holds its segments")
+			return r.leave(ctx, m, "another job is writing into the container that holds its segments")
 		}
 	default:
 		return false, false

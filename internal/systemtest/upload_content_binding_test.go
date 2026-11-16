@@ -191,11 +191,10 @@ func uploadContentBinding(t *testing.T, makeHarness func(*testing.T) *Harness) {
 				if job.State == "complete" || job.Counters.ObjectsCopied != 0 {
 					t.Fatalf("an altered upload was published: state=%s counters=%+v", job.State, job.Counters)
 				}
-				// The refusal the store makes is recorded exactly as
-				// ADR 0080 decision 7 says: a commit the route cannot
-				// verify, whose effect is unresolved because a PUT was
-				// invoked and the store's answer is its own to give.
-				if execution.Result != jobs.ItemFailed || execution.Effect != jobs.EffectUnresolved ||
+				// The store refused the bytes against the declared digest
+				// and said so, and that answer is the file's outcome (ADR
+				// 0122 decision 1): a commit that failed and wrote nothing.
+				if execution.Result != jobs.ItemFailed || execution.Effect != jobs.EffectNotAttempted ||
 					execution.Diagnostic.Stage != jobs.StageCommit || execution.Diagnostic.Code != jobs.CodeUnverified {
 					t.Fatalf("a refused native upload was misrecorded: %+v", execution)
 				}
@@ -391,7 +390,7 @@ func nativeHeldSourceBinding(t *testing.T, makeHarness func(*testing.T) *Harness
 			if job.State == "complete" || job.Counters.ObjectsCopied != 0 {
 				t.Fatalf("a held file that changed under the upload was published: state=%s counters=%+v", job.State, job.Counters)
 			}
-			if item.Execution.Result != jobs.ItemFailed || item.Execution.Effect != jobs.EffectUnresolved ||
+			if item.Execution.Result != jobs.ItemFailed || item.Execution.Effect != jobs.EffectNotAttempted ||
 				item.Execution.Diagnostic.Stage != jobs.StageCommit || item.Execution.Diagnostic.Code != jobs.CodeUnverified {
 				t.Fatalf("a refused native upload was misrecorded: %+v", item.Execution.ItemObservation)
 			}

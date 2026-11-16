@@ -220,30 +220,6 @@ func TestFailedSecondJobBindingReleasesFirst(t *testing.T) {
 	assertJobBindingsReleased(t, h, []string{id})
 }
 
-func TestUploadRecoveryFailureReleasesGenerations(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	start, ids := generationJobStart(t, h, "upload", h.transfer.connections.ActiveBookmarkID())
-	if err := h.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-		_, err := tx.Exec(`CREATE TRIGGER refuse_recovery BEFORE INSERT ON job_recovery
-			BEGIN SELECT RAISE(ABORT, 'injected recovery creation failure'); END`)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if id, err := start(); id != "" || err == nil || !strings.Contains(err.Error(), "injected recovery creation failure") {
-		t.Fatalf("recovery creation fault not reached: id=%q, err=%v", id, err)
-	}
-	rows, err := h.jobsSvc.List(t.Context(), "", false, 10)
-	if err != nil || len(rows) != 1 || rows[0].State != "failed" || rows[0].StartedAt != "" {
-		t.Fatalf("failed upload admission was not recorded: %+v, %v", rows, err)
-	}
-	if _, registered := h.transfer.runner.cancel(rows[0].ID); registered {
-		t.Fatal("failed upload remained cancel-addressable")
-	}
-	assertJobBindingsReleased(t, h, ids)
-}
-
 type cancellationCleanupEngine struct {
 	entered   chan struct{}
 	cancelled chan struct{}

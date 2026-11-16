@@ -17,6 +17,11 @@ import (
 	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 )
 
+// uploadRecoveryStop uploads three files that the engine segments, two from
+// one folder and one from another, so the engine is started once for each
+// folder. With the "captured" fault the record of a segment path the engine
+// reported cannot be written, which stops the run (ADR 0122 decision 8): the
+// engine is not started for the second folder.
 func uploadRecoveryStop(t *testing.T, h *Harness, fault string) {
 	t.Helper()
 	dst := h.Container(h.Primary, "upload-recovery-stop")
@@ -75,29 +80,26 @@ func uploadRecoveryStop(t *testing.T, h *Harness, fault string) {
 func assertUploadRecoveryStop(t *testing.T, h *Harness, fault, id, dst string, body []byte, paths []string, saved uploadRecoveryState) {
 	t.Helper()
 	want := jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3}
-	done, state, result := int64(0), "partial", "verify_mismatch"
-	switch fault {
-	case "captured":
-		want.Failed, want.Unresolved, want.Problems = 2, 2, 3
-	case "committing":
-		want.Failed, want.Unresolved, want.Problems = 1, 2, 2
-	case "committed":
-		done, want.Unresolved, want.Problems = 1, 2, 2
-	case "control":
-		done, state, result = 3, "complete", "applied"
+	done, state, result := int64(3), "complete", "applied"
+	if fault == "captured" {
+		// The engine had the first folder's two files when the record was
+		// refused, and it wrote both. The third file's record carries the
+		// reason it was not attempted.
+		done, state, result = 2, "partial", "verify_mismatch"
+		want.Problems = 1
 	}
-	counters := jobs.Counters{ObjectsPlanned: 3, BytesPlanned: int64(3 * len(body)), ObjectsCopied: done, ObjectsVerified: done, ObjectsFailed: want.Failed, BytesCopied: done * int64(len(body))}
+	counters := jobs.Counters{ObjectsPlanned: 3, BytesPlanned: int64(3 * len(body)), ObjectsCopied: done, ObjectsVerified: done, BytesCopied: done * int64(len(body))}
 	if saved.Job.State != state || saved.Job.Counters != counters || saved.Job.FinishedAt == "" ||
 		!saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != 3 {
 		t.Fatalf("required recovery refusal lost outcomes: job=%+v totals=%+v rows=%d want=%s %+v %+v", saved.Job, saved.ItemTotals, len(saved.Items), state, counters, want)
 	}
 	byKey := map[string]jobs.ItemRecord{}
 	for i, item := range saved.Items {
-		key, stage := "live/"+filepath.Base(paths[i]), ".aeronautes/stage/"+id+"/batch/"+filepath.Base(paths[i])
+		key := "live/" + filepath.Base(paths[i])
 		if item.Key != key || item.JobID != id || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: key}) ||
-			item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: stage}) {
+			item.Staging != nil {
 			t.Fatalf("required recovery refusal lost original identity: %+v", item)
 		}
 		assertUploadRecoveryStopObservation(t, item, fault, i, int64(len(body)))
@@ -115,33 +117,21 @@ func assertUploadRecoveryStop(t *testing.T, h *Harness, fault, id, dst string, b
 	if h.jobStore.Available() != nil || fault != "control" && !strings.Contains(saved.Job.Error, "fixture required upload recovery refusal") || fault == "control" && saved.Job.Error != "" {
 		t.Fatalf("recovery refusal disappeared or manufactured an item-store latch: %q %v", saved.Job.Error, h.jobStore.Available())
 	}
-	if fault == "committed" && !strings.Contains(saved.Job.Error, "1 post-commit issue") {
-		t.Fatalf("verified copied name lost its bookkeeping issue: %q", saved.Job.Error)
-	}
 }
 
+// Each file has one outcome. A file the engine reported as copied is
+// written, whether or not the run stopped afterwards, and the file of the
+// folder the engine was never started for was not attempted.
 func assertUploadRecoveryStopObservation(t *testing.T, item jobs.ItemRecord, fault string, index int, size int64) {
 	t.Helper()
-	var execution, verification *jobs.ItemObservation
-	switch {
-	case fault == "control" || fault == "committed" && index == 0:
-		execution = &jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: size}
-		verification = &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
-		if fault == "committed" {
-			execution.Effect = jobs.EffectUnresolved
-			execution.Diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageRecording, Code: jobs.CodeIO}
-		}
-	case index == 2:
-		execution = &jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted,
+	execution := jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: size}
+	verification := &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
+	if fault == "captured" && index == 2 {
+		execution = jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted,
 			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIncomplete}}
-	case fault == "captured":
-		execution = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeUnknown}}
-	case fault == "committing" && index == 0:
-		execution = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved,
-			Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageRecording, Code: jobs.CodeIO}}
+		verification = nil
 	}
-	if (item.Execution == nil) != (execution == nil) || execution != nil && item.Execution.ItemObservation != *execution ||
+	if item.Execution == nil || item.Execution.ItemObservation != execution ||
 		(item.Verification == nil) != (verification == nil) || verification != nil && item.Verification.ItemObservation != *verification {
 		t.Fatalf("recovery refusal invented or erased a phase: item=%+v execution=%+v verification=%+v want=%+v %+v", item, item.Execution, item.Verification, execution, verification)
 	}
@@ -156,55 +146,27 @@ func assertUploadRecoveryStopEffects(t *testing.T, h *Harness, fault, id, dst st
 		t.Fatal(err)
 	}
 	wantWrites := map[string]int{}
-	wantRows := map[jobs.RecoveryRecord]int{{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryStaging, Container: dst, Prefix: ".aeronautes/stage/" + id + "/"}: 1}
+	wantRows := map[jobs.RecoveryRecord]int{}
 	var allowed []string
 	for i, name := range []string{"first", "second", "third"} {
-		stageName := ".aeronautes/stage/" + id + "/batch/" + name
-		live, liveFound := afterA.Containers[dst].Objects["live/"+name]
-		staged, stageFound := afterA.Containers[dst].Objects[stageName]
-		liveExpected := fault == "control" || fault == "committed" && i == 0
-		stageExpected := fault != "control" && i < 2
-		if liveFound != liveExpected || stageFound != stageExpected {
-			t.Fatalf("required recovery refusal crossed a later effect: %s live=%t/%t stage=%t/%t", name, liveFound, liveExpected, stageFound, stageExpected)
+		live, found := afterA.Containers[dst].Objects["live/"+name]
+		if expected := fault == "control" || i < 2; found != expected {
+			t.Fatalf("required recovery refusal crossed a later effect: %s found=%t want=%t", name, found, expected)
 		}
-		if !liveFound && !stageFound {
+		if !found {
 			continue
 		}
-		object := staged
-		if liveFound {
-			object = live
-			assertUploadDLOManifestBody(t, h.Primary, dst, "live/"+name, live.Manifest)
-			allowed = append(allowed, dst+"/live/"+name)
-			wantWrites["PUT "+storage.Path+"/"+dst+"/live/"+name] = 1
-		}
-		segments := uploadRecoveryVerifyObject(t, object, body, "dlo", dst+"_segments", stageName)
-		if liveFound && stageFound {
-			uploadRecoveryVerifyObject(t, staged, body, "dlo", dst+"_segments", stageName)
-			if live.Manifest != staged.Manifest {
-				t.Fatal("copied live manifest no longer references the retained staged bytes")
-			}
-		}
-		if stageFound {
-			assertUploadDLOManifestBody(t, h.Primary, dst, stageName, staged.Manifest)
-			allowed = append(allowed, dst+"/"+stageName)
-		} else {
-			wantWrites["DELETE "+storage.Path+"/"+dst+"/"+stageName] = 1
-		}
-		wantWrites["PUT "+storage.Path+"/"+dst+"/"+stageName] = 1
+		assertUploadDLOManifestBody(t, h.Primary, dst, "live/"+name, live.Manifest)
+		allowed = append(allowed, dst+"/live/"+name)
+		wantWrites["PUT "+storage.Path+"/"+dst+"/live/"+name] = 1
+		segments := uploadRecoveryVerifyObject(t, live, body, "dlo", dst+"_segments", "live/"+name)
 		allowed = append(allowed, segments...)
 		for _, segment := range segments {
 			wantWrites["PUT "+storage.Path+"/"+segment] = 1
 		}
-		container, prefix, _ := strings.Cut(object.Manifest, "/")
-		for _, kind := range []jobs.RecoveryKind{jobs.RecoveryCaptured, jobs.RecoveryCommitting, jobs.RecoveryCommitted} {
-			if fault == "captured" || fault == "committing" && kind != jobs.RecoveryCaptured || fault == "committed" && (kind == jobs.RecoveryCommitted || kind == jobs.RecoveryCommitting && i != 0) {
-				continue
-			}
-			row := jobs.RecoveryRecord{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: kind, Container: container, Prefix: prefix + "/"}
-			if kind == jobs.RecoveryCommitting {
-				row.Object = dst + "/live/" + name
-			}
-			wantRows[row] = 1
+		if fault == "control" {
+			container, prefix, _ := strings.Cut(live.Manifest, "/")
+			wantRows[jobs.RecoveryRecord{JobID: id, BookmarkID: h.Primary.BookmarkID, Kind: jobs.RecoveryCaptured, Container: container, Prefix: prefix + "/"}] = 1
 		}
 	}
 	h.AssertNoCollateral(beforeA, afterA, allowed...)
@@ -216,7 +178,11 @@ func assertUploadRecoveryStopEffects(t *testing.T, h *Harness, fault, id, dst st
 	for _, row := range saved.Rows {
 		gotRows[row]++
 	}
-	if !reflect.DeepEqual(gotWrites, wantWrites) || !reflect.DeepEqual(gotRows, wantRows) || saved.Job.RecoveryRecords != int64(len(wantRows)) || saved.Status != (app.RecoveryStatusDTO{Jobs: 1, Records: int64(len(wantRows))}) {
+	wantStatus := app.RecoveryStatusDTO{}
+	if len(wantRows) > 0 {
+		wantStatus = app.RecoveryStatusDTO{Jobs: 1, Records: int64(len(wantRows))}
+	}
+	if !reflect.DeepEqual(gotWrites, wantWrites) || !reflect.DeepEqual(gotRows, wantRows) || saved.Job.RecoveryRecords != int64(len(wantRows)) || saved.Status != wantStatus {
 		t.Fatalf("required recovery refusal changed writes or retained recovery identities: writes=%v want=%v rows=%v want=%v status=%+v", gotWrites, wantWrites, gotRows, wantRows, saved.Status)
 	}
 }
@@ -240,7 +206,7 @@ func assertUploadDLOManifestBody(t *testing.T, account *Account, container, name
 }
 
 func uploadRecoveryStopCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, fault := range []string{"captured", "committing", "committed", "control"} {
+	for _, fault := range []string{"captured", "control"} {
 		t.Run(fault, func(t *testing.T) { uploadRecoveryStop(t, makeHarness(t), fault) })
 	}
 }
