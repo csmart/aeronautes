@@ -108,6 +108,9 @@
         jump's notice above says more, so it stands alone. -->
       <div class="backstage-banner">{browser.segmentStoreCaution}</div>
     {/if}
+    <!-- The path and, at its end, the listing's refresh as a small button
+      named by its hover text, as the Containers column has it. -->
+    <div class="path-row">
     <nav class="breadcrumb num" aria-label="Path">
       <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>
       <button class="crumb root" onclick={() => browser.goTo("")}>
@@ -123,6 +126,19 @@
         <span class="prefix-filter">Prefix: {JSON.stringify(partialPrefix)}</span>
       {/if}
     </nav>
+      <button
+        class="tool"
+        title="Refresh: re-read this listing from the server"
+        aria-label="Refresh listing"
+        aria-busy={browser.entriesRefreshing}
+        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
+        onclick={() => browser.refreshView()}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M13.25 8A5.25 5.25 0 1 1 11.71 4.29M11.71 1.79V4.29H9.21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
 
     <div class="fields">
       <label class="field">
@@ -149,9 +165,12 @@
       </button>
     </div>
 
-    <!-- Three groups by weight: the transfers, the quieter listing tools,
-      and the deletions apart at the end so they are never next to a
-      transfer the operator meant to press. -->
+    <!-- Two rows by weight: the transfers with the quieter listing tool,
+      and the deletions on a row of their own so they are never next to a
+      transfer the operator meant to press. A button whose label follows the
+      selection sits in a slot as wide as its widest label, and a button
+      that comes and goes has a slot kept for it, so selecting a row moves
+      neither the buttons nor the list below them. -->
     <div class="actions" role="group" aria-label="Actions">
       {#if v1Offers.upload}
         <button
@@ -164,36 +183,32 @@
         </button>
       {/if}
       {#if v1Offers.download}
-        <button
-          class="find"
-          title={leavesFolders ? "Selected folders are not downloaded; a warning says so before anything opens" : "Download it to a local directory"}
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => browser.requestTransfer("download")}
-        >
-          Download {sourceWord}…
-        </button>
+        <span class="steady">
+          <span class="sizer" aria-hidden="true">Download container…</span>
+          <button
+            class="find"
+            title={leavesFolders ? "Selected folders are not downloaded; a warning says so before anything opens" : "Download it to a local directory"}
+            disabled={browser.containerName === null || browser.backstageFrom !== null}
+            onclick={() => browser.requestTransfer("download")}
+          >
+            Download {sourceWord}…
+          </button>
+        </span>
       {/if}
       {#if v1Offers.copy}
-        <button
-          class="find"
-          title={leavesFolders ? "Selected folders are not copied; a warning says so before anything opens" : "Copy it to another account, container or folder"}
-          disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => browser.requestTransfer("copy")}
-        >
-          Copy {sourceWord}…
-        </button>
+        <span class="steady">
+          <span class="sizer" aria-hidden="true">Copy container…</span>
+          <button
+            class="find"
+            title={leavesFolders ? "Selected folders are not copied; a warning says so before anything opens" : "Copy it to another account, container or folder"}
+            disabled={browser.containerName === null || browser.backstageFrom !== null}
+            onclick={() => browser.requestTransfer("copy")}
+          >
+            Copy {sourceWord}…
+          </button>
+        </span>
       {/if}
       <span class="gap"></span>
-      <button
-        class="refresh quiet"
-        title="Re-read this listing from the server"
-        aria-label="Refresh listing"
-        aria-busy={browser.entriesRefreshing}
-        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
-        onclick={() => browser.refreshView()}
-      >
-        Refresh
-      </button>
       <button
         class="find quiet"
         title="Count the objects under this prefix: streams the listing page by page and keeps no names"
@@ -203,55 +218,69 @@
         {browser.countRunning ? "Stop counting" : "Count objects"}
       </button>
       <span class="deletions">
-      {#if rowDelete}
-        <!-- One selected row's own deletion, as the Delete key and the
-          inspector open it, so a single file is deleted from here too. -->
-        <button class="find danger" title="Delete only the selected row, checked against what was listed" onclick={() => openSelectionDelete(browser)}>
-          {rowDelete.label}
-        </button>
-      {/if}
-      {#if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
-        <button
-          class="find danger"
-          title="Delete the selected objects as one job: an object listed with a size is checked against its listing, a zero-byte or SLO-listed row is read again first; prefix rows are left out"
-          onclick={() => browser.openSelectedDelete()}
-        >
-          Delete selected…
-        </button>
-      {/if}
+      <!-- The selection's own deletion: one row's, known once the row has
+        been read, or the selected set's. Never both, so they share a slot. -->
+      <span class="steady">
+        <span class="sizer" aria-hidden="true">Delete manifest…</span>
+        {#if rowDelete}
+          <!-- One selected row's own deletion, as the Delete key and the
+            inspector open it, so a single file is deleted from here too. -->
+          <button class="find danger" title="Delete only the selected row, checked against what was listed" onclick={() => openSelectionDelete(browser)}>
+            {rowDelete.label}
+          </button>
+        {:else if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
+          <button
+            class="find danger"
+            title="Delete the selected objects as one job: an object listed with a size is checked against its listing, a zero-byte or SLO-listed row is read again first; prefix rows are left out"
+            onclick={() => browser.openSelectedDelete()}
+          >
+            Delete selected…
+          </button>
+        {/if}
+      </span>
       {#if v1Offers.bulkDelete}
         <!-- Each deletion is its own action (ADR 0121). Inside a folder only
           the folder's is offered, so a container's deletion is never one
           click from a prefix's; the container's two are at its top and in
           its menu. -->
         {@const noContainer = browser.containerName === null || browser.backstageFrom !== null}
-        {#if browser.prefix === "" && browser.selectedPrefix === ""}
-          <button
-            class="find danger"
-            title="Delete everything in this container; the container and its settings stay"
-            disabled={noContainer}
-            onclick={() => (browser.deleteOpen = "empty")}
-          >
-            Empty container…
-          </button>
-          <button
-            class="find danger"
-            title="Delete everything in this container, then the container itself with its settings"
-            disabled={noContainer}
-            onclick={() => (browser.deleteOpen = "delete_container")}
-          >
-            Delete container…
-          </button>
-        {:else}
-          <button
-            class="find danger"
-            title="Delete everything under this prefix; not only the selected objects"
-            disabled={noContainer}
-            onclick={() => (browser.deleteOpen = "prefix")}
-          >
-            Delete prefix…
-          </button>
-        {/if}
+        <span class="steady bulk">
+          {#if browser.prefix === ""}
+            <!-- At a container's top one selected folder swaps the two
+              container actions for its own; the slot stays two wide. -->
+            <span class="sizer" aria-hidden="true">Empty container…</span>
+            <span class="sizer second" aria-hidden="true">Delete container…</span>
+          {/if}
+          <span class="bulk-buttons">
+          {#if browser.prefix === "" && browser.selectedPrefix === ""}
+            <button
+              class="find danger"
+              title="Delete everything in this container; the container and its settings stay"
+              disabled={noContainer}
+              onclick={() => (browser.deleteOpen = "empty")}
+            >
+              Empty container…
+            </button>
+            <button
+              class="find danger"
+              title="Delete everything in this container, then the container itself with its settings"
+              disabled={noContainer}
+              onclick={() => (browser.deleteOpen = "delete_container")}
+            >
+              Delete container…
+            </button>
+          {:else}
+            <button
+              class="find danger"
+              title="Delete everything under this prefix; not only the selected objects"
+              disabled={noContainer}
+              onclick={() => (browser.deleteOpen = "prefix")}
+            >
+              Delete prefix…
+            </button>
+          {/if}
+          </span>
+        </span>
       {/if}
       </span>
     </div>
@@ -465,12 +494,40 @@
     overflow-wrap: anywhere;
   }
 
+  .path-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
   .breadcrumb {
     display: flex;
     align-items: center;
     gap: var(--space-1);
     min-height: 1.8rem;
     flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* The Containers column's small tool button. */
+  .tool {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    color: var(--color-accent-strong);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  .tool:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .crumb {
@@ -526,11 +583,47 @@
     width: var(--space-2);
   }
 
-  /* Pushed right, and kept right when the row wraps. */
+  /* A row of its own, at the right. Where the pane is too narrow for one
+    line, the slot kept for the selection's deletion goes under the
+    container's or the folder's, not above them as an empty line. */
   .actions .deletions {
     display: flex;
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
     gap: var(--space-2);
-    margin-left: auto;
+    flex-basis: 100%;
+  }
+
+  /* A slot that is always as wide as the hidden label inside it, whatever
+    the button there reads and whether or not there is one. */
+  .steady {
+    display: inline-grid;
+  }
+
+  .steady > * {
+    grid-area: 1 / 1;
+  }
+
+  .steady .sizer {
+    visibility: hidden;
+    border-color: transparent;
+  }
+
+  /* Two labels wide, with the buttons at its right. */
+  .steady.bulk {
+    grid-template-columns: auto auto;
+    column-gap: var(--space-2);
+  }
+
+  .steady.bulk > .sizer.second {
+    grid-area: 1 / 2;
+  }
+
+  .steady.bulk > .bulk-buttons {
+    grid-area: 1 / 1 / 2 / 3;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
   }
 
   .actions .quiet {
@@ -583,7 +676,7 @@
   }
 
   .find,
-  .refresh {
+  .sizer {
     padding: var(--space-1) var(--space-3);
     font: inherit;
     font-size: var(--text-sm);
@@ -593,11 +686,6 @@
     border-radius: var(--radius-control);
     cursor: pointer;
     white-space: nowrap;
-  }
-
-  .refresh:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 
   .columns {
