@@ -508,6 +508,26 @@ func TestLiveRemoteDestinationRefused(t *testing.T) {
 	}
 }
 
+// ADR 0122 decision 3: an upload's runner is told its destination is the
+// names themselves, and takes a folder or the container's top; a ".."
+// segment is refused whatever the destination is, and a runner that was not
+// told so still refuses a live name, which is what a copy relies on.
+func TestALiveDestinationIsTakenOnlyWhenTheRunnerIsToldSo(t *testing.T) {
+	live, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0"), LiveDestination: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, dst := range []string{"aeronautes_dst:c/folder", "aeronautes_dst:c/folder/sub", "aeronautes_dst:c"} {
+		if _, err := live.Copy(ctx, remotes(), t.TempDir(), dst, []string{"x"}, nil); err != nil {
+			t.Errorf("a live destination %q was refused: %v", dst, err)
+		}
+	}
+	if _, err := live.Copy(ctx, remotes(), t.TempDir(), "aeronautes_dst:c/folder/../other", []string{"x"}, nil); err == nil {
+		t.Error("a destination with a '..' segment was accepted")
+	}
+}
+
 func TestStagingShapeIsAPathSegment(t *testing.T) {
 	// grok follow-up 3 P2: the staging marker must be a real path
 	// SEGMENT, not a substring of a live user name, and must not smuggle

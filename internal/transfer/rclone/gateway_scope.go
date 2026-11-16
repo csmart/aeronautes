@@ -14,13 +14,30 @@ const (
 	maxGatewayBulkNames = 10000
 )
 
+// gatewayScope is where the child may write: one object when exact, or
+// everything under object in the container and in that container's segments
+// container. An empty object, which only a live destination may have, is the
+// whole container: an upload to a container's top writes each file at its
+// own name there (ADR 0122 decision 3).
 type gatewayScope struct {
 	container string
 	object    string
 	exact     bool
+	// keepsObjects refuses every DELETE the child sends. The engine, writing
+	// over a large object, deletes that object's old segments; this is how
+	// they are kept where they still belong to something (destinationRules).
+	keepsObjects bool
 }
 
-func destinationScope(remote, destination string, exact bool) (*gatewayScope, error) {
+// destinationRules say how a child may use its remote destination: one exact
+// object or everything under a path; a live destination, the names
+// themselves, or a staged one; and whether it may delete there at all.
+type destinationRules struct {
+	exact, live, keepsObjects bool
+}
+
+func destinationScope(remote, destination string, rules destinationRules) (*gatewayScope, error) {
+	exact, live := rules.exact, rules.live
 	path, matched := strings.CutPrefix(destination, remote+":")
 	if !matched {
 		return nil, nil
@@ -29,13 +46,32 @@ func destinationScope(remote, destination string, exact bool) (*gatewayScope, er
 	if !exact {
 		object = strings.TrimSuffix(object, "/")
 	}
-	if !found || !gatewayPathSafe(container) || !gatewayPathSafe(object) {
-		return nil, fmt.Errorf("gateway destination needs a safe container and staged object path")
+	wholeContainer := live && !exact && object == ""
+	if !gatewayPathSafe(container) || (!wholeContainer && (!found || !gatewayPathSafe(object))) {
+		return nil, fmt.Errorf("gateway destination needs a safe container and object path")
 	}
-	if err := checkRemoteDestStaged(destination); err != nil {
+	if err := checkRemoteDest(destination, live); err != nil {
 		return nil, err
 	}
-	return &gatewayScope{container: container, object: object, exact: exact}, nil
+	return &gatewayScope{container: container, object: object, exact: exact, keepsObjects: rules.keepsObjects}, nil
+}
+
+// gatewayReadSafe is the rule for a path the child only reads. An empty
+// segment is allowed there: it is an ordinary part of an object's name, and
+// the engine, replacing a large object whose manifest names its segments
+// with a trailing slash, as python-swiftclient writes it, asks for a name
+// under that prefix with two slashes in a row. Refusing the read made the
+// engine leave that object's old segments without saying so.
+func gatewayReadSafe(path string) bool {
+	if !utf8.ValidString(path) || strings.ContainsRune(path, 0) {
+		return false
+	}
+	for segment := range strings.SplitSeq(path, "/") {
+		if segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func gatewayPathSafe(path string) bool {
@@ -54,13 +90,17 @@ func (s *gatewayScope) allowsObject(container, object string) bool {
 	if s == nil || !gatewayPathSafe(object) {
 		return false
 	}
+	under := s.object + "/"
+	if s.object == "" {
+		under = ""
+	}
 	if container == s.container {
 		if s.exact {
 			return object == s.object
 		}
-		return strings.HasPrefix(object, s.object+"/")
+		return strings.HasPrefix(object, under)
 	}
-	return container == s.container+"_segments" && strings.HasPrefix(object, s.object+"/")
+	return container == s.container+"_segments" && strings.HasPrefix(object, under)
 }
 
 func (s *gatewayScope) allowsWrite(req *http.Request, relative string) bool {

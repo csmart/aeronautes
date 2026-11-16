@@ -38,7 +38,7 @@ func TestGatewaySetupFailureClosesEarlierListeners(t *testing.T) {
 			if failure == "mixed trust" {
 				pair[1].InsecureTLS = true
 			}
-			local, cleanup, err := startGatewaysWith(t.Context(), pair, "aeronautes_dst:owned/"+gatewayStage, false, 64, create)
+			local, cleanup, err := startGatewaysWith(t.Context(), pair, "aeronautes_dst:owned/"+gatewayStage, destinationRules{}, 64, create)
 			if err == nil || local != nil || cleanup != nil || len(opened) == 0 {
 				t.Fatal("setup failure did not return an empty result")
 			}
@@ -67,7 +67,7 @@ func TestGatewayCancelDeadlineRevokesWithoutChildExit(t *testing.T) {
 	}))
 	defer upstream.Close()
 	remote := Remote{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}
-	local, closeAll, err := startGateways(ctx, []Remote{remote}, "/unused/download", true, 64)
+	local, closeAll, err := startGateways(ctx, []Remote{remote}, "/unused/download", destinationRules{exact: true}, 64)
 	if err != nil {
 		t.Fatal(err)
 	}

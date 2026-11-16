@@ -89,7 +89,8 @@ func TestGatewayRefusesUnscopedRequests(t *testing.T) {
 		{"other account", "GET", "/v1/AUTH_other/owned/one", "local", nil},
 		{"account sibling", "GET", gatewayAccount + "_other/owned/one", "local", nil},
 		{"dot segment", "GET", gatewayAccount + "/owned/%2e%2e/live", "local", nil},
-		{"empty segment", "GET", gatewayAccount + "/owned/a//b", "local", nil},
+		{"empty segment in a write", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/a//b", "local", batch},
+		{"empty segment in a delete", "DELETE", gatewayAccount + "/owned_segments/" + gatewayStage + "/a//b", "local", batch},
 		{"source put", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", nil},
 		{"source delete", "DELETE", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", nil},
 		{"live destination", "PUT", gatewayAccount + "/owned/live", "local", batch},
@@ -125,12 +126,67 @@ func TestGatewayRefusesUnscopedRequests(t *testing.T) {
 	}
 }
 
+// ADR 0122 decision 3: an upload's child writes at the names themselves. It
+// may write and delete under the destination folder, in the container and in
+// its sidecar container, or anywhere in both when the destination is the
+// container's top, and nowhere else; and where a replaced large object's
+// segments must be kept it may delete nothing at all, one by one or in bulk.
+func TestGatewayConfinesAnUploadToItsDestination(t *testing.T) {
+	folder := &gatewayScope{container: "owned", object: "folder"}
+	top := &gatewayScope{container: "owned"}
+	keeps := &gatewayScope{container: "owned", object: "folder", keepsObjects: true}
+	for _, test := range []struct {
+		name, method, target string
+		scope                *gatewayScope
+		allowed              bool
+	}{
+		{"a file under the folder", "PUT", "/owned/folder/sub/file", folder, true},
+		{"a segment under the folder", "PUT", "/owned_segments/folder/file/ts/00000000", folder, true},
+		{"an old segment under the folder", "DELETE", "/owned_segments/folder/file/old/00000000", folder, true},
+		{"a file beside the folder", "PUT", "/owned/folder-other/file", folder, false},
+		{"a file above the folder", "PUT", "/owned/file", folder, false},
+		{"a segment beside the folder", "DELETE", "/owned_segments/elsewhere/00000000", folder, false},
+		{"another container", "PUT", "/other/folder/file", folder, false},
+		{"another sidecar", "PUT", "/other_segments/folder/file/ts/00000000", folder, false},
+		{"a file at the top", "PUT", "/owned/file", top, true},
+		{"a segment at the top", "PUT", "/owned_segments/file/ts/00000000", top, true},
+		{"an old segment at the top", "DELETE", "/owned_segments/file/old/00000000", top, true},
+		{"another container from the top", "PUT", "/other/file", top, false},
+		{"another sidecar from the top", "DELETE", "/other_segments/file/old/00000000", top, false},
+		{"a write where segments are kept", "PUT", "/owned/folder/file", keeps, true},
+		{"a delete where segments are kept", "DELETE", "/owned_segments/folder/file/old/00000000", keeps, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newGatewayFixture(t, test.scope)
+			status, _ := f.request(t, test.method, gatewayAccount+test.target, f.remote.Token, "", nil)
+			if forwarded := status == http.StatusOK && len(f.events) == 1; forwarded != test.allowed {
+				t.Fatalf("status=%d upstream requests=%d, want allowed=%v", status, len(f.events), test.allowed)
+			}
+		})
+	}
+	// The same bulk delete of an old segment is forwarded for an upload that
+	// may remove it, and refused whole where segments are kept.
+	for name, scope := range map[string]*gatewayScope{"a bulk delete under the folder": folder, "a bulk delete where segments are kept": keeps} {
+		t.Run(name, func(t *testing.T) {
+			f := newGatewayFixture(t, scope)
+			status, _ := f.request(t, "DELETE", gatewayAccount+"?bulk-delete=1", f.remote.Token,
+				"/owned_segments/folder/file/old/00000000\n", http.Header{"Content-Type": {"text/plain"}})
+			if forwarded := status == http.StatusOK && len(f.events) == 1; forwarded == scope.keepsObjects {
+				t.Fatalf("status=%d upstream requests=%d, want forwarded=%v", status, len(f.events), !scope.keepsObjects)
+			}
+		})
+	}
+}
+
 func TestGatewayPreservesScopedPathsAndQueries(t *testing.T) {
 	scope := &gatewayScope{container: "owned", object: gatewayStage}
 	for _, test := range []struct{ method, path string }{
 		{"GET", gatewayAccount},
 		{"HEAD", gatewayAccount + "/owned"},
 		{"GET", gatewayAccount + "/owned/a%2fb%252F%20%2B%25?prefix=a%252Fb+space&marker=a%2Bb"},
+		// A read may name an empty segment: the engine asks for one under a
+		// manifest prefix that ends in a slash.
+		{"HEAD", gatewayAccount + "/owned_segments/subject/run//0000000000000001"},
 		{"PUT", gatewayAccount + "/owned/" + gatewayStage + "/literal%252F%20%2b%25"},
 		{"PUT", gatewayAccount + "/owned_segments"},
 		{"PUT", gatewayAccount + "/owned_segments/" + gatewayStage + "/object/ts/00000000"},
