@@ -215,7 +215,9 @@
         browser.selectAll();
       }
     } else if (event.key === "Escape") {
-      if (browser.chosenRows.length > 0) {
+      // One selected row or several: with nothing selected the toolbar
+      // acts on the folder or container again (ADR 0093 decision 1).
+      if (browser.selectionCount > 0) {
         event.preventDefault();
         browser.clearSelection();
       }
