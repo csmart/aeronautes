@@ -73,7 +73,7 @@ func deleteJourney(w *world, a *account, round int) {
 	w.remaining(a, c, "keep.txt")
 
 	// The container's contents, then the container.
-	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Mode: app.ModeEmpty, Confirm: c})
+	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Mode: app.ModeEmpty, Confirm: "empty " + c})
 	if err != nil {
 		t.Fatalf("empty the container: %s", failure(err))
 	}

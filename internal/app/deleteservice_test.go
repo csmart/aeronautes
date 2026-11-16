@@ -88,20 +88,22 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `does not match "media/scope/"`) {
 		t.Errorf("the container name armed a prefix deletion: %v", err)
 	}
-	// Deleting a container has words of its own, so the name that arms an
-	// emptying never deletes the container, and the deletion's words never
-	// start an emptying (ADR 0121 decision 3).
-	_, err = service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Confirm: "media",
-	})
-	if err == nil || !strings.Contains(err.Error(), `does not match "delete media"`) {
-		t.Errorf("the container name armed a container deletion: %v", err)
-	}
-	_, err = service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "delete media",
-	})
-	if err == nil || !strings.Contains(err.Error(), `does not match "media"`) {
-		t.Errorf("the deletion's words armed an emptying: %v", err)
+	// Each container job is armed by its own verb and the name, so the bare
+	// name starts neither, the emptying's words never delete the container,
+	// and the deletion's words never empty it (ADR 0121 decision 3).
+	for name, refused := range map[string]struct {
+		mode          DeleteMode
+		typed, wanted string
+	}{
+		"the name for a deletion":              {ModeDeleteContainer, "media", "delete media"},
+		"the emptying's words for a deletion":  {ModeDeleteContainer, "empty media", "delete media"},
+		"the name for an emptying":             {ModeEmpty, "media", "empty media"},
+		"the deletion's words for an emptying": {ModeEmpty, "delete media", "empty media"},
+	} {
+		_, err = service.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: refused.mode, Confirm: refused.typed})
+		if err == nil || !strings.Contains(err.Error(), `does not match "`+refused.wanted+`"`) {
+			t.Errorf("%s armed the job: %v", name, err)
+		}
 	}
 	// Prefix mode without a prefix refuses.
 	if _, err := service.StartDelete(ctx, DeleteRequestDTO{
@@ -175,7 +177,7 @@ func TestEmptyAndDeleteContainerJobs(t *testing.T) {
 	}
 
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "media",
+		BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "empty media",
 	})
 	if err != nil {
 		t.Fatal(err)

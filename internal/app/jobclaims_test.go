@@ -202,7 +202,7 @@ func TestNoDeletionStartsOverALiveUploadsStage(t *testing.T) {
 	awaitTerminal(t, h, id)
 	deadline := time.Now().Add(terminalWait)
 	for {
-		started, err = del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "media"})
+		started, err = del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "empty media"})
 		if err == nil {
 			break
 		}
@@ -302,7 +302,7 @@ func TestAnUploadRefusedForASweepKeepsItsSelection(t *testing.T) {
 			once.Do(func() { close(held); <-release })
 		}
 	}
-	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "media"})
+	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Confirm: "empty media"})
 	if err != nil {
 		t.Fatal(err)
 	}

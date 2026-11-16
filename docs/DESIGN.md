@@ -2032,7 +2032,7 @@ Partial failure must retain exact failed object names where practical.
 These are different operations.
 They are separate actions in the window, as the prefix deletion is: each opens the dialog on its one job, with no choice of job inside it ([ADR 0121](adr/0121-emptying-and-deleting-a-container-are-separate-actions.md)).
 The toolbar offers the prefix's inside a folder or for the one folder selected alone, and the container's two wherever there is no single prefix to name; a container's menu offers its two from anywhere.
-Emptying is armed by the container's name and deleting by `delete ` and the name, so the words for one never start the other; a prefix is armed by its scope (§32).
+Emptying is armed by `empty ` and the container's name and deleting by `delete ` and the name, so the words for one never start the other and the bare name starts neither; a prefix is armed by its scope (§32).
 
 ### Empty Container
 

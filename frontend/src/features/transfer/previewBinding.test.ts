@@ -383,12 +383,12 @@ it.each(["pending", "ready"])("Copy mode change and return requires a new previe
 
 // ADR 0121: the dialog is opened for one job and offers no choice of job. Its
 // heading and its button name the job, and each job has its own words, so the
-// name that arms an emptying never arms the container's deletion, nor that
-// deletion's words an emptying.
+// bare name arms no job, the words for an emptying never arm the container's
+// deletion, nor that deletion's words an emptying.
 it.each([
-  ["prefix", "Delete prefix", "media/selected/", ["media", "delete media"]],
-  ["empty", "Empty container", "media", ["delete media", "media/selected/"]],
-  ["delete_container", "Delete container", "delete media", ["media", "media/selected/"]],
+  ["prefix", "Delete prefix", "media/selected/", ["media", "empty media", "delete media"]],
+  ["empty", "Empty container", "empty media", ["media", "delete media", "media/selected/"]],
+  ["delete_container", "Delete container", "delete media", ["media", "empty media", "media/selected/"]],
 ] as const)("Delete opened for %s names that job, offers no other and asks for its own words", async (job, heading, words, others) => {
   const f = show("delete", undefined, (_api, browser) => { browser.deleteOpen = job; });
   expect(f.root.querySelector("h2")?.textContent?.trim()).toBe(heading);

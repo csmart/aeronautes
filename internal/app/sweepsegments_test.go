@@ -151,10 +151,14 @@ func TestSweepWithSegmentsIsArmedByItsOwnWords(t *testing.T) {
 		"the plain words with the option": {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Segments: true, Confirm: "media/scope/"},
 		"the option's words without it":   {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/ and segments"},
 		"a container with the option":     {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "delete media"},
-		// ADR 0121 decision 3 holds with the option too: the words that empty
-		// a container never delete it, nor the deletion's words empty it.
-		"an emptying's words for a deletion": {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "media and segments"},
+		// ADR 0121 decision 3 holds with the option too: the bare name starts
+		// neither container job, the words that empty a container never delete
+		// it, nor the deletion's words empty it.
+		"the name for a deletion":            {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "media and segments"},
+		"the name for an emptying":           {BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Segments: true, Confirm: "media and segments"},
+		"an emptying's words for a deletion": {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "empty media and segments"},
 		"a deletion's words for an emptying": {BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Segments: true, Confirm: "delete media and segments"},
+		"an emptying with the option":        {BookmarkID: bookmark, Container: "media", Mode: ModeEmpty, Segments: true, Confirm: "empty media"},
 	} {
 		if jobID, err := service.StartDelete(ctx, req); err == nil || !strings.Contains(err.Error(), "does not match") {
 			t.Fatalf("%s: job %q, err %v; want the confirmation refused", name, jobID, err)
