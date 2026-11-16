@@ -30,8 +30,8 @@ The role limit is additional authority control; a local token without these rest
 | --- | --- | --- |
 | Source account | `GET`, `HEAD` | Fixed upstream account; no mutation methods |
 | Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters; a read may name an empty path segment, which a write may not |
-| Upload destination | `PUT`, `DELETE` | An upload's `Copy` writes each file at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept |
-| Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage |
+| Upload or copy destination | `PUT`, `DELETE` | The `Copy` of an upload or of a copy writes each object at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept |
+| Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage. No job asks for this scope since the copy step of ADR 0122; it stays until that record's removal step |
 | Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
 | Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
 | Matching sidecar container | Zero-body creation `PUT`; `GET`/`HEAD` | The gateway issues a fresh authenticated destination-container HEAD at validation time; require its one exact policy value, or no header when the HEAD omitted it; refuse other policy/ACL/metadata/versioning/history changes; no container deletion |
@@ -172,6 +172,21 @@ forbidden rather than merely unnecessary.
   remain, no manifest. Both paths end in reconciliation.
 - Custom `X-Object-Meta-*` is not copied (with or without `-M`); Aeronautes re-applies
   metadata natively (§27.4). Destination DLOs get their own manifest.
+- Store to store, at final names, measured 2026-11-16 on the owned Swift with the copy
+  flags ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4):
+  - one info line for each object written, `Copied (new)` or `Copied (replaced existing)`,
+    naming the object as it was listed; a listed name that is not at the source gets no
+    line and the child exits 0; a source that cannot be read whole gets an error line for
+    that object, a non-zero exit, and nothing at the destination name;
+  - the content type is copied, and `X-Object-Meta-Mtime` is the source's own when it has
+    one and the time the source was last changed when it has none; user metadata,
+    `Content-Disposition` and `Content-Encoding` are not copied;
+  - a dynamic or static source larger than the chunk size arrives as a dynamic large
+    object, and when cut at the source's chunk size it has the source's entity tag;
+  - a link is copied as its target's bytes, as a plain object;
+  - writing over a large object removes that object's old segments;
+  - a POST to the dynamic manifest that does not repeat `X-Object-Manifest` leaves an
+    empty plain object; with the header the object stays whole and its metadata is replaced.
 
 Re-run the seam spike suite on any pin upgrade; the unsafe-name classification (dot
 segments included) is verified per version by the compatibility matrix below.
@@ -199,6 +214,8 @@ concrete improvement path for newline-bearing names (they currently route native
 validated end-to-end before any pin change relies on it.
 
 ## copyto
+
+No job uses `copyto` since the copy step of ADR 0122; what follows describes the staged copy it served, and goes with the removal step.
 
 The §28.6 staging path uses `rclone copyto <src-remote:container/name> <dst-remote:container/staged-name>`
 for single-object copies under a different (always Aeronautes-generated, unique, rclone-safe)

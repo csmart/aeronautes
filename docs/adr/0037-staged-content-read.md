@@ -2,6 +2,7 @@
 
 **Status:** Accepted; the native prerequisite and first consumer have passed separate local implementation reviews and require one combined current-base delivery with ADR 0038.
 **Scope:** One native-read prerequisite and its first plain-source to staged-DLO consumer within DS-04/P16.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a copy has no staged object, so the staged content read of this record is no longer made for copies.
 
 ## Problem and oracle
 

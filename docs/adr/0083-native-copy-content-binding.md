@@ -4,6 +4,7 @@
 This line read "Proposed" until 16 October 2026, ten days after the implementation landed, and that staleness was not harmless: it was read as establishing that the route did not exist, twice — once into the finish line's L05 row and once into a draft of [ADR 0086](0086-mirror-deletes-what-the-source-does-not-have.md), which told the operator a mirror would have to stage every object or wait for a binding that was already there.
 This is the last member of the sequence [ADR 0045](0045-route-content-binding.md) opened: that decision delivered the local download route and named the native copy route, the native upload route and the staged upload commit as remaining; ADR 0080 took the two upload paths and handed this one back in terms.
 **Scope:** `nativeCopy` in `internal/transfer/copy/executor.go`. Finish-line item L05, gates P16 and P21. Nothing about the staged copy route changes; [ADR 0042](0042-source-content-ladder.md) bound that one.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: the application's own copy still declares a plain source's entity tag on its one PUT, and the store's check of it is that route's outcome; the read after the PUT is no longer made.
 
 ## Problem
 

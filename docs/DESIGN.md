@@ -1542,11 +1542,11 @@ DO NOT auto-delete
 Reconciliation performs no automatic deletion under ADR 0020.
 It retains uncertain staging and segment data and all recovery records; explicit force cleanup remains a separate action with sharing risk disclosed.
 
-One named exception exists and is not a general licence: an **acknowledged local upload** that replaces a large object.
+One named exception exists and is not a general licence: an **acknowledged local upload**, or since its own step of ADR 0122 an **acknowledged copy**, that replaces a large object.
 Since 16 November 2026 the transfer engine writes over the name and removes the predecessor's old segments itself, as it does when used alone ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3, which replaces [ADR 0081](adr/0081-upload-overwrite-acknowledgement.md) decision 5).
-It can delete only where it can write, under the upload's folder in the container and in its segments container, and its deletes are refused where the container keeps versions or the operator's option is off.
+It can delete only where it can write, under the folder the job writes to in the container and in its segments container, and its deletes are refused where the container keeps versions or the operator's option is off.
 It rests on the operator's accepted exposure and the reference implementation's precedent, not on an exclusivity proof — which §65.10 still owes.
-Copy, Mirror and reconciliation are unchanged: the stage-and-commit protocol's step 7 below still reclaims nothing without `ExclusiveOwnershipProof`.
+Mirror and reconciliation are unchanged: nothing else reclaims without `ExclusiveOwnershipProof`, and the stage-and-commit protocol below is history for uploads and copies, which no longer stage.
 
 **Learning the generated prefix is a Phase-0 investigation** (§60): determine whether the actual segment prefix is reliably obtainable from rclone structured/JSON output or another supported interface. Do not depend permanently on parsing unstable human-readable log strings unless that behaviour is explicitly tested and pinned. A future upstream rclone enhancement (caller-specified segment prefix, or machine-readable reporting of the generated namespace) would make this materially cleaner.
 
@@ -1812,8 +1812,8 @@ Two consequences, both locked for v1:
 **(a) The rclone boundary is absolute: Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.**
 No raw `rclone sync` delete phase, `purge`, `delete` or rclone write to an existing live name is allowed, on any scope (§36).
 No point-in-time scan can make a later rclone `Remove`/`Update` safe: a destination can become a shared-segment DLO/SLO after the scan, and rclone would then follow its current segments.
-Copy routes engine writes through unique staging names and commits live names natively.
-An upload is the exception since 16 November 2026: by the operator's decision its engine writes each file at its name, and what the engine or the store answers is the file's outcome ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3).
+Until 16 November 2026 every engine write went to a unique staging name and the live name was committed natively.
+By the operator's decision of that day the engine of an upload and of a copy writes each object at its name, and what the engine or the store answers is the object's outcome ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4).
 A native manifest-only DELETE does not follow segments, but it can still remove a replacement at that name or an object another manifest references.
 Stage-and-commit alone does not preserve a writer arriving after the final HEAD.
 Planned-new commits use the established conditional-create path and refuse a concurrently created destination; an unconditional fallback is forbidden.
@@ -2120,10 +2120,9 @@ A DLO prefix observed from one manifest does **not** prove that no other manifes
 
 ## 36. The rclone boundary is absolute
 
-rclone copies only to unique names under an Aeronautes staging prefix (§28.6).
-An upload's engine writes each file at its name under the destination folder ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3): the gateway confines it to that folder in the container and in its segments container, and refuses its deletes where a replaced large object's segments must be kept.
-This includes planned-new objects, whose live destination is committed natively with conditional creation.
-Existing-destination replacement remains subject to ADR 0020's P05 refusal and later concurrency gate.
+rclone is never given `sync`, `purge` or `delete`, and writes only where its gateway lets it.
+The engine of an upload or a copy writes each object at its name under the destination folder ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4): the gateway confines it to that folder in the container and in its segments container, and refuses its deletes where a replaced large object's segments must be kept.
+A name the destination already holds differently is written over only when the operator confirmed replacing, and is refused otherwise.
 
 Plus reads: downloads, and the source half of every copy.
 

@@ -2,6 +2,7 @@
 
 **Status:** Accepted (2026-08-28)
 **Detail:** `DESIGN.md` §28.5, §30; requirements K-XFER-005, K-XFER-015
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a copy no longer stages and commits; the engine writes each object at its name, and the stage-and-commit path of this record is history.
 
 ## Context
 

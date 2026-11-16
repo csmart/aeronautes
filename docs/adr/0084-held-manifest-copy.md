@@ -2,6 +2,7 @@
 
 **Status:** Proposed as an amendment to [ADR 0083](0083-native-copy-content-binding.md) decision 2, which was wrong. The contract it amends is accepted and merged; this records what that decision cost and corrects it rather than rewriting it.
 **Scope:** `nativeCopy` in `internal/transfer/copy/executor.go`, for a manifest source. Finish-line item L05, gates P16 and P21.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a manifest source on the application's own route is written in one pass, with no hold, no comparison against its manifest and no declared digest; the 16 MiB bound of this record is gone and the 5 GiB single-PUT limit remains.
 
 ## What ADR 0083 decision 2 got wrong
 

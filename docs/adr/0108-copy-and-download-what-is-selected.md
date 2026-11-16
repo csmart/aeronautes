@@ -4,6 +4,7 @@
 Amended on 15 November 2026, during the 0.5.0 test run: the operator selected a container's files and a folder, pressed "Copy selected…", and the folder was not copied, with one quiet line in the dialog to say so. Their decision: in 0.5.0 a selection that holds a folder beside other rows, or more than one folder, opens a warning before anything else, and the behaviour itself has to change after that, so that a selection copies its folders as it copies its files. Decision 1 and the frontend proof are amended below for the warning; copying a selection's folders is owed and is not decided here.
 **Scope:** `TransferService.PlanCopy`, `StartCopy`, the copy job's planning passes, its verification and `RerunJob`; `LocalTransferService.PreflightDownload` and `StartDownload`; the working list's Copy and Download buttons and the two dialogs.
 **Amends:** DESIGN §65.9 item 9 (as amended by its 11 November paragraph) for a copy of named objects.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a name under `.aeronautes/stage/` is an ordinary name, so it may be a member, and the refusal of a source that holds the copy's working area is gone with the stage.
 
 ## Context
 
