@@ -21,10 +21,14 @@ commit, phase by phase, following the design.
 
 ## Non-negotiable invariants (see the sections for the full rules)
 
-- **The rclone boundary is absolute.** rclone writes only planned-new or uniquely-staged names; it
-  never overwrites or deletes an existing object — no `sync`, `purge`, or `delete`, on any scope.
-  All destruction is **Aeronautes-native** and manifest-only, with an authoritative HEAD before any
-  mutation whose semantics depend on the object's current identity. (§28.6, §36, K-XFER-014)
+- **The store's answer is the result (ADR 0122).**
+  By the operator's decision of 16 November 2026 the application does not guard against another program writing to the same names: it sends a request, and what the store or the transfer engine answers is the outcome.
+  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules below: deletions and uploads so far, with copies and downloads to follow.
+  A deletion sends each name's DELETE and reads nothing before or after it.
+- **The rclone boundary.** rclone is never given `sync`, `purge` or `delete`.
+  For an upload it writes each file at its name, over what is there once the operator confirmed the replacement, and it removes a replaced large object's old segments only under the upload's folder and only where the gateway lets it (ADR 0122 decision 3).
+  For a copy it still writes only uniquely-staged names.
+  All other destruction is **Aeronautes-native**. (§28.6, §36, K-XFER-014)
 - **Automatic segment deletion needs `ExclusiveOwnershipProof`** through the destructive effect.
   Generated prefixes prove creation and `Confirmed` proves a reference; neither excludes sharing or concurrent writers.
   Recovery retains uncertain data and records under ADR 0020; explicit force cleanup is a separate action. (§28.6, K-SEG-004)
