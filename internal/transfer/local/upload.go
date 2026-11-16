@@ -141,7 +141,8 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			names = append(names, filepath.Base(item.Path))
 		}
 		delete(groups, key)
-		answers := engineAnswers{copied: map[string]bool{}, refused: map[string]string{}, segments: map[string]rclone.SegmentPrefix{}}
+		answers := rclone.NewAnswers()
+		segments := map[string]rclone.SegmentPrefix{}
 		heard := func(event rclone.Event) {
 			if p, ok := rclone.PrefixFromEvent(event); ok {
 				// The engine puts a file's segments under the file's own
@@ -149,15 +150,15 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				// path it reports says which file they are.
 				p = p.Canonical()
 				name := path.Dir(strings.TrimSuffix(strings.TrimPrefix(p.Prefix, group.into), "/"))
-				if answers.segments[name] != p {
-					answers.segments[name] = p
+				if segments[name] != p {
+					segments[name] = p
 					report.CapturedPrefixes = append(report.CapturedPrefixes, p)
 					if onRecovery != nil && u.stopped == nil {
 						_ = u.stop(onRecovery("captured", p.Container, p.Prefix, ""))
 					}
 				}
 			}
-			answers.hear(event)
+			answers.Hear(event)
 		}
 		result, engineErr := u.copy(ctx, dst, engine, group.dir, strings.TrimSuffix(dstSpec+"/"+group.into, "/"), names, heard)
 		if engineErr == nil {
@@ -170,11 +171,11 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		// the dynamic object it is. Only an item record that cannot itself
 		// be kept ends the recording, because the rest have nowhere to go.
 		for _, item := range items {
-			outcome := answers.outcome(item, engineErr)
+			outcome := engineOutcome(answers, item, engineErr)
 			// The engine uploads a file larger than the chunk size in
 			// segments, behind a dynamic manifest at the file's name.
 			if u.stopped == nil && outcome.Result == transfercopy.ResultCopied && class == swiftcontrol.ClassSLO && item.Size > preflight.ChunkBytes {
-				outcome = u.makeStatic(ctx, dst, container, item, answers.segments[filepath.Base(item.Path)], preflight.ChunkBytes)
+				outcome = u.makeStatic(ctx, dst, container, item, segments[filepath.Base(item.Path)], preflight.ChunkBytes)
 			}
 			if err := u.observe(item, outcome); err != nil {
 				break
@@ -221,36 +222,19 @@ func destinationDir(item UploadItem) string {
 	return item.Name[:strings.LastIndex(item.Name, "/")+1]
 }
 
-// engineAnswers is what the engine said about the files of one group, by the
-// name each was listed to it under.
-type engineAnswers struct {
-	copied   map[string]bool
-	refused  map[string]string
-	segments map[string]rclone.SegmentPrefix
-}
-
-func (a engineAnswers) hear(event rclone.Event) {
-	if name, ok := rclone.CopiedObject(event); ok {
-		a.copied[name] = true
-		return
-	}
-	if event.Level == "error" && event.Object != "" && a.refused[event.Object] == "" {
-		a.refused[event.Object] = event.Msg
-	}
-}
-
-// outcome is one file's outcome from what the engine said (ADR 0122 decision
-// 7). A file the engine reported as copied is written. One it reported an
-// error for failed with that error. One it said nothing about is unknown
-// when the engine itself stopped in failure, and was not written when the
-// engine finished cleanly: the pinned engine lists every file it writes.
-func (a engineAnswers) outcome(item UploadItem, engineErr error) uploadResult {
+// engineOutcome is one file's outcome from what the engine said (ADR 0122
+// decision 7). A file the engine reported as copied is written. One it
+// reported an error for failed with that error. One it said nothing about is
+// unknown when the engine itself stopped in failure, and was not written
+// when the engine finished cleanly: the pinned engine lists every file it
+// writes.
+func engineOutcome(answers rclone.Answers, item UploadItem, engineErr error) uploadResult {
 	name := filepath.Base(item.Path)
 	switch {
-	case a.copied[name]:
+	case answers.Copied[name]:
 		return uploadDone(item)
-	case a.refused[name] != "":
-		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeIO, "engine", errors.New(a.refused[name]))
+	case answers.Refused[name] != "":
+		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeIO, "engine", errors.New(answers.Refused[name]))
 	case engineErr != nil:
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeUnknown, "engine",
 			fmt.Errorf("the engine stopped without reporting this file: %w", engineErr))
