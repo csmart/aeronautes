@@ -82,9 +82,11 @@ jobs:
         run: go vet ./...
       # The real-cloud oracle's tests carry a build tag and are otherwise
       # compiled only by its own non-blocking workflow, which skips without
-      # credentials; vetting the tag here keeps them from rotting unseen.
+      # credentials; the service journeys carry the same tag and no workflow
+      # compiles them at all. Vetting the tag here keeps both from rotting
+      # unseen.
       - name: go vet (realcloud tag)
-        run: go vet -tags realcloud ./internal/swiftcontrol/
+        run: go vet -tags realcloud ./internal/swiftcontrol/ ./internal/journeys/
       - name: go build
         run: go build ./...
       # ADR 0011: internal/ is plain Go — no webview/CGO imports. This
