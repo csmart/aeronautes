@@ -4,7 +4,7 @@
 these words: re-HEAD just before the delete, and if the hash still matches delete it, otherwise fail;
 it was written for review before any implementation, and the operator accepted it as written once the
 first two paths were delivered against it.
-Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md): the upload overwrite no longer compares the name with what was acknowledged before it writes (decision 3), as the deletions no longer do (decision 6); the copy overwrite keeps this record's comparison until its own step.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md): the upload overwrite no longer compares the name with what was acknowledged before it writes (decision 3), as the deletions no longer do (decision 6); and since its own step the copy overwrite no longer does either (decision 4).
 **Delivered:** native manifest deletion (`internal/app/objectdelete.go`, over
 `internal/swiftcontrol/deletemanifest.go`), the upload overwrite, whose comparison point this record
 fixes (`internal/transfer/local/upload.go`, with the acknowledged baseline in `internal/jobs`), and

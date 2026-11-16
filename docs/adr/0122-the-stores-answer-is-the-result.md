@@ -92,6 +92,34 @@ The operator ran rclone alone against the same store and saw what it does: each 
 4. **A copy writes each object at its name**, on the same terms.
    The engine reads the source and writes the destination; a name it cannot carry is read and written by the application in one pass.
    No object is stamped, and no stamp is read: the preview compares the two listings.
+   **What is copied, skipped and replaced** (added with the copy step, 16 November 2026).
+   A name the two listings show with the same size and tag is skipped, and nothing is sent for it.
+   A name only the source has is copied.
+   A name the listings show as different is replaced when the operator confirmed replacing, and refused when they did not.
+   The listings cannot compare an empty row, which may be an empty object, a dynamic manifest or a link, nor a large object, whose row describes its manifest: for such a pair the copy reads each side once, to learn what the names hold and not to watch for another writer.
+   The store's description of the two then decides: the same length and the same entity tag are the same content, a name that is no longer there is a first copy, and anything else is a replacement.
+   A large object's tag is made from its segments' tags, so two large objects compare as the same only when they are cut at the same places (measured on the owned Swift: a copy made at the source's chunk size has the source's tag).
+   A pair cut differently is treated as different, which costs a copy, or a refusal the operator can answer, and never skips a copy that was needed.
+   The confirmation asks about the names found this way, and a copy that replaces nothing asks nothing.
+   A difference in metadata alone is not a difference: an object the listings show as the same is not written again to refresh its headers.
+   **What a copied object carries.**
+   Measured on the pinned engine, copying store to store: it copies the content type and the source's modification time, and no other header; and it copies a link as its target's bytes.
+   So each name the engine is to copy is read once at the source first.
+   A link found by that read is carried as a link, by the application, in one request.
+   Where the source has user metadata, a content encoding or disposition, or an expiry, the application gives the destination the source's set in one POST after the engine has written the object, and sends none where the engine delivered all there was.
+   A POST replaces the whole set, so for a source that states no modification time it repeats the one the engine wrote, the time the source was last changed: a copied object carries that key whichever of the two wrote its headers.
+   That request is sent for every object the engine reported writing, also when the job was cancelled meanwhile, so that a cancel leaves no copied object without its headers; when it fails, the object is reported failed for that reason, and it is at its name without them.
+   A POST to a dynamic manifest that does not repeat the manifest header turns it into an empty object (measured on the owned Swift).
+   So the request for an object the engine wrote in segments names the segment path the engine reported, and an object too large to be unsegmented, whose path the engine did not report, is sent none and is reported failed for its metadata.
+   **The application's own copy** of a name the engine cannot carry is one GET and one PUT that carries the source's headers.
+   A plain source's entity tag is declared, and the store refuses bytes that do not hash to it; a large source has no such tag for its assembled bytes, declares none, and is written as one object of at most 5 GiB.
+   **What an object's outcome is** is decided as for an upload: the engine's line for it, its error line, or its silence; measured on the pinned engine, a listed name that is no longer at the source gets no line and no error, and is reported as not copied.
+   **A replaced large object's old segments** follow the upload's rule, from one read of the destination container at the start, and the confirmation says which applies.
+   **The engine's size check is off for a copy.**
+   After it writes an object in segments the engine reads the dynamic manifest's size through a listing that can lag the last segment (finding F35), and a copy learns which objects are that large only as it runs.
+   Each object and each segment is still checked against the store's entity tag as it is written.
+   **What a running copy holds** is what an upload holds: the folder it writes under, in the destination container and in its segments container.
+   A `.aeronautes/stage/` name is an ordinary name from this step on: it can be a copy's member, an upload's destination and a copy's destination.
 5. **A download writes each file in the folder the operator chose.**
    The engine writes there directly, as it does when used alone; there is no stage folder and no placing step.
    A download still does not replace a local file, because that file is on the operator's own disk and is not another writer on the store: the preview refuses one that exists, and the engine is told to skip a file that has appeared since, which the job reports as not downloaded because it exists.

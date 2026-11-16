@@ -23,26 +23,24 @@ commit, phase by phase, following the design.
 
 - **The store's answer is the result (ADR 0122).**
   By the operator's decision of 16 November 2026 the application does not guard against another program writing to the same names: it sends a request, and what the store or the transfer engine answers is the outcome.
-  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules below: deletions and uploads so far, with copies and downloads to follow.
+  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules: deletions, uploads and copies so far, with downloads to follow.
   A deletion sends each name's DELETE and reads nothing before or after it.
 - **The rclone boundary.** rclone is never given `sync`, `purge` or `delete`.
-  For an upload it writes each file at its name, over what is there once the operator confirmed the replacement, and it removes a replaced large object's old segments only under the upload's folder and only where the gateway lets it (ADR 0122 decision 3).
-  For a copy it still writes only uniquely-staged names.
+  For an upload and for a copy it writes each object at its name, over what is there once the operator confirmed the replacement, and it removes a replaced large object's old segments only under the destination folder and only where the gateway lets it (ADR 0122 decisions 3 and 4).
   All other destruction is **Aeronautes-native**. (§28.6, §36, K-XFER-014)
 - **Automatic segment deletion needs `ExclusiveOwnershipProof`** through the destructive effect.
   Generated prefixes prove creation and `Confirmed` proves a reference; neither excludes sharing or concurrent writers.
   Recovery retains uncertain data and records under ADR 0020; explicit force cleanup is a separate action. (§28.6, K-SEG-004)
   That force is offered for one object from Backstage, and as a bulk deletion's option (ADR 0119).
   Each starts ticked by the operator's decision, is typed by name, and is refused where the container keeps versions (ADR 0120); neither is automatic.
-- **An existing Copy destination is replaced only when the operator acknowledged it (ADR 0087)**: the preview names the collisions, the confirmation is asked on a native dialog, and each replacement is compared at its fixed point against what was shown and refused if it changed.
-  A collision the plan found is refused before staging unless it was acknowledged, including uncertain pairs resolved as unequal.
-  On either route a destination that changed, or appeared without acknowledgement, after the plan refuses publication; on the staged route the data is staged before that check, and a staged copy follows the staged-cleanup and residue rules, while the native route checks an acknowledged destination with HEAD, then publishes with a separate PUT, and stages nothing.
-  Eligible new names use conditional native creation; unconditional fallback is forbidden.
-  A refused overwrite produces a partial job, is counted separately and cannot consume copied-object verification evidence.
-  A replaced large object's segments are kept, never reclaimed by Copy.
+- **An existing Copy destination is replaced only when the operator confirmed it (ADR 0122 decisions 2 and 4)**: the preview names the collisions and the confirmation is asked on a native dialog.
+  A name the destination holds differently is refused when the copy was not confirmed; a refused overwrite produces a partial job and is counted separately.
+  A confirmed copy writes over what is at the name when its request arrives: nothing is compared again, no request carries a condition, and no name is read after its write.
+  A name the two listings show as the same is skipped; a pair they cannot compare is read once on each side.
+  A replaced large object's old segments follow the upload's rule.
   Mirror starts are refused under ADR 0020; ADR 0086 is a proposal for it and is not built. (§28.6)
-- **Listings are advisory (eventually consistent); HEAD is authoritative.** Verify with bounded
-  retries; namespace comparison is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
+- **Listings are advisory (eventually consistent); HEAD is authoritative.** Namespace comparison
+  is a streaming merge-join over the sorted listings. (§15.2, §15.3, K-CON-001)
 - **Secrets never reach the frontend or SQLite**; rclone gets an invocation-local gateway token through named-remote env config, never the durable key or real Swift token, and never through argv. (§55, §26.2, ADR 0014, K-SEC-*)
 - **Never HEAD every listing row**; stream large namespaces (never accumulate). (§14.2, §15)
 - **Swift semantics live in Go domain packages**, not UI components. Don't port `python-swiftclient`;
@@ -67,7 +65,7 @@ must be green.
 - **Test the dangerous paths first and hardest** — the four layers in §57 against the fixture namespace
   in §58: object-name encoding on both engines; DLO/SLO classification; segment evidence and
   exclusive-ownership; the mutation planner (metadata replace-all, DLO preservation); the delete planner;
-  and the stage-and-commit state machine with a crash at every boundary.
+  and each transfer's outcomes from what the engine or the store answered, with a stop at every boundary.
 - **Every safety requirement (`K-*`) needs a test that fails when the rule is broken** — especially the
   shared-segment corruption fixtures and the plain→DLO race (§28.6, §28.4).
 - **Prefer fast, deterministic tests**: pure unit + mock-HTTP contract tests (§57.1–57.2) for the bulk;
@@ -135,7 +133,7 @@ the reference/first-polish platform. App id: `io.csmart.aeronautes`.
   New work follows the frozen [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and the risk-based evidence and review rules in DESIGN §65.12.
   Name the behaviour oracle and keep changes atomic; review a new or changed locked contract before dependent code.
   Safety changes retain catching system regressions and independent reproduction; ordinary UI and prose use the lighter tiers without weakening required CI.
-  The preceding dated capability list is historical: Copy replaces an existing destination only on ADR 0087's acknowledged terms, and Mirror refuses every start, its comparison preview kept in the backend but not offered in the release's dialog.
+  The preceding dated capability list is historical: Copy replaces an existing destination only when the operator confirmed it (ADR 0122), and Mirror refuses every start, its comparison preview kept in the backend but not offered in the release's dialog.
 - **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
   The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
 - **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in

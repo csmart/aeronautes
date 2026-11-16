@@ -5,6 +5,7 @@ Remediation item P26 names the acceptance, and the roadmap the operator accepted
 Decisions 3 and 4 are the author's choices between alternatives the operator has not ruled on; the alternatives are kept below so either can be reversed by a later record without re-deriving them.
 **Scope:** What this release claims about container versioning on the stores it has measured, how a replacement that was authorised under one versioning observation behaves when the container reports something else by the time it commits, and what a bulk deletion tells the operator when the container it empties is another container's archive.
 It changes neither the container editor's refusals ([ADR 0054](0054-versioning-preflight-authority.md)), the delete dialogs' versioning sentence ([ADR 0092](0092-exact-object-deletion.md)), the overwrite acknowledgement ([ADR 0081](0081-upload-overwrite-acknowledgement.md), [ADR 0087](0087-copy-overwrite-on-upload-terms.md)), nor the v1 capability gate ([ADR 0052](0052-v1-capability-gate.md)).
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a copy no longer reads the destination's versioning again before a replacement, as decision 2 of this record required; the question still states what was observed at the start.
 
 ## Context
 

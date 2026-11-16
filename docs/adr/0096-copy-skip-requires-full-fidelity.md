@@ -5,6 +5,7 @@ This record itself returns no capability: copy was returned to the release the s
 **Scope:** the executor's skip decision for an existing destination — `skippableEqual` and the `VerdictSame`/`VerdictUnknown` dispatch in `internal/transfer/copy/executor.go`.
 The planner's preview counts (`internal/transfer/plan/plan.go`) are out of scope and stay listing-based.
 No new caller state is required: a preview collision already carries its confirmation, baseline and admission, and a `Same` object gains only a possible refusal, which needs neither (decision 5).
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: no stamp is written or read, and a skip is decided by the two listings, or, for a pair they cannot compare, by the store's description of both names; a difference in metadata alone no longer refuses a skip, and is not copied.
 
 ## The requirement, and what existed when this was written
 

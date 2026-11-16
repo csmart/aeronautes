@@ -8,6 +8,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - Each requirement cites the governing `DESIGN.md` section.
 - Phase gates (`DESIGN.md` §60) should list the requirement IDs they verify.
 - IDs are prefixed `K-` and are **stable**. The prefix is historical (the former working name); do not rename them to match Aeronautes.
+- [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) (16 November 2026) replaces staging, the comparison before a write and the read after it, step by step.
+  K-XFER-008, K-XFER-014, K-SEG-005 and K-CON-001 are rewritten for the steps carried out so far: deletions, uploads and copies.
+  Another entry that still speaks of a stage or a staged object describes downloads, or is history until that record's last step rewrites it.
 
 ## Security & secrets
 
@@ -42,10 +45,9 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   engine's own segments, and is the default, with a dynamic object chosen per bookmark or job.
   (§25, §62, ADR 0111)
 - **K-XFER-008** — rclone `Update` (overwrite) and `Remove` (delete) bulk-delete a large object's old
-  referenced segments, so rclone MUST NOT overwrite or delete **any** existing destination object.
-  Current Copy MUST refuse changed existing destinations before staging, including uncertain pairs resolved as unequal; eligible new names use native conditional creation with no unconditional fallback.
-  Refused overwrites MUST be counted separately and produce a partial job without obscuring copied-object verification failures.
-  P14 must establish the final-effect concurrency boundary before overwrites can be re-enabled; every supported deletion remains Aeronautes-native. (§28.6, ADR 0020)
+  referenced segments, so the engine MUST be let delete only as K-SEG-005 allows, and its gateway refuses every delete otherwise.
+  A copy MUST refuse a name the destination holds differently unless the operator confirmed replacing, including a pair the listings cannot compare that the store describes as different.
+  Refused overwrites MUST be counted separately and produce a partial job; every other deletion remains Aeronautes-native. (§28.6, [ADR 0122](adr/0122-the-stores-answer-is-the-result.md))
 - **K-XFER-009** — An Aeronautes-selected transfer set MUST be forced onto the wire (e.g. `--ignore-times`)
   and verified before any Mirror deletion; `--files-from` only filters the source and MUST NOT be
   relied on to override rclone's own equality test. `--ignore-existing` MUST NOT be used for a Copy
@@ -68,23 +70,20 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-XFER-013** — Token lifecycle MUST be implementable in one-shot rclone: bounded batches / a fresh
   child per batch / sufficient-lifetime, not a non-existent "drain"; on restart rebuild the set from
   unverified objects only. (§26.2)
-- **K-XFER-014** — The rclone boundary is absolute: rclone MUST NOT execute any destructive or
-  overwriting operation (`sync` delete phase, `purge`, `delete`, or any write to an existing live
-  name) on **any** scope. rclone writes only planned-new or uniquely-staged names; all destruction
-  is Aeronautes-native and manifest-only, with HEAD-before-mutate where identity matters (§28.6a).
-  Segments go only by the operator's explicit force action (K-SEG-003), the single exception to that
-  being K-SEG-005's acknowledged upload reclamation, which is equally Aeronautes-native and leaves the
-  rclone prohibition above untouched. (§28.6, §36, ADR 0004, ADR 0119)
+- **K-XFER-014** — The rclone boundary: rclone MUST NOT be given `sync`, `purge` or `delete` on any scope, and MUST write only where its gateway lets it.
+  For an upload and for a copy that is each object's own name under the destination folder, in the container and in its segments container, over what is there once the operator confirmed replacing ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4).
+  There the engine removes a replaced large object's old segments itself, unless K-SEG-005 has its deletes refused.
+  All other destruction is Aeronautes-native, and segments otherwise go only by the operator's explicit force action (K-SEG-003). (§28.6, §36, ADR 0004, ADR 0119, ADR 0122)
 - **K-XFER-015** — `--server-side-across-configs` MUST NEVER be enabled for two independently
   authenticated bookmarks. (§30)
 - **K-SEG-004** — Automatic segment deletion requires `ExclusiveOwnershipProof` over the exact objects through the destructive effect, excluding other references and relevant concurrent writers.
   Generated-prefix records and `Confirmed` evidence MUST NOT be promoted to exclusive authority: they prove creation and a reference respectively.
   Recovery MUST retain uncertain data and records; explicit force cleanup remains a separate action with sharing risk disclosed. (§28.6, §24.1, ADR 0020)
-- **K-SEG-005** — One narrow exception exists, and this entry is the whole of it: an **acknowledged local upload** that replaces a large object MAY remove that predecessor's own segment objects, after the replacement is verified, under an operator option that defaults to removing them. (ADR 0081 decision 5)
-  It removes only identities recorded before that publication, never a prefix listed at the time of deletion, and never an entry that names a containing object or another manifest.
-  It is skipped entirely where the container keeps versions, and the answered confirmation bounds it: a question that stated the segments would be kept MUST NOT be followed by their removal.
+- **K-SEG-005** — One narrow exception exists, and this entry is the whole of it: an **acknowledged upload or copy** that replaces a large object MAY let the transfer engine remove that predecessor's own segments as it writes the new object, under an operator option that defaults to removing them. ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4, which replace ADR 0081 decision 5)
+  The engine can delete only where it can write, under the folder the job writes to in the container and in its segments container; old segments kept anywhere else stay.
+  Its deletes are refused entirely where the container keeps versions, where the option is off and where the option cannot be read, and the answered confirmation bounds it: a question that stated the segments would be kept MUST NOT be followed by their removal.
   It rests on the operator's accepted exposure and the reference implementation's precedent, NOT on an exclusivity proof, which §65.10 still owes. No other route gains this authority.
-  It is an exception to K-SEG-004 and to K-XFER-014's **manifest-only** clause, and to nothing else: rclone's prohibition is unchanged, because this removal is Aeronautes-native and rclone still executes no destructive or overwriting operation on any scope.
+  It is an exception to K-SEG-004 and to nothing else.
 
 ## Mirror & comparison
 
@@ -133,8 +132,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - **K-PERF-003** — Adaptive concurrency MUST back off on 429 / `Retry-After` / rising latency /
   transport failure / memory pressure. (§41)
 - **K-CON-001** — Listings are eventually consistent and advisory; object HEAD/GET is authoritative.
-  Listing-based verification MUST use bounded retries, and stage-and-commit verification MUST
-  confirm segment-listing completeness before declaring success. (§15.3, §28.6)
+  A transfer's outcome MUST NOT be taken from a listing: it is what the engine or the store answered for each object ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 7).
+  A copy's skip MAY be decided from the two listings, and a pair they cannot compare MUST be read on both sides before it is skipped (decision 4). (§15.3, §28.6)
 
 ## UI & platform
 
