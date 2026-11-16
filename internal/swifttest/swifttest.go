@@ -442,7 +442,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case ep == accountPath:
-		if r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete") {
+		// A deployed Swift takes a bulk delete as a POST or as a DELETE of
+		// the account; the application sends the first and the transfer
+		// engine the second.
+		if (r.Method == http.MethodPost || r.Method == http.MethodDelete) && r.URL.Query().Has("bulk-delete") {
 			if s.DisableBulkDelete {
 				w.WriteHeader(http.StatusNotFound)
 				return
