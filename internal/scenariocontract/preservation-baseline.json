@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "e8f9453daf9b622f8b4859887bcae5590a40209c",
+    "commit": "fc24836897588352a1e1ab64ba2286f0ff9a0fa3",
     "go_version": "go1.27.4",
-    "run_id": "43330827589",
+    "run_id": "43829040045",
     "run_attempt": "1"
   },
-  "contractHash": "46a6d3c205f56659",
+  "contractHash": "24c93c2fb2a70337",
   "actions": [
     {
       "action": "AppService.About",
@@ -202,7 +202,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial"
       ]
@@ -220,7 +219,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial"
       ]
@@ -231,7 +229,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial"
       ]
@@ -386,8 +383,7 @@
       "kind": "destructive",
       "required": [
         "happy",
-        "refusal",
-        "conflict"
+        "refusal"
       ]
     },
     {
@@ -395,8 +391,7 @@
       "kind": "destructive",
       "required": [
         "happy",
-        "refusal",
-        "conflict"
+        "refusal"
       ]
     },
     {
@@ -404,8 +399,7 @@
       "kind": "destructive",
       "required": [
         "happy",
-        "refusal",
-        "conflict"
+        "refusal"
       ]
     },
     {
@@ -685,10 +679,6 @@
     },
     {
       "action": "DeleteService.DeleteManifestWithSegments",
-      "scenario": "conflict"
-    },
-    {
-      "action": "DeleteService.DeleteManifestWithSegments",
       "scenario": "happy"
     },
     {
@@ -698,10 +688,6 @@
     {
       "action": "DeleteService.StartDelete",
       "scenario": "cancel"
-    },
-    {
-      "action": "DeleteService.StartDelete",
-      "scenario": "conflict"
     },
     {
       "action": "DeleteService.StartDelete",
@@ -718,10 +704,6 @@
     {
       "action": "DeleteService.StartSelectedDelete",
       "scenario": "cancel"
-    },
-    {
-      "action": "DeleteService.StartSelectedDelete",
-      "scenario": "conflict"
     },
     {
       "action": "DeleteService.StartSelectedDelete",
@@ -829,10 +811,6 @@
     },
     {
       "action": "MutateService.DeleteManifest",
-      "scenario": "conflict"
-    },
-    {
-      "action": "MutateService.DeleteManifest",
       "scenario": "happy"
     },
     {
@@ -841,19 +819,11 @@
     },
     {
       "action": "MutateService.DeleteMarker",
-      "scenario": "conflict"
-    },
-    {
-      "action": "MutateService.DeleteMarker",
       "scenario": "happy"
     },
     {
       "action": "MutateService.DeleteMarker",
       "scenario": "refusal"
-    },
-    {
-      "action": "MutateService.DeleteObject",
-      "scenario": "conflict"
     },
     {
       "action": "MutateService.DeleteObject",
@@ -961,10 +931,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-13-copy-destination-baseline.md",
-    "mainReportSHA256": "e0e4e0e3e257cc25c7260fbfb1696a43dc6476a919348477b317de798b4a31cc",
-    "mainReceiptSHA256": "84c55296c0a82bc5a3afce94b27af04e10264bd5769d924fcf059108725bd263",
-    "heavyReportSHA256": "1766ba53cbf9791d7a04e282711dd4b59744f9fd1fcb2e5142e354a647ade729",
-    "heavyReceiptSHA256": "71334bdf94cf2655742148e2df1ff1179d871219dd315ccf5466343fec03db50"
+    "reference": "docs/experiments/2026-11-16-deletion-answer-baseline.md",
+    "mainReportSHA256": "dcecf7ef0d04e447a7bbf43a1e3c9f38fc9d7fefd4e859d576ea95754219552b",
+    "mainReceiptSHA256": "ad7186ddce902765c3a6aed96433328a85684fa4f5dcd97cc1d8d496e70e91be",
+    "heavyReportSHA256": "682204355594d271d2fa0e43ea8bfc1b08cd35d68f816b822a24711f03b544dd",
+    "heavyReceiptSHA256": "82b14cbc12c4b94deab929f9f4f760b06defe62cc54b657ec9a482a3274a0c48"
   }
 }
