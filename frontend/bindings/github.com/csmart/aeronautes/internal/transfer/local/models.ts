@@ -93,9 +93,11 @@ export interface UploadPreflight {
 
     /**
      * LargeObjectsOrigin is where that choice came from, as the job
-     * records it: "default", "override" for the job's, "bookmark", or
+     * records it: "default", "override" for the job's, "bookmark",
      * "capability" when the destination's readable /info has no static
-     * large object entry and a static choice is published as dynamic.
+     * large object entry and a static choice is published as dynamic, or
+     * "versioning" when the container keeps versions and it is published
+     * as dynamic for that.
      */
     "largeObjectsOrigin": string;
 }

@@ -12,10 +12,14 @@ import (
 )
 
 // uploadFile uploads one file of size bytes at a 1 MiB chunk through the
-// pinned engine and returns the finished job and what is live.
-func uploadFile(t *testing.T, h *harness, size int, settings TransferSettingsDTO) (JobDTO, *swiftcontrol.ObjectDetail) {
+// pinned engine and returns the finished job and what is live. A case that
+// needs the container set up some way arranges it once it exists.
+func uploadFile(t *testing.T, h *harness, size int, settings TransferSettingsDTO, arrange ...func()) (JobDTO, *swiftcontrol.ObjectDetail) {
 	t.Helper()
 	h.mock.AddContainer("media", "standard")
+	for _, step := range arrange {
+		step()
+	}
 	content := bytes.Repeat([]byte("segment!"), size/8+1)[:size]
 	path := filepath.Join(t.TempDir(), "big.bin")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
@@ -94,10 +98,15 @@ func TestStaticUploadCompletesUnderALaggingListing(t *testing.T) {
 // bookmark's, else static; a readable /info without static large objects
 // turns a static choice dynamic, and an unreadable one does not. The job
 // records what it published and why (ADR 0111 decision 1).
+//
+// A container that keeps versions turns a static choice dynamic too (ADR
+// 0122 decision 3): the static manifest is written over the engine's dynamic
+// one, and there the store would keep that as a version of every large file.
 func TestUploadPublishesAndRecordsTheLargeObjectKind(t *testing.T) {
 	const noSLO = `{"swift":{"max_file_size":5368709122}}`
 	for _, tc := range []struct {
 		name, info, bookmark, job string
+		versions, history         bool
 		size                      int
 		kind, origin              string
 	}{
@@ -107,6 +116,9 @@ func TestUploadPublishesAndRecordsTheLargeObjectKind(t *testing.T) {
 		{name: "no static objects advertised", info: noSLO, size: segmentedSize, kind: "dlo", origin: "capability"},
 		{name: "a dynamic choice where none are advertised", info: noSLO, job: "dlo", size: segmentedSize, kind: "dlo", origin: "override"},
 		{name: "capabilities unknown", info: "not json", size: segmentedSize, kind: "slo", origin: "default"},
+		{name: "a versions location", versions: true, size: segmentedSize, kind: "dlo", origin: "versioning"},
+		{name: "a history location, over the job's static choice", versions: true, history: true, job: "slo", size: segmentedSize, kind: "dlo", origin: "versioning"},
+		{name: "a dynamic choice where versions are kept", versions: true, job: "dlo", size: segmentedSize, kind: "dlo", origin: "override"},
 		{name: "nothing segmented", job: "dlo", size: 1024},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,7 +127,12 @@ func TestUploadPublishesAndRecordsTheLargeObjectKind(t *testing.T) {
 			if tc.bookmark != "" {
 				setBookmarkLargeObjects(t, h, tc.bookmark)
 			}
-			job, live := uploadFile(t, h, tc.size, TransferSettingsDTO{LargeObjects: tc.job})
+			job, live := uploadFile(t, h, tc.size, TransferSettingsDTO{LargeObjects: tc.job}, func() {
+				if tc.versions {
+					h.mock.AddContainer("archive", "standard")
+					h.mock.EnableVersionArchive("media", "archive", tc.history)
+				}
+			})
 			if job.State != "complete" || live == nil {
 				t.Fatalf("job %s %+v, live %+v", job.State, job.Counters, live)
 			}
@@ -128,6 +145,44 @@ func TestUploadPublishesAndRecordsTheLargeObjectKind(t *testing.T) {
 			}
 			if kind, origin := recordedLargeObjects(t, job); kind != tc.kind || origin != tc.origin {
 				t.Errorf("job records %q from %q, want %q from %q", kind, origin, tc.kind, tc.origin)
+			}
+		})
+	}
+}
+
+// Whether the container keeps versions decides what a large file uploads as,
+// so a preview that cannot read it refuses instead of guessing, and an upload
+// that segments nothing does not need the answer.
+func TestUploadPreviewRefusesALargeFileWhenVersioningCannotBeRead(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		size    int
+		refused bool
+	}{
+		{"a file the engine segments", 2 << 20, true},
+		{"a file it does not", 1024, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.connect(t)
+			h.mock.AddContainer("media", "standard")
+			path := filepath.Join(t.TempDir(), "file.bin")
+			if err := os.WriteFile(path, make([]byte, tc.size), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			h.transfer.setFilePicker(fakePicker{files: []string{path}})
+			picked, err := h.transfer.PickUploadFiles(t.Context(), SelectionScopeDTO{BookmarkID: h.bookmarkID(), Container: "media"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.mock.FailNextContainerHEADs(1)
+			_, err = h.transfer.PreflightUpload(t.Context(), UploadRequestDTO{
+				BookmarkID: h.bookmarkID(), Container: "media", SelectionToken: picked.Token, Settings: TransferSettingsDTO{ChunkSize: "1Mi"}})
+			if tc.refused && (err == nil || !strings.Contains(err.Error(), "versioning could not be read")) {
+				t.Fatalf("preview ended %v, want it refused for the unread versioning", err)
+			}
+			if !tc.refused && err != nil {
+				t.Fatalf("preview ended %v, want it to need no versioning read", err)
 			}
 		})
 	}

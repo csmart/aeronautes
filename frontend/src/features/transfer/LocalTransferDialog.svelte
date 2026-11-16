@@ -87,7 +87,18 @@
   // kind only when the selection holds a file the engine segments; a refused
   // upload writes nothing, so the note is moot there.
   const largeObjects = $derived(current?.mode === "upload" && !rejected ? current.report.largeObjects : "");
-  const largeObjectsByCapability = $derived(current?.mode === "upload" && current.report.largeObjectsOrigin === "capability");
+  // Why a static choice uploads as dynamic, when it does.
+  const largeObjectsBecause = $derived.by(() => {
+    if (current?.mode !== "upload") return "";
+    switch (current.report.largeObjectsOrigin) {
+      case "capability":
+        return ": this cluster does not offer static large objects that Aeronautes can read back";
+      case "versioning":
+        return ": this container keeps versions, where a static large object would leave an extra version of each file";
+      default:
+        return "";
+    }
+  });
   const problemCount = $derived(current?.mode === "download" ? current.report.problemCount : problemRows.length);
   const truncated = $derived(current?.mode === "download" && problemCount > problemRows.length);
 
@@ -300,9 +311,7 @@
         {:else if largeObjects === "dlo"}
           <p class="note">
             Files larger than the chunk size upload in segments as dynamic large
-            objects, whose reads depend on container-listing consistency{largeObjectsByCapability
-              ? ": this cluster does not offer static large objects that Aeronautes can read back"
-              : ""}.
+            objects, whose reads depend on container-listing consistency{largeObjectsBecause}.
           </p>
         {/if}
         {#if collisionsOnly}

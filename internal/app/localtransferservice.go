@@ -491,11 +491,16 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 
 // largeObjectsFor decides what a segmented upload publishes, and the
 // origin its job records (ADR 0111 decision 1): the job's own choice, else
-// the bookmark's, else static. A static choice becomes dynamic only when
-// the session's readable /info has no static large object entry, or a job
-// on the session found the store does not return static manifests
-// (decision 10); when the capability is unknown it stays static and the
-// publication is the attempt.
+// the bookmark's, else static. A static choice becomes dynamic when the
+// session's readable /info has no static large object entry, or a job on
+// the session found the store does not return static manifests (decision
+// 10); when the capability is unknown it stays static and the publication
+// is the attempt. It also becomes dynamic where the container keeps
+// versions: the static manifest is written over the dynamic one the engine
+// wrote, and such a container keeps what is written over, so every large
+// upload would leave the engine's manifest behind as a version, which a
+// versions location puts back at the name when the object is deleted (ADR
+// 0122 decision 3).
 func (s *TransferService) largeObjectsFor(ctx context.Context, req UploadRequestDTO, session *swiftcontrol.Session) (kind, origin string, err error) {
 	bookmark, err := s.connections.store.Get(ctx, req.BookmarkID)
 	if err != nil {
@@ -520,6 +525,13 @@ func (s *TransferService) largeObjectsFor(ctx context.Context, req UploadRequest
 	}
 	if known, returned := s.connections.staticManifestsOf(session); known && !returned {
 		return string(swiftcontrol.ClassDLO), "capability", nil
+	}
+	observed, err := s.readVersioning(ctx, req.BookmarkID, req.Container)
+	if err != nil {
+		return "", "", errors.New("the destination container's versioning could not be read, and it decides what a large file uploads as")
+	}
+	if keepsVersions(observed) {
+		return string(swiftcontrol.ClassDLO), "versioning", nil
 	}
 	return kind, origin, nil
 }
