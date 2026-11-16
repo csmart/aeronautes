@@ -471,7 +471,7 @@ describe("the Delete key and the selection shortcuts", () => {
     expect(api.startSelectedDelete).not.toHaveBeenCalled();
   });
 
-  it("selects every loaded row with Ctrl+A and clears with Escape", async () => {
+  it("selects every loaded row with Ctrl+A and clears any selection with Escape", async () => {
     const s = await screen([]);
     const rows = document.querySelectorAll('[role="option"]').length;
     expect(rows).toBeGreaterThan(2);
@@ -482,6 +482,15 @@ describe("the Delete key and the selection shortcuts", () => {
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     window.dispatchEvent(escape); flushSync(); await settle();
     expect(escape.defaultPrevented).toBe(true);
+    expect(s.foot.textContent).toContain("none selected");
+    // One selected row is cleared the same way, so that the toolbar acts on
+    // the folder or container again.
+    document.querySelectorAll<HTMLElement>('[role="option"]')[0].dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    flushSync(); await settle();
+    expect(s.foot.textContent).toContain("1 selected");
+    const one = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(one); flushSync(); await settle();
+    expect(one.defaultPrevented).toBe(true);
     expect(s.foot.textContent).toContain("none selected");
     // With nothing selected Escape is left to whoever else wants it.
     const again = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
