@@ -4,6 +4,7 @@
 Written for review before any implementation, and implemented on 27 October 2026 behind the `marker-manifest-delete` token: the shared session protocol, the bound services with their ledger, the browser-owned dialogs and the public proof on both fixtures are in the range that carries this sentence, with the capability renamed and still deferred.
 This record itself returns no capability: the return was the operator's word, recorded in ADR 0052 decision 13, as the earlier returns were.
 This record decides what the two actions must be before that word can be asked for.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 6: a marker and a manifest are each deleted by one DELETE of the name and the store's answer is the result, so the marker rule, the comparison with the identity shown and the verifying read are no longer made; a manifest is still deleted without its segments, by the plain DELETE.
 **Scope:** `MutateService.DeleteMarker` and `MutateService.DeleteManifest`, the session protocol behind each, the interface that offers them behind the `marker-manifest-delete` token, and their public proof.
 Deleting a manifest together with its segments stays force-only with bulk deletion; selected sets are [ADR 0093](0093-selected-set-deletion.md); prefixes, containers and symbolic links keep their own records.
 

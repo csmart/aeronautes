@@ -1980,8 +1980,6 @@ strategy selection
 stream listing / execute batches
     ↓
 progress
-    ↓
-verify/re-list
 ```
 
 Native implementation must be bounded/streaming:
@@ -2002,15 +2000,12 @@ LIST batch
 bulk delete
 ```
 
-**Verification at scale is not free.** "Verify/re-list" after deleting millions of objects is itself a full namespace scan and can cost as much as the delete. Aeronautes must have an explicit, bounded verification policy rather than always re-listing everything: for large jobs, verify by sampling and by confirming the specific deleted keys/prefix are absent, escalating to a full re-list only when the sample or the operation's partial-failure record indicates a problem. State the chosen policy in the job's effective configuration so it is never a silent shortcut.
-
-Verification should be **operation-specific**, not one generic re-list:
-
-- recursive prefix delete → a low-cost postcondition such as `GET {container}?prefix={p}&limit=1` returning empty (after bounded retries) is strong evidence the prefix is gone without rescanning the container;
-- Empty Container → the same `limit=1` listing check;
-- single-object mutation → HEAD the exact object;
-- SLO delete → HEAD the manifest, plus targeted segment-state checks as needed;
-- large Copy/Mirror → execution-time verification plus targeted spot checks by default, with a full scan only on demand.
+**The store's answer is the result (16 November 2026).**
+By the operator's decision a deletion sends each name's DELETE once and takes the store's answer ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 6).
+An accepted DELETE is a deleted name, "not found" is a name already gone and is counted with the deleted, any other refusal is a failure with the store's status, and no answer or a server error is unknown.
+No name is read and compared before its DELETE, and nothing is listed or read afterwards to check it: a deletion deletes whatever a name holds when its request arrives, and the dialogs say so.
+The earlier rule, which compared each name with its listing first and read it again afterwards, reported deleted objects as unverified on a store whose replicas lag, and stopped at a name another writer had touched; both are given up with it.
+The job's recorded strategy is `per-name`, and a deletion of N plain objects costs N DELETEs and the listings that found them.
 
 ### 32.1 Cancellation
 
@@ -2065,21 +2060,21 @@ By the operator's decision of 15 November 2026 it starts ticked ([ADR 0120](adr/
 It starts unticked in a container that is, or may be, another container's archive, because an archived version and the object it came from can name the same segments.
 The one-object deletion's option starts ticked on the same decision and is refused in the same containers: under a history location the store keeps a deleted manifest in the archive as a manifest, which can be read only while its segments exist.
 A container that keeps versions is deleted without its segments, and its archive is another container, deleted by a deletion of its own, which takes the archived versions and, with the option, their segments.
-A dynamic manifest's length and entity tag are made from its segments, so with the option the sweep lets the members it has in flight settle before every dynamic manifest and reads it again after they have: another manifest of the same job can name the same segments, as the published and the staged manifest of one upload do in a history archive.
-With it, each large object the sweep meets has its graph read at its turn, its manifest deleted first by the reviewed-manifest protocol bound to that graph, and its segments deleted only once that deletion is recorded: a static manifest's whole entries, each compared with the size and entity tag the manifest recorded, or a dynamic manifest's namespace after a complete listing shows no name outside it.
+With it, each large object the sweep meets is read once at its turn, for the segments its manifest names, its manifest is deleted first, and its segments are deleted only once that deletion is recorded: a static manifest's whole entries, one DELETE each, or a dynamic manifest's namespace after a complete listing shows no name outside it.
+A row the listing shows as empty is read once as well, because the listing cannot say whether it is a dynamic manifest.
 A large object whose segments those rules cannot bound loses its manifest only, as without the option, and the job records why and ends partial.
 Segments are members of the same job, each requested once, and the container is deleted only when every member, segments included, was deleted.
 Nothing here proves a segment is not shared: the dialog says that an object elsewhere that uses one loses its data.
 rclone is not an Empty Container engine: `Purge` deletes the objects and container, losing its configuration and identity, while `Remove` follows referenced large-object segments (K-DEL-001, ADR 0004).
-The acceptance test compares pre/post container HEAD configuration, not merely the existence of a same-named container.
+Emptying sends object DELETEs only, so it has no request that could change the container's configuration, and the job no longer reads that configuration before and after to compare it (ADR 0122).
 
 Do **not** delete/recreate the container as an optimisation.
 
 ### Delete Container
 
 Empty contents first if explicitly requested (same native engines as Empty Container), then issue a native Swift container DELETE.
-The job then checks that the container no longer answers, with the bounded retries the prefix postcondition uses (five reads, 300 ms apart, §15.3): a store's replicas can lag a DELETE it has accepted, and a job that asked once reported a deleted container as left standing (seen on a real cloud, 14 November 2026).
-A container that still answers after that bound leaves the job partial, saying so.
+The store's answer to that DELETE is the result: an accepted DELETE is a deleted container, and the job does not look for the container afterwards (ADR 0122 decision 6).
+A container the store refuses because it is not empty, as it can when its listing has not caught up with the object deletions, leaves the job partial, saying that and to run the deletion again.
 
 `rclone purge` is not used here either (ADR 0004): purge's per-object `Remove` follows manifests and bulk-deletes referenced segments, and a manifest inside the doomed container can reference segments in **other** containers — a sidecar or shared store — that surviving manifests still use. Destroying the container does not make its manifests' segments fair game.
 
