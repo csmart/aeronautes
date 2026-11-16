@@ -89,6 +89,14 @@ The operator ran rclone alone against the same store and saw what it does: each 
 10. **What this supersedes.**
     The staging, commit and fixed-point rules of [ADR 0008](0008-copy-data-path.md), [0037](0037-staged-content-read.md), [0045](0045-route-content-binding.md), [0048](0048-cancelled-stage-removal.md), [0080](0080-upload-content-binding.md), [0081](0081-upload-overwrite-acknowledgement.md) decisions 5 and 6, [0083](0083-native-copy-content-binding.md), [0084](0084-held-manifest-copy.md), [0085](0085-reobserved-destructive-identity.md) and [0087](0087-copy-overwrite-on-upload-terms.md); the stage and placement rules of [0032](0032-download-placement-prerequisites.md), [0060](0060-native-download-content-binding.md), [0061](0061-download-publication-facts.md) and [0070](0070-engine-download-content-binding.md); the stamp of [0096](0096-copy-skip-requires-full-fidelity.md); and the comparison and verifying reads of [0036](0036-delete-identity-accounting.md), [0092](0092-exact-object-deletion.md), [0093](0093-selected-set-deletion.md), [0094](0094-marker-and-manifest-deletion-return-ready.md) and [0095](0095-prefix-deletion-by-the-per-name-protocol.md).
     These are the main ones and not a complete list: each change that carries this out marks the records it replaces, in the change itself.
+11. **The scenario contract loses the cells no deletion can reach** (added with the deletion step, 16 November 2026).
+    A deletion compares nothing, so it cannot end in a conflict, and the `conflict` scenario leaves the six deletion actions of `internal/scenariocontract`: `MutateService.DeleteObject`, `MutateService.DeleteMarker`, `MutateService.DeleteManifest`, `DeleteService.StartDelete`, `DeleteService.StartSelectedDelete` and `DeleteService.DeleteManifestWithSegments`.
+    The behaviour oracle for each is decision 6.
+    All six pairs were protected by the preservation baseline of [ADR 0069](0069-preserve-covered-scenario-cells.md), and all six are given up on purpose: the tests that credited them drove a refusal this record removes, so there is no such outcome left to produce.
+    The required coverage after the change is `happy` and `refusal` for the three single deletions, and `happy`, `refusal`, `cancel` and `partial` for the three jobs.
+    Every other pair the baseline protected stays credited by the system tests on a real Swift: a refusal a caller can cause, a partial job whose member the store refused, and a cancellation that lands between members.
+    No other action's row changes in this step, and the replacement baseline is built by ADR 0069's drift route in the change that carries the step out.
+    A later step that changes a row names its identities here in the same way.
 
 ## What this gives up
 
