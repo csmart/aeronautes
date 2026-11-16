@@ -67,8 +67,10 @@ export interface UploadItem {
     /**
      * Replaces marks a name the preflight found live and admitted anyway,
      * because the caller had the operator's acknowledgement for it
-     * (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it, and
-     * only the publication of such a name may drop its conditional create.
+     * (ADR 0081 decision 1). Only PreflightUploadSourcesReplacing sets it. It
+     * changes nothing about the write, which carries no condition either
+     * way: the run counts such a name as a replacement once its write is
+     * answered.
      */
     "replaces"?: boolean;
 }
@@ -86,8 +88,8 @@ export interface UploadPreflight {
      * published as (ADR 0111): "slo" or "dlo", and empty when no file is
      * segmented, so the dialog can name it. The app-layer bridge fills it,
      * and ChunkBytes, from the job's and the bookmark's setting and the
-     * destination's capabilities; a caller that leaves it empty publishes
-     * what the engine staged as it was staged.
+     * destination's capabilities; a caller that leaves it empty leaves
+     * what the engine wrote as the engine wrote it.
      */
     "largeObjects": string;
 
