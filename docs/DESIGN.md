@@ -1416,6 +1416,7 @@ Notes:
 - **Segmented uploads are static by default (ADR 0111).** rclone's Swift backend creates only **Dynamic** Large Objects (`X-Object-Manifest`), whose size and content Swift computes from an eventually consistent listing on every read.
   So the engine uploads the segments under an Aeronautes-tracked segment location and stages its DLO, and the upload's commit pairs each segment with the local file's chunk and publishes a **Static** Large Object naming them.
   A bookmark or a job can choose a DLO instead, and a cluster whose readable `/info` does not offer static large objects gets one; the preview and the job record name which.
+  A container that keeps versions gets one too, because the static manifest is written over the engine's dynamic one and would leave it behind as a version ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3).
   Copies that segment still write DLOs.
   The inspector must still *read* both DLO and SLO because clusters contain both.
 

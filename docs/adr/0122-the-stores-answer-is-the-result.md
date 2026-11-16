@@ -77,6 +77,12 @@ The operator ran rclone alone against the same store and saw what it does: each 
    So an upload decides once, at its start, from one read of the container: where it keeps versions of either kind, where the operator's setting keeps replaced segments, and where that setting cannot be read, the engine's deletes are refused and the old segments stay.
    The acknowledgement states which of these holds, and an upload that replaces nothing by its preview is started on the same decision.
    The cost is that the engine's own removal of the segments of an upload that failed is refused with the rest, so those stay as well, as decision 8 already allows.
+   **Where versions are kept, a large upload stays dynamic** (added with the upload step, 16 November 2026).
+   The static manifest is written over the dynamic one the engine wrote, and a container that keeps versions keeps what is written over.
+   Measured on the Swift cloud with a history location: the engine's dynamic manifest stayed in the archive as one more version of each large file.
+   With a versions location the store puts the newest kept version back at a name when its object is deleted, so a deleted large object would come back as that manifest.
+   So where the container keeps versions of any kind, a static choice uploads as dynamic, the preview says why, and the job records the origin `versioning`.
+   The cost is the one [ADR 0111](0111-segmented-uploads-as-static-large-objects.md) chose static to avoid: a dynamic object's reads depend on the segments container's listing.
    **The file's modification time.**
    The engine records a file's modification time on every object it writes, in the metadata key `Mtime`, as it does when used alone; the staged route's publishing request did not carry it.
    The application's own writes of an uploaded file set the same key from the file: the one PUT of a name the engine cannot carry, the static manifest, and a dynamic manifest put back.

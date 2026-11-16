@@ -111,8 +111,11 @@ test.describe.serial("segments where versions are kept", () => {
     await expect(page.getByRole("button", { name: "Configure container" })).toBeVisible();
 
     // A small file and a large one by the static choice, and a large one by
-    // the dynamic choice, which the container deletion below still finds.
+    // the dynamic choice. Both large ones are dynamic here: a static manifest
+    // is written over the engine's dynamic one, and this container would
+    // keep that as one more version of the file.
     const first = await uploadFolder(page, [1024, large], "slo");
+    expect(first.kind, "a static choice where versions are kept").toBe("dynamic");
     const second = await uploadFolder(page, [large], "dlo");
     const segments = (await segmentsAdded(target, sidecar, [], 2 * segmentsOfLarge)).sort();
     const folder = `${basename(first.folder)}/`;

@@ -307,6 +307,8 @@
         return "from bookmark";
       case "capability":
         return "this cluster does not offer static large objects that Aeronautes can read back";
+      case "versioning":
+        return "this container keeps versions";
       default:
         return "";
     }
