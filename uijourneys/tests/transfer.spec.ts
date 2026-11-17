@@ -22,6 +22,8 @@ test.describe.serial("transfer", () => {
   let folder = "";
   let digests = new Map<string, string>();
   let published: "static" | "dynamic" = "static";
+  // Where the folder is downloaded, so a second download can find it there.
+  let into = "";
 
   test.beforeAll(async ({}, info) => {
     container = await ownContainer(info.project.name, "ui-transfer", true);
@@ -75,7 +77,7 @@ test.describe.serial("transfer", () => {
     await control.pickFolder(folder);
     await dialog.getByRole("button", { name: "Choose folder…" }).click();
     await dialog.getByRole("button", { name: `Replace ${sizes.length} existing objects…` }).click();
-    await expect(dialog.getByText(`This upload will REPLACE what is at ${sizes.length} names.`)).toBeVisible();
+    await expect(dialog.getByText(new RegExp(`This upload may REPLACE what is at ${sizes.length} names, each only where it differs from your file\\.`.replaceAll(" ", "\\s+")))).toBeVisible();
     // The connection has learned what the store returns, so this preview
     // names the kind the first upload published.
     await expect(dialog.getByText(disclosure(published))).toBeVisible();
@@ -85,7 +87,7 @@ test.describe.serial("transfer", () => {
   });
 
   test("download it back", async ({ page }, info) => {
-    const into = localFolder();
+    into = localFolder();
     await openContainer(page, info.project.name, container);
     await page.getByRole("button", { name: "Download container…" }).click();
     const dialog = page.getByRole("dialog", { name: "Download" });
@@ -94,6 +96,27 @@ test.describe.serial("transfer", () => {
     await dialog.getByRole("button", { name: "Start download" }).click();
     await finish(page, dialog);
     // The second round's bytes coming back proves the replacement wrote.
+    for (const [name, digest] of digests) {
+      expect(digestOf(join(into, basename(folder), name)), name).toBe(digest);
+    }
+  });
+
+  // ADR 0122 decision 12: a download into the same folder is refused until
+  // replacing is confirmed, and then the engine compares each file as rclone
+  // copy does. Every file is what the last download wrote, size and time, so
+  // nothing is replaced and the job says each is already the same.
+  test("download it again over the same files and confirm the replacement", async ({ page }, info) => {
+    await openContainer(page, info.project.name, container);
+    await page.getByRole("button", { name: "Download container…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Download" });
+    await control.pickFolder(into);
+    await dialog.getByRole("button", { name: "Choose directory…" }).click();
+    await dialog.getByRole("button", { name: "Replace existing files…" }).click();
+    await expect(dialog.getByText(new RegExp(`This download may REPLACE ${sizes.length} files in the folder`.replaceAll(" ", "\\s+")))).toBeVisible();
+    await control.answer("overwrite", true);
+    await dialog.getByRole("button", { name: "Start download" }).click();
+    const details = await finish(page, dialog);
+    expect(details).toContain(`${sizes.length} already the same`);
     for (const [name, digest] of digests) {
       expect(digestOf(join(into, basename(folder), name)), name).toBe(digest);
     }

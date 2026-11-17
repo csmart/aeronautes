@@ -48,7 +48,12 @@ func inspectDownloadPath(root *os.Root, item DownloadItem) *Problem {
 			if info.IsDir() {
 				return refuse("local-exists", item.RelPath+" is an existing DIRECTORY under the destination; a file cannot land on it")
 			}
-			return refuse("local-exists", item.RelPath+" already exists under the destination; v1 download never overwrites")
+			if !info.Mode().IsRegular() {
+				return refuse("local-exists", item.RelPath+" already exists under the destination and is not a regular file; a download replaces only a file")
+			}
+			problem := refuse("local-exists", item.RelPath+" already exists under the destination; a download replaces a file only when you ask it to")
+			problem.replaceable = true
+			return problem
 		}
 		if !downloadOrdinaryDirectory(info) {
 			kind := "local-parent"

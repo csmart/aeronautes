@@ -1,8 +1,8 @@
 <!-- Upload / download dialog (§27.5): the collision preflight renders
   before any write under one cross-platform namespace policy. A report
-  that rejects anything offers no Start; an upload whose only rejections
-  are collisions may be asked again as a replacing plan (ADR 0081), and a
-  download never replaces. -->
+  that rejects anything offers no Start; one whose only rejections are
+  names already in use may be asked again as a replacing plan, which
+  replaces only what differs (ADR 0081, ADR 0122 decision 12). -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { trapFocus } from "../../lib/trapFocus";
@@ -36,9 +36,9 @@
   let closed = $state(false);
   let generation = 0;
   // The scope is what navigation binds: the fields both requests share.
-  // Overwrite acknowledgement is not one of them — it is an upload-only
-  // answer this dialog never gives, so it is set at the upload request
-  // and kept out of the identity a late navigation is compared against.
+  // Overwrite acknowledgement is not one of them — it is the operator's
+  // answer, set at the request and kept out of the identity a late
+  // navigation is compared against.
   // Members name a download's selected objects (ADR 0108); an upload has none.
   type Scope = Omit<UploadRequestDTO, "selectionToken" | "acknowledgeOverwrite"> & { members?: string[] };
   interface Intent {
@@ -105,15 +105,20 @@
   // A collision is the one rejection the operator can answer: ADR 0081's
   // acknowledged overwrite. Every OTHER rejecting problem is not a question,
   // so a report mixing a collision with anything else stays a plain refusal
-  // and offers nothing.
-  const collisions = $derived(mode === "upload" ? rejections.filter((p) => p.kind === "exists") : []);
-  const collisionsOnly = $derived(mode === "upload" && rejected
-    && collisions.length > 0 && collisions.length === rejections.length);
+  // and offers nothing. A download's report is a bounded sample, so its
+  // complete count comes from the backend, which gives none when anything
+  // else is refused.
+  const collisionCount = $derived(current?.mode === "download"
+    ? current.report.replaceable
+    : rejections.filter((p) => p.kind === "exists").length);
+  const collisionsOnly = $derived(rejected && collisionCount > 0
+    && (current?.mode === "download" || collisionCount === rejections.length));
   // The acknowledged plan, once asked for: the collisions come back as
-  // warnings rather than rejections, and the names are what will be replaced.
-  const acknowledged = $derived(!!report && prepared?.mode === "upload"
-    && prepared.request.acknowledgeOverwrite === true);
-  const replacing = $derived(acknowledged ? warnings.filter((p) => p.kind === "exists") : []);
+  // warnings rather than rejections, and the names are what may be replaced.
+  const acknowledged = $derived(!!report && prepared?.request.acknowledgeOverwrite === true);
+  const replacingCount = $derived(!acknowledged ? 0 : current?.mode === "download"
+    ? current.report.replacing
+    : warnings.filter((p) => p.kind === "exists").length);
 
   function scope(): Scope {
     return {
@@ -186,7 +191,7 @@
         const dir = await browser.pickDownloadDir(
           { bookmarkId: capturedScope.bookmarkId, container: capturedScope.container, prefix: capturedScope.prefix });
         if (!isCurrent(intent) || !dir?.token) return;
-        const req = Object.freeze({ ...capturedScope, destDirToken: dir.token });
+        const req = Object.freeze({ ...capturedScope, destDirToken: dir.token, acknowledgeOverwrite: false });
         const result = await browser.preflightDownload(req);
         if (isCurrent(intent)) prepared = { intent, mode: "download", request: req, report: result, destination: dir.dir };
       }
@@ -205,14 +210,20 @@
   // it when the job starts, so this button cannot answer it.
   async function replace() {
     const current = prepared;
-    if (checking || starting || !current || current.mode !== "upload" || !isCurrent(current.intent)) return;
+    if (checking || starting || !current || !isCurrent(current.intent)) return;
     const intent = current.intent;
-    const req = Object.freeze({ ...current.request, acknowledgeOverwrite: true });
     checking = true;
     error = null;
     try {
-      const result = await browser.preflightUpload(req);
-      if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
+      if (current.mode === "upload") {
+        const req = Object.freeze({ ...current.request, acknowledgeOverwrite: true });
+        const result = await browser.preflightUpload(req);
+        if (isCurrent(intent)) prepared = { intent, mode: "upload", request: req, report: result, destination: "" };
+      } else {
+        const req = Object.freeze({ ...current.request, acknowledgeOverwrite: true });
+        const result = await browser.preflightDownload(req);
+        if (isCurrent(intent)) prepared = { intent, mode: "download", request: req, report: result, destination: current.destination };
+      }
     } catch (e) {
       if (isCurrent(intent)) error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -316,17 +327,28 @@
         {/if}
         {#if collisionsOnly}
           <p class="hint">
-            {collisions.length === 1 ? "That name is" : "Those names are"} already in use at the
-            destination. Replacing {collisions.length === 1 ? "it" : "them"} is allowed, and the
-            application will ask you to confirm on its own dialog — not on this page — before
-            anything is written.
+            {#if mode === "upload"}
+              {collisionCount === 1 ? "That name is" : "Those names are"} already in use at the destination.
+            {:else}
+              {collisionCount === 1 ? "That file is" : "Those files are"} already in the folder.
+            {/if}
+            Replacing what differs is allowed, and the application will ask you to confirm on its
+            own dialog — not on this page — before anything is written.
           </p>
         {/if}
-        {#if acknowledged && replacing.length > 0}
+        {#if acknowledged && replacingCount > 0}
           <p class="hint">
-            This upload will REPLACE what is at {replacing.length}
-            {replacing.length === 1 ? "name" : "names"}. The application will ask you to confirm,
-            naming the account and what it observed about the container, before it writes anything.
+            {#if mode === "upload"}
+              This upload may REPLACE what is at {replacingCount}
+              {replacingCount === 1 ? "name" : "names"}, each only where it differs from your file. The
+              application will ask you to confirm, naming the account and what it observed about the
+              container, before it writes anything.
+            {:else}
+              This download may REPLACE {replacingCount} {replacingCount === 1 ? "file" : "files"} in the
+              folder, each only where it differs from the object. A replaced file is not kept. The
+              application will ask you to confirm, naming the folder and where the files come from,
+              before it writes anything.
+            {/if}
           </p>
         {/if}
         {#if truncated}
@@ -372,7 +394,9 @@
         {/if}
         {#if collisionsOnly}
           <button class="primary" onclick={replace} disabled={checking || starting}>
-            Replace {collisions.length} existing object{collisions.length === 1 ? "" : "s"}…
+            {mode === "upload"
+              ? `Replace ${collisionCount} existing object${collisionCount === 1 ? "" : "s"}…`
+              : "Replace existing files…"}
           </button>
         {/if}
         {#if report && !rejected}

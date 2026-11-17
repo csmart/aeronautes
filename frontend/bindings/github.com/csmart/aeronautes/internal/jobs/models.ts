@@ -21,6 +21,14 @@ export interface Counters {
      */
     "overwrites": number;
     "overwritesRefused": number;
+
+    /**
+     * ObjectsSame counts the names left as they were because they were
+     * already the source's: a copy's skips from the listings, and the names
+     * a confirmed upload or download found the same (ADR 0122 decision 12).
+     * They are verified and not copied.
+     */
+    "objectsSame": number;
     "nativeRouted": number;
 
     /**

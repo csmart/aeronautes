@@ -32,6 +32,9 @@ type Problem struct {
 	Kind   string `json:"kind"`
 	Detail string `json:"detail"`
 	Reject bool   `json:"reject"`
+	// replaceable marks a download's refusal of a regular file at a planned
+	// file's name, the one a confirmed download may replace instead.
+	replaceable bool
 }
 
 // UploadItem is one file cleared for upload.
@@ -432,6 +435,9 @@ type DownloadItem struct {
 	Route   string `json:"route"`
 	// Dir marks a zero-byte folder marker materialized as a directory.
 	Dir bool `json:"dir"`
+	// Replaces marks a file whose name held a regular file when a
+	// replacing preflight ran (ADR 0122 decision 12).
+	Replaces bool `json:"replaces,omitempty"`
 }
 
 // DownloadPreflight is the complete pre-write report.
@@ -441,6 +447,9 @@ type DownloadPreflight struct {
 	Problems   []Problem      `json:"problems"`
 	TotalBytes int64          `json:"totalBytes"`
 	Objects    int64          `json:"objects"`
+	// Replacing says the preflight was the replacing one, which the
+	// operator confirmed: the run replaces what differs.
+	Replacing bool `json:"replacing,omitempty"`
 }
 
 func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
@@ -455,6 +464,14 @@ type DownloadPreflightView struct {
 	Objects        int64          `json:"objects"`
 	ProblemCount   int64          `json:"problemCount"`
 	Rejected       bool           `json:"rejected"`
+	// Replaceable is the number of refusals that are a regular file at a
+	// planned file's name, which a confirmed download may replace instead,
+	// when they are the only refusals; otherwise it is zero, because the
+	// operator has something else to resolve first (ADR 0122 decision 12).
+	Replaceable int64 `json:"replaceable"`
+	// Replacing is the number of files a replacing preflight admitted that
+	// may be replaced.
+	Replacing int64 `json:"replacing"`
 }
 
 const maxFailures = 200
@@ -471,6 +488,23 @@ func (p *DownloadPreflight) View() DownloadPreflightView {
 	view.Rejected = p.Rejected()
 	view.ItemSamples = sampleOf(p.Items)
 	view.ProblemSamples = sampleOf(p.Problems)
+	var replaceable, refused int64
+	for _, problem := range p.Problems {
+		if problem.Reject {
+			refused++
+			if problem.replaceable {
+				replaceable++
+			}
+		}
+	}
+	if replaceable == refused {
+		view.Replaceable = replaceable
+	}
+	for _, item := range p.Items {
+		if item.Replaces {
+			view.Replacing++
+		}
+	}
 	return view
 }
 
@@ -551,8 +585,23 @@ func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session
 // ceiling and every check count only them, and a member the listing does not
 // hold refuses the preflight, since it is the last check before the start.
 // No members means the whole scope.
-func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64, members []string) (report *DownloadPreflight, err error) {
-	report = &DownloadPreflight{}
+func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64, members []string) (*DownloadPreflight, error) {
+	return preflightDownloadMembers(ctx, src, container, prefix, destination, objectCeiling, members, false)
+}
+
+// PreflightDownloadMembersIntoReplacing is PreflightDownloadMembersInto for
+// a download the operator has asked may replace what differs (ADR 0122
+// decision 12): a planned file whose name holds a regular file is admitted,
+// marked as one that may be replaced, and still reported; anything else at
+// a file's name or on the way to it is refused as before. Like the upload's
+// replacing preflight it is its own entry point, so that only the admission
+// that raises the confirmation can reach it.
+func PreflightDownloadMembersIntoReplacing(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64, members []string) (*DownloadPreflight, error) {
+	return preflightDownloadMembers(ctx, src, container, prefix, destination, objectCeiling, members, true)
+}
+
+func preflightDownloadMembers(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64, members []string, replacing bool) (report *DownloadPreflight, err error) {
+	report = &DownloadPreflight{Replacing: replacing}
 	if objectCeiling < 0 {
 		return nil, fmt.Errorf("object ceiling %d is negative", objectCeiling)
 	}
@@ -715,8 +764,13 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 	report.Problems = append(report.Problems, collisionProblems(prefix, byLower, byCaseless)...)
 	for _, item := range candidates {
 		if refusal := inspectDownloadPath(destination.root, item); refusal != nil {
-			report.Problems = append(report.Problems, *refusal)
-			continue
+			if !replacing || !refusal.replaceable {
+				report.Problems = append(report.Problems, *refusal)
+				continue
+			}
+			item.Replaces = true
+			report.Problems = append(report.Problems, Problem{Name: item.Name, Kind: "local-exists",
+				Detail: item.RelPath + " already exists under the destination; this download replaces it if it differs from the object"})
 		}
 		report.Items = append(report.Items, item)
 		report.Objects++
@@ -981,6 +1035,9 @@ type Report struct {
 	// that replaced objects reporting none of them would be a counter
 	// that lies by omission (ADR 0081 decision 5).
 	Replaced int64
+	// Same counts the names a confirmed upload or download left because
+	// the engine found them the same as the source (ADR 0122 decision 12).
+	Same     int64
 	Failures []Failure
 	// A verified copy still counts when bookkeeping or cleanup fails.
 	// Bound the examples without truncating the issue count (ADR 0023).

@@ -86,18 +86,18 @@ func (f *hostileFixture) askedQuestion(t *testing.T) []string {
 }
 
 // assertCannotAddALine is the property both cases share: whatever the store
-// said, the question is the five lines this application composed.
+// said, the question is the six lines this application composed.
 func assertCannotAddALine(t *testing.T, lines []string) {
 	t.Helper()
-	if len(lines) != 5 {
-		t.Fatalf("the question is %d lines, want the 5 this application composes: %#v", len(lines), lines)
+	if len(lines) != 6 {
+		t.Fatalf("the question is %d lines, want the 6 this application composes: %#v", len(lines), lines)
 	}
 	for i, line := range lines {
 		if strings.ContainsAny(line, "\n\r  ") {
 			t.Errorf("line %d can end itself, so stored data can add a line to the question: %q", i, line)
 		}
 	}
-	if last := lines[4]; last != "This question comes from the application, not from the page." {
+	if last := lines[5]; last != "This question comes from the application, not from the page." {
 		t.Errorf("the question's own last word is not last: %q", last)
 	}
 }
@@ -111,7 +111,7 @@ func TestTheArchiveNameCannotAddALineToTheQuestion(t *testing.T) {
 
 	lines := f.askedQuestion(t)
 	assertCannotAddALine(t, lines)
-	versioning := lines[2]
+	versioning := lines[3]
 	if !strings.Contains(versioning, "retained-versions?untrusted-extra-line") {
 		t.Errorf("the archive name was not stated safely: %q", versioning)
 	}
@@ -133,7 +133,7 @@ func TestALongArchiveNameCannotCrowdOutTheQuestion(t *testing.T) {
 
 	lines := f.askedQuestion(t)
 	assertCannotAddALine(t, lines)
-	versioning := lines[2]
+	versioning := lines[3]
 	if len([]rune(versioning)) > 240 {
 		t.Errorf("the versioning line is %d runes, long enough to crowd out the rest: %q",
 			len([]rune(versioning)), versioning)

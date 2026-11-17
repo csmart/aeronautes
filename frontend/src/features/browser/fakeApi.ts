@@ -837,7 +837,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 42_000_000,
           bytesCopied: 12_000_000,
-          overwrites: 0, overwritesRefused: 1,
+          overwrites: 0, overwritesRefused: 1, objectsSame: 0,
           nativeRouted: 1,
           objectsDeleted: 0,
         },
@@ -946,7 +946,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 1024 * paths.length,
           bytesCopied: 0,
-          overwrites: 0, overwritesRefused: 0,
+          overwrites: 0, overwritesRefused: 0, objectsSame: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },
@@ -960,12 +960,15 @@ export function newFakeApi(): Api {
       ],
       problemSamples:
         req.destDirToken === "collides"
-          ? [{ name: "a.txt", kind: "local-exists", detail: "already there", reject: true }]
+          ? [{ name: "a.txt", kind: "local-exists", reject: !req.acknowledgeOverwrite,
+              detail: req.acknowledgeOverwrite ? "already there; this download replaces it if it differs" : "already there" }]
           : [],
       totalBytes: 512,
       objects: 1,
       problemCount: req.destDirToken === "collides" ? 1 : 0,
-      rejected: req.destDirToken === "collides",
+      rejected: req.destDirToken === "collides" && !req.acknowledgeOverwrite,
+      replaceable: req.destDirToken === "collides" && !req.acknowledgeOverwrite ? 1 : 0,
+      replacing: req.destDirToken === "collides" && req.acknowledgeOverwrite ? 1 : 0,
     }),
     startDownload: async (req) => {
       const id = `job-${jobs.length + 1}`;
@@ -990,7 +993,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 512,
           bytesCopied: 0,
-          overwrites: 0, overwritesRefused: 0,
+          overwrites: 0, overwritesRefused: 0, objectsSame: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },
@@ -1034,7 +1037,7 @@ export function newFakeApi(): Api {
           objectsFailed: 0,
           bytesPlanned: 9_000_000,
           bytesCopied: 0,
-          overwrites: 0, overwritesRefused: 0,
+          overwrites: 0, overwritesRefused: 0, objectsSame: 0,
           nativeRouted: 0,
           objectsDeleted: 0,
         },
@@ -1068,7 +1071,7 @@ export function newFakeApi(): Api {
         sourceBookmarkId: req.scope.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
         startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0, pause: "",
         counters: { objectsPlanned: members.length, objectsCopied: members.length, objectsVerified: 0, objectsFailed: 0,
-          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: members.length },
+          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: members.length },
         error: "",
       });
       record("delete.selected.start", req.container, "applied");
@@ -1160,7 +1163,7 @@ export function newFakeApi(): Api {
         sourceBookmarkId: req.bookmarkId, destBookmarkId: "", createdAt: "2026-10-27T10:00:00Z",
         startedAt: "2026-10-27T10:00:01Z", finishedAt: "2026-10-27T10:00:02Z", engine: "native", settings: "", recoveryRecords: 0, pause: "",
         counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0,
-          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 },
+          bytesPlanned: 0, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 4 },
         error: "",
       });
       record("segments.delete.start", `${req.container}/${req.name}`, "applied");

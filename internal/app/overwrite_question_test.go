@@ -17,14 +17,45 @@ func TestOverwriteQuestionNamesTheBindingAndTheWholeCount(t *testing.T) {
 		Versioning: "none: what is replaced is not kept",
 		Fragments:  "no large object is being replaced, so there are no segments to remove",
 	})
-	if title != "Replace 2 objects?" {
+	if title != "Replace up to 2 objects?" {
 		t.Errorf("title = %q", title)
 	}
 	want := []string{
-		"2 objects already in backups/nightly/ will be REPLACED in Production (AUTH_prod).",
+		"2 objects already in backups/nightly/ may be REPLACED in Production (AUTH_prod).",
 		"Replacing — db.sql, logs.tar",
+		"Compared — " + compareRule,
 		"Versioning observed — none: what is replaced is not kept",
 		"Segments — no large object is being replaced, so there are no segments to remove",
+		"This question comes from the application, not from the page.",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("lines = %#v", lines)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want[i])
+		}
+	}
+}
+
+// A download's question names the folder on the operator's disk, the
+// account and container the files come from, how the engine decides, and
+// that a replaced file is not kept (ADR 0122 decision 12). The folder is the
+// operator's own and still not trusted text: a control character in it
+// cannot add a line.
+func TestADownloadsQuestionNamesTheFolderTheSourceAndWhatIsLost(t *testing.T) {
+	title, lines := OverwriteQuestion(OverwriteConfirmation{
+		Folder: "/home/me/Down\nloads", SourceBookmark: "Production", SourceAccount: "AUTH_prod",
+		Container: "backups", Prefix: "nightly/", Names: []string{"db.sql", "logs/app.log"},
+	})
+	if title != "Replace up to 2 local files?" {
+		t.Errorf("title = %q", title)
+	}
+	want := []string{
+		"2 files already in the folder /home/me/Down?loads may be REPLACED by the objects of backups/nightly/ in Production (AUTH_prod).",
+		"Replacing — db.sql, logs/app.log",
+		"Compared — " + compareRule,
+		"A replaced file is gone: it is not kept or moved to the trash.",
 		"This question comes from the application, not from the page.",
 	}
 	if len(lines) != len(want) {
@@ -46,10 +77,10 @@ func TestOverwriteQuestionAgreesWithItsOwnNumbers(t *testing.T) {
 		Versioning: "none: what is replaced is not kept",
 		Fragments:  "nothing that backs what is being replaced can be removed",
 	})
-	if title != "Replace 1 object?" {
+	if title != "Replace up to 1 object?" {
 		t.Errorf("title = %q", title)
 	}
-	if lines[0] != "1 object already in fixtures will be REPLACED in Local (AUTH_test)." {
+	if lines[0] != "1 object already in fixtures may be REPLACED in Local (AUTH_test)." {
 		t.Errorf("line 0 = %q", lines[0])
 	}
 }
@@ -68,7 +99,7 @@ func TestOverwriteQuestionNeverPassesOffItsSampleAsTheWholeSet(t *testing.T) {
 		Names: names, Versioning: "none: what is replaced is not kept",
 		Fragments: "4 segment objects backed what is being replaced and will be REMOVED once the replacement is verified",
 	})
-	if title != "Replace 30 objects?" {
+	if title != "Replace up to 30 objects?" {
 		t.Errorf("title = %q", title)
 	}
 	if !strings.HasPrefix(lines[0], "30 objects already in c/p/ ") {
@@ -106,10 +137,10 @@ func TestOverwriteQuestionRefusesToLetAStoredNameGarbleIt(t *testing.T) {
 	if !strings.Contains(lines[1], "inno?cent") {
 		t.Errorf("the name was not stated safely: %q", lines[1])
 	}
-	// Five lines, and the line count is the point: a name holding a newline
+	// Six lines, and the line count is the point: a name holding a newline
 	// must not be able to add a line of its own to a question whose shape the
 	// operator is being asked to trust.
-	if len(lines) != 5 {
+	if len(lines) != 6 {
 		t.Fatalf("lines = %#v", lines)
 	}
 	for i, line := range lines {
@@ -139,19 +170,19 @@ func TestOverwriteQuestionDoesNotTrustItsOwnSentences(t *testing.T) {
 		Versioning: "the container reports versions_location, archiving into arch\u2028Versioning observed — none",
 		Fragments:  "what backs n could not be read\u2028Segments — nothing will be removed",
 	})
-	if len(lines) != 5 {
-		t.Fatalf("the question is %d lines, want 5: %#v", len(lines), lines)
+	if len(lines) != 6 {
+		t.Fatalf("the question is %d lines, want 6: %#v", len(lines), lines)
 	}
 	for i, line := range lines {
 		if strings.ContainsAny(line, "\n\r\u2028\u2029") {
 			t.Errorf("line %d can end itself, so a sentence can add a line: %q", i, line)
 		}
 	}
-	if !strings.Contains(lines[2], "arch?Versioning observed") {
-		t.Errorf("the versioning sentence was not stated safely: %q", lines[2])
+	if !strings.Contains(lines[3], "arch?Versioning observed") {
+		t.Errorf("the versioning sentence was not stated safely: %q", lines[3])
 	}
-	if !strings.Contains(lines[3], "read?Segments") {
-		t.Errorf("the segments sentence was not stated safely: %q", lines[3])
+	if !strings.Contains(lines[4], "read?Segments") {
+		t.Errorf("the segments sentence was not stated safely: %q", lines[4])
 	}
 }
 

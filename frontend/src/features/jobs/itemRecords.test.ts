@@ -19,7 +19,7 @@ function job(id: string, state = "failed"): JobDTO {
   return { id, state, type: "copy", source: "source/", destination: "dest/", sourceBookmarkId: "a", destBookmarkId: "b",
     createdAt: "2000-01-01T00:00:00Z", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "", recoveryRecords: 0, pause: "",
     counters: { objectsPlanned: 0, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0, bytesCopied: 0,
-      overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 } };
+      overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0 } };
 }
 
 function item(index: number, key = `item-${index}`): JobItemDTO {

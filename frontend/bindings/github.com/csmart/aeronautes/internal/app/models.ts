@@ -792,6 +792,14 @@ export interface DownloadRequestDTO {
     "settings": TransferSettingsDTO;
 
     /**
+     * AcknowledgeOverwrite says the operator asked for a download that may
+     * replace local files that differ from the objects (ADR 0122 decision
+     * 12), as an upload's does. Without it a download never replaces a local
+     * file. What guards it is the native confirmation the backend raises.
+     */
+    "acknowledgeOverwrite": boolean;
+
+    /**
      * Members, when given, are the full names of the selected objects to
      * download instead of the whole scope (ADR 0108); empty means the scope.
      */

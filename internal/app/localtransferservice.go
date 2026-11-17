@@ -56,6 +56,11 @@ type DownloadRequestDTO struct {
 	Profile string `json:"profile"`
 	// Settings are the per-job §44.1 overrides.
 	Settings TransferSettingsDTO `json:"settings"`
+	// AcknowledgeOverwrite says the operator asked for a download that may
+	// replace local files that differ from the objects (ADR 0122 decision
+	// 12), as an upload's does. Without it a download never replaces a local
+	// file. What guards it is the native confirmation the backend raises.
+	AcknowledgeOverwrite bool `json:"acknowledgeOverwrite"`
 	// Members, when given, are the full names of the selected objects to
 	// download instead of the whole scope (ADR 0108); empty means the scope.
 	Members []string `json:"members,omitempty"`
@@ -129,8 +134,11 @@ type OverwriteConfirmation struct {
 	// above; when SourceAccount is set the question names the two accounts.
 	SourceBookmark string
 	SourceAccount  string
-	Container      string
-	Prefix         string
+	// Folder is the local folder a download writes into, set only for a
+	// download, whose bytes come from SourceBookmark and SourceAccount.
+	Folder    string
+	Container string
+	Prefix    string
 	// Names are the live object names this job would replace, in the
 	// order the preflight reported them.
 	Names []string
@@ -640,6 +648,14 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	if err != nil {
 		return err
 	}
+	return s.askOverwrite(ctx, scope, before, question)
+}
+
+// askOverwrite raises the question and accepts only a yes about the same
+// account and credentials the question named: the connection is observed
+// either side of the dialog, because an answer given about one account must
+// not authorise a write to another.
+func (s *TransferService) askOverwrite(ctx context.Context, scope selectionScope, before activeObservation, question OverwriteConfirmation) error {
 	yes, err := s.overwrites.ConfirmOverwrite(ctx, question)
 	if err != nil {
 		return err
@@ -658,6 +674,34 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 		return errors.New("the account's credentials changed while you were answering; start again")
 	}
 	return nil
+}
+
+// confirmDownloadOverwrite asks the one native confirmation for a download
+// that may replace local files (ADR 0122 decision 12), about the files the
+// preflight found and the folder, account and container it names.
+func (s *TransferService) confirmDownloadOverwrite(ctx context.Context, req DownloadRequestDTO, scope selectionScope,
+	preflight *local.DownloadPreflight, folder string) error {
+	var names []string
+	for _, item := range preflight.Items {
+		if item.Replaces {
+			names = append(names, item.RelPath)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	if s.overwrites == nil {
+		return errors.New("replacing a local file needs the shell's confirmation, and this build has none")
+	}
+	before := s.observeConnection()
+	label, account, _ := s.pickBinding(ctx, scope)
+	if account == "" {
+		return errors.New("the source account could not be identified, so replacing local files is refused")
+	}
+	return s.askOverwrite(ctx, scope, before, OverwriteConfirmation{
+		Folder: folder, SourceBookmark: titleText(label, 80), SourceAccount: titleText(account, 80),
+		Container: req.Container, Prefix: req.Prefix, Names: names,
+	})
 }
 
 // keepsReplaced decides, once at the start of an upload or a copy, whether the engine
@@ -819,7 +863,11 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 		// without any effect.
 		return local.PreflightDownloadBounded(ctx, session, req.Container, req.Prefix, destDir, ceiling)
 	}
-	report, err := local.PreflightDownloadMembersInto(ctx, session, req.Container, req.Prefix, destination, ceiling, req.Members)
+	preflight := local.PreflightDownloadMembersInto
+	if req.AcknowledgeOverwrite {
+		preflight = local.PreflightDownloadMembersIntoReplacing
+	}
+	report, err := preflight(ctx, session, req.Container, req.Prefix, destination, ceiling, req.Members)
 	if err == nil && report != nil {
 		// A directory another active download is using is refused before
 		// any effect, naming that job (ADR 0078).
@@ -1000,6 +1048,9 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	// allowed it.
 	options.LiveDestination = true
 	options.KeepReplacedSegments = keepsSegments
+	// Confirmed, the engine compares each name as rclone copy does and
+	// replaces only what differs (ADR 0122 decision 12).
+	options.CompareExisting = req.AcknowledgeOverwrite
 	// The engine's one size check after a segmented upload reads the
 	// dynamic manifest's size through a listing that can lag the last
 	// segment (F35); the store checks the segments against the static
@@ -1138,11 +1189,18 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		s.destinations.release(reservation)
 		_ = destination.Close()
 	})
+	if req.AcknowledgeOverwrite {
+		if err := s.confirmDownloadOverwrite(ctx, req, scope, preflight, destination.Path()); err != nil {
+			return "", err
+		}
+	}
 	options := settings.options()
-	// The engine writes each file in the folder itself and leaves alone one
-	// that is there, which it reports in a line of its own (ADR 0122
-	// decision 5): a download never replaces a local file.
-	options.LeaveExisting = true
+	// The engine writes each file in the folder itself. Unconfirmed, it
+	// leaves alone one that is there, which it reports in a line of its own
+	// (ADR 0122 decision 5); confirmed, it compares each one as rclone copy
+	// does and replaces what differs (decision 12).
+	options.LeaveExisting = !req.AcknowledgeOverwrite
+	options.CompareExisting = req.AcknowledgeOverwrite
 	engine, err := s.localEngine(ctx, session, "aeronautes_src", options)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
@@ -1358,6 +1416,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		// whose answer was lost is not counted at all, because its outcome
 		// is unknown.
 		counters.Overwrites = report.Replaced
+		counters.ObjectsSame = report.Same
 		if version == 0 {
 			counters.ObjectsFailed = int64(len(report.Failures))
 		}

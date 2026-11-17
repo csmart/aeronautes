@@ -173,7 +173,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			outcome = materializeDownloadDirectory(ctx, destination, item.RelPath)
 		} else {
 			report.NativeRouted++
-			outcome = nativeDownload(ctx, src, container, item, destination)
+			outcome = nativeDownload(ctx, src, container, item, destination, preflight.Replacing)
 		}
 		if err := d.observe(item, outcome); err != nil {
 			return report, err
@@ -333,6 +333,8 @@ func engineDownloadOutcome(answers rclone.Answers, rel string, item DownloadItem
 	switch {
 	case answers.Copied[rel]:
 		return downloadVerified(item.Size)
+	case answers.Same[rel]:
+		return downloadSame()
 	case answers.Skipped[rel]:
 		result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeConflict, "exists",
 			errors.New("not downloaded: a file of that name is in the folder, and a download does not replace a file"))
@@ -469,7 +471,7 @@ func observeDownloadDirectory(parent *os.Root, base string) downloadResult {
 // The store's own tag for a plain object is checked against the bytes as
 // they arrive, at no extra request, as the engine checks it on its route;
 // nothing else is compared and nothing is read back.
-func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot) (result downloadResult) {
+func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container string, item DownloadItem, destination *DestinationRoot, replacing bool) (result downloadResult) {
 	if err := ctx.Err(); err != nil {
 		return downloadNotAttempted(transfercopy.StageSourceRead, err)
 	}
@@ -496,9 +498,14 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeIO, "native-get", errors.Join(atPath(err, "open", display), body.Close()))
 	}
 	// The temporary is removed however the item ends: once the file has its
-	// name it is a second name for it, and before that it is a part. One
-	// that cannot be removed is still in the folder, and the item says so.
+	// name by a link it is a second name for it, and before that it is a
+	// part. Renamed, it is gone already. One that cannot be removed is still
+	// in the folder, and the item says so.
+	renamed := false
 	defer func() {
+		if renamed {
+			return
+		}
 		err := unlinkFileAt(parent, temporary, display)
 		if err == nil {
 			return
@@ -525,6 +532,16 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 		return downloadNotAttempted(transfercopy.StageCommit, err)
 	}
 	base := filepath.Base(item.RelPath)
+	if replacing {
+		// Confirmed, the application's own route does not compare: it
+		// replaces what is there, as a rename does (ADR 0122 decision 12).
+		if err := parent.Rename(temporary, base); err != nil {
+			return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeIO, "native-get",
+				atPath(err, "rename", filepath.Join(destination.Path(), item.RelPath)))
+		}
+		renamed = true
+		return downloadVerified(written)
+	}
 	if err := parent.Link(temporary, base); err != nil {
 		result := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageCommit, transfercopy.CodeIO, "native-get",
 			atPath(err, "link", filepath.Join(destination.Path(), item.RelPath)))

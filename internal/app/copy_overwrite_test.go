@@ -132,7 +132,9 @@ func TestTheCopyConfirmationAsksOnlyAboutWhatWillBeReplaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job := awaitTerminal(t, h, again); job.State != "complete" || job.Counters.ObjectsCopied != 0 {
+	// All three are left as they are and counted as already the same (ADR
+	// 0122 decision 12).
+	if job := awaitTerminal(t, h, again); job.State != "complete" || job.Counters.ObjectsCopied != 0 || job.Counters.ObjectsSame != 3 {
 		t.Fatalf("second job = %s %+v", job.State, job.Counters)
 	}
 	if asked := confirmer.questions(); len(asked) != 1 {

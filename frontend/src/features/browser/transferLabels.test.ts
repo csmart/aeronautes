@@ -129,7 +129,7 @@ it.each(["download", "upload"] as const)("sends the chosen objects only for a do
   browser.localTransfer = mode;
   api.pickDownloadDir = vi.fn().mockResolvedValue({ token: "dir", dir: "chosen" });
   api.pickUploadFiles = vi.fn().mockResolvedValue({ token: "files", files: ["x"], folder: "", skipped: 0, skippedSample: [], emptyDirectories: 0 });
-  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 2, problemCount: 0, rejected: false });
+  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 2, problemCount: 0, rejected: false, replaceable: 0, replacing: 0 });
   api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjects: "", largeObjectsOrigin: "" });
   const root = document.createElement("div");
   document.body.append(root);
@@ -152,7 +152,7 @@ it("downloads a selected folder as its own scope", async () => {
   browser.select(0);
   browser.localTransfer = "download";
   api.pickDownloadDir = vi.fn().mockResolvedValue({ token: "dir", dir: "chosen" });
-  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 2, problemCount: 0, rejected: false });
+  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 2, problemCount: 0, rejected: false, replaceable: 0, replacing: 0 });
   const root = document.createElement("div");
   document.body.append(root);
   mounted.add(mount(LocalTransferDialog, { target: root, props: { browser, mode: "download", onClose: vi.fn() } }));

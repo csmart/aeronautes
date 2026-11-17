@@ -144,6 +144,10 @@ func (u *uploadRun) settle(item UploadItem, result uploadResult, progress func()
 }
 
 func (u *uploadRun) observe(item UploadItem, result uploadResult) error {
+	if result.Result == transfercopy.ResultSame {
+		u.report.Same++
+		u.report.Verified++
+	}
 	if result.Result == transfercopy.ResultCopied {
 		u.report.Done++
 		if result.verification != nil && result.verification.Result == transfercopy.ResultVerified {

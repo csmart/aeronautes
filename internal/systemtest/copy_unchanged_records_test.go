@@ -36,7 +36,7 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 	copyCompletionAwaitPins(t, h)
 	elapsed := time.Since(started)
 	saved := copyCompletionRead(t, h.database, id)
-	if saved.Job.State != "complete" || saved.Job.Counters != (jobs.Counters{ObjectsVerified: count}) || !saved.ItemsCaptured ||
+	if saved.Job.State != "complete" || saved.Job.Counters != (jobs.Counters{ObjectsVerified: count, ObjectsSame: count}) || !saved.ItemsCaptured ||
 		saved.ItemTotals != (jobs.ItemTotals{Items: count}) || len(saved.Items) != count {
 		t.Fatalf("unchanged Copy invented a transfer or lost comparison records: %+v", saved)
 	}

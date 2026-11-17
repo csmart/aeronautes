@@ -67,6 +67,13 @@ func downloadNotAttempted(stage transfercopy.Stage, err error) downloadResult {
 	return result
 }
 
+// downloadSame is a file a confirmed download left because the engine found
+// it the same as the source (ADR 0122 decision 12): verified, not copied.
+func downloadSame() downloadResult {
+	return downloadResult{Observation: transfercopy.Observation{Result: transfercopy.ResultSame, Effect: transfercopy.EffectNotAttempted},
+		verification: &transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}}
+}
+
 func downloadVerified(bytes int64) downloadResult {
 	return downloadResult{Observation: transfercopy.Observation{
 		Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: bytes},
@@ -185,8 +192,18 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 	if result.Result != transfercopy.ResultCopied {
 		d.report.createdDirectories(result.created)
 	}
+	if result.Result == transfercopy.ResultSame {
+		d.report.Same++
+		d.report.Verified++
+	}
 	if result.Result == transfercopy.ResultCopied {
 		d.report.Done++
+		if item.Replaces {
+			// As for an upload: a name the preview found holding a file,
+			// which the operator agreed may be replaced, and whose write
+			// was answered.
+			d.report.Replaced++
+		}
 		if result.verification != nil && result.verification.Result == transfercopy.ResultVerified {
 			d.report.Verified++
 		}
