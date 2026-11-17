@@ -506,18 +506,10 @@ func nullable(s string) *string {
 // RecoveryKind labels one crash-recovery record (§65.8 item 2).
 type RecoveryKind string
 
-const (
-	// RecoveryStaging is a job's staging namespace (container+prefix).
-	RecoveryStaging RecoveryKind = "staging"
-	// RecoveryCaptured is a generated segment prefix observed live.
-	RecoveryCaptured RecoveryKind = "captured"
-	// RecoveryCommitting: persisted BEFORE the live manifest PUT — the
-	// prefix may already be referenced by the recorded live object.
-	RecoveryCommitting RecoveryKind = "committing"
-	// RecoveryCommitted marks a captured prefix now referenced by a
-	// committed manifest — never swept.
-	RecoveryCommitted RecoveryKind = "committed"
-)
+// RecoveryCaptured is a generated segment prefix observed live. It is the
+// only kind this build writes; rows of the kinds an earlier build wrote are
+// still counted and still hold their job back from pruning.
+const RecoveryCaptured RecoveryKind = "captured"
 
 // RecoveryRecord preserves intent or observed provenance, not deletion authority.
 type RecoveryRecord struct {
@@ -526,7 +518,9 @@ type RecoveryRecord struct {
 	Kind       RecoveryKind
 	Container  string
 	Prefix     string
-	// Object is the live "container/name" a committing record targets.
+	// Object is empty for every record this build writes. Only the staged
+	// model's records named a live object here, and the column keeps what
+	// an earlier build wrote.
 	Object string
 }
 
@@ -571,32 +565,6 @@ func (s *Store) RecoveryStatus(ctx context.Context) (RecoveryStatus, error) {
 		return RecoveryStatus{}, err
 	}
 	return status, nil
-}
-
-// RecoveryPending lists records whose job is TERMINAL — a live run
-// still owns its records. Even a completed job retains records because
-// transfer success does not establish safe reclamation (ADR 0020).
-func (s *Store) RecoveryPending(ctx context.Context) ([]RecoveryRecord, error) {
-	rows, err := s.db.Reader().QueryContext(ctx, `
-		SELECT r.job_id, r.bookmark_id, r.kind, r.container, r.prefix, r.object
-		FROM job_recovery r JOIN jobs j ON j.id = r.job_id
-		WHERE j.state IN ('complete','partial','cancelled','failed')
-		ORDER BY r.job_id, r.id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []RecoveryRecord
-	for rows.Next() {
-		var r RecoveryRecord
-		var kind string
-		if err := rows.Scan(&r.JobID, &r.BookmarkID, &kind, &r.Container, &r.Prefix, &r.Object); err != nil {
-			return nil, err
-		}
-		r.Kind = RecoveryKind(kind)
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // PruneTerminal deletes terminal jobs finished before the cutoff —

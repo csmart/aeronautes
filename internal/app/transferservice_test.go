@@ -783,7 +783,7 @@ func TestRecoveryStatusRetainsCrashData(t *testing.T) {
 
 	// Simulate a crashed copy job: terminal row + persisted recovery
 	// records + real litter on the cluster, with one captured prefix
-	// COMMITTED (its live manifest must survive) and one orphaned.
+	// referenced by a live manifest (which must survive) and one orphaned.
 	crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
 	if err != nil {
 		t.Fatal(err)
@@ -791,19 +791,15 @@ func TestRecoveryStatusRetainsCrashData(t *testing.T) {
 	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
 	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
 
-	staging := ".aeronautes/stage/" + crashed.ID + "/"
-	seedObject(h.mock, "backup", staging+"000001", "stranded staged bytes", nil)
-	committedPrefix := "kept.bin/2026-08-30-0000000000000000000001/"
+	referencedPrefix := "kept.bin/2026-08-30-0000000000000000000001/"
 	orphanPrefix := "lost.bin/2026-08-30-0000000000000000000002/"
-	seedObject(h.mock, "backup_segments", committedPrefix+"00000000", "kept-seg", nil)
-	h.mock.PutObject("backup", "kept.bin", swifttest.Object{Manifest: "backup_segments/" + committedPrefix})
+	seedObject(h.mock, "backup_segments", referencedPrefix+"00000000", "kept-seg", nil)
+	h.mock.PutObject("backup", "kept.bin", swifttest.Object{Manifest: "backup_segments/" + referencedPrefix})
 	for i := 0; i < 2; i++ {
 		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", orphanPrefix, i), "orphan-seg", nil)
 	}
 	for _, r := range []jobs.RecoveryRecord{
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: staging},
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: committedPrefix},
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCommitted, Container: "backup_segments", Prefix: committedPrefix},
+		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: referencedPrefix},
 		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: orphanPrefix},
 	} {
 		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
@@ -815,24 +811,21 @@ func TestRecoveryStatusRetainsCrashData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status != (RecoveryStatusDTO{Jobs: 1, Records: 4}) {
+	if status != (RecoveryStatusDTO{Jobs: 1, Records: 2}) {
 		t.Fatalf("retained recovery = %+v", status)
 	}
 	session := h.transfer.connections.sessions[bookmark].session
-	if _, err := session.ObjectDetail(ctx, "backup", staging+"000001"); err != nil {
-		t.Fatalf("stranded staging object not retained: %v", err)
-	}
 	if _, err := session.ObjectDetail(ctx, "backup_segments", orphanPrefix+"00000000"); err != nil {
 		t.Fatalf("uncertain segment not retained: %v", err)
 	}
-	// The committed manifest still assembles.
+	// The referencing manifest still assembles.
 	d, err := session.ObjectDetail(ctx, "backup", "kept.bin")
 	if err != nil || d.ContentLength != int64(len("kept-seg")) {
-		t.Fatalf("committed DLO harmed: %+v %v", d, err)
+		t.Fatalf("referenced DLO harmed: %+v %v", d, err)
 	}
 	// Repeated recovery cannot turn uncertainty into deletion authority.
-	if pending, err := h.transfer.jobs.RecoveryPending(ctx); err != nil || len(pending) != 4 {
-		t.Fatalf("recovery records not retained: %+v, %v", pending, err)
+	if rows := retainedRows(t, h.db); len(rows) != 2 {
+		t.Fatalf("recovery records not retained: %+v", rows)
 	}
 	if next, err := h.jobsSvc.RecoveryStatus(ctx); err != nil || next != status {
 		t.Fatalf("repeated recovery status = %+v, %v", next, err)
@@ -863,10 +856,10 @@ func TestJobRecordsRecoveryDurably(t *testing.T) {
 	if job := awaitTerminal(t, h, jobID); job.State != "complete" {
 		t.Fatalf("job = %+v", job)
 	}
-	pending, err := h.transfer.jobs.RecoveryPending(ctx)
-	if err != nil || len(pending) != 1 || pending[0].Kind != jobs.RecoveryCaptured ||
-		pending[0].Container != "backup_segments" || !strings.HasPrefix(pending[0].Prefix, "big.bin/") {
-		t.Fatalf("recovery records = %+v, %v; want the one segment path the engine reported", pending, err)
+	rows := retainedRows(t, h.db)
+	if len(rows) != 1 || rows[0].Kind != jobs.RecoveryCaptured ||
+		rows[0].Container != "backup_segments" || !strings.HasPrefix(rows[0].Prefix, "big.bin/") {
+		t.Fatalf("recovery records = %+v; want the one segment path the engine reported", rows)
 	}
 }
 
@@ -955,95 +948,6 @@ func TestRerunHistoricalMirrorIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestCrashSweepCommitBoundary(t *testing.T) {
-	// The review-wave C-01 sequence, both sides of the boundary. A
-	// staged DLO's live manifest PUT LANDED but the process died before
-	// the committed record: the sweep must resolve from the committing
-	// record's live identity and KEEP the segments — the old code
-	// deleted the staging namespace first, derived the staged name,
-	// found it gone, and destroyed the live object's segments.
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	bookmark := h.transfer.connections.ActiveBookmarkID()
-	h.mock.AddContainer("backup", "standard")
-	h.mock.AddContainer("backup_segments", "standard")
-
-	newCrashed := func() string {
-		t.Helper()
-		crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
-		_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
-		return crashed.ID
-	}
-
-	// Case A: commit landed, committed record lost.
-	jobA := newCrashed()
-	stagingA := ".aeronautes/stage/" + jobA + "/"
-	prefixA := stagingA + "000001/2026-08-30-0000000000000000000011/"
-	seedObject(h.mock, "backup", stagingA+"000001", "", nil) // staged manifest placeholder
-	for i := 0; i < 3; i++ {
-		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefixA, i), "segment-bytes", nil)
-	}
-	h.mock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + prefixA})
-	for _, r := range []jobs.RecoveryRecord{
-		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: stagingA},
-		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefixA},
-		{JobID: jobA, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: prefixA, Object: "backup/video.bin"},
-	} {
-		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Missing live names do not rule out outside aliases or later writes.
-	jobB := newCrashed()
-	stagingB := ".aeronautes/stage/" + jobB + "/"
-	prefixB := stagingB + "000001/2026-08-30-0000000000000000000022/"
-	seedObject(h.mock, "backup", stagingB+"000001", "", nil)
-	for i := 0; i < 2; i++ {
-		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i), "doomed", nil)
-	}
-	for _, r := range []jobs.RecoveryRecord{
-		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: stagingB},
-		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefixB},
-		{JobID: jobB, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: prefixB, Object: "backup/never-made-it.bin"},
-	} {
-		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if _, err := h.jobsSvc.RecoveryStatus(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	// Case A: the live DLO still assembles — its segments survived.
-	session := h.transfer.connections.sessions[bookmark].session
-	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
-	if err != nil || d.ContentLength != 3*int64(len("segment-bytes")) {
-		t.Fatalf("live DLO after sweep = %+v %v (its segments were destroyed)", d, err)
-	}
-	if _, err := session.ObjectDetail(ctx, "backup", stagingA+"000001"); err != nil {
-		t.Errorf("uncertain staged manifest not retained: %v", err)
-	}
-	for i := 0; i < 2; i++ {
-		if _, err := session.ObjectDetail(ctx, "backup_segments", fmt.Sprintf("%s%08d", prefixB, i)); err != nil {
-			t.Errorf("uncertain segment %d not retained: %v", i, err)
-		}
-	}
-	pending, err := h.transfer.jobs.RecoveryPending(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pending) != 6 {
-		t.Errorf("recovery records not retained: %+v", pending)
-	}
-}
-
 func TestOverlappingScopesRefused(t *testing.T) {
 	// The review-wave C-03 pair: src a/z/ → dst a/ (deterministic
 	// source self-deletion under Mirror) and src a/ → dst a/z/
@@ -1127,56 +1031,6 @@ type fakePicker struct {
 func (f fakePicker) PickFiles(string) ([]string, error)   { return f.files, nil }
 func (f fakePicker) PickDirectory(string) (string, error) { return f.dir, nil }
 
-func TestCrashSweepProductionSlashPair(t *testing.T) {
-	// The follow-up review's C01-slash sequence, with PRODUCTION forms:
-	// the captured row is slash-terminated (log-derived), the committing
-	// row and the live X-Object-Manifest are UNSLASHED (rclone's header
-	// form), and the staged object is already gone. The sweep must still
-	// match them and KEEP the live DLO's segments.
-	h := newHarness(t)
-	ctx := context.Background()
-	h.connect(t)
-	bookmark := h.transfer.connections.ActiveBookmarkID()
-	h.mock.AddContainer("backup", "standard")
-	h.mock.AddContainer("backup_segments", "standard")
-
-	crashed, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeCopy, DestBookmarkID: bookmark})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StatePlanning)
-	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
-
-	staging := ".aeronautes/stage/" + crashed.ID + "/"
-	prefix := staging + "000001/2026-08-30-0000000000000000000033/" // canonical captured form
-	for i := 0; i < 2; i++ {
-		seedObject(h.mock, "backup_segments", fmt.Sprintf("%s%08d", prefix, i), "live-bytes", nil)
-	}
-	// Live manifest header WITHOUT the trailing slash — rclone's form.
-	h.mock.PutObject("backup", "video.bin", swifttest.Object{Manifest: "backup_segments/" + strings.TrimSuffix(prefix, "/")})
-	// No staged manifest object: the staging namespace is already gone.
-	for _, r := range []jobs.RecoveryRecord{
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: staging},
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefix},
-		// Committing row planted UNSLASHED, as an older build (or the
-		// raw header path) would have written it.
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "backup_segments", Prefix: strings.TrimSuffix(prefix, "/"), Object: "backup/video.bin"},
-	} {
-		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if _, err := h.jobsSvc.RecoveryStatus(ctx); err != nil {
-		t.Fatal(err)
-	}
-	session := h.transfer.connections.sessions[bookmark].session
-	d, err := session.ObjectDetail(ctx, "backup", "video.bin")
-	if err != nil || d.ContentLength != 2*int64(len("live-bytes")) {
-		t.Fatalf("live DLO after sweep = %+v %v (C01-slash: its segments were destroyed)", d, err)
-	}
-}
-
 func TestRecoveryStatusRetainsLaterRecords(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -1200,18 +1054,15 @@ func TestRecoveryStatusRetainsLaterRecords(t *testing.T) {
 	_ = h.transfer.jobs.Transition(ctx, crashed.ID, jobs.StateCancelled)
 	prefix := "orphan/2026-08-30-0000000000000000000099/"
 	seedObject(h.mock, "backup_segments", prefix+"00000000", "litter", nil)
-	for _, r := range []jobs.RecoveryRecord{
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "backup", Prefix: ".aeronautes/stage/" + crashed.ID + "/"},
-		{JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefix},
-	} {
-		if err := h.transfer.jobs.RecoveryAdd(ctx, r); err != nil {
-			t.Fatal(err)
-		}
+	if err := h.transfer.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{
+		JobID: crashed.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "backup_segments", Prefix: prefix,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Observing newly retained work cannot authorise its deletion.
 	status, err = h.jobsSvc.RecoveryStatus(ctx)
-	if err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 2}) {
+	if err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 1}) {
 		t.Fatalf("post-crash status = %+v, %v", status, err)
 	}
 	session := h.transfer.connections.sessions[bookmark].session

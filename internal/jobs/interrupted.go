@@ -186,9 +186,8 @@ func (s *Store) DiscloseInterrupted(ctx context.Context, ids []string) (int64, e
 // InterruptedDisclosure is one undisclosed interrupted job and the facts the
 // retained records prove about it — never a verdict the records cannot give
 // (ADR 0088 decision 5). Item facts the ledger acknowledged stand on their own
-// (ADR 0031 line 94); an inconclusive commit ledger is reported as inconclusive
-// and not as a failure (ADR 0031 line 75); and an absent recovery row is not
-// read as "nothing happened", because the download route writes none.
+// (ADR 0031 line 94), and an absent recovery row is not read as "nothing
+// happened", because the download route writes none.
 type InterruptedDisclosure struct {
 	JobID       string
 	Type        Type
@@ -212,10 +211,6 @@ type InterruptedDisclosure struct {
 	// residue may exist remotely where the route writes them; their absence is
 	// not evidence, since the download route writes none.
 	RecoveryRecords int64
-	// InconclusiveCommits counts committing rows with no committed row: for that
-	// many names the recovery ledger is inconclusive (ADR 0031 line 75). It is
-	// not a count of failures.
-	InconclusiveCommits int64
 	// Attempted is true when the ledger records a real attempt: an execution
 	// outcome other than the synthetic not_attempted, or an issued deletion
 	// member with no recorded outcome (its DELETE may have been sent, ADR 0093).
@@ -273,10 +268,7 @@ func (s *Store) InterruptedDisclosures(ctx context.Context, limit int) (Interrup
 
 	rows, err := tx.QueryContext(ctx, `SELECT j.id, j.type, COALESCE(j.source,''), COALESCE(j.destination,''),
 			j.created_at, j.interrupted_at, j.interrupted_state, j.item_records_version,
-			(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=j.id),
-			(SELECT COUNT(*) FROM job_recovery c WHERE c.job_id=j.id AND c.kind='committing'
-				AND NOT EXISTS (SELECT 1 FROM job_recovery d
-					WHERE d.job_id=j.id AND d.kind='committed' AND d.prefix=c.prefix))
+			(SELECT COUNT(*) FROM job_recovery r WHERE r.job_id=j.id)
 		FROM jobs j
 		WHERE j.interrupted_at IS NOT NULL AND j.interrupt_disclosed_at IS NULL
 		ORDER BY j.interrupted_at DESC, j.created_at DESC, j.id DESC
@@ -291,7 +283,7 @@ func (s *Store) InterruptedDisclosures(ctx context.Context, limit int) (Interrup
 		var typ, state, created, interruptedAt string
 		var version int
 		if err := rows.Scan(&d.JobID, &typ, &d.Source, &d.Destination, &created,
-			&interruptedAt, &state, &version, &d.RecoveryRecords, &d.InconclusiveCommits); err != nil {
+			&interruptedAt, &state, &version, &d.RecoveryRecords); err != nil {
 			return InterruptedDisclosurePage{}, err
 		}
 		d.Type = Type(typ)

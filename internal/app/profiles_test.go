@@ -272,7 +272,7 @@ func TestRetentionPrunesExactly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := jobStore.RecoveryAdd(ctx, jobs.RecoveryRecord{
-		JobID: oldWithRecovery, BookmarkID: "bm", Kind: jobs.RecoveryStaging, Container: "c", Prefix: "p/",
+		JobID: oldWithRecovery, BookmarkID: "bm", Kind: jobs.RecoveryCaptured, Container: "c", Prefix: "p/",
 	}); err != nil {
 		t.Fatal(err)
 	}

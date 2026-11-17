@@ -86,16 +86,33 @@ func TestInterruptedProjectionAcrossJobPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fact := RecoveryRecord{JobID: recorded[0].ID, BookmarkID: bookmark, Kind: RecoveryCommitting,
-		Container: "dest", Prefix: ".staging/retained/", Object: "dest/live"}
+	fact := RecoveryRecord{JobID: recorded[0].ID, BookmarkID: bookmark, Kind: RecoveryCaptured,
+		Container: "dest", Prefix: ".staging/retained/"}
 	if err := store.RecoveryAdd(ctx, fact); err != nil {
 		t.Fatal(err)
 	}
-	var before RecoveryRecord
-	err = store.db.Reader().QueryRowContext(ctx, `SELECT job_id, bookmark_id, kind, container, prefix, object FROM job_recovery`).Scan(
-		&before.JobID, &before.BookmarkID, &before.Kind, &before.Container, &before.Prefix, &before.Object)
-	if err != nil || before != fact {
-		t.Fatalf("recovery setup: %+v %v", before, err)
+	recoveryRows := func() []RecoveryRecord {
+		t.Helper()
+		rows, err := store.db.Reader().QueryContext(ctx, `SELECT job_id, bookmark_id, kind, container, prefix, object FROM job_recovery ORDER BY id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []RecoveryRecord
+		for rows.Next() {
+			var r RecoveryRecord
+			if err := rows.Scan(&r.JobID, &r.BookmarkID, &r.Kind, &r.Container, &r.Prefix, &r.Object); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, r)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if before := recoveryRows(); !reflect.DeepEqual([]RecoveryRecord{fact}, before) {
+		t.Fatalf("recovery setup: %+v", before)
 	}
 	if n, err := store.FailInterrupted(ctx); err != nil || n != 206 {
 		t.Fatalf("bounded interruption sweep: %d %v", n, err)
@@ -118,8 +135,8 @@ func TestInterruptedProjectionAcrossJobPages(t *testing.T) {
 	if got, err := store.Get(ctx, done.ID); err != nil || !reflect.DeepEqual(got, done) {
 		t.Fatalf("existing terminal job changed: %+v %v", got, err)
 	}
-	if after, err := store.RecoveryPending(ctx); err != nil || !reflect.DeepEqual([]RecoveryRecord{before}, after) {
-		t.Fatalf("interruption changed recovery facts: %+v %v", after, err)
+	if after := recoveryRows(); !reflect.DeepEqual([]RecoveryRecord{fact}, after) {
+		t.Fatalf("interruption changed recovery facts: %+v", after)
 	}
 	var audits int
 	if err := store.db.Reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_events`).Scan(&audits); err != nil || audits != 0 {

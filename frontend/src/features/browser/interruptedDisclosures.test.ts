@@ -11,7 +11,7 @@ function page(total: number, ids: string[] = []): InterruptedDisclosuresDTO {
       createdAt: "2026-10-19T00:00:00Z", interruptedAt: "2026-10-19T00:00:01Z",
       interruptedState: "queued", attempted: false, itemsCaptured: false,
       items: { items: 0, admitted: 0, copied: 0, verified: 0, copiedBytes: 0, failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, deleted: 0, unsettled: 0 },
-      recoveryRecords: 0, inconclusiveCommits: 0, placesLocalResidue: true,
+      recoveryRecords: 0, placesLocalResidue: true,
     })),
   };
 }

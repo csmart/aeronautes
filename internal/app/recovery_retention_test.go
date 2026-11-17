@@ -117,7 +117,7 @@ func TestRecoveryRecordsAfterProcessReopen(t *testing.T) {
 		// credential authority in the newly started process.
 		service := NewJobService(store)
 		for range 2 {
-			if status, err := service.RecoveryStatus(context.Background()); err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 3}) {
+			if status, err := service.RecoveryStatus(context.Background()); err != nil || status != (RecoveryStatusDTO{Jobs: 1, Records: 1}) {
 				t.Fatalf("reopened recovery status = %+v, %v", status, err)
 			}
 		}
@@ -142,14 +142,10 @@ func TestRecoveryRecordsAfterProcessReopen(t *testing.T) {
 	prefix := ".aeronautes/stage/" + job.ID + "/"
 	seedObject(h.mock, "uploads", prefix+"leaf", "outside live bytes", nil)
 	h.mock.PutObject("unrelated", "alias", swifttest.Object{Manifest: "uploads/" + prefix})
-	for _, row := range []jobs.RecoveryRecord{
-		{JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "uploads", Prefix: prefix},
-		{JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "uploads", Prefix: prefix},
-		{JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCommitting, Container: "uploads", Prefix: prefix, Object: "malformed"},
-	} {
-		if err := h.transfer.jobs.RecoveryAdd(context.Background(), row); err != nil {
-			t.Fatal(err)
-		}
+	if err := h.transfer.jobs.RecoveryAdd(context.Background(), jobs.RecoveryRecord{
+		JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "uploads", Prefix: prefix,
+	}); err != nil {
+		t.Fatal(err)
 	}
 	facts := retainedRows(t, h.db)
 	witness := retentionOracle(t, h.mock)
@@ -203,7 +199,7 @@ func TestRecoveryDoesNotUseChangedBookmark(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := ".aeronautes/stage/" + job.ID + "/"
-	if err := h.transfer.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryStaging, Container: "uploads", Prefix: prefix}); err != nil {
+	if err := h.transfer.jobs.RecoveryAdd(ctx, jobs.RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: jobs.RecoveryCaptured, Container: "uploads", Prefix: prefix}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := h.transfer.jobs.FailInterrupted(ctx); err != nil || n != 1 {

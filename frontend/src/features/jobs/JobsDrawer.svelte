@@ -484,7 +484,7 @@
                 <span class="interrupted-fact">{interruptionItems(entry)}</span>
                 {#if entry.recoveryRecords > 0}
                   <span class="interrupted-fact">
-                    {entry.recoveryRecords} recovery {entry.recoveryRecords === 1 ? "record" : "records"} retained{#if entry.inconclusiveCommits > 0}, {entry.inconclusiveCommits} {entry.inconclusiveCommits === 1 ? "name" : "names"} with an inconclusive commit — not a failure{/if}.
+                    {entry.recoveryRecords} recovery {entry.recoveryRecords === 1 ? "record" : "records"} retained.
                   </span>
                 {:else if entry.placesLocalResidue}
                   <span class="interrupted-fact">This route keeps no recovery records, so none here is not a sign that nothing happened.</span>

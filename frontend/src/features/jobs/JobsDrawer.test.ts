@@ -210,7 +210,7 @@ it("shows interrupted-job detail and dismisses one through the drawer", async ()
     createdAt: "2026-10-19T00:00:00Z", interruptedAt: "2026-10-19T00:00:01Z",
     interruptedState: "running", attempted: true, itemsCaptured: true,
     items: { items: 3, admitted: 3, copied: 1, verified: 0, copiedBytes: 4096, failed: 1, conflicts: 0, refused: 0, unresolved: 2, unverified: 0, deleted: 0, unsettled: 0 },
-    recoveryRecords: 0, inconclusiveCommits: 0, placesLocalResidue: true,
+    recoveryRecords: 0, placesLocalResidue: true,
   };
   api.interruptedDisclosures = vi.fn()
     .mockResolvedValueOnce({ entries: [entry], total: 1 })
@@ -245,7 +245,7 @@ it("does not claim no request was made for a queued bulk-delete interruption", a
     createdAt: "2026-10-19T00:00:00Z", interruptedAt: "2026-10-19T00:00:01Z",
     interruptedState: "queued", attempted: false, itemsCaptured: true,
     items: { items: 0, admitted: 0, copied: 0, verified: 0, copiedBytes: 0, failed: 0, conflicts: 0, refused: 0, unresolved: 0, unverified: 0, deleted: 0, unsettled: 0 },
-    recoveryRecords: 0, inconclusiveCommits: 0, placesLocalResidue: false,
+    recoveryRecords: 0, placesLocalResidue: false,
   };
   api.interruptedDisclosures = vi.fn().mockResolvedValue({ entries: [entry], total: 1 });
   const browser = new BrowserState(api);
