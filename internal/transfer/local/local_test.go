@@ -379,7 +379,7 @@ func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
 				t.Fatal(err)
 			}
 			item := DownloadItem{Name: name, RelPath: filepath.Join("deep", "n.bin"), Size: int64(len(body)), Route: "native"}
-			outcome := nativeDownload(ctx, s, "media", item, testDestination(t, dest))
+			outcome := nativeDownload(ctx, s, "media", item, testDestination(t, dest), false)
 			if outcome.Result != transfercopy.ResultFailed || outcome.Effect != transfercopy.EffectNotAttempted || outcome.Diagnostic.Code != tc.code || outcome.verification != nil {
 				t.Fatalf("a part read was recorded %+v (%v), want failed, not attempted, %s", outcome.Observation, outcome.err(), tc.code)
 			}

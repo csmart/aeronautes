@@ -544,7 +544,7 @@ it("Delete keeps its started job through a scope change and closes when its cont
   f.browser.jobs.list = [{ id: "deleting-job", type: "delete_container", state: "complete", source: "media/", destination: "(deleted)",
     sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
     recoveryRecords: 0, pause: "", counters: { objectsPlanned: 3, objectsCopied: 3, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
-      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 3 } }];
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 3 } }];
   flushSync();
   expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion complete");
   expect(f.root.textContent).toMatch(/Deleted\s*container media:\s*3\s*objects\./);
@@ -585,7 +585,7 @@ it("Delete names a container named for the open one's segments and offers it onc
   f.browser.jobs.list = [{ id: "deleting-job", type: "delete_container", state: "complete", source: "media/", destination: "(deleted)",
     sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
     recoveryRecords: 0, pause: "", counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
-      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 } }];
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 4 } }];
   f.browser.containerName = null; flushSync();
   expect(f.onClose).not.toHaveBeenCalled();
   expect(f.root.querySelector("h2")?.textContent?.trim()).toBe("Deletion complete");
@@ -697,7 +697,7 @@ it("Delete says the job's records list what it deleted from the segments contain
   f.browser.jobs.list = [{ id: "deleting-job", type: "delete_prefix", state: "complete", source: "media/selected/", destination: "(deleted)",
     sourceBookmarkId: "source", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "", engine: "native", settings: "", error: "",
     recoveryRecords: 0, pause: "", counters: { objectsPlanned: 4, objectsCopied: 4, objectsVerified: 0, objectsFailed: 0, bytesPlanned: 0,
-      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 4 } }];
+      bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 4 } }];
   flushSync();
   const text = (f.root.textContent ?? "").replace(/\s+/g, " ");
   expect(text).toContain("4 objects, the segments of large objects among them.");

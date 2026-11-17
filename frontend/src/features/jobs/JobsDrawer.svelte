@@ -681,6 +681,9 @@
                     {#if job.counters.objectsDeleted > 0}
                       · {job.counters.objectsDeleted} deleted
                     {/if}
+                    {#if job.counters.objectsSame > 0}
+                      · {job.counters.objectsSame} already the same
+                    {/if}
                     {#if job.counters.objectsFailed > 0}
                       · <em class="bad">{job.counters.objectsFailed} failed</em>
                     {/if}

@@ -89,7 +89,12 @@ type Counters struct {
 	// Refusals are separate from failed or verified copy attempts.
 	Overwrites        int64 `json:"overwrites"`
 	OverwritesRefused int64 `json:"overwritesRefused"`
-	NativeRouted      int64 `json:"nativeRouted"`
+	// ObjectsSame counts the names left as they were because they were
+	// already the source's: a copy's skips from the listings, and the names
+	// a confirmed upload or download found the same (ADR 0122 decision 12).
+	// They are verified and not copied.
+	ObjectsSame  int64 `json:"objectsSame"`
+	NativeRouted int64 `json:"nativeRouted"`
 	// ObjectsDeleted counts a Mirror's destination-only deletions.
 	ObjectsDeleted int64 `json:"objectsDeleted"`
 	// A deletion accounting failure leaves only last-confirmed progress;

@@ -34,7 +34,7 @@ function job(id = "job-a", state = "running"): JobDTO {
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
     engine: "native", settings: "", error: "", recoveryRecords: 0, pause: "",
     counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
-      bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0,
+      bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0,
       nativeRouted: 0, objectsDeleted: 0 },
   };
 }

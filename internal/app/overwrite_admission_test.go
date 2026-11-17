@@ -164,6 +164,7 @@ func TestAcknowledgedUploadNeedsAYes(t *testing.T) {
 // versions, as an observation.
 func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 	f := newOverwriteFixture(t)
+	seen := f.h.installEngine(nil)
 	confirmer := &recordingOverwriteConfirmer{yes: true}
 	f.h.transfer.setOverwriteConfirmer(confirmer)
 	id, err := f.h.transfer.StartUpload(t.Context(), f.request(true))
@@ -183,6 +184,11 @@ func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 	// that lies by omission.
 	if job.Counters.Overwrites != 1 {
 		t.Fatalf("the job reports %d replacements of 1: %+v", job.Counters.Overwrites, job.Counters)
+	}
+	// Confirmed, the engine compares each name as rclone copy does (ADR 0122
+	// decision 12).
+	if len(*seen) != 1 || !(*seen)[0].CompareExisting {
+		t.Fatalf("engine options = %+v, want the engine told to compare", *seen)
 	}
 	if got := f.liveTag(t); got == f.tag {
 		t.Fatalf("the live object was not replaced: still %q", got)

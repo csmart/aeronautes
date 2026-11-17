@@ -22,7 +22,7 @@ function job(type: string, state = "running", counters: Partial<JobDTO["counters
     engine: "native", settings: '{"transfers":2,"checkers":4}', error: "", recoveryRecords: 0, pause: "",
     counters: {
       objectsPlanned: 10, objectsCopied: 3, objectsVerified: 0, objectsFailed: 0,
-      bytesPlanned: 80, bytesCopied: 24, overwrites: 0, overwritesRefused: 0,
+      bytesPlanned: 80, bytesCopied: 24, overwrites: 0, overwritesRefused: 0, objectsSame: 0,
       nativeRouted: 0, objectsDeleted: 0, ...counters,
     },
   };

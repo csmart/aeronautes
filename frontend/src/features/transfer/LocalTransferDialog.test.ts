@@ -70,6 +70,7 @@ function show(mode: Mode, adjust?: (api: Api, browser: BrowserState) => void) {
     else downloads[index].resolve({
       itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
       problemSamples: problems, totalBytes: 5, objects: 1, problemCount: problems.length, rejected: reject,
+      replaceable: 0, replacing: 0,
     });
     await settle();
   };
@@ -162,11 +163,12 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     flushSync();
     const expected = { bookmarkId: "source", container: "media", prefix: "selected/", profile: "auto",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
-      // The dialog never acknowledges an overwrite, and the exact-forwarding
-      // assertion is where that stays visible (ADR 0081 decision 1).
+      // The dialog acknowledges an overwrite only when asked to, and the
+      // exact-forwarding assertion is where that stays visible (ADR 0081
+      // decision 1, ADR 0122 decision 12).
       ...(mode === "upload"
         ? { selectionToken: "files-0", acknowledgeOverwrite: false }
-        : { destDirToken: "dir-0" }),
+        : { destDirToken: "dir-0", acknowledgeOverwrite: false }),
     };
     expect(mode === "upload" ? f.api.preflightUpload : f.api.preflightDownload).toHaveBeenCalledExactlyOnceWith(expected);
     expect(mode === "upload" ? f.api.startUpload : f.api.startDownload).toHaveBeenCalledExactlyOnceWith(expected);
@@ -335,7 +337,7 @@ it("counts download objects from the first-class field, not the sample", async (
   const f = show("download"); f.choose(); await f.resolvePicker();
   f.downloads[0].resolve({
     itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
-    problemSamples: [], totalBytes: 1025, objects: 205, problemCount: 0, rejected: false,
+    problemSamples: [], totalBytes: 1025, objects: 205, problemCount: 0, rejected: false, replaceable: 0, replacing: 0,
   });
   await settle();
   expect(f.root.textContent).toContain("205");
@@ -346,7 +348,7 @@ it("counts download objects from the first-class field, not the sample", async (
 it("arms download Start from rejected, not from sampled problems", async () => {
   const f = show("download"); f.choose(); await f.resolvePicker();
   f.downloads[0].resolve({
-    itemSamples: [], problemSamples: [], totalBytes: 0, objects: 205, problemCount: 201, rejected: true,
+    itemSamples: [], problemSamples: [], totalBytes: 0, objects: 205, problemCount: 201, rejected: true, replaceable: 0, replacing: 0,
   });
   await settle();
   expect(f.root.textContent).toContain("Rejected");
@@ -361,7 +363,7 @@ it("does not claim a truncated problem list when every sampled row is on screen"
     ...Array.from({ length: 7 }, (_, i) => ({ name: "w" + i, kind: "portability", detail: "warn", reject: false })),
   ];
   f.downloads[0].resolve({
-    itemSamples: [], problemSamples, totalBytes: 0, objects: 10, problemCount: 10, rejected: true,
+    itemSamples: [], problemSamples, totalBytes: 0, objects: 10, problemCount: 10, rejected: true, replaceable: 0, replacing: 0,
   });
   await settle();
   expect(f.root.querySelectorAll(".problem")).toHaveLength(10);
@@ -376,7 +378,7 @@ it("discloses a truncated warning sample without rebuilding the count from it", 
   ));
   f.downloads[0].resolve({
     itemSamples: [{ name: "selected/a.txt", relPath: "a.txt", size: 5, route: "rclone", dir: false }],
-    problemSamples, totalBytes: 5, objects: 7000, problemCount: 5000, rejected: false,
+    problemSamples, totalBytes: 5, objects: 7000, problemCount: 5000, rejected: false, replaceable: 0, replacing: 0,
   });
   await settle();
   expect(f.root.querySelectorAll(".problem")).toHaveLength(200);
@@ -417,7 +419,7 @@ it("never shows the large-object note for a download", async () => {
 it.each(["upload", "download"] as const)("forwards the complete captured %s request without rebuilding its scope", async (mode) => {
   const api = newFakeApi();
   api.preflightUpload = vi.fn().mockResolvedValue({ items: [], problems: [], totalBytes: 0, largeObjects: "", largeObjectsOrigin: "" });
-  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 0, problemCount: 0, rejected: false });
+  api.preflightDownload = vi.fn().mockResolvedValue({ itemSamples: [], problemSamples: [], totalBytes: 0, objects: 0, problemCount: 0, rejected: false, replaceable: 0, replacing: 0 });
   api.startUpload = vi.fn().mockResolvedValue("job"); api.startDownload = vi.fn().mockResolvedValue("job");
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "another"; browser.containerName = "another"; browser.prefix = "another/";
@@ -430,7 +432,7 @@ it.each(["upload", "download"] as const)("forwards the complete captured %s requ
     expect(api.preflightUpload).toHaveBeenCalledExactlyOnceWith(req);
     expect(api.startUpload).toHaveBeenCalledExactlyOnceWith(req);
   } else {
-    const req = { ...scope, destDirToken: "directory" };
+    const req = { ...scope, destDirToken: "directory", acknowledgeOverwrite: false };
     await browser.preflightDownload(req); await browser.startDownload(req);
     expect(api.preflightDownload).toHaveBeenCalledExactlyOnceWith(req);
     expect(api.startDownload).toHaveBeenCalledExactlyOnceWith(req);
@@ -615,7 +617,7 @@ describe("upload replacement", () => {
     replaceButton(f)!.click();
     await settle();
     await resolveReplacing(f);
-    expect(visible(f)).toContain("will REPLACE what is at 1 name.");
+    expect(visible(f)).toContain("may REPLACE what is at 1 name, each only where it differs from your file.");
     expect(visible(f)).toContain("naming the account and what it observed");
     expect(replaceButton(f)).toBeUndefined();
     expect(f.startButton()).toBeDefined();
@@ -644,19 +646,54 @@ describe("upload replacement", () => {
     expect(f.api.preflightUpload).toHaveBeenCalledOnce();
   });
 
-  // A download never asks this question: its own refusal to overwrite is
-  // ADR 0045's and is not an acknowledgeable one.
-  it("never offers a replacement in download mode", async () => {
+  // A download's report is a bounded sample, so whether its refusals are all
+  // files it may replace is the backend's complete count (ADR 0122 decision
+  // 12): with none, nothing is offered, whatever the sample shows.
+  async function reachDownloadCollision(replaceable: number) {
     const f = show("download");
     f.choose();
     await f.resolvePicker();
     f.downloads[0].resolve({
-      itemSamples: [], problemSamples: [{ name: "a.txt", kind: "exists", detail: "already exists", reject: true }],
-      totalBytes: 0, objects: 0, problemCount: 1, rejected: true,
+      itemSamples: [], problemSamples: [{ name: "a.txt", kind: "local-exists", detail: "already exists", reject: true }],
+      totalBytes: 0, objects: 2, problemCount: 2, rejected: true, replaceable, replacing: 0,
     });
     await settle();
-    expect(replaceButton(f)).toBeUndefined();
+    return f;
+  }
+
+  it("offers a download's replacement only when every refusal is a file it may replace", async () => {
+    const refused = await reachDownloadCollision(0);
+    expect(replaceButton(refused)).toBeUndefined();
+    expect(refused.startButton()).toBeUndefined();
+    const f = await reachDownloadCollision(2);
+    expect(replaceButton(f)?.textContent?.trim()).toBe("Replace existing files…");
     expect(f.startButton()).toBeUndefined();
+    expect(visible(f)).toContain("Those files are already in the folder");
+    expect(visible(f)).toContain("on its own dialog");
+  });
+
+  it("asks a download again with the acknowledgement on the same folder and starts that request", async () => {
+    const f = await reachDownloadCollision(2);
+    replaceButton(f)!.click();
+    await settle();
+    expect(f.api.pickDownloadDir).toHaveBeenCalledOnce();
+    const first = vi.mocked(f.api.preflightDownload).mock.calls[0][0];
+    const second = vi.mocked(f.api.preflightDownload).mock.calls[1][0];
+    expect(first.acknowledgeOverwrite).toBe(false);
+    expect({ ...second, acknowledgeOverwrite: false }).toEqual(first);
+    expect(second.acknowledgeOverwrite).toBe(true);
+    f.downloads[1].resolve({
+      itemSamples: [], problemSamples: [{ name: "a.txt", kind: "local-exists", detail: "replaces it if it differs", reject: false }],
+      totalBytes: 10, objects: 2, problemCount: 2, rejected: false, replaceable: 0, replacing: 2,
+    });
+    await settle();
+    expect(visible(f)).toContain("This download may REPLACE 2 files in the folder, each only where it differs from the object.");
+    expect(visible(f)).toContain("A replaced file is not kept.");
+    expect(replaceButton(f)).toBeUndefined();
+    f.startButton()!.click();
+    await settle();
+    expect(f.api.startDownload).toHaveBeenCalledOnce();
+    expect(vi.mocked(f.api.startDownload).mock.calls[0][0]).toEqual(second);
   });
 });
 

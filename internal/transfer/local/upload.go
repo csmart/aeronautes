@@ -233,6 +233,8 @@ func engineOutcome(answers rclone.Answers, item UploadItem, engineErr error) upl
 	switch {
 	case answers.Copied[name]:
 		return uploadDone(item)
+	case answers.Same[name]:
+		return uploadSame()
 	case answers.Refused[name] != "":
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeIO, "engine", errors.New(answers.Refused[name]))
 	case engineErr != nil:
@@ -241,6 +243,14 @@ func engineOutcome(answers rclone.Answers, item UploadItem, engineErr error) upl
 	}
 	return uploadFailed(transfercopy.EffectNotAttempted, transfercopy.StageEngine, transfercopy.CodeIncomplete, "engine",
 		errors.New("the engine finished without reporting this file as written"))
+}
+
+// uploadSame is a file a confirmed upload left because the engine found the
+// object at its name the same as the file (ADR 0122 decision 12): verified,
+// not copied, and not published again.
+func uploadSame() uploadResult {
+	return uploadResult{Observation: transfercopy.Observation{Result: transfercopy.ResultSame, Effect: transfercopy.EffectNotAttempted},
+		verification: &transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}}
 }
 
 // uploadDone is a file the engine or the store answered for: it is written

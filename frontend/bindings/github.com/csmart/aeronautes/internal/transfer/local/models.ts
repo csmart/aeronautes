@@ -18,6 +18,12 @@ export interface DownloadItem {
      * Dir marks a zero-byte folder marker materialized as a directory.
      */
     "dir": boolean;
+
+    /**
+     * Replaces marks a file whose name held a regular file when a
+     * replacing preflight ran (ADR 0122 decision 12).
+     */
+    "replaces"?: boolean;
 }
 
 /**
@@ -32,6 +38,20 @@ export interface DownloadPreflightView {
     "objects": number;
     "problemCount": number;
     "rejected": boolean;
+
+    /**
+     * Replaceable is the number of refusals that are a regular file at a
+     * planned file's name, which a confirmed download may replace instead,
+     * when they are the only refusals; otherwise it is zero, because the
+     * operator has something else to resolve first (ADR 0122 decision 12).
+     */
+    "replaceable": number;
+
+    /**
+     * Replacing is the number of files a replacing preflight admitted that
+     * may be replaced.
+     */
+    "replacing": number;
 }
 
 /**

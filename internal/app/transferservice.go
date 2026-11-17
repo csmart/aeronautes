@@ -962,6 +962,7 @@ func (s *TransferService) runCopy(ctx context.Context, jobID string, req CopyReq
 	counters.BytesCopied = report.BytesCopied
 	counters.Overwrites = report.Overwrites
 	counters.OverwritesRefused = report.OverwritesRefused
+	counters.ObjectsSame = report.SkippedEqual
 	counters.NativeRouted = report.NativeRouted
 	counters.ObjectsVerified = report.Verified
 	countersMu.Unlock()

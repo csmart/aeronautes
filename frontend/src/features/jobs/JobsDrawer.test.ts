@@ -29,7 +29,7 @@ it.each([undefined, false, true])("qualifies deletion counters and retains histo
     engine: "native", settings: "", recoveryRecords: 0, pause: "",
     error: "Deletion stopped; inspect retained admitted-attempt evidence at the recorded path.",
     counters: { objectsPlanned: 10, objectsCopied: 2, objectsVerified: 2, objectsFailed: 3,
-      bytesPlanned: 100, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0,
+      bytesPlanned: 100, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0,
       ...(incomplete === undefined ? {} : { deletionAccountingIncomplete: incomplete }) },
   };
   api.jobs = async () => [job];
@@ -70,7 +70,7 @@ it.each([false, true])("shows unavailable status over a stale active count (%s)"
       sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
       engine: "rclone+native", settings: "", error: "", recoveryRecords: 1, pause: "",
       counters: { objectsPlanned: 1, objectsCopied: 0, objectsVerified: 0, objectsFailed: 0,
-        bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+        bytesPlanned: 8, bytesCopied: 0, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0 },
     }];
   }
   show(browser);
@@ -91,7 +91,7 @@ it("shows refused overwrites separately from copied and failed objects", async (
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
     engine: "native", settings: "", error: "261 overwrites refused; 1 unverified", recoveryRecords: 1, pause: "",
     counters: { objectsPlanned: 263, objectsCopied: 2, objectsVerified: 1, objectsFailed: 1,
-      bytesPlanned: 1000, bytesCopied: 16, overwrites: 0, overwritesRefused: 261, nativeRouted: 1, objectsDeleted: 0 },
+      bytesPlanned: 1000, bytesCopied: 16, overwrites: 0, overwritesRefused: 261, objectsSame: 0, nativeRouted: 1, objectsDeleted: 0 },
   };
   api.jobs = async () => [job];
   show(new BrowserState(api));
@@ -102,6 +102,24 @@ it("shows refused overwrites separately from copied and failed objects", async (
   expect(counts).toMatch(/2\s*\/263/);
 });
 
+// A confirmed download or upload leaves what is already the same, and the
+// row says how many, so a complete job that copied fewer than it planned
+// reads as what happened (ADR 0122 decision 12).
+it("counts the files a job left because they were already the same", async () => {
+  const api = newFakeApi();
+  const job: JobDTO = {
+    id: "same", type: "download", state: "complete", source: "media/", destination: "local directory (picker-selected)",
+    sourceBookmarkId: "a", destBookmarkId: "", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "rclone+native", settings: "", error: "", recoveryRecords: 0, pause: "",
+    counters: { objectsPlanned: 5, objectsCopied: 2, objectsVerified: 5, objectsFailed: 0,
+      bytesPlanned: 50, bytesCopied: 20, overwrites: 1, overwritesRefused: 0, objectsSame: 3, nativeRouted: 0, objectsDeleted: 0 },
+  };
+  api.jobs = async () => [job];
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelector(".counts")?.textContent).toContain("3 already the same"));
+  expect(document.querySelector(".counts")?.textContent).toMatch(/2\s*\/5/);
+});
+
 it("shows global and per-job retained records without changing a completed result", async () => {
   const api = newFakeApi();
   const job: JobDTO = {
@@ -109,7 +127,7 @@ it("shows global and per-job retained records without changing a completed resul
     sourceBookmarkId: "a", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
     engine: "native", settings: "", error: "", recoveryRecords: 3, pause: "",
     counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
-      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 1, objectsDeleted: 0 },
+      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 1, objectsDeleted: 0 },
   };
   api.jobs = async () => [job];
   api.recoveryStatus = async () => ({ jobs: 7, records: 21 });
@@ -138,7 +156,7 @@ it("shows upload cleanup issues without inventing a failed transfer", async () =
     engine: "rclone+native", settings: "", recoveryRecords: 4, pause: "",
     error: "1 post-commit issue (first: live/file: staging-cleanup: delete staging object failed)",
     counters: { objectsPlanned: 1, objectsCopied: 1, objectsVerified: 1, objectsFailed: 0,
-      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+      bytesPlanned: 8, bytesCopied: 8, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0 },
   };
   api.jobs = async () => [job];
   api.recoveryStatus = async () => ({ jobs: 1, records: 4 });
@@ -247,7 +265,7 @@ function transferJob(over: Partial<JobDTO>): JobDTO {
     sourceBookmarkId: "", destBookmarkId: "b", createdAt: "", startedAt: "", finishedAt: "",
     engine: "rclone", settings: "", error: "", recoveryRecords: 0, pause: "",
     counters: { objectsPlanned: 10, objectsCopied: 4, objectsVerified: 4, objectsFailed: 0,
-      bytesPlanned: 100, bytesCopied: 40, overwrites: 0, overwritesRefused: 0, nativeRouted: 0, objectsDeleted: 0 },
+      bytesPlanned: 100, bytesCopied: 40, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0 },
     ...over,
   };
 }
