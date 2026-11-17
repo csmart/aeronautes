@@ -75,7 +75,7 @@ A copy also verifies by a fresh join of the whole source and destination scopes,
    It is refused, with decision 2's checks and naming the member, before any listing or job row, when a write could land on something the same run reads: an object member's destination is an object member or lies under a folder member; an object member lies under a folder member's destination folder; or a folder member's destination folder and a folder member's source folder are the same or lie one inside the other.
    A destination inside the source folder stays allowed wherever none of these holds.
    **Re-run** records and plans folder members by the same names, trailing slash included, under the current state.
-   **Delete is not changed**: a deletion's selection keeps [ADR 0093](0093-selected-set-deletion.md)'s rule that folder rows are not members, and changing that is a separate decision.
+   **Delete** was not changed by this decision; on the operator's further decision of 17 November a deletion's selection takes a selected folder whole as well ([ADR 0093](0093-selected-set-deletion.md) decision 8).
 
 ## Consequences
 

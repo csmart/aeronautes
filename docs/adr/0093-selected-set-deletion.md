@@ -5,6 +5,7 @@ Written for review before any implementation, and implemented on 27 October 2026
 That capability was returned to the release on 29 October 2026 by [ADR 0052](0052-v1-capability-gate.md) decision 11, the operator's word for one object and the selected set together.
 It adds one bridge action behind the capability "Object deletion" that ADR 0092 created, lifts nothing from the [ADR 0052](0052-v1-capability-gate.md) gate, and changes no refusal of [ADR 0020](0020-recovery-containment.md).
 Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 6: each member is deleted by one DELETE of its name and the store's answer is its outcome, so the comparison with the listing, the later-baseline read, the conflict and link refusals and the verifying read are no longer made; the selection, the typed count, the ceiling, the admission of the whole member set before any effect and cancellation between members stay.
+Amended on 17 November 2026 by decisions 8 and 9, on the operator's decision of that day that a deletion's selection, like a copy's and a download's, takes a selected folder with everything in it ("we should also do the same for delete in 0.5.0"): a folder row in a selection is a member, decisions 1, 2 and 5 are amended below, and the dialog's line naming the prefix rows left out is withdrawn; large objects in a selection lose their segments as a folder deletion's do; and every deletion's typed words begin with "delete".
 **Scope:** Selecting several loaded rows in the working list, and deleting the selected objects as one job whose members are each deleted exactly, by the protocol [ADR 0085](0085-reobserved-destructive-identity.md) decided for prefix deletion and ADR 0092 refined for one object.
 Batch modification of a selection, such as a metadata change over many objects, is a later record and is named here only so it is not lost.
 
@@ -86,9 +87,35 @@ The job also builds, once, the per-name protocol that 0.2.x's prefix deletion th
    0.2.x's prefix and container deletion becomes the same per-name protocol run over a listing pass instead of a selection, with the bulk request retired as ADR 0085 decided, and its own record decides the listing-to-request race and names first listed in a later pass.
    Batch modification of a selection, the operator's other half, gets its own record once the selection model is in place.
 
+8. **A selected folder is deleted with everything in it** (17 November 2026).
+   The operator decided that a transfer follows rclone's semantics, where deleting a folder deletes everything in it, and that a deletion's selection takes a selected folder whole, as a copy's and a download's do ([ADR 0108](0108-copy-and-download-what-is-selected.md) decision 7).
+   **A folder row is a member.**
+   "Delete selected…" is offered whenever two or more rows are chosen, folders alone included, and the request's members are the chosen rows: each object row as before, and each folder row, by its name ending in `/`, meaning that folder and everything under it, its own marker object included where there is one.
+   A member that lies under a selected folder is refused as named twice, as for a copy.
+   **What the job deletes.**
+   Before any DELETE, the job lists everything under each folder member and admits each listed object as an item beside the object members, with its listed facts, once, as decision 4 admits a selection; the selection ceiling counts that whole set, and a set beyond it fails the job before any DELETE, naming the folder where the count crossed it.
+   Every item is then deleted as decision 3 and [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 6 say: one DELETE of the name, and the store's answer is its outcome.
+   An object written under a selected folder after that listing is not deleted, because it was not listed; one deleted by something else in the meantime is already gone, as for any member.
+   A folder member with nothing under it deletes nothing and is not an error.
+   **Large objects**, whether selected or under a selected folder, are treated as a folder deletion treats them ([ADR 0119](0119-a-bulk-deletion-may-take-segments.md) as amended by [ADR 0120](0120-segments-go-by-default-and-versions-keep-them.md)), on the operator's question of 17 November, "why would we treat them any differently?": the dialog offers the same option to delete each large object's segments after its manifest, ticked when it opens except in a container that is or may be another container's archive; with it ticked each large object loses its segments by the route the folder deletion uses, and a container that keeps versions refuses it as it does there; unticked, a large object loses only its manifest.
+   This withdraws, for the selection, decision 3's manifest-only rule and ADR 0119's sentence that the selected-set deletion is not changed.
+   **What a running transfer holds.**
+   The job claims each folder member as a prefix deletion claims its prefix ([ADR 0105](0105-concurrent-jobs.md) decision 3), so it is refused while an upload or a copy writes inside a selected folder, and no transfer starts inside one while it runs; an object member keeps the refusal it has.
+   **What the operator is told, and what the confirmation binds.**
+   The dialog lists the selected objects and the selected folders, and for each folder what a listing of it holds now, from the preview the prefix deletion already offers: its objects and bytes, and its possible manifests, the listed large objects and zero-byte rows, in the words the prefix dialog uses for them, saying that their segments go when the segments option is ticked and stay when it is not.
+   It says that everything under each folder goes, including anything written there before the job lists it.
+   The confirmation is decision 9's words; the request is built from the snapshot, and the snapshot check of decision 5 applies to the folder rows as to the objects.
+   The line naming the prefix rows left out is withdrawn, with its tests.
+
+9. **Every deletion is typed with the word delete** (17 November 2026).
+   The operator asked that a deletion, "whether a file, container or virtual folder", keep the verb "delete" in what is typed to confirm it.
+   One object, and one directory marker from the same dialog, is confirmed by typing `delete ` and its name, where until now it took only the button: `MutateService.DeleteObject` and `DeleteMarker` gain the typed words as an argument, a check those two did not have, and refuse any other words before any request; a selection by `delete ` and the number of selected rows; a folder by `delete ` and the container and prefix, where until now the container and prefix alone; a container by `delete ` and its name, as before.
+   Emptying a container keeps `empty ` and its name, because it deletes the contents and keeps the container, and a deletion that takes segments still ends ` and segments`.
+   Every other deletion's service checks the new words where it checks its words now, so a request with the old words is refused; the Backstage manifest deletion, which types the object's name under its own force, is not changed.
+
 ## What this does not touch
 
-Prefix and container deletion stay with `DeleteService.StartDelete` and the bulk request until 0.2.x; segment deletion stays force-only with bulk delete; manifests are deleted manifest-only here and nothing reclaims a segment; symlinks are refused.
+Prefix and container deletion stay with `DeleteService.StartDelete` and the bulk request until 0.2.x; segment deletion stays force-only with bulk delete; manifests were deleted manifest-only here and nothing reclaimed a segment until decision 8 gave a selection the folder deletion's segments option; symlinks are refused.
 Nothing here is a lock, a reservation or exclusive ownership, and a member deleted after a match may still have been replaced by a writer landing after its final HEAD, as ADR 0085 states for every path.
 
 ## Required proof before implementation is accepted
@@ -109,6 +136,10 @@ Backend cases run through the public service on the mock and the owned Swift, wi
 - Frontend, around the real browser state: toggle, range and select-all over loaded rows only; the summary; the dialog's member list, excluded prefixes, ceiling and typed count; one request built from the snapshot; the dialog closing without deleting when the scope moves, when the selection changes to other names with the same count, and when a refresh changes one member's listed entity tag with the same count; the Delete key opening the dialog and deleting nothing; outcomes shown per item.
 - Retained mutants, each failing a case above: a bulk request used for the members; the listed row ignored in favour of a HEAD baseline for an ordinary member; the replacement adopted as the baseline when an ordinary row's comparison finds a manifest; a DELETE repeated after a lost reply; cancellation honoured inside a member between its HEAD and DELETE; the ceiling removed; prefix rows accepted as members; the successor dropped from the item; the request rebuilt from live rows instead of the snapshot; a surviving same-kind manifest recorded as deleted; a later DELETE sent after an outcome record failed.
 - The candidate run's drift diagnostic retained and the replacement baseline built from its reports.
+
+Decision 8 withdraws four items above: the happy case's requirement that every manifest's segments stay, which now holds only with the segments option unticked; the refusal of a prefix row offered as a member, the retained case that fails when prefix rows are accepted as members, and the dialog's excluded prefixes; a folder row is now a member, and a member under a selected folder is refused instead.
+For decision 8 (17 November 2026): on the mock and a real Swift, a deletion of two objects and a folder holding three, one of them in a subfolder, deletes those five and nothing beside the folder (a sibling whose name starts the same stays), and the folder's marker goes with it; a member under a selected folder is refused before any job; a folder whose contents cross the ceiling fails the job before any DELETE; a selected folder another transfer is writing into is refused, and a transfer into a folder a running deletion holds is refused; a folder with nothing under it deletes nothing; the frontend offers "Delete selected…" for folders alone and for a mix, lists the folders with their previewed counts, sends the folder rows and types the number of rows; a selected large object and one under a selected folder lose their segments with the option ticked and keep them unticked; in a container that keeps versions the option is refused before any job; in a container that is or may be another's archive the option starts unticked; the browser journey deletes a file and a folder selected together, on the mock and both real stores.
+For decision 9: each deletion refuses its old words and accepts the new ones, in the service where it checks them and in the dialog, and the journeys type the new words.
 
 ## What this does not establish
 
