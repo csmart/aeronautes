@@ -80,7 +80,7 @@ func TestObjectDeleteSendsOneDeleteAndRecordsTheAnswer(t *testing.T) {
 	ctx := context.Background()
 	before := len(h.mock.RequestLog())
 
-	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestObjectDeleteDeletesWhatAnotherWriterPutThere(t *testing.T) {
 	shownObject(t, h, deleteFixture)
 	h.mock.PutObject("fixtures", deleteFixture, swifttest.Object{Bytes: 40, ContentType: "text/plain", ETag: "00000000000000000000000000000040"})
 
-	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("result = %+v, err = %v, want applied", result, err)
 	}
@@ -134,7 +134,7 @@ func TestObjectDeleteTakesNotFoundAsAlreadyGone(t *testing.T) {
 	ctx := context.Background()
 	h.mock.RemoveObject("fixtures", deleteFixture)
 
-	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+	result, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("result = %+v, err = %v, want applied", result, err)
 	}
@@ -158,7 +158,7 @@ func TestObjectDeleteRefusesAChangedScopeWithoutTouchingAnything(t *testing.T) {
 		"moved generation": {BookmarkID: current.BookmarkID, Generation: current.Generation + 7},
 		"another bookmark": {BookmarkID: "not-the-active-one", Generation: current.Generation},
 	} {
-		_, err := h.mutate.DeleteObject(ctx, scope, "fixtures", deleteFixture)
+		_, err := h.mutate.DeleteObject(ctx, scope, "fixtures", deleteFixture, "delete "+deleteFixture)
 		if !errors.Is(err, ErrMutationScopeChanged) {
 			t.Fatalf("%s: err = %v, want the scope refusal", name, err)
 		}
@@ -179,7 +179,7 @@ func TestObjectDeleteIntentAbortSendsNoDelete(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT,'fixture required intent refusal'); END`)
 	requests := h.mock.Requests()
 
-	if _, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture); err == nil {
+	if _, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture); err == nil {
 		t.Fatal("a refused intent must fail the call")
 	}
 	if n := deleteRequests(h.mock.RequestLog(), deleteFixture); n != 0 {
@@ -205,7 +205,7 @@ func TestObjectDeleteResidueWhenTheOutcomeCannotBeRecorded(t *testing.T) {
 			refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
 				BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
 
-			_, residue := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+			_, residue := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 			if !errors.Is(residue, errObjectDeleteResidue) {
 				t.Fatalf("err = %v, want residue", residue)
 			}
@@ -240,7 +240,7 @@ func TestObjectDeleteRefusalRecordFailureIsNotResidue(t *testing.T) {
 	refuseSQL(t, h, `CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
 		BEGIN SELECT RAISE(ABORT,'fixture required audit refusal'); END`)
 
-	_, err := h.mutate.DeleteObject(context.Background(), h.portrait(), "fixtures", deleteFixture)
+	_, err := h.mutate.DeleteObject(context.Background(), h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 	var se *swiftcontrol.SwiftError
 	if !errors.As(err, &se) || se.Kind != swiftcontrol.KindForbidden || errors.Is(err, errObjectDeleteResidue) {
 		t.Fatalf("err = %v, want the store's refusal and the record failure without a residue claim", err)
@@ -256,7 +256,7 @@ func TestObjectDeleteRefusesAnEmptyNameBeforeAnythingHappens(t *testing.T) {
 	}
 	requests := h.mock.Requests()
 	for name, parts := range map[string][2]string{"empty name": {"fixtures", ""}, "empty container": {"", deleteFixture}} {
-		if _, err := h.mutate.DeleteObject(ctx, h.portrait(), parts[0], parts[1]); err == nil {
+		if _, err := h.mutate.DeleteObject(ctx, h.portrait(), parts[0], parts[1], "delete "+parts[1]); err == nil {
 			t.Fatalf("%s was not refused", name)
 		}
 	}
@@ -297,6 +297,31 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
+// One object and one marker are armed by typing "delete" and the name (ADR
+// 0093 decision 9): nothing else, the bare name that only a button stood for
+// before included, reaches the store or the ledger.
+func TestObjectAndMarkerDeleteNeedTheVerbAndTheName(t *testing.T) {
+	h := newHarness(t)
+	h.connect(t)
+	ctx := context.Background()
+	requests := h.mock.Requests()
+	factsBefore := len(objectDeleteFacts(t, h))
+	for typed, wanted := range map[string]string{"": "delete " + deleteFixture, deleteFixture: "delete " + deleteFixture, "delete other": "delete " + deleteFixture} {
+		if _, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, typed); err == nil || !strings.Contains(err.Error(), `does not match "`+wanted+`"`) {
+			t.Errorf("object armed by %q: %v", typed, err)
+		}
+	}
+	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/", "folder-marker/"); err == nil || !strings.Contains(err.Error(), `does not match "delete folder-marker/"`) {
+		t.Errorf("marker armed by its bare name: %v", err)
+	}
+	if got := h.mock.Requests(); got != requests {
+		t.Fatalf("refused deletions sent %d requests", got-requests)
+	}
+	if got := len(objectDeleteFacts(t, h)); got != factsBefore {
+		t.Fatalf("refused deletions recorded %d facts", got-factsBefore)
+	}
+}
+
 func TestObjectDeleteRefusesAPortraitFromBeforeAKeyChange(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)
@@ -312,7 +337,7 @@ func TestObjectDeleteRefusesAPortraitFromBeforeAKeyChange(t *testing.T) {
 		t.Fatalf("the generation did not move: %+v after %+v", current, stale)
 	}
 	requests := h.mock.Requests()
-	if _, err := h.mutate.DeleteObject(ctx, stale, "fixtures", deleteFixture); !errors.Is(err, ErrMutationScopeChanged) {
+	if _, err := h.mutate.DeleteObject(ctx, stale, "fixtures", deleteFixture, "delete "+deleteFixture); !errors.Is(err, ErrMutationScopeChanged) {
 		t.Fatalf("err = %v, want the scope refusal", err)
 	}
 	if got := h.mock.Requests(); got != requests {
@@ -337,7 +362,7 @@ func TestObjectDeleteStoreRefusalAndLostReply(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a refused DELETE is failed with the object intact", func(t *testing.T) {
 		h := forbiddenDeletes(t, deleteFixture)
-		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 		var se *swiftcontrol.SwiftError
 		if !errors.As(err, &se) || se.Kind != swiftcontrol.KindForbidden || errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
 			t.Fatalf("err = %v, want the store's refusal", err)
@@ -368,7 +393,7 @@ func TestObjectDeleteStoreRefusalAndLostReply(t *testing.T) {
 			return false
 		})
 		before := len(h.mock.RequestLog())
-		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture)
+		_, err := h.mutate.DeleteObject(ctx, h.portrait(), "fixtures", deleteFixture, "delete "+deleteFixture)
 		if !errors.Is(err, swiftcontrol.ErrUnverifiedDelete) {
 			t.Fatalf("err = %v, want unverified", err)
 		}

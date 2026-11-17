@@ -146,6 +146,14 @@ export function newFakeApi(): Api {
     }
   }
 
+  // A deletion of one name is armed by "delete" and the name, which the
+  // service checks (ADR 0093 decision 9).
+  function requireTyped(confirm: string, want: string) {
+    if (confirm !== want) {
+      throw new Error(`confirmation ${JSON.stringify(confirm)} does not match ${JSON.stringify(want)}`);
+    }
+  }
+
   function scopedJob(id: string, bookmarkId: string) {
     readScope(bookmarkId);
     const job = jobs.find((row) => row.id === id);
@@ -691,8 +699,9 @@ export function newFakeApi(): Api {
     // The three single deletions delete the name and take the answer (ADR
     // 0122 decision 6): whatever the name holds goes, and a name that is
     // already gone is the outcome asked for.
-    deleteMarker: async (scope, container, prefix): Promise<MutationResultDTO> => {
+    deleteMarker: async (scope, container, prefix, confirm): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
+      requireTyped(confirm, `delete ${prefix}`);
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== prefix);
       record("marker.delete", `${container}/${prefix}`, "applied");
       return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
@@ -734,8 +743,9 @@ export function newFakeApi(): Api {
       return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
     },
 
-    deleteObject: async (scope, container, name): Promise<MutationResultDTO> => {
+    deleteObject: async (scope, container, name, confirm): Promise<MutationResultDTO> => {
       requireWriteScope(scope);
+      requireTyped(confirm, `delete ${name}`);
       objects[container] = (objects[container] ?? []).filter((o) => o.name !== name);
       record("object.delete", `${container}/${name}`, "applied");
       return { outcome: "applied", mismatch: "", limitation: "", transIds: ["txfake"], objectAfter: null, containerAfter: null, accountAfter: null };
@@ -1011,7 +1021,7 @@ export function newFakeApi(): Api {
       archiveUnestablished: "",
     }),
     startDelete: async (req) => {
-      const want = req.mode === "prefix" ? `${req.container}/${req.prefix}` : req.container;
+      const want = req.mode === "prefix" ? `delete ${req.container}/${req.prefix}` : req.container;
       if (req.confirm !== want) {
         throw new Error(`confirmation ${JSON.stringify(req.confirm)} does not match ${JSON.stringify(want)}`);
       }
@@ -1058,9 +1068,7 @@ export function newFakeApi(): Api {
         if (seen.has(member.name)) throw new Error(`${JSON.stringify(member.name)} is selected twice; a member is deleted once`);
         seen.add(member.name);
       }
-      if (req.confirm !== String(members.length)) {
-        throw new Error(`confirmation ${JSON.stringify(req.confirm)} does not match the number of members, ${members.length}; type it exactly`);
-      }
+      requireTyped(req.confirm, `delete ${members.length}`);
       // The fake deletes every member as listed and ends the job at once;
       // the real job compares each member first and records what it found.
       const names = new Set(members.map((m) => m.name));

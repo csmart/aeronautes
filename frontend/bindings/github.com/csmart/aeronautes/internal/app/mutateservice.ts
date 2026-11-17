@@ -57,9 +57,10 @@ export function DeleteManifest(scope: $models.ListingScopeDTO, container: string
 /**
  * DeleteMarker deletes ONE directory marker, the zero-byte object at a
  * prefix's own name. The objects under the prefix are never read or touched.
+ * confirm must be "delete " and the marker's name.
  */
-export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, prefix: string): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(1622704602, scope, container, prefix);
+export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, prefix: string, confirm: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(1622704602, scope, container, prefix, confirm);
 }
 
 /**
@@ -67,10 +68,11 @@ export function DeleteMarker(scope: $models.ListingScopeDTO, container: string, 
  * the inspector's detail was read under (ADR 0079), records its intent
  * before the store is asked and its outcome with the audit event in one
  * transaction (ADR 0058), and reports the store's answer: nothing is read
- * before the DELETE or after it (ADR 0122 decision 6).
+ * before the DELETE or after it (ADR 0122 decision 6). confirm is what the
+ * operator typed, which must be "delete " and the name.
  */
-export function DeleteObject(scope: $models.ListingScopeDTO, container: string, name: string): $CancellablePromise<$models.MutationResultDTO> {
-    return $Call.ByID(259793559, scope, container, name);
+export function DeleteObject(scope: $models.ListingScopeDTO, container: string, name: string, confirm: string): $CancellablePromise<$models.MutationResultDTO> {
+    return $Call.ByID(259793559, scope, container, name, confirm);
 }
 
 /**

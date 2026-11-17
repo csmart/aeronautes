@@ -146,7 +146,7 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 		_, err := del.StartDelete(ctx, req)
 		refusedForClaim(t, h, string(req.Mode)+" of "+req.Container+"/"+req.Prefix, id, rows, err)
 	}
-	_, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "2",
+	_, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 2",
 		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "object", Name: writing + "photos/.hidden"}}})
 	refusedForClaim(t, h, "a selected set naming an object the upload is writing", id, rows, err)
 
@@ -186,7 +186,7 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 		}
 		awaitTerminal(t, h, started)
 	}
-	started, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "1",
+	started, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 1",
 		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}}})
 	if err != nil {
 		t.Fatalf("a selected set of an ordinary name was refused: %v", err)
@@ -241,7 +241,7 @@ func TestNoTransferWritesInsideALiveSweep(t *testing.T) {
 			once.Do(func() { close(held); <-release })
 		}
 	}
-	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "scope/", Confirm: "media/scope/"})
+	sweep, err := del.StartDelete(ctx, DeleteRequestDTO{BookmarkID: bookmark, Container: "media", Mode: ModePrefix, Prefix: "scope/", Confirm: "delete media/scope/"})
 	if err != nil {
 		t.Fatal(err)
 	}

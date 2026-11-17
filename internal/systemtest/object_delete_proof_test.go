@@ -235,7 +235,7 @@ func TestObjectDeleteVersionsLocationRestoresThePredecessorSwift(t *testing.T) {
 		t.Fatalf("archive holds %d objects before the delete, want the predecessor", n)
 	}
 
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "v.txt")
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "v.txt", "delete v.txt")
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("result = %+v, err = %v", result, err)
 	}

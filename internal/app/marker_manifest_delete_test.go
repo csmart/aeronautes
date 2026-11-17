@@ -36,7 +36,7 @@ func TestMarkerAndManifestDeleteRefuseAChangedScope(t *testing.T) {
 		"moved generation": {BookmarkID: current.BookmarkID, Generation: current.Generation + 7},
 		"another bookmark": {BookmarkID: "not-the-active-one", Generation: current.Generation},
 	} {
-		if _, err := h.mutate.DeleteMarker(ctx, scope, "fixtures", "folder-marker/"); !errors.Is(err, ErrMutationScopeChanged) {
+		if _, err := h.mutate.DeleteMarker(ctx, scope, "fixtures", "folder-marker/", "delete folder-marker/"); !errors.Is(err, ErrMutationScopeChanged) {
 			t.Fatalf("marker, %s: err = %v, want the scope refusal", name, err)
 		}
 		if _, err := h.mutate.DeleteManifest(ctx, scope, "fixtures", "external-dlo"); !errors.Is(err, ErrMutationScopeChanged) {
@@ -69,7 +69,7 @@ func TestMarkerAndManifestDeleteSendOneDeleteAndSayWhatStays(t *testing.T) {
 		run                   func() (MutationResultDTO, error)
 	}{
 		{"marker.delete", "folder-marker/", "deleted directory marker (children untouched)", func() (MutationResultDTO, error) {
-			return h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/")
+			return h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "folder-marker/", "delete folder-marker/")
 		}},
 		{"manifest.delete", "external-dlo", "deleted manifest; segments remain", func() (MutationResultDTO, error) {
 			return h.mutate.DeleteManifest(ctx, h.portrait(), "fixtures", "external-dlo")

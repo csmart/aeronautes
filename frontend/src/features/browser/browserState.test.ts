@@ -241,7 +241,7 @@ describe("mutations (§65.2)", () => {
     await s.createMarker("implied/");
     expect(s.prefixDetail?.markerBacked).toBe(true);
 
-    await s.deleteMarker("implied/");
+    await s.deleteMarker("implied/", "delete implied/");
     // Children keep the prefix alive as implied.
     expect(s.entries.some((e) => e.kind === "prefix" && e.name === "implied/")).toBe(true);
     expect(s.audit.recentEvents[0]?.operation).toBe("marker.delete");
@@ -291,7 +291,7 @@ describe("large-object read semantics (§65.3)", () => {
     await s.openContainer("fixtures");
     s.select(s.entries.findIndex((e) => e.name === "empty-object"));
     await vi.waitFor(() => expect(s.objectDetail).not.toBeNull());
-    await expect(s.deleteObject("fixtures", "empty-object", s.objectDetail!)).resolves.toMatchObject({ outcome: "applied" });
+    await expect(s.deleteObject("fixtures", "empty-object", s.objectDetail!, "delete empty-object")).resolves.toMatchObject({ outcome: "applied" });
     expect(s.entries.some((e) => e.name === "empty-object")).toBe(false);
   });
 });

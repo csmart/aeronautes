@@ -104,7 +104,7 @@ function show(kind: Kind, factsLoader?: () => Promise<ContainerSettingsDTO | nul
   const preview = () => { previewButton().click(); flushSync(); };
   const arm = () => {
     const confirm = root.querySelector<HTMLInputElement>(".confirm input");
-    const words = browser.deleteOpen === "prefix" ? `${browser.containerName}/${browser.prefix}`
+    const words = browser.deleteOpen === "prefix" ? `delete ${browser.containerName}/${browser.prefix}`
       : browser.deleteOpen === "delete_container" ? `delete ${browser.containerName}` : browser.containerName ?? "";
     if (confirm) input(confirm, words);
   };
@@ -201,7 +201,7 @@ describe.each(["copy", "delete"] as const)("%s preview binding", (kind) => {
       expect(f.api.startCopy).toHaveBeenCalledExactlyOnceWith(vi.mocked(f.api.planCopy).mock.calls[0][0]);
     } else {
       expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith({
-        ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media/selected/",
+        ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "delete media/selected/",
       });
     }
     f.startReply.reject(new Error("start outcome unavailable"));
@@ -386,7 +386,7 @@ it.each(["pending", "ready"])("Copy mode change and return requires a new previe
 // bare name arms no job, the words for an emptying never arm the container's
 // deletion, nor that deletion's words an emptying.
 it.each([
-  ["prefix", "Delete prefix", "media/selected/", ["media", "empty media", "delete media"]],
+  ["prefix", "Delete prefix", "delete media/selected/", ["media", "empty media", "delete media", "media/selected/"]],
   ["empty", "Empty container", "empty media", ["media", "delete media", "media/selected/"]],
   ["delete_container", "Delete container", "delete media", ["media", "empty media", "media/selected/"]],
 ] as const)("Delete opened for %s names that job, offers no other and asks for its own words", async (job, heading, words, others) => {
@@ -611,7 +611,7 @@ it("Delete takes segments unless the option is unticked, and each choice has its
   none.preview(); await none.resolve();
   expect(option(none)).toBeNull();
   // With no large object in scope nothing is asked for under another name.
-  expect(confirm(none).placeholder).toBe("media/selected/");
+  expect(confirm(none).placeholder).toBe("delete media/selected/");
 
   const versioned = show("delete", facts("history_location"));
   versioned.preview(); versioned.deletes[0].resolve(manifests); await settle();
@@ -621,7 +621,7 @@ it("Delete takes segments unless the option is unticked, and each choice has its
   const f = show("delete", facts("off"));
   f.preview(); f.deletes[0].resolve(manifests); await settle();
   expect(option(f)!.checked).toBe(true);
-  expect(confirm(f).placeholder).toBe("media/selected/ and segments");
+  expect(confirm(f).placeholder).toBe("delete media/selected/ and segments");
   expect(f.root.textContent).toContain("one that does will lose its data");
   expect(f.root.textContent).not.toContain("Deletion is manifest-only");
   // The plain words do not arm a deletion that takes segments.
@@ -633,16 +633,16 @@ it("Delete takes segments unless the option is unticked, and each choice has its
   // Unticking changes the words, clears what was typed and says what stays.
   option(f)!.click(); flushSync();
   expect(confirm(f).value).toBe("");
-  expect(confirm(f).placeholder).toBe("media/selected/");
+  expect(confirm(f).placeholder).toBe("delete media/selected/");
   expect(f.root.textContent).toContain("Deletion is manifest-only");
 
   // A new preview returns the option to its starting value.
   f.preview(); f.deletes[1].resolve(manifests); await settle();
   expect(option(f)!.checked).toBe(true);
-  input(confirm(f), "media/selected/ and segments");
+  input(confirm(f), "delete media/selected/ and segments");
   f.startButton().click(); flushSync();
   expect(f.api.startDelete).toHaveBeenCalledExactlyOnceWith({
-    ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "media/selected/ and segments", segments: true,
+    ...vi.mocked(f.api.previewDelete).mock.calls[0][0], confirm: "delete media/selected/ and segments", segments: true,
   });
   expect(vi.mocked(f.api.previewDelete).mock.calls[0][0].segments).toBe(false);
 
@@ -653,7 +653,7 @@ it("Delete takes segments unless the option is unticked, and each choice has its
   plain.arm();
   plain.startButton().click(); flushSync();
   expect(plain.api.startDelete).toHaveBeenCalledExactlyOnceWith({
-    ...vi.mocked(plain.api.previewDelete).mock.calls[0][0], confirm: "media/selected/", segments: false,
+    ...vi.mocked(plain.api.previewDelete).mock.calls[0][0], confirm: "delete media/selected/", segments: false,
   });
 });
 
@@ -670,10 +670,10 @@ it.each([
   const option = f.root.querySelector<HTMLInputElement>('.option input[type="checkbox"]')!;
   const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
   expect(option.checked).toBe(false);
-  expect(confirm.placeholder).toBe("media/selected/");
+  expect(confirm.placeholder).toBe("delete media/selected/");
   expect(f.root.textContent).toContain("It starts unticked here");
   option.click(); flushSync();
-  expect(confirm.placeholder).toBe("media/selected/ and segments");
+  expect(confirm.placeholder).toBe("delete media/selected/ and segments");
 });
 
 // After a job that took segments the notice no longer says the deletion
@@ -691,7 +691,7 @@ it("Delete says the job's records list what it deleted from the segments contain
   expect(f.root.textContent).toContain("A deletion here removes nothing from it.");
   option.click(); flushSync();
   expect(f.root.textContent).not.toContain("A deletion here removes nothing from it.");
-  input(f.root.querySelector<HTMLInputElement>(".confirm input")!, "media/selected/ and segments");
+  input(f.root.querySelector<HTMLInputElement>(".confirm input")!, "delete media/selected/ and segments");
   f.startButton().click(); flushSync();
   f.startReply.resolve("deleting-job"); await settle();
   f.browser.jobs.list = [{ id: "deleting-job", type: "delete_prefix", state: "complete", source: "media/selected/", destination: "(deleted)",
@@ -727,6 +727,6 @@ it("Delete prefix acts on the folder selected at the container's top", async () 
   const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
   input(confirm, "media");
   expect(f.startButton().disabled).toBe(true);
-  input(confirm, "media/files/");
+  input(confirm, "delete media/files/");
   expect(f.startButton().disabled).toBe(false);
 });

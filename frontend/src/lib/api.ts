@@ -223,7 +223,7 @@ export interface Api {
   /** Deletes ONE object by its name, under the scope its detail was read
    * under. The store's answer to the DELETE is the result: nothing is read
    * before it or after it (ADR 0122 decision 6). */
-  deleteObject(scope: ListingScope, container: string, name: string): Promise<MutationResultDTO>;
+  deleteObject(scope: ListingScope, container: string, name: string, confirm: string): Promise<MutationResultDTO>;
   capabilities(bookmarkId: string): Promise<CapabilitiesDTO>;
   updateObjectMetadata(
     scope: ListingScope,
@@ -250,7 +250,7 @@ export interface Api {
   createMarker(scope: ListingScope, container: string, prefix: string): Promise<PrefixDetailDTO>;
   /** Deletes ONE directory marker, the prefix's own object, under the scope
    * its detail was read under. The objects under the prefix are untouched. */
-  deleteMarker(scope: ListingScope, container: string, prefix: string): Promise<MutationResultDTO>;
+  deleteMarker(scope: ListingScope, container: string, prefix: string, confirm: string): Promise<MutationResultDTO>;
   auditRecent(limit: number, bookmarkId: string): Promise<AuditEventDTO[]>;
   auditSearch(q: AuditQueryDTO): Promise<AuditEventDTO[]>;
   /** Archive the trail under these filters to a file the operator chooses
@@ -349,7 +349,7 @@ export const liveApi: Api = {
   sloManifest: (container, name, bookmarkId) => InspectorService.SLOManifest(bookmarkId, container, name),
   dloSegments: (manifest, bookmarkId) => InspectorService.DLOSegments(bookmarkId, manifest),
   deleteManifest: (scope, container, name) => MutateService.DeleteManifest(scope, container, name),
-  deleteObject: (scope, container, name) => MutateService.DeleteObject(scope, container, name),
+  deleteObject: (scope, container, name, confirm) => MutateService.DeleteObject(scope, container, name, confirm),
   capabilities: (bookmarkId) => BrowseService.Capabilities(bookmarkId),
   updateObjectMetadata: (scope, container, name, baseFingerprint, edit) =>
     MutateService.UpdateObjectMetadata(scope, container, name, baseFingerprint, edit),
@@ -360,7 +360,7 @@ export const liveApi: Api = {
   updateTempUrlKey: (scope, edit) => MutateService.UpdateTempURLKey(scope, edit),
   createContainer: (scope, create) => MutateService.CreateContainer(scope, create),
   createMarker: (scope, container, prefix) => MutateService.CreateMarker(scope, container, prefix),
-  deleteMarker: (scope, container, prefix) => MutateService.DeleteMarker(scope, container, prefix),
+  deleteMarker: (scope, container, prefix, confirm) => MutateService.DeleteMarker(scope, container, prefix, confirm),
   auditRecent: async (limit, bookmarkId) =>
     (await AuditService.RecentFor(bookmarkId, limit)) ?? [],
   auditSearch: async (q) => (await AuditService.Search(q)) ?? [],

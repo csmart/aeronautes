@@ -29,7 +29,7 @@ func bulkDeletePartial(t *testing.T, h *Harness, bookmarkID string, refuse func(
 	refuse(c, "scope/held.txt", http.StatusForbidden)
 	t.Cleanup(func() { refuse(c, "scope/held.txt", 0) })
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
+		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: "delete " + c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
@@ -101,7 +101,7 @@ func bulkDeleteCancel(t *testing.T, h *Harness, bookmarkID string, arm func(cont
 		}
 	})
 	rec := h.StartDelete(ctx, app.DeleteRequestDTO{
-		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/" + "scope/",
+		BookmarkID: bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: "delete " + c + "/" + "scope/",
 	})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())

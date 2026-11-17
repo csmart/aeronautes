@@ -86,8 +86,16 @@ func TestDeletePreviewCountsAndDisclosures(t *testing.T) {
 	_, err = service.StartDelete(ctx, DeleteRequestDTO{
 		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media",
 	})
-	if err == nil || !strings.Contains(err.Error(), `does not match "media/scope/"`) {
+	if err == nil || !strings.Contains(err.Error(), `does not match "delete media/scope/"`) {
 		t.Errorf("the container name armed a prefix deletion: %v", err)
+	}
+	// Every deletion is typed with its verb, so the scope alone, the words
+	// before 17 November 2026, no longer arms it (ADR 0093 decision 9).
+	_, err = service.StartDelete(ctx, DeleteRequestDTO{
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
+	})
+	if err == nil || !strings.Contains(err.Error(), `does not match "delete media/scope/"`) {
+		t.Errorf("the scope without the verb armed a prefix deletion: %v", err)
 	}
 	// Each container job is armed by its own verb and the name, so the bare
 	// name starts neither, the emptying's words never delete the container,
@@ -138,7 +146,7 @@ func TestDeletePrefixJob(t *testing.T) {
 	h.mock.PutObject("media", "sibling", swifttest.Object{Manifest: "media_segments/shared/"})
 
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "delete media/scope/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -407,7 +415,7 @@ func TestAuditSearch(t *testing.T) {
 
 	// Generate a mixed trail: a delete job plus a refused segments call.
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
+		BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "delete media/scope/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -466,7 +474,7 @@ func TestDeletePartialAfterIrreversibleSubset(t *testing.T) {
 	defer func() { h.mock.FailDeletesAfter = 0 }()
 
 	jobID, err := service.StartDelete(ctx, DeleteRequestDTO{
-		BookmarkID: bookmark, Container: "media", Prefix: "doomed/", Mode: ModePrefix, Confirm: "media/doomed/",
+		BookmarkID: bookmark, Container: "media", Prefix: "doomed/", Mode: ModePrefix, Confirm: "delete media/doomed/",
 	})
 	if err != nil {
 		t.Fatal(err)

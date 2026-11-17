@@ -27,7 +27,7 @@
   // while the dialog is open: another job is another action.
   const mode: Mode = untrack(() => browser.deleteOpen ?? "empty");
   const jobs: Record<Mode, { heading: string; words: string }> = {
-    prefix: { heading: "Delete prefix", words: "the container and prefix" },
+    prefix: { heading: "Delete prefix", words: "“delete” and the container and prefix" },
     empty: { heading: "Empty container", words: "“empty” and the container name" },
     delete_container: { heading: "Delete container", words: "“delete” and the container name" },
   };
@@ -91,7 +91,7 @@
   // decision 3). A deletion that takes segments is armed by other words
   // again, so the words for one never start the other (ADR 0119 decision 2).
   function armingText(req: DeleteRequestDTO, segments: boolean): string {
-    const words = req.mode === "prefix" ? `${req.container}/${req.prefix}`
+    const words = req.mode === "prefix" ? `delete ${req.container}/${req.prefix}`
       : req.mode === "delete_container" ? `delete ${req.container}` : `empty ${req.container}`;
     return segments ? `${words} and segments` : words;
   }

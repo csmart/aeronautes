@@ -2151,8 +2151,9 @@ export class BrowserState {
 
   /** Delete ONE object by its name (ADR 0092, ADR 0122 decision 6). The
    * request names the scope the detail was read under (ADR 0079); the
-   * listing refreshes afterwards. */
-  async deleteObject(container: string, name: string, detail: ObjectDetailDTO, ownsView = () => true): Promise<MutationResultDTO> {
+   * listing refreshes afterwards. confirm is what the operator typed,
+   * "delete " and the name (ADR 0093 decision 9). */
+  async deleteObject(container: string, name: string, detail: ObjectDetailDTO, confirm: string, ownsView = () => true): Promise<MutationResultDTO> {
     if (!container || !name) {
       throw new Error("no object identity");
     }
@@ -2160,7 +2161,7 @@ export class BrowserState {
     const selection = this.detailIdentity;
     const prefix = this.prefix;
     const displayed = container === selection?.container && name === selection.name;
-    const result = await this.#api.deleteObject(detail.scope, container, name);
+    const result = await this.#api.deleteObject(detail.scope, container, name, confirm);
     await this.audit.loadRecent();
     if (displayed && ownsView() && this.#currentView(scope, selection)) await this.goTo(prefix);
     return result;
@@ -2256,17 +2257,19 @@ export class BrowserState {
 
   /** Run the opened delete once. The result or the refusal lands on the
    * operation, which survives the listing refresh, so the dialog can show an
-   * observed successor rather than a plain success. */
-  async runObjectDelete(): Promise<void> {
+   * observed successor rather than a plain success. confirm is the typed
+   * words an object or a marker needs; a manifest is armed by its own
+   * dialog. */
+  async runObjectDelete(confirm = ""): Promise<void> {
     const op = this.objectDelete;
     if (!op || op.status !== "pending" || !this.objectDeleteCurrent()) return;
     op.status = "running";
     try {
       const owns = () => this.objectDelete === op;
       const result = op.kind === "object"
-        ? await this.deleteObject(op.container, op.name, op.detail, owns)
+        ? await this.deleteObject(op.container, op.name, op.detail, confirm, owns)
         : op.kind === "marker"
-          ? await this.deleteMarker(op.name, owns)
+          ? await this.deleteMarker(op.name, confirm, owns)
           : await this.deleteManifest(op.container, op.name, op.detail, owns);
       if (this.objectDelete !== op) return;
       op.result = result;
@@ -2385,8 +2388,8 @@ export class BrowserState {
 
   /** Delete ONLY the marker object the current prefix detail showed (ADR
    * 0094): the request names the scope that detail was read under, and the
-   * working list refreshes. */
-  async deleteMarker(prefix: string, ownsView = () => true): Promise<MutationResultDTO> {
+   * working list refreshes. confirm is "delete " and the marker's name. */
+  async deleteMarker(prefix: string, confirm: string, ownsView = () => true): Promise<MutationResultDTO> {
     const container = this.containerName;
     const identity = this.detailIdentity;
     const detail = this.prefixDetail;
@@ -2401,7 +2404,7 @@ export class BrowserState {
     const scope = this.#scopeRevision;
     const selection = this.detailIdentity;
     const parent = this.prefix;
-    const result = await this.#api.deleteMarker(detail.scope, container, prefix);
+    const result = await this.#api.deleteMarker(detail.scope, container, prefix, confirm);
     await this.audit.loadRecent();
     if (ownsView() && this.#currentView(scope, selection)) await this.goTo(parent);
     return result;

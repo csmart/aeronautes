@@ -2,7 +2,8 @@
   the snapshot the browser state captured when it opened, listing the members
   with the full count, the prefix rows left out, the ceiling and what the
   delete does under the container's versioning mode. The confirmation is the
-  number of members, typed, and the request is built from the snapshot alone.
+  word delete and the number of members, typed, and the request is built
+  from the snapshot alone.
   While the confirmation is still possible the snapshot is checked against the
   view, and a view that no longer matches ends it and says why. -->
 <script lang="ts">
@@ -47,7 +48,8 @@
     if (browser.selectedDelete === op) facts = result;
   });
 
-  const canConfirm = $derived(pending && abandoned === null && facts !== undefined && typed === String(count));
+  const words = `delete ${count}`;
+  const canConfirm = $derived(pending && abandoned === null && facts !== undefined && typed === words);
 
   async function confirm() {
     if (!canConfirm) return;
@@ -103,8 +105,8 @@
           {op.ceiling.toLocaleString("en-US")} objects; the ceiling is set in Settings.
         </p>
         <label class="confirm">
-          <span>Type the number of objects, {count}, to confirm</span>
-          <input class="type-mono" bind:value={typed} placeholder={String(count)} inputmode="numeric" />
+          <span>Type <span class="type-mono">{words}</span> to confirm</span>
+          <input class="type-mono" bind:value={typed} placeholder={words} autocomplete="off" spellcheck="false" />
         </label>
       {/if}
       {#if op.error}

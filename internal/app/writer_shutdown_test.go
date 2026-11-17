@@ -104,7 +104,7 @@ func TestShutdownWorkWaitsForEveryMutateStoreWrite(t *testing.T) {
 			return err
 		}},
 		{"DeleteMarker", "DELETE", "folder-marker/", func(h *harness) error {
-			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/")
+			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/", "delete folder-marker/")
 			return err
 		}},
 		{"DeleteManifest", "DELETE", "external-dlo", func(h *harness) error {
@@ -143,7 +143,7 @@ func mutateStoreWrites(h *harness) []mutateWrite {
 			return err
 		}},
 		{"DeleteMarker", func() error {
-			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/")
+			_, err := h.mutate.DeleteMarker(context.Background(), h.portrait(), "fixtures", "folder-marker/", "delete folder-marker/")
 			return err
 		}},
 		{"DeleteManifest", func() error {

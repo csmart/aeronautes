@@ -42,7 +42,7 @@ func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 		if err != nil || marker.SelfObject == nil || !marker.MarkerBacked {
 			t.Fatalf("marker detail = %+v, %v", marker, err)
 		}
-		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/")
+		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/", "delete dir/")
 		if err != nil || result.Outcome != "applied" {
 			t.Fatalf("marker: result = %+v, err = %v; want applied", result, err)
 		}
@@ -94,7 +94,7 @@ func TestMarkerManifestDeleteUnderVersioningSwift(t *testing.T) {
 		if err != nil || marker.SelfObject == nil {
 			t.Fatalf("marker detail = %+v, %v", marker, err)
 		}
-		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/")
+		result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "dir/", "delete dir/")
 		if err != nil || result.Outcome != "applied" {
 			t.Fatalf("marker: result = %+v, err = %v; want applied", result, err)
 		}

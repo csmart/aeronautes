@@ -54,7 +54,7 @@ func rowsOf(t *testing.T, h *harness, names ...string) []ListingRowDTO {
 }
 
 func selectedRequest(h *harness, members []ListingRowDTO) SelectedDeleteRequestDTO {
-	return SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "fixtures", Members: members, Confirm: itoa(len(members))}
+	return SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "fixtures", Members: members, Confirm: "delete " + itoa(len(members))}
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -92,15 +92,16 @@ func TestSelectedDeleteRefusesBeforeAnyJobRow(t *testing.T) {
 	requests := h.mock.Requests()
 	one := rows[:1]
 	cases := map[string]SelectedDeleteRequestDTO{
-		"empty scope":        {Container: "fixtures", Members: one, Confirm: "1"},
-		"moved generation":   {Scope: ListingScopeDTO{BookmarkID: current.BookmarkID, Generation: current.Generation + 7}, Container: "fixtures", Members: one, Confirm: "1"},
-		"another bookmark":   {Scope: ListingScopeDTO{BookmarkID: "not-the-active-one", Generation: current.Generation}, Container: "fixtures", Members: one, Confirm: "1"},
-		"no members":         {Scope: current, Container: "fixtures", Confirm: "0"},
-		"a prefix member":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "prefix", Name: "implied/"}}, Confirm: "1"},
-		"an empty name":      {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "object", Name: ""}}, Confirm: "1"},
-		"a repeated name":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{rows[0], rows[0]}, Confirm: "2"},
-		"wrong confirmation": {Scope: current, Container: "fixtures", Members: rows, Confirm: "1"},
-		"no container":       {Scope: current, Members: one, Confirm: "1"},
+		"empty scope":        {Container: "fixtures", Members: one, Confirm: "delete 1"},
+		"moved generation":   {Scope: ListingScopeDTO{BookmarkID: current.BookmarkID, Generation: current.Generation + 7}, Container: "fixtures", Members: one, Confirm: "delete 1"},
+		"another bookmark":   {Scope: ListingScopeDTO{BookmarkID: "not-the-active-one", Generation: current.Generation}, Container: "fixtures", Members: one, Confirm: "delete 1"},
+		"no members":         {Scope: current, Container: "fixtures", Confirm: "delete 0"},
+		"a prefix member":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "prefix", Name: "implied/"}}, Confirm: "delete 1"},
+		"an empty name":      {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "object", Name: ""}}, Confirm: "delete 1"},
+		"a repeated name":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{rows[0], rows[0]}, Confirm: "delete 2"},
+		"wrong confirmation": {Scope: current, Container: "fixtures", Members: rows, Confirm: "delete 1"},
+		"the count alone":    {Scope: current, Container: "fixtures", Members: rows, Confirm: itoa(len(rows))},
+		"no container":       {Scope: current, Members: one, Confirm: "delete 1"},
 	}
 	for name, req := range cases {
 		if _, err := service.StartSelectedDelete(ctx, req); err == nil {
@@ -464,7 +465,7 @@ func TestSelectedDeleteRefusesAStalePortrait(t *testing.T) {
 	rows := rowsOf(t, h, "normal/hello.txt")
 	stale := h.portrait()
 	h.connect(t)
-	if _, err := service.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: stale, Container: "fixtures", Members: rows, Confirm: "1"}); !errors.Is(err, ErrMutationScopeChanged) {
+	if _, err := service.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: stale, Container: "fixtures", Members: rows, Confirm: "delete 1"}); !errors.Is(err, ErrMutationScopeChanged) {
 		t.Fatalf("err = %v, want the scope refusal", err)
 	}
 	if list, _ := h.jobsSvc.List(ctx, "", false, 10); len(list) != 0 {
