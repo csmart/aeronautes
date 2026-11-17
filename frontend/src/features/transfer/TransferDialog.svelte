@@ -10,6 +10,7 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
+  import { selectionSummary } from "./selectionSummary";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
 
@@ -78,12 +79,9 @@
   // members are part of the request, so a change of selection disarms a
   // preview like any other change of scope.
   const source = $derived(browser.transferSource);
-  // A multi-selection of folder rows alone names no objects; sending it would
-  // ask for the whole folder, so it cannot be previewed.
-  const noMembers = $derived(source.kind === "selected" && source.members.length === 0);
 
   const canPreview = $derived(!closed && !previewing && !starting && !creating && !browser.connecting
-    && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "" && !noMembers);
+    && !!browser.connectedBookmarkId && !!browser.containerName && destContainer !== "");
   // The overwrite question only has an answer once a copy preview shows a
   // destination that exists: Changed is a listed difference, Unknown a pair the
   // listing could not prove equal. Both are refused by default and both can be
@@ -94,11 +92,6 @@
 
   // The selected objects in words: how many, and the first few by name
   // within the folder.
-  function selectedSummary(members: string[], prefix: string): string {
-    const shown = members.slice(0, 5).map((name) => name.slice(prefix.length));
-    const more = members.length > shown.length ? `, and ${members.length - shown.length} more` : "";
-    return `${members.length} selected ${members.length === 1 ? "object" : "objects"}: ${shown.join(", ")}${more}`;
-  }
 
   function scope(): Scope {
     return {
@@ -305,10 +298,7 @@
           <span>Container: {browser.containerName == null ? "—" : JSON.stringify(browser.containerName)}</span>
           <span>Prefix: {JSON.stringify(source.prefix)}{source.prefix === "" ? " (container root)" : ""}</span>
           {#if source.members.length > 0}
-            <span>{selectedSummary(source.members, source.prefix)}</span>
-          {/if}
-          {#if source.excludedFolders > 0}
-            <span>{source.excludedFolders} selected {source.excludedFolders === 1 ? "folder is" : "folders are"} not included</span>
+            <span>{selectionSummary(source.members, source.prefix)}</span>
           {/if}
         </div>
       </div>
@@ -423,7 +413,7 @@
             {#if preview.missingMembers}
               <!-- The copy still copies the rest and ends partial (ADR 0108 decision 3). -->
               <p class="warn">
-                {preview.missingMembers} of the selected objects {preview.missingMembers === 1 ? "was" : "were"} no longer
+                {preview.missingMembers} of the selected objects and folders {preview.missingMembers === 1 ? "was" : "were"} no longer
                 at the source; {preview.missingMembers === source.members.length ? "nothing is copied" : "the others are copied"}
                 and the job will end partial.
               </p>

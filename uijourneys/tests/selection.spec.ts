@@ -2,20 +2,19 @@ import { test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { control } from "../control.ts";
-import { expect, expectInside, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
+import { digestOf, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
 
 // A folder is uploaded with a file and a folder inside it, so that one
 // listing shows both. Selecting rows there must leave the toolbar and the
-// list where they were. Then ADR 0108 decision 1: a selection's folders are
-// not copied, so a selection holding a folder beside a file is told so
-// before the copy dialog opens; the copy itself is cancelled, and nothing
-// is sent.
-test("a selection holding a folder is warned before a copy", async ({ page }, info) => {
+// list where they were. Then ADR 0108 decision 7: a selected folder is taken
+// with everything in it, so a selection of the file and the folder is copied
+// and downloaded whole, the folder's name kept, and nothing opens first.
+test("a selection of a file and a folder is copied and downloaded with the folder's contents", async ({ page }, info) => {
   const container = await ownContainer(info.project.name, "ui-selection");
   const folder = localFolder();
-  writeFiles(folder, [16], 1);
+  const top = writeFiles(folder, [16], 1);
   mkdirSync(join(folder, "inner"));
-  writeFiles(join(folder, "inner"), [16], 1);
+  const nested = writeFiles(join(folder, "inner"), [32], 2);
 
   await openContainer(page, info.project.name, container);
   await page.getByRole("button", { name: "Upload…" }).click();
@@ -52,14 +51,31 @@ test("a selection holding a folder is warned before a copy", async ({ page }, in
   expect(await places(), "with two rows selected").toEqual(before);
 
   await page.getByRole("button", { name: "Copy selected…" }).click();
-  const warning = page.getByRole("alertdialog", { name: "Selected folders are left out" });
-  await expect(warning.getByRole("heading", { name: "1 selected folder will not be copied" })).toBeVisible();
-  await expect(warning).toContainText("This selection holds 1 folder beside 1 object: inner/.");
-  await expect(warning).toContainText("That folder and everything in it will not be copied.");
-  await expect(warning.getByRole("button", { name: "Copy the 1 object only…" })).toBeVisible();
-  await expectInside(warning);
+  const copy = page.getByRole("dialog", { name: "Transfer" });
+  await expect(copy.getByRole("group", { name: "Source scope" })).toContainText("1 object and 1 folder selected: file00.bin, inner/");
+  await copy.getByLabel("Destination container").fill(container);
+  await copy.getByLabel("Destination prefix").fill("copied/");
+  await copy.getByRole("button", { name: "Preview" }).click();
+  await copy.getByRole("button", { name: "Start copy" }).click();
+  await finish(page, copy);
 
-  await warning.getByRole("button", { name: "Cancel" }).click();
-  await expect(warning).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Transfer" })).toHaveCount(0);
+  // The download takes the same selection into a local folder.
+  await page.getByRole("button", { name: "Download selected…" }).click();
+  const download = page.getByRole("dialog", { name: "Download" });
+  await expect(download.getByRole("heading", { name: /Download 1 object and 1 folder from / })).toBeVisible();
+  const into = localFolder();
+  await control.pickFolder(into);
+  await download.getByRole("button", { name: "Choose directory…" }).click();
+  await download.getByRole("button", { name: "Start download" }).click();
+  await finish(page, download);
+  for (const [name, digest] of top) expect(digestOf(join(into, name)), name).toBe(digest);
+  for (const [name, digest] of nested) expect(digestOf(join(into, "inner", name)), `inner/${name}`).toBe(digest);
+
+  // The copy kept the folder's name beside the file.
+  await page.getByRole("button", { name: "Up one level" }).click();
+  await page.getByRole("button", { name: "Refresh listing" }).click();
+  await openFolder(page, "copied");
+  await expect(objectRow(page, "file00.bin")).toBeVisible();
+  await openFolder(page, "inner");
+  await expect(objectRow(page, "file00.bin")).toBeVisible();
 });

@@ -33,13 +33,10 @@
 
   const rowDelete = $derived(singleRowDelete(browser));
   // Copy and Download act on what is selected and say so (ADR 0108): the
-  // selected objects, the selected object or folder, or else the folder or
-  // container being browsed. A selection's folder rows are left out, so a
-  // selection holding one opens a warning before either dialog, and stays
-  // enabled so that the warning can be read.
+  // selected objects and folders, the selected object or folder, or else the
+  // folder or container being browsed.
   const source = $derived(browser.transferSource);
   const sourceWord = $derived(source.kind === "selected" ? "selected" : source.kind);
-  const leavesFolders = $derived(source.excludedFolders > 0);
 
   // The row menu offers the toolbar's own actions for what is selected,
   // under the same conditions, so the two can never disagree.
@@ -51,10 +48,10 @@
     const items: MenuItem[] = [];
     if (entry.kind === "prefix") items.push({ label: "Open", run: () => browser.activate(entry) });
     if (v1Offers.download) {
-      items.push({ label: `Download ${sourceWord}…`, disabled: noScope, run: () => browser.requestTransfer("download") });
+      items.push({ label: `Download ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("download") });
     }
     if (v1Offers.copy) {
-      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope, run: () => browser.requestTransfer("copy") });
+      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("copy") });
     }
     items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
     if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
@@ -187,9 +184,9 @@
           <span class="sizer" aria-hidden="true">Download container…</span>
           <button
             class="find"
-            title={leavesFolders ? "Selected folders are not downloaded; a warning says so before anything opens" : "Download it to a local directory"}
+            title="Download it to a local directory"
             disabled={browser.containerName === null || browser.backstageFrom !== null}
-            onclick={() => browser.requestTransfer("download")}
+            onclick={() => browser.openTransfer("download")}
           >
             Download {sourceWord}…
           </button>
@@ -200,9 +197,9 @@
           <span class="sizer" aria-hidden="true">Copy container…</span>
           <button
             class="find"
-            title={leavesFolders ? "Selected folders are not copied; a warning says so before anything opens" : "Copy it to another account, container or folder"}
+            title="Copy it to another account, container or folder"
             disabled={browser.containerName === null || browser.backstageFrom !== null}
-            onclick={() => browser.requestTransfer("copy")}
+            onclick={() => browser.openTransfer("copy")}
           >
             Copy {sourceWord}…
           </button>
