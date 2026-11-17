@@ -786,7 +786,7 @@ func lifetimeAssertRecords(t *testing.T, result lifetimeResult, mode, id, contai
 		t.Fatalf("terminal records differ from observed effects: %+v want state=%s counters=%+v totals=%+v", after, wantState, wantCounters, wantTotals)
 	}
 	item := after.Items[0]
-	if item.Key != "scope/file.bin" || item.Source.Kind != "swift" || item.Source.Container != container || item.Source.Object != "scope/file.bin" || item.Source.BookmarkID != after.Job.SourceBookmarkID || item.Destination.LocalPath != filepath.Join(root, "file.bin") || item.Staging != nil || !item.Admitted || !item.Planned || item.ListedBytes != size {
+	if item.Key != "scope/file.bin" || item.Source.Kind != "swift" || item.Source.Container != container || item.Source.Object != "scope/file.bin" || item.Source.BookmarkID != after.Job.SourceBookmarkID || item.Destination.LocalPath != filepath.Join(root, "file.bin") || !item.Admitted || !item.Planned || item.ListedBytes != size {
 		t.Fatalf("retained item identity changed: %+v", item)
 	}
 	if killed {

@@ -207,7 +207,7 @@ func TestCopyItemAdapterPreservesExactIdentities(t *testing.T) {
 				admitted := verdict == plan.VerdictNew || verdict == plan.VerdictUnknown
 				if item.Key != key || item.Source.Object != "source/"+key || item.Source.BookmarkID != "source" || item.Source.Container != "source-c" ||
 					item.Destination.Object != "dest/"+key || item.Destination.BookmarkID != "dest" || item.Destination.Container != "dest-c" ||
-					item.Planned != planned || item.Admitted != admitted || item.Staging != nil || item.Execution != nil || item.Verification == nil ||
+					item.Planned != planned || item.Admitted != admitted || item.Execution != nil || item.Verification == nil ||
 					item.Verification.Result != jobs.ItemVerified || !reflect.DeepEqual(public.Items[i], jobItemDTO(item)) || public.Items[i].Key != key {
 					t.Fatalf("adapter normalised identity or invented effects: %+v %+v", item, public.Items[i])
 				}

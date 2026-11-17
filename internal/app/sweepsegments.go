@@ -255,7 +255,7 @@ func (s *DeleteService) deleteManifestMember(ctx context.Context, session *swift
 		return jobs.ItemObservation{}, fmt.Sprintf("the manifest's issued mark could not be written: %v", err)
 	}
 	observation := memberOutcome(session.DeleteName(ctx, container, name))
-	if recErr := s.jobs.RecordDeletion(ctx, jobID, key, observation, nil, nil); recErr != nil {
+	if recErr := s.jobs.RecordDeletion(ctx, jobID, key, observation); recErr != nil {
 		return observation, fmt.Sprintf("the manifest's outcome could not be recorded after its request: %v", recErr)
 	}
 	return observation, ""

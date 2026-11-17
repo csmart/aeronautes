@@ -254,7 +254,7 @@ func copyInterruptionRun(t *testing.T, h *Harness, tc copyInterruptionCase) {
 	if tc.interruption != "none" && !tc.beforeWork {
 		buffered := saved.Items[len(saved.Items)-1]
 		if buffered.Key != "y-engine.bin" || !buffered.Admitted || buffered.Execution == nil || buffered.Verification != nil ||
-			buffered.Execution.Result != jobs.ItemNotAttempted || buffered.Execution.Effect != jobs.EffectNotAttempted || buffered.Staging != nil {
+			buffered.Execution.Result != jobs.ItemNotAttempted || buffered.Execution.Effect != jobs.EffectNotAttempted {
 			t.Fatalf("planning interruption dispatched or lost acknowledged buffer: %+v", buffered)
 		}
 	}

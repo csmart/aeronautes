@@ -83,12 +83,6 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes {
 				t.Fatalf("public download identity differs: %+v", row)
 			}
-			// A download writes each file at its name, so an item has no
-			// staging location and no record of a final publication (ADR 0122
-			// decisions 5 and 7).
-			if item.Staging != nil || row.Staging != nil || item.PublicationRequired || row.PublicationRequired || item.Publication != nil || row.Publication != nil {
-				t.Fatalf("a download item carries a stage or a publication: stored=%+v public=%+v", item, row)
-			}
 			assertUploadPublicObservation(t, row.Execution, item.Execution)
 			assertUploadPublicObservation(t, row.Verification, item.Verification)
 			seen[row.Key], lastID = true, rowID

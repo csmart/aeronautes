@@ -24,7 +24,7 @@ func assertCopyItemRecords(t *testing.T, h *Harness, id, src, dst string, failed
 		if item.JobID != id || !item.Admitted || !item.Planned || item.ListedBytes != int64(bytes) ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "scope/" + item.Key}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Secondary.BookmarkID, Container: dst, Object: "scope/" + item.Key}) ||
-			item.Staging != nil || item.Execution == nil {
+			item.Execution == nil {
 			t.Fatalf("actual Copy lost captured identity or observations, or recorded a stage name: %+v", item)
 		}
 		// A refused read of the source wrote nothing, and that answer is the

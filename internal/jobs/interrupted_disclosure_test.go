@@ -517,20 +517,6 @@ func deletionItem(bm, key string) ItemIntent {
 	}
 }
 
-func publicationItem(bm, key string) ItemIntent {
-	return ItemIntent{
-		ItemIdentity: ItemIdentity{
-			Key:         key,
-			Source:      ItemLocation{Kind: ItemSwift, BookmarkID: bm, Container: "src", Object: key},
-			Destination: ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/aeronautes-test/" + key},
-		},
-		Staging:             &ItemLocation{Kind: ItemLocal, LocalPath: "/tmp/aeronautes-test/.stage/" + key},
-		Planned:             true,
-		Admitted:            true,
-		PublicationRequired: true,
-	}
-}
-
 // ADR 0088 decision 5: the attempt signal must exclude the
 // synthetic not_attempted rows the sweep writes for never-issued deletion
 // members, and must include an issued member with no recorded outcome, whose
@@ -589,42 +575,4 @@ func TestInterruptedDisclosuresAttemptExcludesSyntheticNotAttempted(t *testing.T
 			t.Fatal("never-issued members carrying only synthetic not_attempted rows must not read as attempted")
 		}
 	})
-}
-
-// ADR 0061/0070: a publication-required download is not
-// "verified" on the strength of its staged read alone; the final publication
-// must be verified too. The copied fact still stands on its own.
-func TestInterruptedDisclosuresVerifiedRequiresFinalPublication(t *testing.T) {
-	ctx := context.Background()
-	s, bm := newStore(t)
-	job, err := s.Create(ctx, Job{Type: TypeDownload, SourceBookmarkID: bm, ItemRecordsVersion: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	item := publicationItem(bm, "obj")
-	if err := s.AdmitItems(ctx, job.ID, []ItemIntent{item}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RecordExecution(ctx, job.ID, item.Key, ItemObservation{Result: ItemCopied, Effect: EffectReportedApplied, CopiedBytes: 10}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RecordComparison(ctx, job.ID, item.ItemIdentity, ItemObservation{Result: ItemVerified, Effect: EffectNotAttempted}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.FailInterrupted(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	page, err := s.InterruptedDisclosures(ctx, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := findEntry(t, page, job.ID)
-	if e.Verified != 0 {
-		t.Fatalf("verified = %d with the final publication unrecorded, want 0 (the staged read alone is not verified)", e.Verified)
-	}
-	// The copied member and the attempt stand on their own.
-	if !e.Attempted || e.Copied != 1 {
-		t.Fatalf("attempted/copied = %v/%d, want true/1", e.Attempted, e.Copied)
-	}
 }

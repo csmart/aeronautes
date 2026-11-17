@@ -180,7 +180,7 @@ func copyListingFidelityRun(t *testing.T, h *Harness, tc copyListingFidelityCase
 	for _, item := range saved.Items {
 		if (item.Source.Object != "scope/a\ncontrol" && item.Source.Object != tc.object) || item.Key != strings.TrimPrefix(item.Source.Object, "scope/") ||
 			item.Destination.Object != item.Source.Object || item.Execution == nil || item.Verification == nil ||
-			item.Execution.Result != jobs.ItemCopied || item.Verification.Result != jobs.ItemVerified || item.Staging != nil {
+			item.Execution.Result != jobs.ItemCopied || item.Verification.Result != jobs.ItemVerified {
 			t.Errorf("valid Unicode identity or native outcome was not retained: %+v", item)
 		}
 	}

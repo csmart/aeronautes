@@ -158,7 +158,7 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 	items := itemsOf(t, h, jobID)
 	for _, name := range names {
 		item := items[name]
-		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() || item.Successor != nil || item.Baseline != nil {
+		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() {
 			t.Fatalf("%s: item = %+v", name, item)
 		}
 		if requests := requestsFor(wire, "fixtures", name); len(requests) != 1 || requests[0] != "DELETE" {
@@ -173,7 +173,7 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 		t.Fatalf("items page = %+v, %v", page, err)
 	}
 	for _, item := range page.Items {
-		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" || item.Successor != nil || item.Baseline != nil {
+		if item.IssuedAt == "" || item.Execution == nil || item.Execution.Result != "deleted" {
 			t.Fatalf("item DTO %s = %+v", item.Key, item)
 		}
 		if item.ListedETag == "" {

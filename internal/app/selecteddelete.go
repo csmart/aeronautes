@@ -182,7 +182,7 @@ func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req
 		// The member's request runs to its answer whatever the job's context
 		// does: cancellation lands between members, never inside a DELETE.
 		observation := memberOutcome(session.DeleteName(background, req.Container, member.Name))
-		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation, nil, nil); recErr != nil {
+		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation); recErr != nil {
 			recordingLost = fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was touched: %v", member.Name, recErr)
 			break
 		}
@@ -267,7 +267,7 @@ func (s *DeleteService) storeStoppedBeside() string {
 
 func (s *DeleteService) recordNotAttempted(ctx context.Context, jobID string, members []ListingRowDTO) {
 	for _, member := range members {
-		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}); err != nil {
 			applog.Errorf("job %s: member %q not attempted but unrecorded: %v", jobID, member.Name, err)
 			return
 		}

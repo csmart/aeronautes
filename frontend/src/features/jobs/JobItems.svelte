@@ -166,9 +166,6 @@
                 {#if !deletion}
                   <dt>Destination ({item.destination.kind})</dt><dd><code>{item.destination.display}</code></dd>
                 {/if}
-                {#if item.staging}
-                  <dt>Staging ({item.staging.kind})</dt><dd><code>{item.staging.display}</code></dd>
-                {/if}
               </dl>
               <p>Planned: {item.planned ? "yes" : "no"} · Admitted: {item.admitted ? "yes" : "no"} · Listed bytes (advisory): {item.listedBytes}{#if deletion} · Listed entity tag: <code>{item.listedEtag}</code> · Listed as a static large object: {item.listedSlo ? "yes" : "no"}{/if}</p>
             </details>
@@ -180,8 +177,8 @@
               </p>
             {:else}
             <p>
-              {#if item.admitted && (!item.execution || item.execution.effect === "unresolved" || item.publication?.effect === "unresolved")}<span class="problem">Unresolved effects. </span>{/if}
-              {#if item.execution?.result === "copied" && (item.verification?.result !== "verified" || item.publicationRequired && item.publication?.result !== "verified")}<span class="problem">Unverified copy. </span>{/if}
+              {#if item.admitted && (!item.execution || item.execution.effect === "unresolved")}<span class="problem">Unresolved effects. </span>{/if}
+              {#if item.execution?.result === "copied" && item.verification?.result !== "verified"}<span class="problem">Unverified copy. </span>{/if}
               {#if !item.admitted && !item.execution && item.verification}Comparison only; no execution admission.{/if}
             </p>
             {#each [["Execution", item.execution], ["Verification", item.verification]] as const as [label, observation]}
@@ -197,20 +194,6 @@
                 {/if}
               </p>
             {/each}
-            <p class="publication">
-              <strong>Final publication:</strong>
-              {#if item.publication}
-                {item.publication.result.replaceAll("_", " ")} · effects: {item.publication.effect.replaceAll("_", " ")}
-                {#if item.publication.code} · {item.publication.stage}: {item.publication.code}{/if}
-                {#if item.publication.httpStatus} · HTTP {item.publication.httpStatus}{/if}
-              {:else if !item.publicationRequired}
-                Not required for this item.
-              {:else if item.execution?.result === "copied"}
-                Required final check was not recorded.
-              {:else}
-                Final check not reached.
-              {/if}
-            </p>
             {/if}
           </article>
         {/each}

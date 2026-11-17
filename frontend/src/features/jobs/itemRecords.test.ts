@@ -26,10 +26,9 @@ function item(index: number, key = `item-${index}`): JobItemDTO {
   return { id: (9007199254740993n + BigInt(index)).toString(), key, keyDisplay: JSON.stringify(key),
     source: { kind: "swift", bookmarkId: "a", container: "source", object: key, localPath: "", display: `"a" / "source" / ${JSON.stringify(key)}` },
     destination: { kind: "swift", bookmarkId: "b", container: "dest", object: key, localPath: "", display: `"b" / "dest" / ${JSON.stringify(key)}` },
-    staging: null, planned: true, admitted: true, listedBytes: 10, createdAt: "2000-01-01T00:00:00Z", publicationRequired: false, publication: null,
-    // Copy items replace nothing, so they carry no predecessor, and they are
-    // not deletion members, so no issued mark and no successor.
-    predecessor: null, issuedAt: "", successor: null, listedEtag: "", listedSlo: false, baseline: null,
+    planned: true, admitted: true, listedBytes: 10, createdAt: "2000-01-01T00:00:00Z",
+    // Copy items are not deletion members, so they carry no issued mark.
+    issuedAt: "", listedEtag: "", listedSlo: false,
     execution: { result: "failed", effect: "not_attempted", stage: "source_read", code: "forbidden", httpStatus: 403, copiedBytes: 0, createdAt: "" },
     verification: { result: "failed", effect: "not_attempted", stage: "verification", code: "missing", httpStatus: 404, copiedBytes: 0, createdAt: "" } };
 }
@@ -38,43 +37,6 @@ function totals(overrides: Partial<JobItemTotalsDTO> = {}): JobItemTotalsDTO {
   return { status: "available", items: 0, planned: 0, admitted: 0, failed: 0, conflicts: 0, refused: 0,
     unresolved: 0, unverified: 0, problems: 0, issued: 0, deleted: 0, unsettled: 0, ...overrides };
 }
-
-it("keeps early verification distinct from final publication evidence", async () => {
-  const api = newFakeApi();
-  const rows = ["confirmed", "substituted", "missing", "not reached", "historical"].map((name, index) => {
-    const row = item(index, name);
-    row.destination = { kind: "local", bookmarkId: "", container: "", object: "", localPath: `/download/${name}`, display: JSON.stringify(`/download/${name}`) };
-    row.publicationRequired = name !== "historical";
-    row.execution = { result: "copied", effect: "reported_applied", stage: "", code: "", httpStatus: 0, copiedBytes: 10, createdAt: "" };
-    row.verification = { result: "verified", effect: "not_attempted", stage: "", code: "", httpStatus: 0, copiedBytes: 0, createdAt: "" };
-    return row;
-  });
-  rows[0].publication = { ...rows[0].verification! };
-  rows[1].publication = { ...rows[1].verification!, result: "failed", effect: "unresolved", stage: "verification", code: "unverified" };
-  rows[3].execution = { ...rows[3].execution!, result: "failed", effect: "not_attempted", copiedBytes: 0, stage: "source_read", code: "missing" };
-  rows[3].verification = null;
-  api.jobItems = async () => ({ status: "available", items: rows, nextCursor: "" });
-  api.jobItemTotals = async () => totals({ items: 5, planned: 5, admitted: 5, failed: 2, unresolved: 1, unverified: 2, problems: 2 });
-  await show(api, [{ ...job("first", "partial"), type: "download", destBookmarkId: "" }]);
-  expand();
-  await vi.waitFor(() => expect(document.querySelectorAll(".item-record")).toHaveLength(5));
-  const records = [...document.querySelectorAll(".item-record")];
-  expect(records[0].querySelector(".publication")?.textContent).toContain("verified");
-  expect(records[0].textContent).not.toContain("Unverified copy");
-  expect(records[1].querySelectorAll(".observation")[1].textContent).toContain("verified");
-  expect(records[1].querySelector(".publication")?.textContent).toContain("failed");
-  expect(records[1].textContent).toContain("Unresolved effects");
-  expect(records[1].textContent).toContain("Unverified copy");
-  expect(records[1].textContent).toContain("10 reported copied bytes");
-  expect(records[2].querySelectorAll(".observation")[1].textContent).toContain("verified");
-  expect(records[2].querySelector(".publication")?.textContent).toContain("Required final check was not recorded");
-  expect(records[2].textContent).toContain("Unverified copy");
-  expect(records[2].textContent).not.toContain("Unresolved effects");
-  expect(records[3].querySelector(".publication")?.textContent).toContain("Final check not reached");
-  expect(records[3].textContent).not.toContain("Unverified copy");
-  expect(records[4].querySelector(".publication")?.textContent).toContain("Not required for this item");
-  expect(records[4].textContent).not.toContain("Unverified copy");
-});
 
 function button(text: string, root: ParentNode = document): HTMLButtonElement {
   const found = [...root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === text);
@@ -122,6 +84,7 @@ async function settleResponse() {
 }
 
 it("does not offer re-run for a copy job in a v1 build", async () => {
+  v1Offers.rerun = false;
   const api = newFakeApi();
   api.rerunJob = vi.fn(async () => { throw new Error("should not run"); });
   api.startCopy = vi.fn(async () => "unsafe-fallback");
@@ -287,7 +250,7 @@ it("keeps unrecorded download history distinct and requires its own dialog", asy
   expect(api.startDownload).not.toHaveBeenCalled();
 });
 
-it("pages exact download destinations and temporary paths without acquiring rerun authority", async () => {
+it("pages exact download destinations without acquiring rerun authority", async () => {
   vi.useFakeTimers();
   const api = newFakeApi();
   const download = { ...job("download", "partial"), type: "download", destBookmarkId: "" };
@@ -299,8 +262,6 @@ it("pages exact download destinations and temporary paths without acquiring reru
     const row = item(index, prefix + name);
     const path = marker ? root : root + "/" + name;
     row.destination = { kind: "local", bookmarkId: "", container: "", object: "", localPath: path, display: JSON.stringify(path) };
-    const temporary = index % 2 === 0 ? root + "/.aeronautes-part-" + index : root + "/.aeronautes-stage-download/" + name;
-    row.staging = marker ? null : { kind: "local", bookmarkId: "", container: "", object: "", localPath: temporary, display: JSON.stringify(temporary) };
     row.listedBytes = marker ? 0 : 9;
     row.execution = index % 4 === 3 ? null : { result: "copied", effect: index % 4 === 1 ? "unresolved" : "reported_applied",
       stage: index % 4 === 1 ? "cleanup" : "", code: index % 4 === 1 ? "io" : "", httpStatus: 0,
@@ -338,8 +299,6 @@ it("pages exact download destinations and temporary paths without acquiring reru
       expect(element.querySelector("summary code")?.textContent).toBe(row.keyDisplay);
       expect(element.querySelector(".locations")?.textContent).toContain(row.source.display);
       expect(element.querySelector(".locations")?.textContent).toContain(row.destination.display);
-      if (row.staging) expect(element.querySelector(".locations")?.textContent).toContain(row.staging.display);
-      else expect(element.querySelector(".locations")?.textContent).not.toContain(".aeronautes-part-");
       expect(element.querySelectorAll(".observation")).toHaveLength(2);
       expect(element.querySelectorAll(".observation")[0].textContent).toContain(row.execution ? "copied" : "No observation recorded");
       expect(element.querySelectorAll(".observation")[1].textContent).toContain(row.verification ? "verified" : "No observation recorded");
@@ -473,7 +432,6 @@ it("renders escaped identities and both phases without summing overlapping facet
   rows[1].keyDisplay = '"line\\n\\x00\\u202e<script>alert(1)</script>é�"';
   rows[1].source.display = '"a" / "source" / "line\\n\\x00\\u202e<script>alert(1)</script>é�"';
   rows[1].destination = { kind: "local", bookmarkId: "", container: "", object: "", localPath: "/local\nname", display: '"/local\\nname"' };
-  rows[1].staging = { ...rows[1].source, object: "stage\nname", display: '"a" / "source" / "stage\\nname"' };
   rows[0].execution = null;
   rows[0].verification = null;
   rows[1].execution = { ...rows[1].execution!, result: "copied", copiedBytes: 9, effect: "unresolved", stage: "cleanup", code: "io", httpStatus: 0 };
@@ -486,7 +444,6 @@ it("renders escaped identities and both phases without summing overlapping facet
   document.querySelectorAll("details").forEach((d) => { d.open = true; });
   expect(document.querySelector(".item-records script")).toBeNull();
   expect(document.querySelector(".item-records")!.textContent).not.toMatch(/[\u0000\u202e]/u);
-  expect(document.querySelectorAll(".locations")[1].textContent).toContain(rows[1].staging.display);
   expect(document.querySelectorAll(".locations")[1].textContent).toContain(rows[1].destination.display);
   const text = document.querySelector(".item-records")!.textContent!;
   expect(text).toContain("No observation recorded");

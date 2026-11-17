@@ -155,7 +155,7 @@ func TestPrefixSweepDeletesEveryMemberExactly(t *testing.T) {
 	items := sweepItems(t, h, jobID)
 	for _, name := range members {
 		item := items[name]
-		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() || item.Successor != nil || item.Baseline != nil {
+		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() {
 			t.Fatalf("%s: item = %+v", name, item)
 		}
 		if requests := requestsFor(wire, "sweep", name); len(requests) != 1 || requests[0] != "DELETE" {
