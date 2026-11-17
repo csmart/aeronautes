@@ -68,7 +68,7 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 		account := swiftcontrol.AccountIdentity(r.session.StorageURL())
 		seen := map[string]bool{}
 		for _, entry := range entries {
-			if holder, staged := r.s.runner.stagedByLiveJob(account, entry.Container, entry.Object); staged {
+			if holder, claimed := r.s.runner.claimedByLiveJob(account, entry.Container, entry.Object); claimed {
 				return r.leave(ctx, m, "a segment of it is where "+holder+" is writing")
 			}
 			segment := sweepMember{container: entry.Container, name: entry.Object, bytes: entry.Size, etag: entry.ETag}

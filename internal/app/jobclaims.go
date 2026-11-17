@@ -93,12 +93,12 @@ func (o *jobOwner) claim(claims ...scopeClaim) error {
 	return nil
 }
 
-// refuseStagedName refuses a deletion of named objects when one of its names
+// refuseClaimedName refuses a deletion of named objects when one of its names
 // lies under the folder a transfer is writing into. Such a deletion asks at
 // its start and holds no claim of its
 // own: its names are fixed before it runs, so it cannot reach a transfer
 // that begins later.
-func (r *jobRunner) refuseStagedName(account, container, name string) error {
+func (r *jobRunner) refuseClaimedName(account, container, name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for owner := range r.owners {
@@ -112,11 +112,11 @@ func (r *jobRunner) refuseStagedName(account, container, name string) error {
 	return nil
 }
 
-// stagedByLiveJob reports the live job that is writing where an object name
+// claimedByLiveJob reports the live job that is writing where an object name
 // lies. A sweep that takes segments asks it for each segment: an ordinary
 // live object can name segments a job is still writing, and those are kept
 // (ADR 0105 decision 3).
-func (r *jobRunner) stagedByLiveJob(account, container, name string) (string, bool) {
+func (r *jobRunner) claimedByLiveJob(account, container, name string) (string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for owner := range r.owners {
