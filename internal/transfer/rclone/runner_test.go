@@ -162,6 +162,48 @@ func TestIgnoreSizeOnlyWhenAsked(t *testing.T) {
 	}
 }
 
+// A download into a local folder is told to leave a file that exists alone
+// (ADR 0122 decision 5); a copy to a store is never told so, because there
+// the plan decides what is replaced and the engine must not skip
+// (K-XFER-009).
+func TestLeaveExistingOnlyForALocalDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name, dst string
+		leave     bool
+		passed    bool
+		refused   bool
+	}{
+		{name: "a download, told to", dst: t.TempDir(), leave: true, passed: true},
+		{name: "a download, not told to", dst: t.TempDir()},
+		{name: "a copy to a store", dst: "aeronautes_dst:media/.aeronautes/stage/t/batch", leave: true, refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := stub(t, "v1.74.3", "exit 0")
+			r, err := NewRunner(Options{Binary: bin, LeaveExisting: tc.leave})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = r.Copy(t.Context(), remotes(), "aeronautes_src:media", tc.dst, []string{"a"}, nil)
+			if tc.refused {
+				if err == nil {
+					t.Fatal("a copy to a store was told to leave existing objects alone")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			args, err := os.ReadFile(filepath.Join(dumpDir(bin), "args"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := slices.Contains(strings.Split(string(args), "\n"), "--ignore-existing"); got != tc.passed {
+				t.Errorf("--ignore-existing passed = %t, want %t", got, tc.passed)
+			}
+		})
+	}
+}
+
 func TestNewlineNamesRefused(t *testing.T) {
 	r, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0")})
 	if err != nil {

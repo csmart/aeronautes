@@ -73,8 +73,8 @@ func InStageNamespace(name string) bool {
 // caller that does not say its destination is live must name one under an
 // .aeronautes staging namespace; no job does since the copy step, and the
 // rule goes with that record's removal step. Neither may hold a ".."
-// segment. Local filesystem destinations (downloads) are governed by the
-// local stage-and-place path instead.
+// segment. A local filesystem destination (a download) is the held folder
+// the local route anchors the child to.
 func checkRemoteDest(dst string, live bool) error {
 	if !strings.HasPrefix(dst, "aeronautes_") {
 		return nil
@@ -168,6 +168,13 @@ type Options struct {
 	// checks each segment against the static manifest instead (ADR 0111
 	// decision 2).
 	IgnoreSize bool
+	// LeaveExisting tells the child to leave alone a destination file that
+	// exists, which it then reports in a line of its own, and to write the
+	// rest. It is for a download into the operator's folder, which never
+	// replaces a local file (ADR 0122 decision 5). A copy to a store is
+	// refused it: there an object that exists is replaced or refused by
+	// the plan, never skipped by the engine (K-XFER-009).
+	LeaveExisting bool
 	// ChunkSize is the §25 single knob (e.g. "5Gi"); "" leaves rclone's
 	// default in place.
 	ChunkSize string
@@ -319,22 +326,33 @@ func CopiedObject(event Event) (string, bool) {
 }
 
 // Answers is what the engine said about the objects of one copy, by the name
-// each was listed to it under: the ones it reported writing, and the error it
-// reported for one it could not write.
+// each was listed to it under: the ones it reported writing, the ones it
+// left alone because the destination had them (only a child told to leave
+// existing files alone says so), and the error it reported for one it could
+// not write.
 type Answers struct {
 	Copied  map[string]bool
+	Skipped map[string]bool
 	Refused map[string]string
 }
 
 func NewAnswers() Answers {
-	return Answers{Copied: map[string]bool{}, Refused: map[string]string{}}
+	return Answers{Copied: map[string]bool{}, Skipped: map[string]bool{}, Refused: map[string]string{}}
 }
+
+// leftExisting is the child's line for a destination file it left alone,
+// measured on the pinned engine with --ignore-existing.
+const leftExisting = "Destination exists, skipping"
 
 // Hear takes one child log event. An object's first error line is the one
 // kept.
 func (a Answers) Hear(event Event) {
 	if name, ok := CopiedObject(event); ok {
 		a.Copied[name] = true
+		return
+	}
+	if event.Level == "debug" && event.Object != "" && event.Msg == leftExisting {
+		a.Skipped[event.Object] = true
 		return
 	}
 	if event.Level == "error" && event.Object != "" && a.Refused[event.Object] == "" {
@@ -450,6 +468,12 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	}
 	if r.opts.IgnoreSize {
 		args = append(args, "--ignore-size")
+	}
+	if r.opts.LeaveExisting {
+		if strings.HasPrefix(dst, "aeronautes_") {
+			return nil, fmt.Errorf("a copy to a store is never told to leave existing objects alone (K-XFER-009)")
+		}
+		args = append(args, "--ignore-existing")
 	}
 	// Flags close before "--": nothing in a path can ever be parsed as
 	// a flag, whatever it starts with.
