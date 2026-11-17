@@ -31,14 +31,12 @@ The role limit is additional authority control; a local token without these rest
 | Source account | `GET`, `HEAD` | Fixed upstream account; no mutation methods |
 | Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters; a read may name an empty path segment, which a write may not |
 | Upload or copy destination | `PUT`, `DELETE`; `POST` to an object for a child told to compare | The `Copy` of an upload or of a copy writes each object at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept. A child of a confirmed upload, told to compare, may `POST` to an object it may write, which is how it sets the time of one it found the same but for its time (decision 12); a `POST` to a container, or carrying a manifest header, is refused |
-| Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage. No job asks for this scope since the copy step of ADR 0122; it stays until that record's removal step |
-| Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
-| Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
+| Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the upload or copy destination's scope above before forwarding; refuse the whole request on any invalid or out-of-scope name |
 | Matching sidecar container | Zero-body creation `PUT`; `GET`/`HEAD` | The gateway issues a fresh authenticated destination-container HEAD at validation time; require its one exact policy value, or no header when the HEAD omitted it; refuse other policy/ACL/metadata/versioning/history changes; no container deletion |
 | Anonymous capability request | `GET` on the exact library-derived `/info` path | No upstream token; this class comes from the wire-library contract and was not emitted in the run below |
 | Everything else | Refused locally | Any other `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
 
-DLO `PUT` requests, staged or at an upload's own name, must keep `X-Object-Manifest` inside the sidecar container, under the manifest object's own name.
+DLO `PUT` requests at an upload's or a copy's own name must keep `X-Object-Manifest` inside the sidecar container, under the manifest object's own name.
 Bulk-delete validation decodes each name once according to Swift's wire format, refuses malformed encoding and container-only entries, and applies explicit byte and name-count limits before any upstream request.
 The response passes through unchanged because bulk middleware can report per-name failures inside HTTP 200.
 The bulk body is limited to 4 MiB and 10,000 names, with two body buffers per gateway.
@@ -68,7 +66,7 @@ The storage-policy follow-up repeated the 73-request experiment on 6 September a
 The independently reviewed [ADR amendment](adr/0014-child-storage-gateway.md#storage-policy-compatibility-amendment-2026-09-06) permits only the policy bound by the gateway's fresh authenticated HEAD of the destination container.
 The bulk `DELETE` body names the failed upload's first successfully written generated segment; it is the observed segment cleanup, not a staged-object deletion.
 No `POST`, `COPY`, anonymous `/info` or per-object `DELETE` was observed in this run.
-Per-object staged/segment `DELETE` remains an allowance for the documented abort-cleanup contract.
+Per-object segment `DELETE` under the destination folder remains an allowance for the documented abort-cleanup contract.
 The experiment's download bytes matched its source and the injected upload failed as intended.
 The underlying measurement lane still reports only 11/16 names exact, the known five unsafe-name omissions, DLO prefix capture and missing user metadata; its passing exit remains a harness result, not behavioural compatibility approval.
 Repeating this fixture through the implemented gateway produced 74 upstream requests: the same classes plus its fresh destination-container policy HEAD.
@@ -140,8 +138,8 @@ something to be checked against; the enumeration and the reasoning are in
 
 | Default relied on | Pinned value | What breaks if it moves |
 |---|---|---|
-| `--swift-no-chunk` off | uploads of unknown length chunk | nothing for `copy`/`copyto` on known-size sources, which chunk above the configured size regardless; an unknown-length path would depend on it |
-| `--swift-use-segments-container` unset | `<container>_segments` sidecar; `=false` puts them in the DATA container under `.file-segments/` (measured 2026-10-02) | the transfer itself: the scoped gateway admits segment writes only to `<container>_segments` under the staged prefix and its manifest check requires that container by name, so the dotted placement is refused. The capture is not what breaks — it reads the container out of the child's own notice rather than assuming one |
+| `--swift-no-chunk` off | uploads of unknown length chunk | nothing for `copy` on known-size sources, which chunk above the configured size regardless; an unknown-length path would depend on it |
+| `--swift-use-segments-container` unset | `<container>_segments` sidecar; `=false` puts them in the DATA container under `.file-segments/` (measured 2026-10-02) | the transfer itself: the scoped gateway admits segment writes only to `<container>_segments`, under the destination folder there or anywhere in it for a destination at the container's top, and its manifest check requires that container by name, so the dotted placement is refused. The capture is not what breaks — it reads the container out of the child's own notice rather than assuming one |
 | `--swift-encoding` | `Slash,InvalidUtf8` | the names written change, and the native routing rules for unsafe names were measured under this value |
 | `--swift-fetch-until-empty-page` off, `--swift-partial-page-fetch-threshold` 0 | pagination as measured | listing completeness — mostly moot, because `--no-traverse --files-from-raw` means the engine does not list our sources |
 | `--inplace` off | the child writes each file as `<name>.<8 hex>.partial` in its destination folder and renames it to the name when it is whole, so no partial body is ever under the final name; interrupted, the child removes the partial file, and killed, it stays in the chosen folder, where the flag would leave a truncated body under the final name (measured 2026-10-02 and 2026-11-16) | that a stopped download leaves at most a `.partial` file and never a short file under a final name; the job says when one may be there ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5) |
@@ -250,10 +248,6 @@ validated end-to-end before any pin change relies on it.
 
 ## copyto
 
-No job uses `copyto` since the copy step of ADR 0122; what follows describes the staged copy it served, and goes with the removal step.
-
-The §28.6 staging path uses `rclone copyto <src-remote:container/name> <dst-remote:container/staged-name>`
-for single-object copies under a different (always Aeronautes-generated, unique, rclone-safe)
-destination name — batch `copy` cannot rename. Same flag surface as `copy` minus
-`--files-from-raw`; validated against real Swift in the executor integration suite
-(stage-and-commit overwrites, segment-prefix capture on staged large objects).
+No job uses `copyto`.
+It wrote one object under a staged name for the staged copy, and the runner's one-object copy was removed with the rest of that model ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 13).
+Every engine run is a `copy` of named objects to a folder, a container's top or a local folder.
