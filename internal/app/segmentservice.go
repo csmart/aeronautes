@@ -443,7 +443,7 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	// checked now; a dynamic object's namespace is swept, so it is claimed
 	// like any sweep (ADR 0105 decision 3).
 	account := swiftcontrol.AccountIdentity(session.StorageURL())
-	if err := s.runner.refuseStagedName(account, req.Container, req.Name); err != nil {
+	if err := s.runner.refuseClaimedName(account, req.Container, req.Name); err != nil {
 		return "", err
 	}
 	if detail.Class == swiftcontrol.ClassDLO {
@@ -452,7 +452,7 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		}
 	} else {
 		for _, entry := range req.Reviewed.Entries {
-			if err := s.runner.refuseStagedName(account, entry.Container, entry.Object); err != nil {
+			if err := s.runner.refuseClaimedName(account, entry.Container, entry.Object); err != nil {
 				return "", err
 			}
 		}

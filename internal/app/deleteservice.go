@@ -225,9 +225,9 @@ func (s *DeleteService) StartDelete(ctx context.Context, req DeleteRequestDTO) (
 			return "", err
 		}
 	}
-	// A sweep deletes every row it lists, and another job's stage is ordinary
-	// rows, so the sweep claims what it will list and is refused while a
-	// transfer is staging inside it (ADR 0105 decision 3).
+	// A sweep deletes every row it lists, and what a running upload or copy
+	// is writing is ordinary rows, so the sweep claims what it will list and
+	// is refused while a transfer writes inside it (ADR 0105 decision 3).
 	if err := owner.claim(sweepClaim(swiftcontrol.AccountIdentity(session.StorageURL()), req.Container, req.Prefix)); err != nil {
 		return "", err
 	}

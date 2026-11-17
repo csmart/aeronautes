@@ -18,7 +18,7 @@ import (
 // unreadable account identifier counts as any account; and two claims of one
 // kind never conflict.
 func TestScopeClaimOverlap(t *testing.T) {
-	stage := destinationClaims("auth_a", "media", "backup/")
+	writing := destinationClaims("auth_a", "media", "backup/")
 	for _, tc := range []struct {
 		name  string
 		sweep scopeClaim
@@ -35,7 +35,7 @@ func TestScopeClaimOverlap(t *testing.T) {
 		{"an account that could not be read", sweepClaim("", "media", ""), true},
 	} {
 		got := false
-		for _, held := range stage {
+		for _, held := range writing {
 			// Asked both ways round: the rule does not depend on which job
 			// started first.
 			if tc.sweep.overlaps(held) != held.overlaps(tc.sweep) {
@@ -47,7 +47,7 @@ func TestScopeClaimOverlap(t *testing.T) {
 			t.Errorf("%s: overlap = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if stage[0].overlaps(destinationClaims("auth_a", "media", "backup/")[0]) {
+	if writing[0].overlaps(destinationClaims("auth_a", "media", "backup/")[0]) {
 		t.Error("two transfers into one place conflict by their claims")
 	}
 	if sweepClaim("auth_a", "media", "").overlaps(sweepClaim("auth_a", "media", "")) {
@@ -61,7 +61,7 @@ func TestScopeClaimOverlap(t *testing.T) {
 func TestConflictingClaimsRaceToExactlyOneAndLeaveWithTheOwner(t *testing.T) {
 	r := newHarness(t).transfer.runner
 	for round := range 200 {
-		stager, _, err := r.admit(context.Background())
+		writer, _, err := r.admit(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,19 +70,19 @@ func TestConflictingClaimsRaceToExactlyOneAndLeaveWithTheOwner(t *testing.T) {
 			t.Fatal(err)
 		}
 		var wg sync.WaitGroup
-		var stageErr, sweepErr error
+		var writeErr, sweepErr error
 		wg.Add(2)
-		go func() { defer wg.Done(); stageErr = stager.claim(destinationClaims("auth_a", "media", "")...) }()
+		go func() { defer wg.Done(); writeErr = writer.claim(destinationClaims("auth_a", "media", "")...) }()
 		go func() { defer wg.Done(); sweepErr = sweeper.claim(sweepClaim("auth_a", "media", "")) }()
 		wg.Wait()
-		if (stageErr == nil) == (sweepErr == nil) {
-			t.Fatalf("round %d: stage claim %v, sweep claim %v; want exactly one refused", round, stageErr, sweepErr)
+		if (writeErr == nil) == (sweepErr == nil) {
+			t.Fatalf("round %d: write claim %v, sweep claim %v; want exactly one refused", round, writeErr, sweepErr)
 		}
-		if refused := errors.Join(stageErr, sweepErr); !errors.Is(refused, errScopeClaimed) {
+		if refused := errors.Join(writeErr, sweepErr); !errors.Is(refused, errScopeClaimed) {
 			t.Fatalf("round %d: the refusal is %v", round, refused)
 		}
 		// Neither owner has a slot or a job row: a claim does not need one.
-		stager.finishStart()
+		writer.finishStart()
 		sweeper.finishStart()
 		// Both owners have left, so either claim is free again.
 		next, _, err := r.admit(context.Background())
@@ -106,9 +106,9 @@ func jobCount(t *testing.T, h *harness) int {
 	return len(list)
 }
 
-// refusedForStage requires a start to have been refused for another job's
+// refusedForClaim requires a start to have been refused for another job's
 // claim with that job named, and to have created no row.
-func refusedForStage(t *testing.T, h *harness, what, holder string, rows int, err error) {
+func refusedForClaim(t *testing.T, h *harness, what, holder string, rows int, err error) {
 	t.Helper()
 	if !errors.Is(err, errScopeClaimed) || !strings.Contains(err.Error(), "job "+holder) {
 		t.Errorf("%s: error = %v, want a refusal naming job %s", what, err, holder)
@@ -144,11 +144,11 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 	} {
 		req.BookmarkID, req.Confirm = bookmark, deleteConfirmation(req)
 		_, err := del.StartDelete(ctx, req)
-		refusedForStage(t, h, string(req.Mode)+" of "+req.Container+"/"+req.Prefix, id, rows, err)
+		refusedForClaim(t, h, string(req.Mode)+" of "+req.Container+"/"+req.Prefix, id, rows, err)
 	}
 	_, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "2",
 		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "object", Name: writing + "photos/.hidden"}}})
-	refusedForStage(t, h, "a selected set naming an object the upload is writing", id, rows, err)
+	refusedForClaim(t, h, "a selected set naming an object the upload is writing", id, rows, err)
 
 	// A deletion of a manifest with its segments is refused on each of its
 	// three grounds: a dynamic object whose segment namespace lies under the
@@ -170,7 +170,7 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 	for _, name := range []string{"big.bin", "big.slo", writing + "held.slo"} {
 		_, err := del.DeleteManifestWithSegments(ctx, SegmentsDeleteRequestDTO{BookmarkID: bookmark, Container: "media", Name: name,
 			Confirm: name, Force: true, Reviewed: reviewOf(t, del, bookmark, "media", name)})
-		refusedForStage(t, h, "a segment deletion of "+name, id, rows, err)
+		refusedForClaim(t, h, "a segment deletion of "+name, id, rows, err)
 	}
 
 	// Beside it: a prefix that does not cover it, another container, and a
@@ -213,8 +213,8 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 	awaitTerminal(t, h, started)
 }
 
-// The other direction: while a sweep holds its claim, a copy whose stage would
-// lie inside it is refused, through the bookmark the sweep uses and through a
+// The other direction: while a sweep holds its claim, a copy that would write
+// inside it is refused, through the bookmark the sweep uses and through a
 // second bookmark that reaches the same account by another host name, and so
 // is an upload into the swept folder; an upload beside the sweep starts. Two
 // accounts whose identifiers differ are covered by TestScopeClaimOverlap: the
@@ -248,10 +248,10 @@ func TestNoTransferWritesInsideALiveSweep(t *testing.T) {
 	<-held
 	rows := jobCount(t, h)
 
-	// A copy into the swept prefix stages under it.
+	// A copy into the swept prefix writes under it.
 	_, err = h.transfer.StartCopy(ctx, CopyRequestDTO{SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "elsewhere/",
 		DestBookmarkID: bookmark, DestContainer: "media", DestPrefix: "scope/in/"})
-	refusedForStage(t, h, "a copy into the swept prefix", sweep, rows, err)
+	refusedForClaim(t, h, "a copy into the swept prefix", sweep, rows, err)
 
 	// The same account through a second bookmark on another host name.
 	alias, err := h.bookmarks.Save(ctx, BookmarkDTO{DisplayName: "alias",
@@ -261,7 +261,7 @@ func TestNoTransferWritesInsideALiveSweep(t *testing.T) {
 	}
 	_, err = h.transfer.StartCopy(ctx, CopyRequestDTO{SourceBookmarkID: bookmark, SourceContainer: "media", SourcePrefix: "elsewhere/",
 		DestBookmarkID: alias.ID, DestContainer: "media", DestPrefix: "scope/in/"})
-	refusedForStage(t, h, "a copy through an alias of the account", sweep, rows, err)
+	refusedForClaim(t, h, "a copy through an alias of the account", sweep, rows, err)
 
 	// An upload writes under its destination folder: into the swept prefix
 	// it is refused, and beside it it starts.
@@ -275,7 +275,7 @@ func TestNoTransferWritesInsideALiveSweep(t *testing.T) {
 		return pick.Token
 	}
 	_, err = h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/", SelectionToken: picked("scope/")})
-	refusedForStage(t, h, "an upload into the swept prefix", sweep, rows, err)
+	refusedForClaim(t, h, "an upload into the swept prefix", sweep, rows, err)
 	uploadID, err := h.transfer.StartUpload(ctx, UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "beside/", SelectionToken: picked("beside/")})
 	if err != nil {
 		t.Fatalf("an upload beside the sweep was refused: %v", err)
@@ -321,7 +321,7 @@ func TestAnUploadRefusedForASweepKeepsItsSelection(t *testing.T) {
 	}
 	req := UploadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "inbox/", SelectionToken: picked.Token}
 	_, err = h.transfer.StartUpload(ctx, req)
-	refusedForStage(t, h, "an upload into the swept container", sweep, rows, err)
+	refusedForClaim(t, h, "an upload into the swept container", sweep, rows, err)
 
 	letGo()
 	awaitTerminal(t, h, sweep)
@@ -369,7 +369,7 @@ func TestASegmentALiveJobIsWritingIsKept(t *testing.T) {
 		{"photos_segments", "work/big.mov/2026-11-16-000000-run/00000000", false},
 		{"other_segments", "holiday/big.mov/2026-11-16-000000-run/00000000", false},
 	} {
-		holder, held := runner.stagedByLiveJob("auth_test", tc.container, tc.name)
+		holder, held := runner.claimedByLiveJob("auth_test", tc.container, tc.name)
 		if held != tc.want || held && holder != "job 1a2b3c4d5e6f7089" {
 			t.Errorf("%s/%s: held by %q = %v, want %v", tc.container, tc.name, holder, held, tc.want)
 		}
