@@ -149,6 +149,11 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 	_, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 2",
 		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "object", Name: writing + "photos/.hidden"}}})
 	refusedForClaim(t, h, "a selected set naming an object the upload is writing", id, rows, err)
+	// A selected folder is claimed as a prefix deletion claims its prefix
+	// (ADR 0093 decision 8), so one holding the upload's folder is refused.
+	_, err = del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 2",
+		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "prefix", Name: writing}}})
+	refusedForClaim(t, h, "a selected set naming the folder the upload is writing", id, rows, err)
 
 	// A deletion of a manifest with its segments is refused on each of its
 	// three grounds: a dynamic object whose segment namespace lies under the
@@ -186,10 +191,10 @@ func TestNoDeletionStartsOverWhereALiveUploadWrites(t *testing.T) {
 		}
 		awaitTerminal(t, h, started)
 	}
-	started, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 1",
-		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}}})
+	started, err := del.StartSelectedDelete(ctx, SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Confirm: "delete 2",
+		Members: []ListingRowDTO{{Kind: "object", Name: "kept.txt"}, {Kind: "prefix", Name: "logs/"}}})
 	if err != nil {
-		t.Fatalf("a selected set of an ordinary name was refused: %v", err)
+		t.Fatalf("a selected set of an ordinary name and a folder beside the upload was refused: %v", err)
 	}
 	awaitTerminal(t, h, started)
 

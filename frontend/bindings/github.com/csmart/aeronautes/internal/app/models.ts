@@ -1558,15 +1558,23 @@ export interface SegmentsDeleteRequestDTO {
 }
 
 /**
- * SelectedDeleteRequestDTO starts the deletion of the selected objects as one
- * job (ADR 0093 decision 2): the scope the view was built under, the
- * container, the member rows as the working list carries them, and the
- * typed confirmation, which is "delete " and the number of members.
+ * SelectedDeleteRequestDTO starts the deletion of the selected rows as one
+ * job (ADR 0093 decisions 2 and 8): the scope the view was built under, the
+ * container, the member rows as the working list carries them, objects and
+ * folders, whether each large object loses its segments too, and the typed
+ * confirmation, which is "delete " and the number of members.
  */
 export interface SelectedDeleteRequestDTO {
     "scope": ListingScopeDTO;
     "container": string;
     "members": ListingRowDTO[] | null;
+
+    /**
+     * Segments asks that each large object the job deletes lose its segments
+     * after its manifest, as the folder deletion's option does (ADR 0119,
+     * ADR 0120); the confirmation then ends " and segments".
+     */
+    "segments": boolean;
     "confirm": string;
 }
 

@@ -55,7 +55,7 @@
     }
     items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
     if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
-    if (v1Offers.objectDelete && browser.chosenRows.length > 1 && browser.chosenRows.some((row) => row.kind === "object")) {
+    if (v1Offers.objectDelete && browser.chosenRows.length > 1) {
       items.push({ label: "Delete selected…", danger: true, run: () => browser.openSelectedDelete() });
     }
     // The prefix deletion's target is the selected folder only when that
@@ -225,10 +225,10 @@
           <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
             {rowDelete.label}
           </button>
-        {:else if v1Offers.objectDelete && browser.chosenRows.some((row) => row.kind === "object")}
+        {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
           <button
             class="find danger"
-            title="Delete the selected objects as one job, one request each; prefix rows are left out"
+            title="Delete the selected objects, and each selected folder with everything in it, as one job"
             onclick={() => browser.openSelectedDelete()}
           >
             Delete selected…

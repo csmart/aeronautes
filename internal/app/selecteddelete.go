@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
@@ -12,15 +13,20 @@ import (
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
 
-// SelectedDeleteRequestDTO starts the deletion of the selected objects as one
-// job (ADR 0093 decision 2): the scope the view was built under, the
-// container, the member rows as the working list carries them, and the
-// typed confirmation, which is "delete " and the number of members.
+// SelectedDeleteRequestDTO starts the deletion of the selected rows as one
+// job (ADR 0093 decisions 2 and 8): the scope the view was built under, the
+// container, the member rows as the working list carries them, objects and
+// folders, whether each large object loses its segments too, and the typed
+// confirmation, which is "delete " and the number of members.
 type SelectedDeleteRequestDTO struct {
 	Scope     ListingScopeDTO `json:"scope"`
 	Container string          `json:"container"`
 	Members   []ListingRowDTO `json:"members"`
-	Confirm   string          `json:"confirm"`
+	// Segments asks that each large object the job deletes lose its segments
+	// after its manifest, as the folder deletion's option does (ADR 0119,
+	// ADR 0120); the confirmation then ends " and segments".
+	Segments bool   `json:"segments"`
+	Confirm  string `json:"confirm"`
 }
 
 // selectionCeiling is the most members one selected-set deletion admits:
@@ -48,13 +54,25 @@ func WireDeleteSettings(s *DeleteService, settings *SettingsService) {
 	}
 }
 
-// StartSelectedDelete deletes the selected objects as one job whose members
-// are each deleted by one DELETE of the name (ADR 0093, ADR 0122 decision 6).
-// The request is refused before any job row when the scope is empty or has
-// moved, when it names no member, a prefix row, an empty or repeated name,
-// or more members than the selection ceiling, or when the typed confirmation
-// is not the member count. The whole member set is admitted to the ledger
-// once, before any request, and a set that cannot be recorded sends nothing.
+// selectedConfirmation is what the operator types to start a selected-set
+// deletion (ADR 0093 decision 9).
+func selectedConfirmation(req SelectedDeleteRequestDTO) string {
+	words := "delete " + strconv.Itoa(len(req.Members))
+	if req.Segments {
+		return words + " and segments"
+	}
+	return words
+}
+
+// StartSelectedDelete deletes the selected objects, and everything under each
+// selected folder, as one job whose items are each deleted by one DELETE of
+// the name (ADR 0093 decisions 2 and 8, ADR 0122 decision 6). The request is
+// refused before any job row when the scope is empty or has moved, when it
+// names no member, a row that is neither an object nor a folder, an empty or
+// repeated name, a member inside a selected folder, or more members than the
+// selection ceiling, when the typed confirmation is not its words, or when it
+// asks for segments in a container that keeps versions. The job lists the
+// folders and admits the whole set before any request.
 func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDeleteRequestDTO) (string, error) {
 	if err := refuseIfDeferred("DeleteService.StartSelectedDelete"); err != nil {
 		return "", err
@@ -63,25 +81,40 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		return "", errors.New("a selected-set deletion needs its container")
 	}
 	if len(req.Members) == 0 {
-		return "", errors.New("nothing is selected; a selected-set deletion needs at least one object")
+		return "", errors.New("nothing is selected; a selected-set deletion needs at least one object or folder")
 	}
 	if ceiling := s.selectionCeiling(ctx); len(req.Members) > ceiling {
 		return "", fmt.Errorf("%d members exceed the selection ceiling of %d; narrow the selection", len(req.Members), ceiling)
 	}
 	seen := make(map[string]bool, len(req.Members))
+	folders := map[string]bool{}
 	for _, member := range req.Members {
 		switch {
-		case member.Kind != "object":
-			return "", fmt.Errorf("%q is a %s row, not an object; a prefix is deleted by the bulk deletion that owns it", member.Name, member.Kind)
 		case member.Name == "":
 			return "", errors.New("a member needs its name; an empty name would address the container itself")
+		case member.Kind == "prefix" && !strings.HasSuffix(member.Name, "/"):
+			return "", fmt.Errorf("%q is a folder row whose name does not end in a slash", member.Name)
+		case member.Kind != "object" && member.Kind != "prefix":
+			return "", fmt.Errorf("%q is a %s row; only objects and folders are deleted here", member.Name, member.Kind)
 		case seen[member.Name]:
 			return "", fmt.Errorf("%q is selected twice; a member is deleted once", member.Name)
 		}
 		seen[member.Name] = true
+		if member.Kind == "prefix" {
+			folders[member.Name] = true
+		}
 	}
-	if want := "delete " + strconv.Itoa(len(req.Members)); req.Confirm != want {
-		return "", fmt.Errorf("confirmation %q does not match %q, the word delete and the number of members; type it exactly", req.Confirm, want)
+	// A member inside a selected folder would be deleted twice, once as
+	// itself and once with the folder.
+	for _, member := range req.Members {
+		for i := 0; i < len(member.Name)-1; i++ {
+			if folder := member.Name[:i+1]; member.Name[i] == '/' && folders[folder] {
+				return "", fmt.Errorf("%q is inside the selected folder %q, which is deleted with everything in it; select one or the other", member.Name, folder)
+			}
+		}
+	}
+	if want := selectedConfirmation(req); req.Confirm != want {
+		return "", fmt.Errorf("confirmation %q does not match %q; type it exactly", req.Confirm, want)
 	}
 	entry, bookmarkID, _, err := s.connections.boundSnapshot(ctx, req.Scope)
 	if err != nil {
@@ -97,10 +130,22 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		return "", err
 	}
 	owner.hold(releasePins)
+	if req.Segments {
+		if err := refuseSegmentsWhereVersionsAreKept(ctx, entry.session, req.Container); err != nil {
+			return "", err
+		}
+	}
 	// The selection may be rows a running upload or copy is writing, which
-	// the working list shows like any others (ADR 0105 decision 3).
+	// the working list shows like any others, and a selected folder is
+	// claimed as a prefix deletion claims its prefix (ADR 0105 decision 3).
 	account := swiftcontrol.AccountIdentity(entry.session.StorageURL())
 	for _, member := range req.Members {
+		if member.Kind == "prefix" {
+			if err := owner.claim(sweepClaim(account, req.Container, member.Name)); err != nil {
+				return "", err
+			}
+			continue
+		}
 		if err := s.runner.refuseClaimedName(account, req.Container, member.Name); err != nil {
 			return "", err
 		}
@@ -108,130 +153,105 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type: jobs.TypeDeleteSelected, ItemRecordsVersion: 1,
 		Source: req.Container, Destination: "(deleted)", SourceBookmarkID: bookmarkID, Engine: "native",
+		Settings: fmt.Sprintf(`{"segments":%t}`, req.Segments),
 	})
 	if err != nil {
 		return "", err
-	}
-	// Admission once and fail-closed: the ledger takes the set in pages, and
-	// a page it cannot record ends the job before any request leaves.
-	intents := make([]jobs.ItemIntent, 0, len(req.Members))
-	for _, member := range req.Members {
-		intents = append(intents, jobs.ItemIntent{
-			ItemIdentity: jobs.ItemIdentity{Key: member.Name, Source: jobs.ItemLocation{
-				Kind: jobs.ItemSwift, BookmarkID: bookmarkID, Container: req.Container, Object: member.Name}},
-			Planned: true, Admitted: true, ListedBytes: member.Bytes, ListedETag: member.ETag, ListedSLO: member.SLOListed,
-		})
-	}
-	for start := 0; start < len(intents); start += 500 {
-		end := min(start+500, len(intents))
-		if err := s.jobs.AdmitItems(ctx, job.ID, intents[start:end]); err != nil {
-			owner.cancel()
-			s.finishSelected(context.WithoutCancel(ctx), job.ID, req, bookmarkID, jobs.StateFailed,
-				"the members could not be recorded before any request: "+err.Error())
-			return "", fmt.Errorf("the members could not be recorded, so nothing was sent: %w", err)
-		}
 	}
 	s.runner.register(job.ID, owner.cancel)
 	s.runner.record(ctx, bookmarkID, "delete.selected.start", req.Container,
 		fmt.Sprintf("job %s · %d members", job.ID, len(req.Members)), audit.ResultApplied)
 	owner.launch(job.ID, bookmarkID, func(runCtx context.Context) {
-		s.runSelectedDelete(runCtx, job.ID, req, bookmarkID, entry.session)
+		s.runSelectedDelete(runCtx, job.ID, req, bookmarkID, entry.session, owner)
 	}, func(background context.Context) {
-		// Cancelled before it ran: no member was issued, each is recorded as
-		// not attempted, and the job is cancelled. Another job's lost record
-		// can stop the store while these are recorded; the job is then left
-		// open as the running path leaves it, so that the restart settles
-		// the members this could not.
-		s.recordNotAttempted(background, job.ID, req.Members)
-		if lost := s.storeStoppedBeside(); lost != "" {
-			s.leaveSelectedOpen(background, job.ID, req, bookmarkID, lost)
-			return
-		}
-		s.finishSelected(background, job.ID, req, bookmarkID, jobs.StateCancelled, "")
+		// Cancelled before it ran: nothing was listed, admitted or issued.
+		s.finishSelected(background, job.ID, req, bookmarkID, jobs.StateCancelled, "", 0)
 	})
 	return job.ID, nil
 }
 
-// runSelectedDelete is the job goroutine: each member in turn, its issued mark
-// before its DELETE, the request under a context cancellation does not
-// reach, and the store's answer recorded as its outcome; cancellation lands
-// between members, and a record that cannot be written stops the job with no
-// later member touched (ADR 0093 decision 4, ADR 0122 decision 6).
-func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID string, session *swiftcontrol.Session) {
+// runSelectedDelete is the job goroutine: the selected folders listed, the
+// whole set admitted once, each item deleted by the folder deletion's own
+// machinery, and the terminal state from the items' answers (ADR 0093
+// decisions 4 and 8). A lost record leaves the job open with its status
+// unavailable.
+func (s *DeleteService) runSelectedDelete(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID string, session *swiftcontrol.Session, owner *jobOwner) {
 	background := context.WithoutCancel(ctx)
-	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
-		if err := s.jobs.Transition(background, jobID, state); err != nil {
-			applog.Errorf("job %s: %v", jobID, err)
-		}
+	if err := s.jobs.Transition(background, jobID, jobs.StatePlanning); err != nil {
+		applog.Errorf("job %s: %v", jobID, err)
 	}
-	counters := jobs.Counters{ObjectsPlanned: int64(len(req.Members))}
-	var (
-		cancelled     bool
-		recordingLost string
-	)
-	for i, member := range req.Members {
+	rows, folders, err := s.selectionRows(ctx, session, req)
+	if err != nil {
 		if ctx.Err() != nil {
-			cancelled = true
-			s.recordNotAttempted(background, jobID, req.Members[i:])
-			break
+			s.finishSelected(background, jobID, req, bookmarkID, jobs.StateCancelled, "", 0)
+			return
 		}
-		if err := s.jobs.MarkIssued(background, jobID, member.Name); err != nil {
-			recordingLost = fmt.Sprintf("the issued mark for %q could not be written, so it and every later member were not attempted: %v", member.Name, err)
-			break
-		}
-		// The member's request runs to its answer whatever the job's context
-		// does: cancellation lands between members, never inside a DELETE.
-		observation := memberOutcome(session.DeleteName(background, req.Container, member.Name))
-		if recErr := s.jobs.RecordDeletion(background, jobID, member.Name, observation); recErr != nil {
-			recordingLost = fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was touched: %v", member.Name, recErr)
-			break
-		}
-		counters.ObjectsCopied++
-		if observation.Result == jobs.ItemDeleted {
-			counters.ObjectsDeleted++
-		}
-		_ = s.jobs.UpdateCounters(background, jobID, counters)
-	}
-	if recordingLost == "" {
-		recordingLost = s.storeStoppedBeside()
-	}
-	if recordingLost != "" {
-		s.leaveSelectedOpen(background, jobID, req, bookmarkID, recordingLost)
+		s.finishSelected(background, jobID, req, bookmarkID, jobs.StateFailed, "nothing was deleted: "+err.Error(), 0)
 		return
 	}
-	state, reason := s.selectedEnd(background, jobID, cancelled)
+	if err := s.jobs.Transition(background, jobID, jobs.StateRunning); err != nil {
+		applog.Errorf("job %s: %v", jobID, err)
+	}
+	sweep := &prefixSweep{s: s, jobID: jobID, bookmarkID: bookmarkID, container: req.Container, session: session,
+		segments: req.Segments, owner: owner, selection: true, folders: folders}
+	sweep.runRows(ctx, rows)
+	lost := sweep.lostReason()
+	if lost == "" {
+		lost = s.storeStoppedBeside()
+	}
+	if lost != "" {
+		s.leaveSelectedOpen(background, jobID, req, bookmarkID, lost)
+		return
+	}
+	state, reason := s.sweepEnd(background, jobID, sweep)
+	if left := sweep.segmentsLeft(); left != "" && (state == jobs.StateComplete || state == jobs.StatePartial) {
+		state = jobs.StatePartial
+		if reason == "" {
+			reason = left
+		} else {
+			reason += "; " + left
+		}
+	}
 	if state == jobs.StateComplete {
 		if err := s.jobs.Transition(background, jobID, jobs.StateVerifying); err != nil {
 			applog.Errorf("job %s: %v", jobID, err)
 		}
 	}
-	s.finishSelected(background, jobID, req, bookmarkID, state, reason)
+	s.finishSelected(background, jobID, req, bookmarkID, state, reason, sweep.counts().admitted)
 }
 
-// selectedEnd derives the terminal state from the members' answers: complete
-// when every member was deleted; cancelled when the job was stopped before
-// any DELETE was sent; partial otherwise, because some members are gone and
-// some are not, or not known to be. A DELETE was sent for every member
-// deleted, unverified or failed, and may have been for one issued and never
-// settled; each member is counted once, by its own outcome.
-func (s *DeleteService) selectedEnd(ctx context.Context, jobID string, cancelled bool) (jobs.State, string) {
-	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
-	if err != nil {
-		return jobs.StatePartial, "the members' records could not be read: " + err.Error()
+// selectionRows is what the job deletes: each selected object as it was
+// listed, and every object a listing of each selected folder shows now, the
+// folder's own marker included (ADR 0093 decision 8). The ceiling counts the
+// whole set, and a set beyond it is refused before any request, naming the
+// folder where the count crossed it. folders are the selected folders.
+func (s *DeleteService) selectionRows(ctx context.Context, session *swiftcontrol.Session, req SelectedDeleteRequestDTO) (rows []sweepMember, folders []string, err error) {
+	ceiling := s.selectionCeiling(ctx)
+	for _, member := range req.Members {
+		if member.Kind == "object" {
+			rows = append(rows, sweepMember{container: req.Container, name: member.Name, bytes: member.Bytes, etag: member.ETag, slo: member.SLOListed})
+		}
 	}
-	sent := totals.Deleted + totals.Unverified + totals.Failed + totals.Unsettled
-	switch {
-	case cancelled && sent == 0:
-		return jobs.StateCancelled, ""
-	case cancelled:
-		return jobs.StatePartial, fmt.Sprintf("cancelled after %d of %d members were requested, %d deleted", sent, totals.Admitted, totals.Deleted)
-	case totals.Deleted == totals.Admitted:
-		return jobs.StateComplete, ""
-	case totals.Deleted == 0 && totals.Unverified == 0:
-		return jobs.StateFailed, fmt.Sprintf("nothing was deleted: the store refused all %d members", totals.Failed)
-	default:
-		return jobs.StatePartial, fmt.Sprintf("%d of %d members deleted; %d failed, %d unknown", totals.Deleted, totals.Admitted, totals.Failed, totals.Unverified)
+	for _, member := range req.Members {
+		if member.Kind != "prefix" {
+			continue
+		}
+		folders = append(folders, member.Name)
+		for page, listErr := range session.ObjectPages(ctx, req.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: member.Name}) {
+			if listErr != nil {
+				return nil, nil, fmt.Errorf("the listing of the selected folder %q could not be read: %w", member.Name, listErr)
+			}
+			for _, entry := range page.Entries {
+				if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
+					rows = append(rows, sweepMember{container: req.Container, name: object.Name, bytes: object.Bytes, etag: object.ETag, slo: object.SLOListed})
+				}
+			}
+			if len(rows) > ceiling {
+				return nil, nil, fmt.Errorf("the selection holds more than the selection ceiling of %d objects once the selected folder %q is counted; narrow the selection", ceiling, member.Name)
+			}
+		}
 	}
+	return rows, folders, nil
 }
 
 // leaveSelectedOpen ends a selected-set deletion whose records can no longer
@@ -247,12 +267,8 @@ func (s *DeleteService) leaveSelectedOpen(ctx context.Context, jobID string, req
 	applog.Warnf("job %s: %s", jobID, reason)
 }
 
-// recordNotAttempted settles the members a cancellation leaves untouched;
-// a record it cannot write is logged, because the job's end is derived from
-// the records and a missing one keeps the member unresolved.
-//
-// storeStoppedBeside is why such a record cannot be written when it was
-// another job's lost record that stopped the store: the runner then cancels
+// storeStoppedBeside is why a deletion job's records cannot be written when
+// it was another job's lost record that stopped the store: the runner then cancels
 // this job (ADR 0105 decision 9), and the store refuses every deletion record
 // from then on. A deletion job that ends that way is left open with its
 // status unavailable, as one whose own record was lost is, so that the
@@ -265,21 +281,12 @@ func (s *DeleteService) storeStoppedBeside() string {
 	return "the job store stopped recording while this job ran, so its remaining members could not be recorded"
 }
 
-func (s *DeleteService) recordNotAttempted(ctx context.Context, jobID string, members []ListingRowDTO) {
-	for _, member := range members {
-		if err := s.jobs.RecordDeletion(ctx, jobID, member.Name, jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}); err != nil {
-			applog.Errorf("job %s: member %q not attempted but unrecorded: %v", jobID, member.Name, err)
-			return
-		}
-	}
-}
-
-func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID string, state jobs.State, message string) {
+func (s *DeleteService) finishSelected(ctx context.Context, jobID string, req SelectedDeleteRequestDTO, bookmarkID string, state jobs.State, message string, admitted int64) {
 	s.runner.release(jobID)
 	err := s.jobs.FinishFromItems(ctx, jobID, jobs.Completion{
-		State: state, Counters: jobs.Counters{ObjectsPlanned: int64(len(req.Members))}, Error: message,
+		State: state, Counters: jobs.Counters{ObjectsPlanned: admitted}, Error: message,
 		Audit: audit.Event{BookmarkID: bookmarkID, Operation: "delete.selected." + string(state), Resource: req.Container,
-			Summary: fmt.Sprintf("job %s · %d members", jobID, len(req.Members)), Result: terminalAuditResult(state)},
+			Summary: fmt.Sprintf("job %s · %d selected · %d objects", jobID, len(req.Members), admitted), Result: terminalAuditResult(state)},
 	}, s.runner.audit)
 	if err != nil {
 		applog.Errorf("job %s terminal outcome was not saved: %v", jobID, err)

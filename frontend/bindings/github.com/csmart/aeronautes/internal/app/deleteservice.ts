@@ -60,13 +60,15 @@ export function StartDelete(req: $models.DeleteRequestDTO): $CancellablePromise<
 }
 
 /**
- * StartSelectedDelete deletes the selected objects as one job whose members
- * are each deleted by one DELETE of the name (ADR 0093, ADR 0122 decision 6).
- * The request is refused before any job row when the scope is empty or has
- * moved, when it names no member, a prefix row, an empty or repeated name,
- * or more members than the selection ceiling, or when the typed confirmation
- * is not the member count. The whole member set is admitted to the ledger
- * once, before any request, and a set that cannot be recorded sends nothing.
+ * StartSelectedDelete deletes the selected objects, and everything under each
+ * selected folder, as one job whose items are each deleted by one DELETE of
+ * the name (ADR 0093 decisions 2 and 8, ADR 0122 decision 6). The request is
+ * refused before any job row when the scope is empty or has moved, when it
+ * names no member, a row that is neither an object nor a folder, an empty or
+ * repeated name, a member inside a selected folder, or more members than the
+ * selection ceiling, when the typed confirmation is not its words, or when it
+ * asks for segments in a container that keeps versions. The job lists the
+ * folders and admits the whole set before any request.
  */
 export function StartSelectedDelete(req: $models.SelectedDeleteRequestDTO): $CancellablePromise<string> {
     return $Call.ByID(2423131708, req);

@@ -49,10 +49,12 @@ func selectedRequest(h *Harness, container string, rows []app.ListingRowDTO) app
 
 // testSelectedDelete produces the selected-set deletion's happy and refusal
 // cells through the public service (ADR 0093, ADR 0122 decision 6): the
-// selected objects deleted exactly, a manifest among them manifest-only and a
-// link as the link it is, with every neighbour and segment unchanged; a
-// prefix row refused before any job; and a member another writer replaced
-// after it was listed deleted like the rest.
+// selected objects and a selected folder with everything in it deleted
+// exactly, a manifest among them manifest-only and a link as the link it is,
+// with every neighbour and segment unchanged, a name that only begins like
+// the folder included (ADR 0093 decision 8); a member inside a selected
+// folder refused before any job; and a member another writer replaced after
+// it was listed deleted like the rest.
 func testSelectedDelete(t *testing.T, h *Harness) {
 	t.Helper()
 	ctx := context.Background()
@@ -67,12 +69,18 @@ func testSelectedDelete(t *testing.T, h *Harness) {
 	h.Seed(h.Primary, c, "racy.txt", []byte("first"), textType)
 	h.Seed(h.Primary, c, "link.txt", nil, map[string]string{"X-Symlink-Target": c + "/keep.txt"})
 	h.Seed(h.Primary, c, "d.txt", []byte("delta"), textType)
+	h.Seed(h.Primary, c, "folder/", nil, map[string]string{"Content-Type": "application/directory"})
+	h.Seed(h.Primary, c, "folder/one.txt", []byte("one"), textType)
+	h.Seed(h.Primary, c, "folder/sub/two.txt", []byte("two"), textType)
+	h.Seed(h.Primary, c, "folderx.txt", []byte("only begins like the folder"), textType)
 	before := h.Snapshot(h.Primary, c)
 	segsBefore := h.Snapshot(h.Primary, segs)
 
-	// Happy: exactly the selected objects are gone.
-	names := []string{"a.txt", "b.txt", "nested/c.txt", "video.dlo", "link.txt"}
-	rec := h.StartSelectedDelete(ctx, selectedRequest(h, c, listedRows(t, h, c, names...)))
+	// Happy: exactly the selected objects and the folder's contents are gone.
+	selected := []string{"a.txt", "b.txt", "nested/c.txt", "video.dlo", "link.txt"}
+	names := append(append([]string{}, selected...), "folder/", "folder/one.txt", "folder/sub/two.txt")
+	members := append(listedRows(t, h, c, selected...), app.ListingRowDTO{Kind: "prefix", Name: "folder/"})
+	rec := h.StartSelectedDelete(ctx, selectedRequest(h, c, members))
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
 	}
@@ -110,10 +118,12 @@ func testSelectedDelete(t *testing.T, h *Harness) {
 	}
 	rec.CreditHappy()
 
-	// Refusal: a prefix row is not a member, and nothing starts.
-	refused := h.StartSelectedDelete(ctx, selectedRequest(h, c, []app.ListingRowDTO{{Kind: "prefix", Name: "nested/"}}))
+	// Refusal: a member inside a selected folder would be deleted twice, and
+	// nothing starts.
+	refused := h.StartSelectedDelete(ctx, selectedRequest(h, c, []app.ListingRowDTO{
+		{Kind: "prefix", Name: "keep/"}, {Kind: "object", Name: "keep/inside.txt"}}))
 	if refused.Err() == nil {
-		t.Fatal("a prefix row was accepted as a member")
+		t.Fatal("a member inside a selected folder was accepted")
 	}
 	if d := diffOf(after, h.Snapshot(h.Primary, c)); !d.Empty() {
 		t.Fatalf("a refused start changed state:\n%s", d)

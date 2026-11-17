@@ -58,6 +58,16 @@ type prefixSweep struct {
 	// nested marks the sweep of one dynamic large object's namespace inside a
 	// job's own sweep: the job's sweep counts its members and publishes them.
 	nested bool
+	// selection marks a selected-set deletion, which has no one prefix: what
+	// it deletes is its rows, and folders are the selected folders those
+	// rows were listed from (ADR 0093 decision 8).
+	selection bool
+	folders   []string
+	// acked, set for a selection, is how its one worker says it has
+	// finished a member: each hand-over waits for it, so the caller never
+	// sends a request of its own, such as a manifest's DELETE, while a
+	// member is in flight (ADR 0093 decision 4).
+	acked chan struct{}
 
 	mu    sync.Mutex
 	lost  string
@@ -157,39 +167,94 @@ func (r *prefixSweep) pass(ctx, background context.Context) (admittedNew int64, 
 			return admittedNew, false, nil
 		}
 		admittedNew += int64(len(fresh))
-		for i, m := range fresh {
-			handled, cancelled := false, false
-			if r.segments && (m.slo || m.bytes == 0) {
-				handled, cancelled = r.largeObject(ctx, background, queue, m)
-			}
-			if !handled && !cancelled {
-				cancelled = r.enqueue(ctx, background, queue, fresh[i:i+1])
-			}
-			if cancelled {
-				// Members admitted and never issued are settled here as not
-				// attempted; the listing is not consumed further.
-				for _, rest := range fresh[i+1:] {
-					r.notAttempted(background, rest)
-				}
-				return admittedNew, true, nil
-			}
+		if r.deleteAdmitted(ctx, background, queue, fresh) {
+			// The listing is not consumed further.
+			return admittedNew, true, nil
 		}
 	}
 	return admittedNew, false, nil
+}
+
+// runRows deletes a selection's rows, listed before the job started: the
+// whole set is admitted once before any request, as decision 4 of ADR 0093
+// requires, and then each row is deleted as a sweep deletes the rows of a
+// listing page, a large object with its segments when the job takes them.
+// The rows go one at a time: one worker, and each hand-over waits until it
+// has finished, so that a cancellation lands between members with at most
+// one in flight, as that decision also requires.
+func (r *prefixSweep) runRows(ctx context.Context, rows []sweepMember) {
+	background := context.WithoutCancel(ctx)
+	fresh, readErr, latched := r.admitRows(background, rows)
+	if latched {
+		return
+	}
+	if readErr != nil {
+		r.mu.Lock()
+		r.tally.listErr = readErr
+		r.mu.Unlock()
+		return
+	}
+	queue := make(chan sweepMember)
+	r.acked = make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for m := range queue {
+			r.member(ctx, background, m)
+			r.acked <- struct{}{}
+		}
+	}()
+	cancelled := r.deleteAdmitted(ctx, background, queue, fresh)
+	close(queue)
+	<-done
+	r.mu.Lock()
+	r.tally.cancelled = r.tally.cancelled || cancelled
+	r.mu.Unlock()
+}
+
+// deleteAdmitted hands admitted members to the workers in order, taking a
+// possible large object with its segments first when the job takes them. A
+// cancellation settles the members not yet handed over as not attempted and
+// reports itself.
+func (r *prefixSweep) deleteAdmitted(ctx, background context.Context, queue chan<- sweepMember, fresh []sweepMember) (cancelled bool) {
+	for i, m := range fresh {
+		handled := false
+		if r.segments && (m.slo || m.bytes == 0) {
+			handled, cancelled = r.largeObject(ctx, background, queue, m)
+		}
+		if !handled && !cancelled {
+			cancelled = r.enqueue(ctx, background, queue, fresh[i:i+1])
+		}
+		if cancelled {
+			for _, rest := range fresh[i+1:] {
+				r.notAttempted(background, rest)
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // enqueue hands members to the workers in order. A cancellation settles the
 // ones not yet handed over as not attempted and reports itself.
 func (r *prefixSweep) enqueue(ctx, background context.Context, queue chan<- sweepMember, members []sweepMember) (cancelled bool) {
 	for i, m := range members {
-		select {
-		case queue <- m:
-		case <-ctx.Done():
-			for _, rest := range members[i:] {
-				r.notAttempted(background, rest)
+		// A free worker and a cancellation can both be ready, and select
+		// would then pick either; a job already cancelled hands over nothing.
+		if ctx.Err() == nil {
+			select {
+			case queue <- m:
+				if r.acked != nil {
+					<-r.acked
+				}
+				continue
+			case <-ctx.Done():
 			}
-			return true
 		}
+		for _, rest := range members[i:] {
+			r.notAttempted(background, rest)
+		}
+		return true
 	}
 	return false
 }
