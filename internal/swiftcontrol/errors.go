@@ -160,13 +160,3 @@ func IsDeclaredDigestRefused(err error) bool {
 	}
 	return false
 }
-
-// IsPreconditionFailed reports a 412 — the conditional-create verdict
-// (If-None-Match: * met an existing object).
-func IsPreconditionFailed(err error) bool {
-	var swiftErr *SwiftError
-	if errors.As(err, &swiftErr) {
-		return swiftErr.HTTPStatus == 412
-	}
-	return false
-}

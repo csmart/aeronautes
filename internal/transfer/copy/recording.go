@@ -59,7 +59,6 @@ const (
 	StagePlanning     Stage = "planning"
 	StageSourceRead   Stage = "source_read"
 	StageEngine       Stage = "engine"
-	StageStaging      Stage = "staging"
 	StageCommit       Stage = "commit"
 	StageVerification Stage = "verification"
 	StageCleanup      Stage = "cleanup"

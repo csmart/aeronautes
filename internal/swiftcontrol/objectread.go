@@ -11,8 +11,10 @@ import (
 	"github.com/ncw/swift/v2"
 )
 
-// OpenObjectContent preserves stored bytes for staged-content verification.
-// The caller must consume EOF and check Close before accepting the content.
+// OpenObjectContent reads an object's stored bytes whole, for a caller that
+// needs an independent read of what the store holds, as the service
+// journeys do. The caller must consume EOF and check Close before accepting
+// the content.
 func (s *Session) OpenObjectContent(ctx context.Context, container, name string) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, Normalize(err)

@@ -2,8 +2,6 @@ package swiftcontrol
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -101,73 +99,48 @@ func TestSLOManifestBadShapes(t *testing.T) {
 	}
 }
 
-// SLOManifestDigests is the bounded input a content comparison rests on,
-// so every shape it cannot vouch for has to refuse rather than be
-// reduced to something it is not.
-func TestSLOManifestDigestsBoundedInput(t *testing.T) {
+// SLOManifestEntries is a read something is decided from, so a body that
+// is not a whole entry list, or one past its ceilings, refuses rather than
+// being taken for the manifest.
+func TestSLOManifestEntriesBoundedInput(t *testing.T) {
 	const good = `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4},
 	               {"name": "/parts/b", "hash": "0cc175b9c0f1b6a831c399e269772661", "bytes": 6}]`
-	t.Run("whole_segments_admitted", func(t *testing.T) {
+	t.Run("whole_list_admitted", func(t *testing.T) {
 		s := newSLOManifestSession(t, good)
-		digests, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 1<<20)
+		entries, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(digests) != 2 || digests[0].Size != 4 || digests[1].ETag != "0cc175b9c0f1b6a831c399e269772661" {
-			t.Fatalf("digests = %+v", digests)
+		if len(entries) != 2 {
+			t.Fatalf("entries = %+v", entries)
+		}
+		second, ok := entries[1].(ObjectSegment)
+		if !ok || second.Size != 6 || second.ETag == nil || *second.ETag != "0cc175b9c0f1b6a831c399e269772661" {
+			t.Fatalf("second entry = %+v", entries[1])
 		}
 	})
 	for label, manifest := range map[string]string{
-		"ranged_entry":       `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4, "range": "0-3"}]`,
-		"nested_manifest":    `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4, "sub_slo": true}]`,
-		"unrecognised_entry": `[{"mystery": "entry-from-the-future"}]`,
-		"no_recorded_hash":   `[{"name": "/parts/a", "bytes": 4}]`,
-		"not_a_list":         `{"name": "/parts/a"}`,
-		"truncated_list":     `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}`,
-		"trailing_content":   good + ` []`,
+		"not_a_list":       `{"name": "/parts/a"}`,
+		"truncated_list":   `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}`,
+		"trailing_content": good + ` []`,
 	} {
 		t.Run(label, func(t *testing.T) {
 			s := newSLOManifestSession(t, manifest)
-			if _, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 1<<20); err == nil {
-				t.Fatal("a shape the reader cannot vouch for was admitted")
+			if _, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20); err == nil {
+				t.Fatal("a body that is not a whole entry list was admitted")
 			}
 		})
 	}
-	t.Run("inline_data_is_read_not_refused", func(t *testing.T) {
-		// An inline entry carries its own bytes, so its run is read from
-		// them rather than the source class being narrowed to exclude it.
-		s := newSLOManifestSession(t, `[{"data": "aGVsbG8="}]`)
-		digests, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 1<<20)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sum := md5.Sum([]byte("hello"))
-		if len(digests) != 1 || digests[0].Size != 5 || digests[0].ETag != hex.EncodeToString(sum[:]) {
-			t.Fatalf("inline entry = %+v, want the length and MD5 of its own bytes", digests)
-		}
-	})
 	t.Run("entry_ceiling", func(t *testing.T) {
 		s := newSLOManifestSession(t, good)
-		if _, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 1, 1<<20); err == nil {
+		if _, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 1, 1<<20); err == nil {
 			t.Fatal("a manifest past the entry ceiling was truncated instead of refused")
 		}
 	})
 	t.Run("byte_ceiling", func(t *testing.T) {
 		s := newSLOManifestSession(t, good)
-		if _, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 8); err == nil {
+		if _, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 8); err == nil {
 			t.Fatal("a manifest past the byte ceiling was truncated instead of refused")
-		}
-	})
-	t.Run("display_getter_is_unchanged", func(t *testing.T) {
-		// The exact model still keeps every entry shape in place; only the
-		// safety reader narrows what it will vouch for.
-		s := newSLOManifestSession(t, `[{"data": "aGVsbG8="}]`)
-		m, err := s.SLOManifest(context.Background(), "media", "archive.tar")
-		if err != nil || len(m.Entries) != 1 {
-			t.Fatalf("display getter changed: %v %+v", err, m)
-		}
-		if _, ok := m.Entries[0].(InlineDataSegment); !ok {
-			t.Fatalf("display getter lost the inline entry: %#v", m.Entries[0])
 		}
 	})
 }
@@ -185,7 +158,7 @@ func (c *consumptionReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
+func TestSLOManifestEntriesBudgetBoundsTheRead(t *testing.T) {
 	// Counting the bytes after the decoder has already
 	// buffered them is not a bound. Each of these bodies is far larger
 	// than the budget, and the parser must stop inside it.
@@ -199,7 +172,7 @@ func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
 	} {
 		t.Run(label, func(t *testing.T) {
 			counted := &consumptionReader{inner: strings.NewReader(body)}
-			if _, err := parseSLOManifestDigests(counted, 1<<20, budget, "media/archive.tar"); err == nil {
+			if _, err := parseSLOManifestEntries(counted, 1<<20, budget, "media/archive.tar"); err == nil {
 				t.Fatal("an oversized manifest was admitted")
 			}
 			// One byte past the budget is the overrun probe that tells a
@@ -213,9 +186,9 @@ func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
 	t.Run("a_manifest_inside_the_budget_still_parses", func(t *testing.T) {
 		body := `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}]`
 		counted := &consumptionReader{inner: strings.NewReader(body)}
-		digests, err := parseSLOManifestDigests(counted, 10, budget, "media/archive.tar")
-		if err != nil || len(digests) != 1 {
-			t.Fatalf("digests = %+v, err = %v", digests, err)
+		entries, err := parseSLOManifestEntries(counted, 10, budget, "media/archive.tar")
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("entries = %+v, err = %v", entries, err)
 		}
 		if counted.count > budget+1 {
 			t.Fatalf("parser consumed %d bytes against a budget of %d", counted.count, budget)
@@ -226,15 +199,15 @@ func TestSLOManifestDigestsBudgetBoundsTheRead(t *testing.T) {
 		// rather than a conservative refusal.
 		body := `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}]`
 		counted := &consumptionReader{inner: strings.NewReader(body)}
-		digests, err := parseSLOManifestDigests(counted, 10, int64(len(body)), "media/archive.tar")
-		if err != nil || len(digests) != 1 {
-			t.Fatalf("a manifest exactly at the budget was refused: %+v %v", digests, err)
+		entries, err := parseSLOManifestEntries(counted, 10, int64(len(body)), "media/archive.tar")
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("a manifest exactly at the budget was refused: %+v %v", entries, err)
 		}
 	})
 	t.Run("one_byte_over_the_budget_refuses", func(t *testing.T) {
 		body := `[{"name": "/parts/a", "hash": "d41d8cd98f00b204e9800998ecf8427e", "bytes": 4}] `
 		counted := &consumptionReader{inner: strings.NewReader(body)}
-		if _, err := parseSLOManifestDigests(counted, 10, int64(len(body))-1, "media/archive.tar"); err == nil {
+		if _, err := parseSLOManifestEntries(counted, 10, int64(len(body))-1, "media/archive.tar"); err == nil {
 			t.Fatal("a manifest one byte past the budget was admitted")
 		}
 	})
@@ -255,7 +228,7 @@ func (j *joinedEOFReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func TestSLOManifestDigestsRequiresACleanEnd(t *testing.T) {
+func TestSLOManifestEntriesRequiresACleanEnd(t *testing.T) {
 	// errors.Is would accept an EOF joined with a read failure, so
 	// a manifest whose body failed on its last read was admitted as
 	// evidence. Only a clean end counts.
@@ -263,18 +236,18 @@ func TestSLOManifestDigestsRequiresACleanEnd(t *testing.T) {
 	fault := errors.New("body failed while ending")
 	t.Run("eof_joined_with_a_failure_refuses", func(t *testing.T) {
 		reader := &joinedEOFReader{inner: strings.NewReader(body), fault: fault}
-		digests, err := parseSLOManifestDigests(reader, 10, 1<<20, "media/archive.tar")
+		entries, err := parseSLOManifestEntries(reader, 10, 1<<20, "media/archive.tar")
 		if err == nil {
-			t.Fatalf("a body that failed while ending was admitted with %d runs", len(digests))
+			t.Fatalf("a body that failed while ending was admitted with %d entries", len(entries))
 		}
 		if !errors.Is(err, fault) {
 			t.Fatalf("refusal lost the underlying failure: %v", err)
 		}
 	})
 	t.Run("clean_eof_is_admitted", func(t *testing.T) {
-		digests, err := parseSLOManifestDigests(strings.NewReader(body), 10, 1<<20, "media/archive.tar")
-		if err != nil || len(digests) != 1 {
-			t.Fatalf("a clean end was refused: %+v %v", digests, err)
+		entries, err := parseSLOManifestEntries(strings.NewReader(body), 10, 1<<20, "media/archive.tar")
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("a clean end was refused: %+v %v", entries, err)
 		}
 	})
 }
@@ -304,7 +277,7 @@ func newSLOManifestPartialSession(t *testing.T, status int, header, value, body 
 	return s
 }
 
-func TestSLOManifestDigestsRequiresACompleteResponse(t *testing.T) {
+func TestSLOManifestEntriesRequiresACompleteResponse(t *testing.T) {
 	// A partial body that happens to parse is not the
 	// manifest. Same contract as OpenObjectContent: HTTP 200, no
 	// Content-Range.
@@ -319,16 +292,16 @@ func TestSLOManifestDigestsRequiresACompleteResponse(t *testing.T) {
 	} {
 		t.Run(label, func(t *testing.T) {
 			s := newSLOManifestPartialSession(t, tc.status, tc.header, tc.value, body)
-			if _, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 1<<20); err == nil {
+			if _, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20); err == nil {
 				t.Fatal("a partial response was admitted as a complete manifest")
 			}
 		})
 	}
 	t.Run("complete_response_is_admitted", func(t *testing.T) {
 		s := newSLOManifestPartialSession(t, http.StatusOK, "", "", body)
-		digests, err := s.SLOManifestDigests(context.Background(), "media", "archive.tar", 10, 1<<20)
-		if err != nil || len(digests) != 1 {
-			t.Fatalf("digests = %+v, err = %v", digests, err)
+		entries, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20)
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("entries = %+v, err = %v", entries, err)
 		}
 	})
 }

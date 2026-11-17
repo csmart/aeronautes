@@ -2,14 +2,11 @@ package swiftcontrol
 
 import (
 	"context"
-	"crypto/md5"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -197,14 +194,6 @@ func parseSLOManifest(body io.Reader, container, name string) (*SLOManifest, err
 	return manifest, nil
 }
 
-// SLOSegmentDigest is one manifest entry reduced to the two facts a
-// content comparison needs: the length the manifest recorded and the MD5
-// it recorded for those bytes.
-type SLOSegmentDigest struct {
-	Size int64
-	ETag string
-}
-
 // errManifestBudget stops a decoder the moment it asks for more than the
 // caller allowed, so the budget bounds what is read rather than
 // describing it afterwards.
@@ -216,8 +205,7 @@ var errManifestBudget = errors.New("manifest exceeds its byte budget")
 //
 // The limit is inclusive: a body that ends exactly at the budget is
 // admitted. Distinguishing that from one byte too many costs a single
-// probe read once the budget is spent, which is the same bounded overrun
-// check the staged-content comparison makes, and never an unbounded read.
+// probe read once the budget is spent, and never an unbounded read.
 type budgetReader struct {
 	inner  io.Reader
 	budget int64
@@ -254,55 +242,33 @@ func (b *budgetReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// SLOManifestDigests reads the manifest as a bounded, complete input for
-// a safety decision, rather than for display.
-//
-// It differs from SLOManifest in the ways a safety input has to. It
-// requires a complete response, HTTP 200 with no Content-Range, on the
-// same contract OpenObjectContent uses, because a partial body that
-// happens to parse is not the manifest. It never reads past its byte
-// budget: the budget bounds the decoder's input, including the opening
-// token and the read that confirms the end of the stream, rather than
-// being checked once an entry has already been buffered. It refuses
-// instead of truncating once maxEntries is passed, refuses trailing
-// content after the entry list, and refuses when the body cannot be
-// closed cleanly, because a read that could not be completed cleanly is
-// not evidence.
-//
-// It reduces each entry to the length and MD5 of the bytes that entry
-// contributes, and refuses any entry that states neither. An inline data
-// entry carries its own bytes, so its run is read from them. A ranged
-// entry records the containing segment's tag rather than the range's,
-// and a nested manifest records an aggregate rather than content, so
-// neither can be read this way.
-func (s *Session) SLOManifestDigests(ctx context.Context, container, name string, maxEntries int, maxBytes int64) (digests []SLOSegmentDigest, err error) {
-	return readSLOManifest(ctx, s, container, name, func(body io.Reader, where string) ([]SLOSegmentDigest, error) {
-		return parseSLOManifestDigests(body, maxEntries, maxBytes, where)
-	})
-}
-
-// SLOManifestEntries is the same strictly-read, bounded manifest as
-// SLOManifestDigests, kept as its ORDERED ENTRIES rather than reduced to
-// digests, for a caller that has to record which entry was which.
+// SLOManifestEntries reads the manifest strictly and within bounds, as its
+// ordered entries, for a caller that decides something from which entries
+// it names.
 //
 // It exists because SLOManifest is a display read: it decodes one array
 // without checking the status, the absence of a Content-Range, a clean
 // end, or any byte bound, so a partial or trailing-garbage response parses
-// as a manifest. That is tolerable for something a person is looking at
-// and not for a durable record of what an operation is about to replace,
-// where a short read would be credited as the exact list (ADR 0081
-// decision 5). A response this build will not read whole is an error here
-// rather than a shorter answer.
+// as a manifest. This read requires a complete response, HTTP 200 with no
+// Content-Range, on the same contract OpenObjectContent uses, because a
+// partial body that happens to parse is not the manifest. It never reads
+// past its byte budget: the budget bounds the decoder's input, including
+// the opening token and the read that confirms the end of the stream,
+// rather than being checked once an entry has already been buffered. It
+// refuses instead of truncating once maxEntries is passed, refuses
+// trailing content after the entry list, and refuses when the body cannot
+// be closed cleanly. A response this build will not read whole is an
+// error here rather than a shorter answer.
 func (s *Session) SLOManifestEntries(ctx context.Context, container, name string, maxEntries int, maxBytes int64) (entries []SLOEntry, err error) {
 	return readSLOManifest(ctx, s, container, name, func(body io.Reader, where string) ([]SLOEntry, error) {
 		return parseSLOManifestEntries(body, maxEntries, maxBytes, where)
 	})
 }
 
-// readSLOManifest performs the manifest GET and the response checks both
-// strict readers share: HTTP 200, no Content-Range, and the body closed
-// with its error joined, because a read that could not be completed
-// cleanly is not evidence.
+// readSLOManifest performs the manifest GET and the response checks of the
+// strict read: HTTP 200, no Content-Range, and the body closed with its
+// error joined, because a read that could not be completed cleanly is not
+// evidence.
 func readSLOManifest[T any](ctx context.Context, s *Session, container, name string,
 	parse func(io.Reader, string) (T, error)) (result T, err error) {
 	var zero T
@@ -408,53 +374,6 @@ func parseSLOManifestEntries(body io.Reader, maxEntries int, maxBytes int64, whe
 		}
 	}
 	return entries, nil
-}
-
-// parseSLOManifestDigests is the bounded, complete-list parse reduced to the
-// length and MD5 each entry contributes. It is the pure reduction of
-// parseSLOManifestEntries, so the budget, the entry limit and the clean-end
-// rules live in exactly one place.
-func parseSLOManifestDigests(body io.Reader, maxEntries int, maxBytes int64, where string) ([]SLOSegmentDigest, error) {
-	entries, err := parseSLOManifestEntries(body, maxEntries, maxBytes, where)
-	if err != nil {
-		return nil, err
-	}
-	digests := make([]SLOSegmentDigest, 0, len(entries))
-	for i, entry := range entries {
-		digest, err := segmentDigest(entry)
-		if err != nil {
-			return nil, fmt.Errorf("SLO manifest entry %d of %s %w", i, where, err)
-		}
-		digests = append(digests, digest)
-	}
-	return digests, nil
-}
-
-// segmentDigest reduces one entry to the length and MD5 of the bytes it
-// contributes. An inline entry carries its own bytes, so its run is read from
-// them (Swift contributes the same MD5 to the object's entity tag). A ranged
-// entry records the containing segment's tag rather than the range's, and a
-// nested manifest records an aggregate rather than content, so neither can be
-// read this way.
-func segmentDigest(entry SLOEntry) (SLOSegmentDigest, error) {
-	if inline, ok := entry.(InlineDataSegment); ok {
-		sum := md5.Sum(inline.Data)
-		return SLOSegmentDigest{Size: int64(len(inline.Data)), ETag: hex.EncodeToString(sum[:])}, nil
-	}
-	segment, ok := entry.(ObjectSegment)
-	switch {
-	case !ok:
-		return SLOSegmentDigest{}, errors.New("states no whole-segment content MD5")
-	case segment.NestedSLO:
-		return SLOSegmentDigest{}, errors.New("is a nested manifest")
-	case segment.Range != nil:
-		return SLOSegmentDigest{}, errors.New("is ranged, so its recorded tag is not the range's content MD5")
-	case segment.ETag == nil:
-		return SLOSegmentDigest{}, errors.New("records no MD5")
-	case segment.Size > math.MaxInt64:
-		return SLOSegmentDigest{}, errors.New("records an unusable length")
-	}
-	return SLOSegmentDigest{Size: int64(segment.Size), ETag: *segment.ETag}, nil
 }
 
 // parseSLOEntry classifies one manifest entry. The internal manifest

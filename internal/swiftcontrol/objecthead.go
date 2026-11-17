@@ -183,7 +183,7 @@ func (s *Session) SymlinkGet(ctx context.Context, container, name string) (*Obje
 // controls ride the request (?symlink=get&multipart-manifest=get). A read
 // that follows or expands reports a dangling link, or a manifest whose
 // segments are missing, as not found while an object still stands at the
-// name, which is why a deletion verifies with this read (ADR 0092).
+// name, which is why a check that a name is gone uses this read.
 func (s *Session) LiteralObjectHead(ctx context.Context, container, name string) (*ObjectDetail, error) {
 	return s.literalHead(ctx, container, name, "symlink=get&multipart-manifest=get", "literal HEAD")
 }
