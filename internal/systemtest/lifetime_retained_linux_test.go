@@ -26,11 +26,11 @@ func TestLifetimeRetainedAllowsProgressButNothingElse(t *testing.T) {
 	prefix := func(n int64) lifetimeFile {
 		return lifetimeFile{Mode: 0o644, Size: n, Hash: fmt.Sprintf("%x", sha256.Sum256(body[:n]))}
 	}
-	const partial = "stage/file.bin.partial"
+	const partial = "nested/file.bin.0123abcd.partial"
 	sentinel := lifetimeFile{Mode: 0o600, Size: 9, Hash: "deadbeef"}
-	stage := lifetimeFile{Mode: fs.ModeDir | 0o700}
+	folder := lifetimeFile{Mode: fs.ModeDir | 0o700}
 	snapshot := func(p lifetimeFile, edits ...func(map[string]lifetimeFile)) map[string]lifetimeFile {
-		m := map[string]lifetimeFile{"stage": stage, partial: p, "sentinel": sentinel}
+		m := map[string]lifetimeFile{"nested": folder, partial: p, "sentinel": sentinel}
 		for _, edit := range edits {
 			edit(m)
 		}
@@ -56,8 +56,8 @@ func TestLifetimeRetainedAllowsProgressButNothingElse(t *testing.T) {
 		{"the sentinel changed", snapshot(prefix(released)), snapshot(prefix(released), func(m map[string]lifetimeFile) {
 			m["sentinel"] = lifetimeFile{Mode: 0o600, Size: 10, Hash: "f00d"}
 		}), false},
-		{"the stage directory's mode changed", snapshot(prefix(released)), snapshot(prefix(released), func(m map[string]lifetimeFile) {
-			m["stage"] = lifetimeFile{Mode: fs.ModeDir | 0o755}
+		{"a folder's mode changed", snapshot(prefix(released)), snapshot(prefix(released), func(m map[string]lifetimeFile) {
+			m["nested"] = lifetimeFile{Mode: fs.ModeDir | 0o755}
 		}), false},
 		{"an entry disappeared", snapshot(prefix(released)), snapshot(prefix(released), func(m map[string]lifetimeFile) {
 			delete(m, "sentinel")

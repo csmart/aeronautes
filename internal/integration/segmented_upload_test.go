@@ -69,7 +69,7 @@ func TestSegmentedUploadKindsRealSwift(t *testing.T) {
 			if err != nil || down.Rejected() {
 				t.Fatalf("download preflight: %v %+v", err, down)
 			}
-			downReport, err := localtransfer.Download(ctx, h.Session, source, "aeronautes_src:"+container, container, "up/", destDir, "it-down-"+string(kind), down, nil)
+			downReport, err := localtransfer.Download(ctx, h.Session, source, "aeronautes_src:"+container, container, "up/", destDir, down, nil)
 			if err != nil || downReport.Done != 1 || len(downReport.Failures) != 0 {
 				t.Fatalf("download: %v %+v", err, downReport)
 			}

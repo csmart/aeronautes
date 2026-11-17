@@ -1,12 +1,11 @@
 package systemtest
 
 import (
-	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -21,7 +20,7 @@ func TestDownloadDestinationOverlapRealSwift(t *testing.T) {
 }
 
 // ADR 0078 through the public services with a real engine child held at
-// the stage boundary: the running job's directory, a subdirectory and the
+// its read of the source: the running job's directory, a subdirectory and the
 // parent are reported by preflight and refused by the start, a sibling is
 // admitted and queues, the queued job's directory is refused in turn, and
 // once both jobs have ended the directory is free again.
@@ -69,27 +68,16 @@ func downloadDestinationOverlap(t *testing.T, h *Harness) {
 			t.Fatalf("start into %s was not refused naming %s: id=%q err=%v", dir, job, id, err)
 		}
 	}
-	entered, release := make(chan struct{}, 1), make(chan struct{})
-	var once sync.Once
-	resume := func() { once.Do(func() { close(release) }) }
-	t.Cleanup(resume)
-	app.WireDownloadStageBoundary(h.Transfer, func(ctx context.Context, _ string) error {
-		select {
-		case entered <- struct{}{}:
-		default:
-		}
-		select {
-		case <-release:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	})
+	// The running job's engine is held at its read of the one file, so the
+	// job is running while the other starts are tried.
+	barrier, _, _, _ := interruptionProxy(t, h, source, http.MethodGet, "scope/one.bin", nil)
 	running, err := h.Transfer.StartDownload(t.Context(), pick(dirA, "scope/"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-entered
+	if event, err := barrier.Wait(t.Context()); err != nil || event.StatusCode != http.StatusOK {
+		t.Fatalf("the running job's read was not held: %+v %v", event, err)
+	}
 	refused(dirA, "other/", running)
 	refused(filepath.Join(dirA, "sub"), "other/", running)
 	refused(base, "other/", running)
@@ -102,7 +90,9 @@ func downloadDestinationOverlap(t *testing.T, h *Harness) {
 		t.Fatal(err)
 	}
 	h.AwaitJob(queued)
-	resume()
+	if err := barrier.Release(); err != nil {
+		t.Fatal(err)
+	}
 	h.AwaitJob(running)
 	for _, pair := range [][2]string{{running, "complete"}, {queued, "cancelled"}} {
 		if job, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, pair[0]); err != nil || job.State != pair[1] {

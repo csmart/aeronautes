@@ -238,39 +238,6 @@ func TestAStoppedStoreReachesARunningJobBeforeTheRunnerIsTold(t *testing.T) {
 	}
 }
 
-// The download route removes its stage on an ordinary cancel (ADR 0048). A
-// cancel made because the store stopped is the recording failure of that
-// record's decision 7 for every job at once: the download places nothing
-// further and its cleanup is not attempted, so the stage is still there.
-func TestAStoppedStoreKeepsADownloadsStage(t *testing.T) {
-	for _, stopped := range []bool{true, false} {
-		t.Run(map[bool]string{true: "the store stops", false: "an ordinary cancel"}[stopped], func(t *testing.T) {
-			h, _, id, dir := pausedDownload(t)
-			placed := placedFiles(t, dir)
-			stage := stageOf(t, dir)
-			if stage == "" {
-				t.Fatal("the fixture's download holds no stage while it is paused")
-			}
-			if stopped {
-				stopStore(t, h)
-			} else {
-				if err := h.transfer.CancelJob(context.Background(), id); err != nil {
-					t.Fatal(err)
-				}
-				awaitTerminal(t, h, id)
-			}
-			ownersGone(t, h)
-			if got := placedFiles(t, dir); got != placed {
-				t.Errorf("%d files are placed, %d were before the job ended", got, placed)
-			}
-			_, err := os.Stat(stage)
-			if kept := err == nil; kept != stopped {
-				t.Errorf("the stage is kept = %v (%v); want it kept only when the store had stopped", kept, err)
-			}
-		})
-	}
-}
-
 // The runner cancels the other jobs, not the one whose record could not be
 // written. That job has its own write's error and ends on that account, as it
 // did when it was the only job; a cancel beside the error could change what it
@@ -377,45 +344,6 @@ func TestAStoppedStoreLeavesADeletionJobOpen(t *testing.T) {
 				t.Errorf("the job said that the store stopped beside it %d times, want once: %+v", said, events)
 			}
 		})
-	}
-}
-
-// The same for a download that is running and held in its engine when the
-// store stops, rather than parked: its stage is kept and the report says
-// cleanup was not attempted. This is the case that relies on the route asking
-// the store at cleanup, because a running download leaves through its engine
-// and not through its pause.
-func TestAStoppedStoreKeepsARunningDownloadsStage(t *testing.T) {
-	h := newHarness(t)
-	h.connect(t)
-	block := newEngineBarrier(t)
-	h.installEngine(block)
-	h.mock.AddContainer("media", "standard")
-	for _, name := range []string{"scope/a.bin", "scope/b.bin"} {
-		seedObject(h.mock, "media", name, "bytes of "+name, nil)
-	}
-	bookmark := h.transfer.connections.ActiveBookmarkID()
-	dir := t.TempDir()
-	h.transfer.setFilePicker(fakePicker{dir: dir})
-	picked, err := h.transfer.PickDownloadDir(context.Background(), SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/"})
-	if err != nil || picked == nil {
-		t.Fatalf("pick: %+v %v", picked, err)
-	}
-	id, err := h.transfer.StartDownload(context.Background(), DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "scope/", DestDirToken: picked.Token})
-	if err != nil {
-		t.Fatal(err)
-	}
-	block.waitUntilEntered(t)
-	stopStore(t, h)
-	block.unblock()
-	ownersGone(t, h)
-	if _, err := os.Stat(filepath.Join(dir, ".aeronautes-stage-"+id)); err != nil {
-		t.Fatalf("the stage of a download stopped with the store was removed: %v", err)
-	}
-	for _, name := range []string{"a.bin", "b.bin"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			t.Errorf("%s was placed after the store stopped", name)
-		}
 	}
 }
 

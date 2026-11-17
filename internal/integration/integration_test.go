@@ -983,7 +983,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	if err != nil || downPre.Rejected() {
 		t.Fatalf("download preflight: %v %+v", err, downPre)
 	}
-	downReport, err := localtransfer.Download(ctx, h.Session, srcEngine, "aeronautes_src:"+container, container, "up/", destDir, "it-down-job", downPre, nil)
+	downReport, err := localtransfer.Download(ctx, h.Session, srcEngine, "aeronautes_src:"+container, container, "up/", destDir, downPre, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

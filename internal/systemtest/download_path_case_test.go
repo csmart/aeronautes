@@ -2,14 +2,12 @@ package systemtest
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -114,8 +112,6 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 	if !reflect.DeepEqual(beforeLocal, snapshotListingLocal(t, owned)) || !reflect.DeepEqual(beforeCounts, downloadRootGuardCounts(t, h)) {
 		t.Error("path-case preflight changed owned entries or history")
 	}
-	var returnedCopies atomic.Int32
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { returnedCopies.Add(1); return nil })
 	id, startErr := h.Transfer.StartDownload(t.Context(), request)
 	var saved uploadRecoveryState
 	if id != "" {
@@ -141,7 +137,7 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 	evidence, err := json.Marshal(map[string]any{
 		"preflight": preflight, "preflight_error": fmt.Sprint(preflightErr), "job_id": id, "start_error": fmt.Sprint(startErr),
 		"before_counts": beforeCounts, "after_counts": afterCounts, "saved": saved, "transfer_audit": events,
-		"selected_gets": trace.selectedGets(), "returned_Copy_calls": returnedCopies.Load(), "remote_writes": trace.traffic.writeSnapshot(),
+		"selected_gets": trace.selectedGets(), "remote_writes": trace.traffic.writeSnapshot(),
 		"before_primary": beforeA, "after_primary": afterA, "before_secondary": beforeB, "after_secondary": afterB,
 	})
 	if err != nil {
@@ -163,8 +159,8 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 		if id != "" || startErr == nil || !strings.Contains(startErr.Error(), "preflight found problems") {
 			t.Errorf("Start admitted a case-folded ancestor conflict: id=%q error=%v", id, startErr)
 		}
-		if !reflect.DeepEqual(beforeCounts, afterCounts) || len(events) != 0 || len(trace.selectedGets()) != 0 || returnedCopies.Load() != 0 {
-			t.Errorf("case-folded ancestor refusal admitted history or content work: counts=%v -> %v gets=%v returned Copy calls=%d audit=%+v", beforeCounts, afterCounts, trace.selectedGets(), returnedCopies.Load(), events)
+		if !reflect.DeepEqual(beforeCounts, afterCounts) || len(events) != 0 || len(trace.selectedGets()) != 0 {
+			t.Errorf("case-folded ancestor refusal admitted history or content work: counts=%v -> %v gets=%v audit=%+v", beforeCounts, afterCounts, trace.selectedGets(), events)
 		}
 		assertListingLocalDelta(t, beforeLocal, afterLocal, nil)
 		return
@@ -234,13 +230,8 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: prefix + name}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(selected, rel)}) ||
 			item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}) ||
-			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) || (item.Staging == nil) != directory {
+			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 			t.Fatalf("safe control lost exact identity or item observations: %+v", item)
-		}
-		if item.Staging != nil && (item.Staging.Kind != jobs.ItemLocal || !filepath.IsAbs(item.Staging.LocalPath) ||
-			route != "native" && item.Staging.LocalPath != filepath.Join(selected, ".aeronautes-stage-"+id, rel) ||
-			route == "native" && (filepath.Dir(item.Staging.LocalPath) != filepath.Dir(filepath.Join(selected, rel)) || !strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-"))) {
-			t.Fatalf("safe control lost exact staging identity: %+v", item)
 		}
 		if !directory {
 			data, err := os.ReadFile(filepath.Join(selected, rel))
@@ -248,13 +239,6 @@ func downloadPathCaseService(t *testing.T, h *Harness, route, shape string) {
 				t.Errorf("safe control full file bytes differ for %q: %q error=%v", name, data, err)
 			}
 		}
-	}
-	wantCopies := int32(0)
-	if route != "native" && fileCount > 0 {
-		wantCopies = 1
-	}
-	if returnedCopies.Load() != wantCopies {
-		t.Errorf("safe control route differs: returned Copy calls=%d want=%d", returnedCopies.Load(), wantCopies)
 	}
 	gets := trace.selectedGets()
 	for _, name := range names {

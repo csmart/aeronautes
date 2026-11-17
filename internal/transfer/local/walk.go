@@ -161,12 +161,12 @@ func (w *folderWalk) descend(ctx context.Context, dir *os.Root, rel string) erro
 
 func (w *folderWalk) visit(ctx context.Context, parent *os.Root, rel string, entry fs.DirEntry) error {
 	childRel := path.Join(rel, entry.Name())
-	// A download keeps its stage directory and its partial files inside its
-	// destination until it ends. A folder that holds one is uploaded without
-	// them, disclosed with the other skipped entries: they are this
-	// application's own unfinished work, and with several jobs at once the
-	// download may still be writing them (ADR 0105 decision 5).
-	if strings.HasPrefix(entry.Name(), downloadStagePrefix) || strings.HasPrefix(entry.Name(), downloadPartPrefix) {
+	// A download the application writes itself keeps a partial file beside
+	// the file it will become until it has it whole. A folder that holds
+	// one is uploaded without it, disclosed with the other skipped entries:
+	// it is this application's own unfinished work, and with several jobs
+	// at once the download may still be writing it (ADR 0105 decision 5).
+	if strings.HasPrefix(entry.Name(), downloadPartPrefix) {
 		w.skip(childRel)
 		return nil
 	}

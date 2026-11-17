@@ -491,19 +491,20 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 	case <-time.After(lifetimeWait):
 		t.Fatal("GET body barrier not reached")
 	}
-	stage := filepath.Join(root, ".aeronautes-stage-"+id)
+	// The engine writes the file in the chosen folder under its own partial
+	// name until it has it whole (ADR 0122 decision 5).
 	var writing string
-	// A timeout here says only "stage bytes"; the sizes last seen in the
-	// stage say whether the child never wrote, wrote slowly or wrote
-	// something else, so log them when the test fails.
+	// A timeout here says only "partial bytes"; the sizes last seen say
+	// whether the child never wrote, wrote slowly or wrote something else,
+	// so log them when the test fails.
 	observed, waited := map[string]int{}, time.Now()
 	t.Cleanup(func() {
 		if t.Failed() {
-			t.Logf("stage bytes: waited %s, last observed %v", time.Since(waited).Round(time.Millisecond), observed)
+			t.Logf("partial bytes: waited %s, last observed %v", time.Since(waited).Round(time.Millisecond), observed)
 		}
 	})
-	lifetimeAwait(t, "stage bytes", func() bool {
-		paths, err := filepath.Glob(filepath.Join(stage, "*"))
+	lifetimeAwait(t, "partial bytes", func() bool {
+		paths, err := filepath.Glob(filepath.Join(root, "*.partial"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -555,7 +556,7 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 	before := lifetimeSnapshot(t, root)
 	partial, ok := before[strings.TrimPrefix(writing, root+string(os.PathSeparator))]
 	switch {
-	case !ok || len(before) != 3:
+	case !ok || len(before) != 2:
 		t.Fatalf("barrier did not capture one partial and the sentinel: %+v", before)
 	case partial.Size <= 0 || partial.Size > 64*1024:
 		t.Fatalf("retained partial is %d bytes, want between 1 and the %d released: %+v", partial.Size, 64*1024, before)
@@ -680,7 +681,7 @@ func childLifetime(t *testing.T, h *Harness, mode string) {
 		close(hold.release)
 	}
 	if !reflect.DeepEqual(after, lifetimeSnapshot(t, root)) {
-		t.Fatal("post-terminal stage changed after releasing held body")
+		t.Fatal("the folder changed after releasing the held body")
 	}
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
@@ -785,7 +786,7 @@ func lifetimeAssertRecords(t *testing.T, result lifetimeResult, mode, id, contai
 		t.Fatalf("terminal records differ from observed effects: %+v want state=%s counters=%+v totals=%+v", after, wantState, wantCounters, wantTotals)
 	}
 	item := after.Items[0]
-	if item.Key != "scope/file.bin" || item.Source.Kind != "swift" || item.Source.Container != container || item.Source.Object != "scope/file.bin" || item.Source.BookmarkID != after.Job.SourceBookmarkID || item.Destination.LocalPath != filepath.Join(root, "file.bin") || item.Staging.LocalPath != filepath.Join(root, ".aeronautes-stage-"+id, "file.bin") || !item.Admitted || !item.Planned || item.ListedBytes != size {
+	if item.Key != "scope/file.bin" || item.Source.Kind != "swift" || item.Source.Container != container || item.Source.Object != "scope/file.bin" || item.Source.BookmarkID != after.Job.SourceBookmarkID || item.Destination.LocalPath != filepath.Join(root, "file.bin") || item.Staging != nil || !item.Admitted || !item.Planned || item.ListedBytes != size {
 		t.Fatalf("retained item identity changed: %+v", item)
 	}
 	if killed {
@@ -807,8 +808,10 @@ func lifetimeAssertRecords(t *testing.T, result lifetimeResult, mode, id, contai
 			if item.Execution == nil || item.Execution.Result != jobs.ItemFailed || item.Execution.Effect != jobs.EffectUnresolved || item.Execution.Diagnostic.Stage != jobs.StageEngine || item.Execution.Diagnostic.Code != jobs.CodeCancelled || item.Execution.CopiedBytes != 0 || item.Verification != nil || !strings.Contains(after.Job.Error, "context canceled") {
 				t.Fatalf("cancelled item has wrong observations: %+v error=%s", item, after.Job.Error)
 			}
-			if mode == "escalate" && !strings.Contains(after.Job.Error, filepath.Join(root, ".aeronautes-stage-"+id)) {
-				t.Fatal("forced cancellation omitted the retained stage")
+			// A killed engine leaves its partial file, which the job says may
+			// be there (ADR 0122 decision 5).
+			if mode == "escalate" && !strings.Contains(after.Job.Error, "a name ending .partial") {
+				t.Fatalf("forced cancellation did not say a partial file may remain: %q", after.Job.Error)
 			}
 		}
 	}

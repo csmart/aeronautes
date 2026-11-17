@@ -37,16 +37,17 @@ func folderFixture(t *testing.T) string {
 	return root
 }
 
-// ADR 0105 decision 5: a folder that holds a download's stage directory or one
-// of its partial files is uploaded without them, and they are counted and
-// named with the skipped entries.
+// ADR 0105 decision 5, as ADR 0122 decision 5 amends it: a folder that holds
+// the partial file of a download the application writes itself is uploaded
+// without it, and it is counted and named with the skipped entries. A stage
+// folder an earlier build left is an ordinary folder.
 func TestWalkUploadDirectorySkipsThisApplicationsLocalStaging(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "incoming")
 	for rel, content := range map[string]string{
 		"report.pdf":                      "done",
-		".aeronautes-stage-1b2c/half.bin": "staged",
+		".aeronautes-stage-1b2c/half.bin": "an earlier build's stage",
 		"sub/.aeronautes-part-0011aabb":   "partial",
-		"sub/.aeronautes-stagehand-notes": "an ordinary file with a similar name",
+		"sub/.aeronautes-partner-notes":   "an ordinary file with a similar name",
 	} {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -65,13 +66,11 @@ func TestWalkUploadDirectorySkipsThisApplicationsLocalStaging(t *testing.T) {
 		names = append(names, source.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"incoming/report.pdf", "incoming/sub/.aeronautes-stagehand-notes"}) {
-		t.Errorf("sources = %q, want the two ordinary files", names)
+	if want := []string{"incoming/.aeronautes-stage-1b2c/half.bin", "incoming/report.pdf", "incoming/sub/.aeronautes-partner-notes"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("sources = %q, want %q", names, want)
 	}
-	skipped := append([]string(nil), selection.SkippedSample...)
-	sort.Strings(skipped)
-	if selection.Skipped != 2 || !reflect.DeepEqual(skipped, []string{".aeronautes-stage-1b2c", "sub/.aeronautes-part-0011aabb"}) {
-		t.Errorf("skipped = %d %q, want the stage directory and the partial file named", selection.Skipped, selection.SkippedSample)
+	if selection.Skipped != 1 || !reflect.DeepEqual(selection.SkippedSample, []string{"sub/.aeronautes-part-0011aabb"}) {
+		t.Errorf("skipped = %d %q, want the partial file named", selection.Skipped, selection.SkippedSample)
 	}
 }
 

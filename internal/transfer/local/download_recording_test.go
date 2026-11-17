@@ -57,17 +57,16 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 				var phases []string
 				refused := errors.New("required record refused")
 				engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
-				engine.check = func(stage string, names []string) {
-					if len(admissions) != 2 || len(names) != 2 || stage != filepath.Join(root, ".aeronautes-stage-fixture") {
-						t.Fatalf("engine ran without every exact admission: %+v %q %v", admissions, stage, names)
+				engine.check = func(dst string, names []string) {
+					if len(admissions) != 2 || len(names) != 2 || dst != root {
+						t.Fatalf("engine ran without every exact admission: %+v %q %v", admissions, dst, names)
 					}
 				}
 				recorder := &DownloadRecorder{
-					Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 					Admit: func(a DownloadAdmission) error {
 						phases = append(phases, "admit:"+a.Item.Name)
-						if _, err := os.Lstat(a.StagingPath); !errors.Is(err, os.ErrNotExist) {
-							t.Fatalf("staging preceded admission: %q %v", a.StagingPath, err)
+						if _, err := os.Lstat(filepath.Join(root, a.Item.RelPath)); !errors.Is(err, os.ErrNotExist) {
+							t.Fatalf("the file preceded its admission: %v", err)
 						}
 						if !native && (engine.calls != 0 || mock.Requests() != beforeRequests) || native && len(admissions) == 0 && mock.Requests() != beforeRequests {
 							t.Fatal("selected data read preceded admission")
@@ -87,9 +86,6 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 						data, err := os.ReadFile(filepath.Join(root, item.RelPath))
 						if err != nil || string(data) != "bytes "+item.RelPath || o.Result != transfercopy.ResultCopied || o.CopiedBytes != int64(len(data)) {
 							t.Fatalf("execution lacked witnessed final content: %q %+v %v", data, o, err)
-						}
-						if _, err := os.Lstat(admitted.StagingPath); !errors.Is(err, os.ErrNotExist) {
-							t.Fatalf("item cleanup was deferred past execution acknowledgement: %v", err)
 						}
 						if refusal == "execute" {
 							return refused
@@ -111,7 +107,7 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 						return nil
 					},
 				}
-				report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", preflight, nil, recorder)
+				report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, preflight, nil, recorder)
 				if errors.Is(err, refused) != (refusal != "none") {
 					t.Fatalf("required refusal was lost: %+v %v", report, err)
 				}
@@ -127,23 +123,19 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 				if refusal == "admit" && (engine.calls != 0 || mock.Requests() != beforeRequests) {
 					t.Fatal("admission refusal allowed dependent transfer work")
 				}
-				if refusal != "none" {
-					if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
-						t.Fatal("required record refusal allowed a later placement")
-					}
-					if native && mock.Requests() != beforeRequests+int(wantDone) {
-						t.Fatalf("required record refusal allowed another native GET: %d -> %d", beforeRequests, mock.Requests())
-					}
+				// A record that cannot be kept ends the recording: nothing is
+				// recorded after it. The engine had the whole batch, so its
+				// second file is written; the application's own route reads
+				// no further file.
+				if refusal != "none" && !strings.HasPrefix(phases[len(phases)-1], refusal+":") {
+					t.Fatalf("records went on after the refused one: %v", phases)
 				}
-				if !native && refusal != "admit" {
-					if report.StageCleanup == nil || report.StageCleanup.Retained != (refusal != "none") || report.StageCleanup.Issues != 0 {
-						t.Fatalf("cleanup retention was lost or fabricated an issue: %+v", report.StageCleanup)
+				if native && refusal != "none" {
+					if _, err := os.Lstat(filepath.Join(root, "b")); !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("required record refusal allowed a later native download")
 					}
-					if refusal != "none" {
-						data, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", "b"))
-						if err != nil || string(data) != "bytes b" {
-							t.Fatalf("record refusal reclaimed unresolved child data: %q %v", data, err)
-						}
+					if mock.Requests() != beforeRequests+int(wantDone) {
+						t.Fatalf("required record refusal allowed another native GET: %d -> %d", beforeRequests, mock.Requests())
 					}
 				}
 				if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "unrelated" {
@@ -154,69 +146,8 @@ func TestDownloadRecordingAcknowledgement(t *testing.T) {
 	}
 }
 
-func TestDownloadAdmittedTemporaryCollision(t *testing.T) {
-	for _, kind := range []string{"file", "directory", "symlink"} {
-		t.Run(kind, func(t *testing.T) {
-			source, mock := session(t)
-			seed(mock, "media", "scope\n/selected", "bytes")
-			root := t.TempDir()
-			writeFile(t, root, "keep", "other writer")
-			preflight, err := PreflightDownload(t.Context(), source, "media", "scope\n/", root)
-			if err != nil || preflight.Rejected() {
-				t.Fatalf("fixture preflight: %+v %v", preflight, err)
-			}
-			var temporary string
-			var observed transfercopy.Observation
-			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-				Admit: func(a DownloadAdmission) error {
-					temporary = a.StagingPath
-					if filepath.Dir(temporary) != root || !strings.HasPrefix(filepath.Base(temporary), ".aeronautes-part-") {
-						t.Fatalf("wrong native temporary identity: %+v", a)
-					}
-					switch kind {
-					case "file":
-						return os.WriteFile(temporary, []byte("collision"), 0o600)
-					case "directory":
-						return os.Mkdir(temporary, 0o700)
-					default:
-						return os.Symlink(filepath.Join(root, "keep"), temporary)
-					}
-				},
-				Execute: func(_ DownloadItem, o transfercopy.Observation) error { observed = o; return nil },
-				Verify: func(DownloadItem, transfercopy.Observation) error {
-					t.Fatal("collision invented verification")
-					return nil
-				},
-			}
-			report, err := Download(t.Context(), source, nil, "", "media", "scope\n/", root, "fixture", preflight, nil, recorder)
-			if err != nil || report.Done != 0 || len(report.Failures) != 1 || observed.Result != transfercopy.ResultConflict || observed.Effect != transfercopy.EffectUnresolved {
-				t.Fatalf("collision lost its refusal: %+v %+v %v", report, observed, err)
-			}
-			info, err := os.Lstat(temporary)
-			if err != nil {
-				t.Fatalf("failed exclusive creation unlinked another entry: %v", err)
-			}
-			if kind == "directory" && !info.IsDir() || kind == "symlink" && info.Mode()&os.ModeSymlink == 0 || kind == "file" && !info.Mode().IsRegular() {
-				t.Fatal("collision entry changed type")
-			}
-			if kind == "file" {
-				if data, err := os.ReadFile(temporary); err != nil || string(data) != "collision" {
-					t.Fatal("collision entry changed content")
-				}
-			}
-			if entries, err := os.ReadDir(root); err != nil || len(entries) != 2 {
-				t.Fatalf("collision silently selected another temporary name or placed a target: %+v %v", entries, err)
-			}
-			if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "other writer" {
-				t.Fatal("collision changed unrelated bytes")
-			}
-		})
-	}
-}
-
 func TestDownloadRejectsConstructedIdentity(t *testing.T) {
-	for _, fault := range []string{"prefix", "relative", "dot", "empty", "control", "backslash", "bytes", "duplicate", "directory_size", "directory_name", "case_fold", "file_parent", "file_parent_nonadjacent"} {
+	for _, fault := range []string{"no_plan", "prefix", "relative", "dot", "empty", "control", "backslash", "bytes", "duplicate", "directory_size", "directory_name", "case_fold", "file_parent", "file_parent_nonadjacent"} {
 		t.Run(fault, func(t *testing.T) {
 			root := t.TempDir()
 			item := DownloadItem{Name: "scope/selected", RelPath: "selected", Size: 5, Route: "native"}
@@ -257,8 +188,7 @@ func TestDownloadRejectsConstructedIdentity(t *testing.T) {
 				items = append(items, DownloadItem{Name: "scope/selected/child", RelPath: "selected/child", Size: 5})
 			}
 			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-				Admit:       func(DownloadAdmission) error { t.Fatal("invalid constructed identity reached admission"); return nil },
+				Admit: func(DownloadAdmission) error { t.Fatal("invalid constructed identity reached admission"); return nil },
 				Execute: func(DownloadItem, transfercopy.Observation) error {
 					t.Fatal("invalid constructed identity reached execution")
 					return nil
@@ -268,7 +198,11 @@ func TestDownloadRejectsConstructedIdentity(t *testing.T) {
 					return nil
 				},
 			}
-			if _, err := Download(t.Context(), nil, nil, "", "media", "scope/", root, "fixture", &DownloadPreflight{Items: items}, nil, recorder); err == nil {
+			plan := &DownloadPreflight{Items: items}
+			if fault == "no_plan" {
+				plan = nil
+			}
+			if _, err := Download(t.Context(), nil, nil, "", "media", "scope/", root, plan, nil, recorder); err == nil {
 				t.Fatal("invalid constructed identity was accepted")
 			}
 			if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
@@ -288,11 +222,7 @@ func TestDownloadDirectoryRecording(t *testing.T) {
 			var admitted []DownloadItem
 			var executed, verified []transfercopy.Observation
 			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(a DownloadAdmission) error {
-					if a.StagingPath != "" {
-						t.Fatal("directory marker invented a temporary identity")
-					}
 					admitted = append(admitted, a.Item)
 					if cancelAfterAdmission {
 						cancel()
@@ -302,7 +232,7 @@ func TestDownloadDirectoryRecording(t *testing.T) {
 				Execute: func(_ DownloadItem, o transfercopy.Observation) error { executed = append(executed, o); return nil },
 				Verify:  func(_ DownloadItem, o transfercopy.Observation) error { verified = append(verified, o); return nil },
 			}
-			report, err := Download(ctx, nil, nil, "", "media", "scope/", root, "fixture", &DownloadPreflight{Items: items}, nil, recorder)
+			report, err := Download(ctx, nil, nil, "", "media", "scope/", root, &DownloadPreflight{Items: items}, nil, recorder)
 			if cancelAfterAdmission {
 				if !errors.Is(err, context.Canceled) || report.Done != 0 || len(admitted) != 1 || len(verified) != 0 || len(executed) != 1 || executed[0].Result != transfercopy.ResultNotAttempted || executed[0].Effect != transfercopy.EffectNotAttempted {
 					t.Fatalf("cancelled marker invented materialization: %+v %+v %+v %v", report, executed, verified, err)
@@ -314,49 +244,6 @@ func TestDownloadDirectoryRecording(t *testing.T) {
 				t.Fatalf("directory records lost observed materialization: %+v %+v %+v %v", report, executed, verified, err)
 			} else if info, err := os.Stat(filepath.Join(root, "nested")); err != nil || !info.IsDir() {
 				t.Fatal("successful marker lacks an actual directory")
-			}
-		})
-	}
-}
-
-func TestDownloadCancelledBodyClosure(t *testing.T) {
-	for _, closeFailure := range []bool{false, true} {
-		t.Run(fmt.Sprint(closeFailure), func(t *testing.T) {
-			source, mock := session(t)
-			seed(mock, "media", "scope\n/nested/selected", "bytes")
-			body, _, err := source.OpenObject(t.Context(), "media", "scope\n/nested/selected")
-			if err != nil {
-				t.Fatal(err)
-			}
-			root := t.TempDir()
-			item := DownloadItem{Name: "scope\n/nested/selected", RelPath: "nested/selected", Size: 5, Route: "native"}
-			temporary := filepath.Join(root, "nested", ".aeronautes-part-fixture")
-			closeErr := errors.New("independent source close failure")
-			closes := 0
-			wrapped := downloadCloseReader{Reader: body, close: func() error {
-				closes++
-				err := body.Close()
-				if closeFailure {
-					return errors.Join(err, closeErr)
-				}
-				return err
-			}}
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
-			outcome := nativeDownloadBody(ctx, wrapped, item, testDestination(t, root), temporary, ladderFor(t, nil), nil)
-			want := transfercopy.ResultNotAttempted
-			if closeFailure {
-				want = transfercopy.ResultFailed
-			}
-			if outcome.Result != want || outcome.Effect != transfercopy.EffectNotAttempted || outcome.verification != nil ||
-				closes != 1 || !errors.Is(outcome.err(), context.Canceled) || errors.Is(outcome.err(), closeErr) != closeFailure {
-				t.Fatalf("cancelled open body lost independent closure facts: %+v closes=%d error=%v", outcome, closes, outcome.err())
-			}
-			if closeFailure && outcome.Diagnostic.Code != transfercopy.CodeIO {
-				t.Fatalf("cancellation concealed the independent close failure: %+v", outcome.Diagnostic)
-			}
-			if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
-				t.Fatalf("cancellation after GET allowed local effects: %+v %v", entries, err)
 			}
 		})
 	}
@@ -380,7 +267,6 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 			}
 			admitted := 0
 			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
 				Admit: func(a DownloadAdmission) error {
 					admitted++
 					// Existing collisions now refuse the whole plan at entry.
@@ -410,8 +296,8 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 					t.Fatalf("progress counted attempted names as copied: done=%d bytes=%d total=%d actual files=%d bytes=%d", done, bytes, total, placed, size)
 				}
 			}
-			report, err := Download(t.Context(), source, &fsEngine{session: source}, "remote:media", "media", prefix, root, "fixture", preflight, progress, recorder)
-			if err != nil || report.Done != 1 || report.Bytes != 7 || len(report.Failures) != 1 || updates != 2 || admitted != 2 {
+			report, err := Download(t.Context(), source, &fsEngine{session: source}, "remote:media", "media", prefix, root, preflight, progress, recorder)
+			if err != nil || report.Done != 1 || report.Bytes != 7 || len(report.Failures) != 1 || updates == 0 || admitted != 2 {
 				t.Fatalf("mixed transfer lost final accounting: %+v updates=%d error=%v", report, updates, err)
 			}
 			if data, err := os.ReadFile(filepath.Join(root, "a")); err != nil || string(data) != "other writer" {
@@ -458,15 +344,19 @@ func TestDownloadDirectoryObservation(t *testing.T) {
 	}
 }
 
+// A cancel that lands before the engine is given a batch leaves every
+// admitted file of it recorded as not attempted and gives no child the batch.
+// One that lands after the engine ended normally changes nothing the engine
+// said: each file it reported is downloaded. A cancel while the engine runs
+// is TestACancelledDownloadRecordsWhatTheEngineSaid.
 func TestDownloadEngineCancellationBoundaries(t *testing.T) {
-	for _, boundary := range []string{"control", "before_child", "after_child", "between_placements"} {
+	for _, boundary := range []string{"before_child", "after_child"} {
 		t.Run(boundary, func(t *testing.T) {
 			source, mock := session(t)
 			for _, name := range []string{"a", "b"} {
 				seed(mock, "media", "scope/"+name, "bytes "+name)
 			}
 			root := t.TempDir()
-			writeFile(t, root, "keep", "unrelated")
 			preflight, err := PreflightDownload(t.Context(), source, "media", "scope/", root)
 			if err != nil || preflight.Rejected() {
 				t.Fatalf("fixture preflight: %+v %v", preflight, err)
@@ -475,103 +365,40 @@ func TestDownloadEngineCancellationBoundaries(t *testing.T) {
 			defer cancel()
 			beforeRequests := mock.Requests()
 			admitted := 0
-			executed := map[string]transfercopy.Observation{}
-			verified := map[string]transfercopy.Observation{}
-			engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
-			if boundary == "after_child" {
-				engine.after = func() {
-					for _, name := range []string{"a", "b"} {
-						data, err := os.ReadFile(filepath.Join(root, ".aeronautes-stage-fixture", name))
-						if err != nil || string(data) != "bytes "+name {
-							t.Fatalf("child cancellation lacks actual stage bytes: %q %v", data, err)
-						}
-					}
+			var kept downloadRecords
+			recorder := kept.recorder()
+			admit := recorder.Admit
+			recorder.Admit = func(a DownloadAdmission) error {
+				admitted++
+				if admitted == 2 && boundary == "before_child" {
 					cancel()
 				}
+				return admit(a)
 			}
-			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-				Admit: func(DownloadAdmission) error {
-					admitted++
-					if admitted == 2 && boundary == "before_child" {
-						cancel()
+			engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
+			if boundary == "after_child" {
+				engine.after = cancel
+			}
+			report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", root, preflight, nil, recorder)
+			if admitted != 2 || !errors.Is(err, context.Canceled) {
+				t.Fatalf("report = %+v, admitted %d, %v", report, admitted, err)
+			}
+			for _, name := range []string{"a", "b"} {
+				got := kept.executed["scope/"+name]
+				data, readErr := os.ReadFile(filepath.Join(root, name))
+				switch boundary {
+				case "before_child":
+					if got.Result != transfercopy.ResultNotAttempted || got.Effect != transfercopy.EffectNotAttempted || got.Diagnostic.Code != transfercopy.CodeCancelled || !errors.Is(readErr, os.ErrNotExist) {
+						t.Fatalf("%s was recorded %+v with %v on disk, want not attempted and nothing", name, got, readErr)
 					}
-					return nil
-				},
-				Execute: func(item DownloadItem, observation transfercopy.Observation) error {
-					executed[item.Name] = observation
-					return nil
-				},
-				Verify: func(item DownloadItem, observation transfercopy.Observation) error {
-					verified[item.Name] = observation
-					if boundary == "between_placements" {
-						cancel()
-					}
-					return nil
-				},
-			}
-			report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", root, "fixture", preflight, nil, recorder)
-			if admitted != 2 || errors.Is(err, context.Canceled) != (boundary != "control") {
-				t.Fatalf("cancellation lost admitted scope: %+v admitted=%d err=%v", report, admitted, err)
-			}
-			// Every item carries an execution record at every boundary; the
-			// ones a cancel left staged are recorded as unplaced failures.
-			wantDone, wantFailures := int64(0), 0
-			switch boundary {
-			case "control":
-				wantDone = 2
-			case "after_child":
-				wantFailures = 2
-			case "between_placements":
-				wantDone, wantFailures = 1, 1
-			}
-			if report.Done != wantDone || report.Bytes != wantDone*7 || len(report.Failures) != wantFailures || len(executed) != 2 || int64(len(verified)) != wantDone {
-				t.Fatalf("cancellation invented or erased observed outcomes: %+v execution=%+v verification=%+v", report, executed, verified)
-			}
-			for _, failure := range report.Failures {
-				if !failure.Cancelled {
-					t.Fatalf("cancellation failure not marked as the cancellation: %+v", failure)
-				}
-			}
-			for index, name := range []string{"a", "b"} {
-				data, err := os.ReadFile(filepath.Join(root, name))
-				if int64(index) < wantDone {
-					if err != nil || string(data) != "bytes "+name || executed["scope/"+name].Result != transfercopy.ResultCopied || verified["scope/"+name].Result != transfercopy.ResultVerified {
-						t.Fatalf("cancellation lost an earlier copied file: %q %+v %v", data, executed, err)
-					}
-				} else if !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("known cancellation allowed a later final placement")
-				}
-				if boundary == "before_child" {
-					got := executed["scope/"+name]
-					if got.Result != transfercopy.ResultNotAttempted || got.Effect != transfercopy.EffectNotAttempted || got.Diagnostic.Code != transfercopy.CodeCancelled {
-						t.Fatalf("undispatched cancellation lost positive no-effect knowledge: %+v", got)
-					}
-				} else if boundary != "control" && int64(index) >= wantDone {
-					if got := executed["scope/"+name]; got != unplacedAfterCancel {
-						t.Fatalf("staged item left unplaced by the cancel lacks its one record: %+v", got)
-					}
-					// A cancel removes the partial files this job staged
-					// (ADR 0048). These are the application's own scratch
-					// under a name it invented, not the operator's data,
-					// and the source still holds the object.
-					if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-fixture", name)); !errors.Is(err, os.ErrNotExist) {
-						t.Fatalf("cancellation left this job's staged file behind: %v", err)
+				case "after_child":
+					if got.Result != transfercopy.ResultCopied || !kept.verified["scope/"+name] || readErr != nil || string(data) != "bytes "+name {
+						t.Fatalf("%s was recorded %+v and holds %q (%v), want downloaded", name, got, data, readErr)
 					}
 				}
 			}
-			if boundary == "before_child" {
-				if engine.calls != 0 || mock.Requests() != beforeRequests || report.StageCleanup != nil {
-					t.Fatal("known cancellation dispatched the child or created a stage")
-				}
-				if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-fixture")); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("known cancellation created staging")
-				}
-			} else if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 {
-				t.Fatalf("cancellation confused conservative cleanup with record-refusal retention: %+v", report.StageCleanup)
-			}
-			if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "unrelated" {
-				t.Fatal("cancellation changed unrelated bytes")
+			if boundary == "before_child" && (engine.calls != 0 || mock.Requests() != beforeRequests || report.Done != 0) {
+				t.Fatalf("a cancel before the child ran %d children and %d requests: %+v", engine.calls, mock.Requests()-beforeRequests, report)
 			}
 		})
 	}

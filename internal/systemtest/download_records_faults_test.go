@@ -50,7 +50,6 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 	aliases := h.Container(h.Primary, "record-shared-aliases")
 	other := h.Container(h.Secondary, "record-untouched")
 	h.Seed(h.Primary, source, "outside", []byte("source sentinel"), nil)
-	h.Seed(h.Primary, source, ".aeronautes/stage/other-job/keep", []byte("other job"), nil)
 	h.Seed(h.Secondary, other, "keep", []byte("other account"), nil)
 	shared := []byte("shared bytes")
 	h.Seed(h.Primary, segments, "shared/0", shared, nil)
@@ -77,7 +76,6 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	root := t.TempDir()
 	seedListingLocal(t, root, "selected/keep", []byte("existing destination"))
-	seedListingLocal(t, root, "selected/.aeronautes-stage-other-job/keep", []byte("other stage"))
 	seedListingLocal(t, root, "outside/keep", []byte("unselected"))
 	beforeLocal := snapshotListingLocal(t, root)
 	destination := filepath.Join(root, "selected")
@@ -118,7 +116,7 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 		if strings.HasSuffix(mode, "verification") {
 			totals.Unresolved, totals.Unverified = count-1, 1
 		}
-	} else if mode == "staged_admission" || mixed {
+	} else if mode == "engine_admission" || mixed {
 		totals.Problems = 1
 	}
 	counters := jobs.Counters{ObjectsPlanned: 3, BytesPlanned: int64(3 * len(body)), ObjectsCopied: done, ObjectsVerified: done, BytesCopied: done * int64(len(body))}
@@ -135,24 +133,20 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 	var dirs []string
 	files := map[string][]byte{}
 	gets := map[string]int{}
+	// The engine is given its whole batch before any of its files is
+	// recorded, so a record refused after it ran leaves every file it wrote
+	// in the folder, under its name (ADR 0122 decision 5).
+	engineRan := !native && !directory && !admission
 	for i, name := range names {
-		if int64(i) < done {
+		if int64(i) < done || engineRan {
 			if directory {
 				dirs = append(dirs, "selected/"+strings.TrimSuffix(name, "/"))
 			} else {
 				files["selected/"+name] = body
 			}
 		}
-		if !directory && (native && int64(i) < done || !native && !admission) {
+		if !directory && (native && int64(i) < done || engineRan) {
 			gets[name] = 1
-		}
-	}
-	retained := !native && !directory && !control && !admission
-	if retained {
-		stage := "selected/.aeronautes-stage-" + id
-		dirs = append(dirs, stage)
-		for _, name := range names[1:] {
-			files[stage+"/"+name] = body
 		}
 	}
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), files, dirs...)
@@ -167,20 +161,7 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(destination, strings.TrimSuffix(name, "/"))}) {
 			t.Fatalf("download SQL refusal changed exact admitted locations: %+v", item)
 		}
-		if directory {
-			if item.Staging != nil {
-				t.Fatalf("directory record invented a temporary path: %+v", item)
-			}
-		} else if item.Staging == nil || item.Staging.Kind != jobs.ItemLocal {
-			t.Fatalf("download record lost its staged pathname: %+v", item)
-		} else if native {
-			if filepath.Dir(item.Staging.LocalPath) != destination || !strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-") {
-				t.Fatalf("native download lost its admitted pathname: %+v", item)
-			}
-		} else if item.Staging.LocalPath != filepath.Join(destination, ".aeronautes-stage-"+id, name) {
-			t.Fatalf("engine download lost its admitted pathname: %+v", item)
-		}
-		if mode == "staged_admission" || mixed {
+		if mode == "engine_admission" || mixed {
 			if item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted,
 				Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeIncomplete}}) || item.Verification != nil {
 				t.Fatalf("undispatched download lost positive no-effect knowledge: %+v", item)
@@ -198,14 +179,7 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 		}
 		byKey[item.Key] = item
 	}
-	summary := ""
-	if retained {
-		summary = "download stage retained after required item recording failed; cleanup was not attempted"
-		if !strings.Contains(saved.Job.Error, summary) || strings.Contains(saved.Job.Error, "download stage cleanup:") {
-			t.Fatalf("record refusal fabricated attempted cleanup or omitted retention: %q", saved.Job.Error)
-		}
-	}
-	summary += fmt.Sprintf(" · item outcomes: 0 failed names, 0 conflicts, 0 refusals, %d unresolved, %d unverified, %d with problems", totals.Unresolved, totals.Unverified, totals.Problems)
+	summary := fmt.Sprintf(" · item outcomes: 0 failed names, 0 conflicts, 0 refusals, %d unresolved, %d unverified, %d with problems", totals.Unresolved, totals.Unverified, totals.Problems)
 	result := "verify_mismatch"
 	if control {
 		result = "applied"
@@ -247,7 +221,7 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 
 func downloadRecordFaultCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	t.Run("mixed_admission", func(t *testing.T) { downloadRecordFault(t, makeHarness(t), "mixed_admission") })
-	for _, route := range []string{"native", "staged", "directory"} {
+	for _, route := range []string{"native", "engine", "directory"} {
 		for _, fault := range []string{"first_admission", "admission", "execution", "verification", "control"} {
 			t.Run(route+"_"+fault, func(t *testing.T) { downloadRecordFault(t, makeHarness(t), route+"_"+fault) })
 		}

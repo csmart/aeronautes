@@ -122,7 +122,7 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 							slices.Reverse(items)
 						}
 						before := downloadDestinationSnapshot(t, owned)
-						plan := plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items})
+						plan := &DownloadPreflight{Items: items}
 						requests := mock.Requests()
 						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 						var admissions []DownloadAdmission
@@ -131,13 +131,12 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 						var recorders []*DownloadRecorder
 						if recorded {
 							recorders = []*DownloadRecorder{{
-								Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-								Admit:       func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute:     func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:      func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
+								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
+								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
+								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
 							}}
 						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan,
+						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
 							func(int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if fixture.conflict != "" {
@@ -163,7 +162,6 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 						wantCalls := 0
 						if route == "rclone" && files > 0 {
 							wantCalls = 1
-							want.StageCleanup = &StageCleanupResult{Attempted: true}
 						}
 						if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
 							t.Fatalf("safe direct control failed: report=%+v error=%v Copy calls=%d progress=%d", report, err, engine.calls, progressCalls)
@@ -178,10 +176,6 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 								if a.Item != item || x.Result != transfercopy.ResultCopied || x.Effect != transfercopy.EffectReportedApplied || x.CopiedBytes != item.Size || x.Diagnostic != (transfercopy.Diagnostic{}) ||
 									v.Result != transfercopy.ResultVerified || v.Effect != transfercopy.EffectNotAttempted || v.Diagnostic != (transfercopy.Diagnostic{}) || v.CopiedBytes != 0 {
 									t.Fatalf("safe control lost unchanged identity or observations: item=%+v admission=%+v execution=%+v verification=%+v", item, a, x, v)
-								}
-								if item.Dir && a.StagingPath != "" || !item.Dir && route == "rclone" && a.StagingPath != filepath.Join(root, ".aeronautes-stage-fixture", item.RelPath) ||
-									!item.Dir && route == "native" && (filepath.Dir(a.StagingPath) != filepath.Dir(filepath.Join(root, item.RelPath)) || !strings.HasPrefix(filepath.Base(a.StagingPath), ".aeronautes-part-")) {
-									t.Fatalf("safe control lost staging identity: %+v", a)
 								}
 							}
 						}

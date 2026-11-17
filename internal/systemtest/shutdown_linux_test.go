@@ -184,9 +184,10 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("real child did not reach the body barrier")
 	}
-	stage := filepath.Join(root, ".aeronautes-stage-"+id)
+	// The engine writes the file in the chosen folder under its own partial
+	// name until it has it whole (ADR 0122 decision 5).
 	var writing string
-	// What the stage held on the last look, reported if the wait runs out.
+	// What the folder held on the last look, reported if the wait runs out.
 	//
 	// The body barrier establishes progress at the fixture proxy and nothing
 	// further: between that proxy and these bytes reaching disk sit this job's
@@ -233,7 +234,7 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 			"helper log: "+lifetimeTail(parent.log, 2048))
 	}
 	lifetimeAwaitReporting(t, "real child partial bytes", witness, func() bool {
-		paths, err := filepath.Glob(filepath.Join(stage, "*"))
+		paths, err := filepath.Glob(filepath.Join(root, "*.partial"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -260,19 +261,17 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 			return true
 		}
 		if len(paths) == 0 {
-			// filepath.Glob reports no matches for a missing directory, an
-			// unreadable one and a path that is not a directory, as well as for
-			// an empty one, so the glob alone cannot say which. The directory is
+			// The glob cannot say what the folder holds instead, so it is
 			// asked separately rather than assumed.
-			state := "no stage paths matched"
-			if info, statErr := os.Lstat(stage); statErr != nil {
-				state += fmt.Sprintf("; stage: %v", statErr)
-			} else if !info.IsDir() {
-				state += fmt.Sprintf("; stage is not a directory: mode %s", info.Mode())
-			} else if entries, readErr := os.ReadDir(stage); readErr != nil {
-				state += fmt.Sprintf("; stage unreadable: %v", readErr)
+			state := "no partial file matched"
+			if entries, readErr := os.ReadDir(root); readErr != nil {
+				state += fmt.Sprintf("; folder unreadable: %v", readErr)
 			} else {
-				state += fmt.Sprintf("; stage holds %d entries", len(entries))
+				var names []string
+				for _, entry := range entries {
+					names = append(names, entry.Name())
+				}
+				state += fmt.Sprintf("; folder holds %q", names)
 			}
 			seen = append(seen, state)
 		}
@@ -308,7 +307,7 @@ func shutdownChild(t *testing.T, h *Harness, mode string) {
 	before := lifetimeSnapshot(t, root)
 	partial, ok := before[strings.TrimPrefix(writing, root+string(os.PathSeparator))]
 	switch {
-	case !ok || len(before) != 3:
+	case !ok || len(before) != 2:
 		t.Fatalf("write barrier did not capture one partial and the sentinel: %+v", before)
 	case partial.Size <= 0 || partial.Size > 64*1024:
 		t.Fatalf("retained partial is %d bytes, want between 1 and the %d released: %+v", partial.Size, 64*1024, before)

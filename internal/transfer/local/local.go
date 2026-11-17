@@ -441,9 +441,6 @@ type DownloadPreflight struct {
 	Problems   []Problem      `json:"problems"`
 	TotalBytes int64          `json:"totalBytes"`
 	Objects    int64          `json:"objects"`
-	// nativeSource is the Start listing/HEAD identity for native files.
-	// It is not a bridge field (ADR 0060).
-	nativeSource map[string]downloadSourceIdentity
 }
 
 func (p *DownloadPreflight) Rejected() bool { return rejected(p.Problems) }
@@ -574,7 +571,6 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 	}
 	var names []string
 	var candidates []DownloadItem
-	nativeSource := map[string]downloadSourceIdentity{}
 	// One group per relation; a collision in either refuses the selection.
 	byLower := map[string][]string{}
 	byCaseless := map[string][]string{}
@@ -691,7 +687,6 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 		}
 
 		size := object.Bytes
-		var source downloadSourceIdentity
 		if size == 0 {
 			// A zero-byte listing row may be a DLO manifest whose logical
 			// size the listing does not show (§28.4); one HEAD resolves it.
@@ -700,9 +695,6 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 				return nil, err
 			}
 			size = detail.ContentLength
-			source = headSourceIdentity(detail)
-		} else {
-			source = listingSourceIdentity(object)
 		}
 		route := "rclone"
 		if plan.RcloneUnsafe(prefix + rel) {
@@ -711,7 +703,6 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 		candidates = append(candidates, DownloadItem{
 			Name: object.Name, RelPath: filepath.FromSlash(rel), Size: size, Route: route,
 		})
-		nativeSource[object.Name] = source
 	}
 
 	if missing := missingMember(members, memberSet); missing != "" {
@@ -731,7 +722,6 @@ func PreflightDownloadMembersInto(ctx context.Context, src *swiftcontrol.Session
 		report.Objects++
 		report.TotalBytes += item.Size
 	}
-	report.nativeSource = nativeSource
 	return report, nil
 }
 
@@ -996,7 +986,11 @@ type Report struct {
 	// Bound the examples without truncating the issue count (ADR 0023).
 	PostCommitIssues       int64
 	PostCommitIssueSamples []Failure
-	StageCleanup           *StageCleanupResult
+	// EngineStopped says an engine child of a download did not end normally.
+	// Interrupted, the engine removes the file it was writing; killed, it
+	// leaves that file in the folder under its own temporary name, which
+	// ends ".partial" (measured on the pinned engine).
+	EngineStopped bool
 	// RootDisplacement records when the captured pathname stopped naming
 	// the held destination; effects continued through the handle.
 	RootDisplacement string

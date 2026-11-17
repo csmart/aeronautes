@@ -20,13 +20,12 @@ func assertDownloadRecords(t *testing.T, h *Harness, id, source, prefix, root st
 	if native {
 		want.Failed = count
 	} else {
-		want.Conflicts, want.Unresolved = count, count
+		want.Conflicts = count
 	}
 	if !saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != len(originals) || len(saved.Rows) != 0 {
 		t.Fatalf("download lost exact identities or invented recovery authority: %+v want=%+v", saved, want)
 	}
 	byKey := map[string]jobs.ItemRecord{}
-	stages := map[string]bool{}
 	for _, item := range saved.Items {
 		name, selected := strings.CutPrefix(item.Key, prefix)
 		body, exists := originals[name]
@@ -36,20 +35,10 @@ func assertDownloadRecords(t *testing.T, h *Harness, id, source, prefix, root st
 			item.ID <= 0 || item.CreatedAt.IsZero() || item.Execution == nil {
 			t.Fatalf("download identity differs from source selection and captured local root: %+v", item)
 		}
-		if item.Staging == nil || item.Staging.Kind != jobs.ItemLocal || item.Staging.BookmarkID != "" || item.Staging.Container != "" || item.Staging.Object != "" ||
-			!filepath.IsAbs(item.Staging.LocalPath) || filepath.Clean(item.Staging.LocalPath) != item.Staging.LocalPath || stages[item.Staging.LocalPath] {
-			t.Fatalf("download lost a unique exact staging identity: %+v", item)
-		}
-		stages[item.Staging.LocalPath] = true
-		if native {
-			if filepath.Dir(item.Staging.LocalPath) != root || !strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-") {
-				t.Fatalf("native download stage was not beside its final target: %+v", item)
-			}
-		} else if item.Staging.LocalPath != filepath.Join(root, ".aeronautes-stage-"+id, name) {
-			t.Fatalf("engine download stage differs from actual selected child path: %+v", item)
-		}
 		if problems[name] {
-			expected := jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeConflict}}
+			// The engine left the operator's file alone; the native route's
+			// read was refused by the store.
+			expected := jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeConflict}}
 			if native {
 				expected = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeForbidden, HTTPStatus: 403}}
 			}
@@ -63,11 +52,7 @@ func assertDownloadRecords(t *testing.T, h *Harness, id, source, prefix, root st
 		byKey[item.Key] = item
 	}
 	assertDownloadItemPages(t, h, id, byKey, want)
-	// Cleanup now removes the files this job staged, so an engine download
-	// that failed items leaves nothing behind and reports no cleanup
-	// outcome (ADR 0048).
-	summary := ""
-	summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", want.Failed, want.Conflicts, want.Unresolved, want.Problems)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", want.Failed, want.Conflicts, want.Unresolved, want.Problems)
 	if len(saved.Audit) != 1 || saved.Audit[0].Summary != summary {
 		t.Fatalf("download terminal audit is not item-derived: %+v want=%q", saved.Audit, summary)
 	}
@@ -95,16 +80,17 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 				row.Source != (app.JobItemLocationDTO{Kind: "swift", BookmarkID: item.Source.BookmarkID, Container: item.Source.Container, Object: item.Source.Object,
 					Display: strconv.Quote(item.Source.BookmarkID) + " / " + strconv.Quote(item.Source.Container) + " / " + strconv.Quote(item.Source.Object)}) ||
 				row.Destination != (app.JobItemLocationDTO{Kind: "local", LocalPath: item.Destination.LocalPath, Display: strconv.Quote(item.Destination.LocalPath)}) ||
-				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes || row.PublicationRequired != item.PublicationRequired {
+				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes {
 				t.Fatalf("public download identity differs: %+v", row)
 			}
-			if (row.Staging == nil) != (item.Staging == nil) || row.Staging != nil &&
-				*row.Staging != (app.JobItemLocationDTO{Kind: "local", LocalPath: item.Staging.LocalPath, Display: strconv.Quote(item.Staging.LocalPath)}) {
-				t.Fatalf("public download staging path differs: %+v", row)
+			// A download writes each file at its name, so an item has no
+			// staging location and no record of a final publication (ADR 0122
+			// decisions 5 and 7).
+			if item.Staging != nil || row.Staging != nil || item.PublicationRequired || row.PublicationRequired || item.Publication != nil || row.Publication != nil {
+				t.Fatalf("a download item carries a stage or a publication: stored=%+v public=%+v", item, row)
 			}
 			assertUploadPublicObservation(t, row.Execution, item.Execution)
 			assertUploadPublicObservation(t, row.Verification, item.Verification)
-			assertUploadPublicObservation(t, row.Publication, item.Publication)
 			seen[row.Key], lastID = true, rowID
 		}
 		encoded, err := json.Marshal(page)

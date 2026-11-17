@@ -2,7 +2,6 @@ package local
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -16,8 +15,7 @@ import (
 // The executor's authority over the selected directory is the handle it
 // holds from the pick. Each case replaces exactly one entry at one
 // deterministic boundary the production code exposes: before the first
-// effect, the engine boundary between staging and placement, or the
-// progress callback between two items. The invariants are K-XFER-011 and
+// effect, after the engine ran, or the progress callback between two items. The invariants are K-XFER-011 and
 // P18: nothing outside the selected directory changes, every reported
 // success exists inside the directory picked, residue is reported, and
 // each refusal names its reason. The archived before probes under
@@ -127,13 +125,13 @@ func rootAuthorityTree(t *testing.T, root string) map[string]string {
 	return result
 }
 
-type afterStageEngine struct {
+type afterEngine struct {
 	inner Engine
 	after func()
 	calls int
 }
 
-func (e *afterStageEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+func (e *afterEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	e.calls++
 	result, err := e.inner.Copy(ctx, src, dst, names, onEvent)
 	if err == nil && e.after != nil {
@@ -152,11 +150,8 @@ func rootAuthorityMarker(rel string) DownloadItem {
 	return DownloadItem{Name: "scope/" + rel + "/", RelPath: filepath.FromSlash(rel), Dir: true}
 }
 
-const rootAuthorityStage = "root-authority"
-
 const (
 	rootAuthorityRefusal      = "is not an inspectable ordinary directory"
-	rootAuthorityStageReplace = "was replaced under the selected directory while the engine ran"
 	rootAuthorityDisplaced    = "the selected directory was relocated or replaced at its pathname"
 	rootAuthorityEngineRefuse = "the engine can only be given a pathname; engine items were not attempted"
 )
@@ -165,19 +160,17 @@ type rootAuthorityCase struct {
 	name  string
 	items []DownloadItem
 	// seam: "start" acts after the handle is held and before the first
-	// effect, "stage" after the engine stages, "progress" after the first
+	// effect, "engine" after the engine ran, "progress" after the first
 	// item, "" never.
 	seam string
-	// replace: "root", "stage", or a path relative to the selected directory.
-	replace        string
-	existingParent bool
-	deleted        bool
-	wantDone       int64
-	wantFailed     []string
-	wantFailure    string
-	wantIssues     bool
-	wantDisplaced  string
-	realRoot       string
+	// replace: "root", or a path relative to the selected directory.
+	replace       string
+	deleted       bool
+	wantDone      int64
+	wantFailed    []string
+	wantFailure   string
+	wantDisplaced string
+	realRoot      string
 }
 
 func rootAuthorityCases() []rootAuthorityCase {
@@ -188,18 +181,8 @@ func rootAuthorityCases() []rootAuthorityCase {
 	marker := []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("m")}
 	markerNested := []DownloadItem{rootAuthorityFile("a.bin", "native"), rootAuthorityMarker("redirect/m")}
 	return []rootAuthorityCase{
-		// Cleanup now removes the planned files as well as the planned
-		// directories, so these two leave no residue and report none. The
-		// invariant below still binds: residue implies a report, and no
-		// residue implies none (ADR 0048).
-		{name: "engine_parent_after_stage", items: engineNested, seam: "stage", replace: "redirect",
-			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, realRoot: "selected"},
-		{name: "engine_existing_parent_after_stage", items: engineNested, seam: "stage", replace: "redirect", existingParent: true,
-			wantFailed: []string{"scope/redirect/payload.bin"}, wantFailure: rootAuthorityRefusal, realRoot: "selected"},
-		{name: "engine_root_after_stage", items: engine, seam: "stage", replace: "root",
+		{name: "engine_root_after_the_engine", items: engine, seam: "engine", replace: "root",
 			wantDone: 1, wantDisplaced: "after the last effect", realRoot: "moved"},
-		{name: "engine_stage_replaced", items: engine, seam: "stage", replace: "stage",
-			wantFailed: []string{"scope/payload.bin"}, wantFailure: rootAuthorityStageReplace, wantIssues: true, realRoot: "selected"},
 		{name: "native_root_between_items", items: native, seam: "progress", replace: "root",
 			wantDone: 2, wantDisplaced: "after the last effect", realRoot: "moved"},
 		{name: "native_parent_between_items", items: nativeNested, seam: "progress", replace: "redirect",
@@ -226,9 +209,6 @@ func TestDownloadRootAuthority(t *testing.T) {
 	for _, c := range rootAuthorityCases() {
 		t.Run(c.name, func(t *testing.T) {
 			f := newRootAuthorityFixture(t)
-			if c.existingParent {
-				rootAuthorityWrite(t, filepath.Join(f.selected, c.replace), "keep", "existing parent contents")
-			}
 			s, mock := session(t)
 			var objects, total int64
 			for _, item := range c.items {
@@ -241,17 +221,14 @@ func TestDownloadRootAuthority(t *testing.T) {
 				total += item.Size
 			}
 			act := func() {
-				switch c.replace {
-				case "root":
+				if c.replace == "root" {
 					f.replaceRoot(t)
-				case "stage":
-					f.replaceEntry(t, downloadStagePrefix+rootAuthorityStage)
-				default:
+				} else {
 					f.replaceEntry(t, c.replace)
 				}
 			}
-			engine := &afterStageEngine{inner: &fsEngine{s}}
-			if c.seam == "stage" {
+			engine := &afterEngine{inner: &fsEngine{s}}
+			if c.seam == "engine" {
 				engine.after = act
 			}
 			replaced := false
@@ -270,12 +247,11 @@ func TestDownloadRootAuthority(t *testing.T) {
 				act()
 			}
 			before := rootAuthorityTree(t, f.owned)
-			plan := plannedWithIdentities(t, s, "media", &DownloadPreflight{Items: c.items, Objects: objects, TotalBytes: total})
-			report, err := DownloadInto(t.Context(), s, engine, "aeronautes_src:media", "media", "scope/", destination, rootAuthorityStage, plan, progress)
+			plan := &DownloadPreflight{Items: c.items, Objects: objects, TotalBytes: total}
+			report, err := DownloadInto(t.Context(), s, engine, "aeronautes_src:media", "media", "scope/", destination, plan, progress)
 			after := rootAuthorityTree(t, f.owned)
 
-			// Nothing outside the selected directory changes, and an existing
-			// parent moved aside keeps its contents.
+			// Nothing outside the selected directory changes.
 			for key, state := range after {
 				if key == "outside" || strings.HasPrefix(key, "outside/") {
 					if want, existed := before[key]; !existed || want != state {
@@ -287,9 +263,6 @@ func TestDownloadRootAuthority(t *testing.T) {
 				if (key == "outside" || strings.HasPrefix(key, "outside/")) && after[key] == "" {
 					t.Errorf("outside entry %q disappeared", key)
 				}
-			}
-			if c.existingParent && after["moved-parent/keep"] != "file:existing parent contents" {
-				t.Errorf("existing parent moved aside changed: %q", after["moved-parent/keep"])
 			}
 
 			if c.deleted {
@@ -306,7 +279,7 @@ func TestDownloadRootAuthority(t *testing.T) {
 			}
 
 			// Exact outcomes: done count, the failed names with their reason,
-			// residue reporting and the displacement note.
+			// and the displacement note.
 			if report.Done != c.wantDone {
 				t.Errorf("done %d, want %d: %+v", report.Done, c.wantDone, report)
 			}
@@ -324,10 +297,6 @@ func TestDownloadRootAuthority(t *testing.T) {
 				if !failed[name] {
 					t.Errorf("expected failure for %q is missing: %+v", name, report.Failures)
 				}
-			}
-			issues := report.StageCleanup != nil && (report.StageCleanup.Retained || report.StageCleanup.Issues > 0)
-			if issues != c.wantIssues {
-				t.Errorf("stage cleanup issues=%v, want %v: %+v", issues, c.wantIssues, report.StageCleanup)
 			}
 			if c.wantDisplaced == "" && report.RootDisplacement != "" || c.wantDisplaced != "" && !strings.Contains(report.RootDisplacement, rootAuthorityDisplaced+" "+c.wantDisplaced) {
 				t.Errorf("displacement note %q, want %q", report.RootDisplacement, c.wantDisplaced)
@@ -352,24 +321,15 @@ func TestDownloadRootAuthority(t *testing.T) {
 				}
 			}
 
-			// Residue anywhere in the owned tree is reported, never silent.
-			residue := 0
+			// The application's own temporary is gone whichever way an item
+			// ended.
 			for key := range after {
-				if strings.Contains(key, downloadStagePrefix) || strings.Contains(key, ".aeronautes-part-") {
-					residue++
+				if strings.Contains(key, downloadPartPrefix) {
+					t.Errorf("a temporary remains: %q", key)
 				}
-			}
-			if residue > 0 && !issues {
-				t.Errorf("%d stage or temporary entries remain without a retained or failed cleanup report", residue)
-			}
-			if residue == 0 && c.wantIssues {
-				t.Errorf("cleanup reported issues without residue: %+v", report.StageCleanup)
 			}
 			if engine.calls > 1 {
 				t.Errorf("engine invoked %d times", engine.calls)
-			}
-			if c.seam == "" && errors.Is(err, fs.ErrExist) {
-				t.Errorf("control saw an existing stage: %v", err)
 			}
 		})
 	}

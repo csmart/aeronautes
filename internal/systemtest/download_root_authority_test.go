@@ -1,7 +1,6 @@
 package systemtest
 
 import (
-	"context"
 	"crypto/sha256"
 	"net/http"
 	"os"
@@ -17,11 +16,12 @@ import (
 )
 
 // The picker token names the directory picked, held by handle from the
-// pick through every effect of every job it starts. These cases replace
-// the selected root or a parent under it at one deterministic boundary
-// the service exposes: the held Swift response before a native write,
-// the engine boundary between staging and placement, or the gap between
-// the operator's preflight and start calls. The assertions are exact:
+// pick through every effect of every job it starts, and the engine is
+// anchored to that handle (ADR 0122 decision 5). These cases replace the
+// selected root or a parent under it at one deterministic boundary the
+// service exposes: the held Swift response before a write, which on the
+// engine route is after the application made the file's folders, or the
+// gap between the operator's preflight and start calls. The assertions are exact:
 // where every byte landed, which items failed and why, and what the job
 // reported. The archived service probe under docs/experiments/probes/
 // failed eight of these cases on both providers.
@@ -29,22 +29,21 @@ import (
 type rootAuthorityServiceCase struct {
 	name    string
 	route   string // engine, native or marker
-	seam    string // stage, get, bridge, or empty for a control
+	seam    string // get, bridge, or empty for a control
 	replace string // root or parent
 }
 
 const (
-	rootAuthorityRefusal      = "is not an inspectable ordinary directory"
-	rootAuthorityEngineRefuse = "the engine can only be given a pathname; engine items were not attempted"
-	rootAuthorityEngineGate   = "engine downloads are refused on this platform"
-	rootAuthorityStageReplace = "was replaced under the selected directory while the engine ran"
+	rootAuthorityRefusal    = "is not an inspectable ordinary directory"
+	rootAuthorityEngineGate = "engine downloads are refused on this platform"
 )
 
 func downloadRootAuthorityCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	for _, c := range []rootAuthorityServiceCase{
-		{"engine_parent_after_stage", "engine", "stage", "parent"},
-		{"engine_root_after_stage", "engine", "stage", "root"},
-		{"engine_stage_relocated_during_get", "engine", "get", "stage"},
+		// No engine case for a folder replaced during the copy: the engine
+		// follows it, as rclone does, and no rule of the application's
+		// governs it (ADR 0122 decision 5).
+		{"engine_root_during_get", "engine", "get", "root"},
 		{"native_parent_during_get", "native", "get", "parent"},
 		{"native_root_during_get", "native", "get", "root"},
 		{"marker_parent_during_get", "marker", "get", "parent"},
@@ -83,7 +82,7 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	selected := filepath.Join(owned, "selected")
 	outside := filepath.Join(owned, "outside")
 	moved := filepath.Join(owned, "moved")
-	movedStage := filepath.Join(owned, "moved-stage")
+	movedParent := filepath.Join(owned, "moved-parent")
 	seedListingLocal(t, owned, "selected/keep", []byte("selected sentinel\x00\xff"))
 	seedListingLocal(t, owned, "outside/keep", []byte("outside sentinel"))
 	// A newline in the prefix keeps the child engine away, so the native
@@ -118,7 +117,6 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	h.Seed(h.Secondary, other, "keep", []byte("other remote sentinel"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 
-	stageDir := ""
 	act := func() {
 		if c.replace == "root" {
 			if err := os.Rename(selected, moved); err != nil {
@@ -129,20 +127,16 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 			}
 			return
 		}
-		if c.replace == "stage" {
-			// The stage this executor created is moved out of the selected
-			// directory while the child's source read is held, and a link
-			// to the outside directory is left at its name.
-			if err := os.Rename(stageDir, movedStage); err != nil {
+		// Absent at admission, so the complete inspection admits it. On the
+		// engine route the application has made it by the time the engine
+		// reads, so the folder it made is moved away for the link.
+		parentPath := filepath.Join(selected, "redirect")
+		if info, err := os.Lstat(parentPath); err == nil && info.IsDir() {
+			if err := os.Rename(parentPath, movedParent); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(outside, stageDir); err != nil {
-				t.Fatal(err)
-			}
-			return
 		}
-		// Absent at admission, so the complete inspection admits it.
-		if err := os.Symlink(outside, filepath.Join(selected, "redirect")); err != nil {
+		if err := os.Symlink(outside, parentPath); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -155,14 +149,6 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	} else {
 		trace = copyCompletionProxy(t, h, h.Primary, "")
 	}
-	stageCalls := &atomic.Int32{}
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error {
-		stageCalls.Add(1)
-		if c.seam == "stage" {
-			act()
-		}
-		return nil
-	})
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
 	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix})
 	if err != nil || picked == nil || picked.Dir != selected {
@@ -181,7 +167,6 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	if err != nil {
 		t.Fatalf("start refused an admitted selection: %v", err)
 	}
-	stageDir = filepath.Join(selected, ".aeronautes-stage-"+id)
 	if c.seam == "get" {
 		event, err := barrier.Wait(t.Context())
 		if err != nil || event.StatusCode != http.StatusOK {
@@ -209,8 +194,8 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	}
 	sort.Strings(added)
 	sort.Strings(changed)
-	t.Logf("root authority service outcome: state=%s error=%q counters=%+v totals=%+v stageCalls=%d added=%v changed=%v",
-		job.State, job.Error, job.Counters, saved.ItemTotals, stageCalls.Load(), added, changed)
+	t.Logf("root authority service outcome: state=%s error=%q counters=%+v totals=%+v added=%v changed=%v",
+		job.State, job.Error, job.Counters, saved.ItemTotals, added, changed)
 
 	// Nothing outside the selected directory changes.
 	for _, key := range append(append([]string(nil), added...), changed...) {
@@ -235,13 +220,10 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	var wantCopied int64
 	var wantFailedRel []string
 	// Without a descriptor anchor the engine route is refused on this
-	// platform, controls included. With the anchor, a stage relocated
-	// while the child runs fails its items with the stage diagnosis and
-	// the child's bytes stay in the relocated stage this executor created.
+	// platform, controls included.
 	engineRefused := c.route == "engine" && !rclone.AnchorSupported
-	stageRelocated := c.replace == "stage" && !engineRefused
 	for _, object := range objects {
-		if c.replace == "parent" && c.seam != "" && strings.HasPrefix(object.rel, "redirect/") || engineRefused || stageRelocated {
+		if c.replace == "parent" && c.seam != "" && strings.HasPrefix(object.rel, "redirect/") || engineRefused {
 			wantFailedRel = append(wantFailedRel, object.rel)
 			continue
 		}
@@ -262,19 +244,6 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 	case c.seam == "":
 		if job.Error != "" {
 			t.Errorf("control reported an error: %q", job.Error)
-		}
-	case stageRelocated:
-		// A displaced stage is retained wherever it was moved, so the
-		// outcome is now the retained one rather than a bare issue count
-		// (ADR 0048 decision 9, ADR 0035 decision 7).
-		if !strings.Contains(job.Error, rootAuthorityStageReplace) ||
-			!strings.Contains(job.Error, "stage cleanup") && !strings.Contains(job.Error, "stage retained") {
-			t.Errorf("relocated stage was not reported with its diagnosis and retained cleanup: %q", job.Error)
-		}
-		key := "moved-stage/" + objects[0].rel
-		state, found := afterLocal[key]
-		if !found || !state.mode.IsRegular() || state.size != int64(len(objects[0].body)) || state.digest != sha256.Sum256(objects[0].body) {
-			t.Errorf("the child's bytes are not in the relocated stage this executor created at %q: %+v %v", key, state, found)
 		}
 	case c.replace == "root":
 		if !strings.Contains(job.Error, "the selected directory was relocated or replaced at its pathname") {
@@ -317,32 +286,13 @@ func downloadRootAuthorityService(t *testing.T, h *Harness, c rootAuthorityServi
 		}
 	}
 
-	// Stage or temporary residue is reported as a cleanup problem, and a
-	// refused engine placement retains its staged bytes under the stage.
-	residue := 0
+	// Neither route leaves a temporary file of its own: the application
+	// removes its part file however the item ends, and the engine, which
+	// ended normally, removed or renamed its partial file.
 	for _, key := range added {
-		if strings.Contains(key, ".aeronautes-stage-") || strings.Contains(key, ".aeronautes-part-") {
-			residue++
+		if strings.Contains(key, ".aeronautes-part-") || strings.HasSuffix(key, ".partial") {
+			t.Errorf("a temporary file remains at %q", key)
 		}
-	}
-	// Residue is always reported, under whichever of the three outcomes
-	// applies: cleanup not attempted, or cleanup ran and left some (ADR 0048).
-	if residue > 0 && !strings.Contains(job.Error, "stage cleanup") && !strings.Contains(job.Error, "stage retained") {
-		t.Errorf("%d stage or temporary entries remain while the job reports %q with error %q", residue, job.State, job.Error)
-	}
-	// A refused engine placement used to leave its stage behind. Cleanup now
-	// removes the files this job staged, so the stage goes with them and the
-	// refusal is carried by the item records rather than by residue.
-	// A stage this executor still owns is cleaned; one another actor moved
-	// is retained wherever it went, so the relocated case is excluded.
-	if c.route == "engine" && (c.replace == "parent" || c.replace == "stage") && !engineRefused && !stageRelocated && residue > 0 {
-		t.Errorf("refused engine placement retained a stage it staged itself: added=%v", added)
-	}
-	if c.route == "engine" && !engineRefused && stageCalls.Load() != 1 {
-		t.Errorf("engine boundary observed %d times", stageCalls.Load())
-	}
-	if engineRefused && stageCalls.Load() != 0 {
-		t.Errorf("refused engine still ran %d times", stageCalls.Load())
 	}
 
 	if len(trace.writeSnapshot()) != 0 {

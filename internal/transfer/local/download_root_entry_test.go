@@ -54,7 +54,7 @@ func TestDownloadRejectsDestinationBeforeEffects(t *testing.T) {
 				item.Dir, item.Size = true, 0
 			}
 			plan := &DownloadPreflight{Items: []DownloadItem{item}, Objects: 1, TotalBytes: item.Size}
-			report, err := Download(t.Context(), s, engine, "aeronautes_src:media", "media", "", captured, "root-entry", plan, nil)
+			report, err := Download(t.Context(), s, engine, "aeronautes_src:media", "media", "", captured, plan, nil)
 			if report != nil || err == nil || err.Error() != downloadRootTestRefusal || engine.calls != 0 {
 				t.Errorf("changed destination reached execution: %+v %v engine_calls=%d", report, err, engine.calls)
 			}

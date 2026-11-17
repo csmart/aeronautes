@@ -135,19 +135,6 @@ func (r *DestinationRoot) Displaced() (bool, error) {
 	return !os.SameFile(resolved, r.identity), nil
 }
 
-// displacedAt reports whether the entry at name beneath parent is no
-// longer this held directory.
-func (r *DestinationRoot) displacedAt(parent *os.Root, name string) (bool, error) {
-	current, err := parent.Lstat(name)
-	if err != nil {
-		if downloadChildAbsent(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	return !os.SameFile(current, r.identity), nil
-}
-
 // openDirectory opens the directory at rel beneath the held root one
 // component at a time. Every component is inspected through the parent
 // handle before it is opened, links and non-directories are refused,
@@ -260,60 +247,4 @@ func atPath(err error, op, display string) error {
 		return &os.PathError{Op: op, Path: display, Err: pathErr.Err}
 	}
 	return err
-}
-
-// openChildDirectory binds a handle to the directory named base under
-// parent after inspecting it, for directories this executor created.
-func (r *DestinationRoot) openChildDirectory(parent *os.Root, base string) (*DestinationRoot, error) {
-	display := filepath.Join(r.path, base)
-	opened, _, err := r.openComponent(parent, base, display, false)
-	if err != nil {
-		return nil, err
-	}
-	return bindDestinationRoot(opened, display, nil)
-}
-
-// publication links the verified staged file into its inspected parent.
-// Both parents are handles bound to inspected directories; the root
-// relative names exist for the platform that links by name.
-type publication struct {
-	root       *DestinationRoot
-	stagedRoot *os.Root
-	stagedBase string
-	stagedRel  string
-	targetRoot *os.Root
-	targetBase string
-	targetRel  string
-	// The captured pathnames of both entries, for reports only.
-	stagedDisplay string
-	targetDisplay string
-	// stopped reports why the job's records can no longer be written, or
-	// nil; a nil hook never says so. A read that a cancel ended keeps its
-	// partial file when it does (DownloadRecorder.Stopped).
-	stopped func() error
-}
-
-// publishVerified links the verified file to its target with no-replace
-// semantics and confirms that the target now names that file. A
-// mismatch after a successful link means the staged entry was swapped
-// between verification and linking; the link this executor created to
-// the swapped entry is removed and the failure reported. A target that
-// no longer names either is left alone and reported.
-func (p publication) publishVerified(verified os.FileInfo) error {
-	if err := p.link(); err != nil {
-		return err
-	}
-	placed, err := p.targetRoot.Lstat(p.targetBase)
-	if err != nil {
-		return fmt.Errorf("published file cannot be inspected after linking: %w", err)
-	}
-	if os.SameFile(placed, verified) {
-		return nil
-	}
-	current, err := p.stagedRoot.Lstat(p.stagedBase)
-	if err == nil && os.SameFile(placed, current) {
-		return errors.Join(fmt.Errorf("staged file %q was substituted between verification and publication; the link to the substitute was removed", p.stagedDisplay),
-			unlinkFileAt(p.targetRoot, p.targetBase, p.targetDisplay))
-	}
-	return fmt.Errorf("target %q does not name the verified file after publication; the entry was left in place", p.targetDisplay)
 }

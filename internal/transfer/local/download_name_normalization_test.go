@@ -235,7 +235,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 							slices.Reverse(items)
 						}
 						before := downloadDestinationSnapshot(t, owned)
-						plan := plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items})
+						plan := &DownloadPreflight{Items: items}
 						requests := mock.Requests()
 						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 						var admissions []DownloadAdmission
@@ -244,13 +244,12 @@ func TestDownloadNameFormDirect(t *testing.T) {
 						var recorders []*DownloadRecorder
 						if recorded {
 							recorders = []*DownloadRecorder{{
-								Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-								Admit:       func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute:     func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:      func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
+								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
+								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
+								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
 							}}
 						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture",
+						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root,
 							plan, func(int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if !fixture.refused() {
@@ -271,7 +270,6 @@ func TestDownloadNameFormDirect(t *testing.T) {
 								want.NativeRouted = fileCount
 							} else if fileCount > 0 {
 								wantCalls = 1
-								want.StageCleanup = &StageCleanupResult{Attempted: true}
 							}
 							if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
 								t.Fatalf("accepted control lost its exact outcome: report=%+v want=%+v error=%v Copy calls=%d want=%d progress=%d",
@@ -289,12 +287,6 @@ func TestDownloadNameFormDirect(t *testing.T) {
 										v.Result != transfercopy.ResultVerified || v.Effect != transfercopy.EffectNotAttempted ||
 										v.Diagnostic != (transfercopy.Diagnostic{}) || v.CopiedBytes != 0 {
 										t.Fatalf("accepted control lost identity or observations: item=%+v admission=%+v execution=%+v verification=%+v", item, a, x, v)
-									}
-									if item.Dir && a.StagingPath != "" ||
-										!item.Dir && route == "rclone" && a.StagingPath != filepath.Join(root, ".aeronautes-stage-fixture", item.RelPath) ||
-										!item.Dir && route == "native" && (filepath.Dir(a.StagingPath) != filepath.Dir(filepath.Join(root, item.RelPath)) ||
-											!strings.HasPrefix(filepath.Base(a.StagingPath), ".aeronautes-part-")) {
-										t.Fatalf("accepted control lost staging identity: %+v", a)
 									}
 								}
 							}

@@ -1,11 +1,7 @@
 package systemtest
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -21,10 +17,11 @@ func TestDownloadBatchesRealChildrenRealSwift(t *testing.T) {
 	downloadBatchesRealChildren(t, New(t))
 }
 
-// ADR 0074 decision 3 on real engine children: a selection one name past
-// the batch bound runs two children through the actual pinned rclone,
-// every name is placed and verified, the stage is gone, and the records
-// are complete.
+// ADR 0074 decision 3 with the real engine: a selection one name past the
+// batch bound downloads through the pinned rclone with every file in the
+// chosen folder with its bytes, nothing else there, and every record
+// complete. Where the names are split is pinned in the local package; this
+// is the run across the bound with real children.
 func downloadBatchesRealChildren(t *testing.T, h *Harness) {
 	t.Helper()
 	count := transfercopy.DefaultBatchNames + 1
@@ -41,8 +38,7 @@ func downloadBatchesRealChildren(t *testing.T, h *Harness) {
 	if err != nil || picked == nil {
 		t.Fatalf("pick: %+v %v", picked, err)
 	}
-	var children atomic.Int32
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { children.Add(1); return nil })
+	localBefore := snapshotListingLocal(t, root)
 	request := app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/", DestDirToken: picked.Token}
 	id, err := h.Transfer.StartDownload(t.Context(), request)
 	if err != nil {
@@ -59,18 +55,11 @@ func downloadBatchesRealChildren(t *testing.T, h *Harness) {
 	if job.State != "complete" || job.Error != "" || job.Counters != want {
 		t.Fatalf("batched download: state=%s error=%q counters=%+v want %+v", job.State, job.Error, job.Counters, want)
 	}
-	if children.Load() != 2 {
-		t.Fatalf("engine children: %d, want 2 for %d names", children.Load(), count)
-	}
+	files := map[string][]byte{}
 	for i := range count {
-		data, err := os.ReadFile(filepath.Join(root, fmt.Sprintf("o-%04d.bin", i)))
-		if err != nil || string(data) != string(body) {
-			t.Fatalf("o-%04d.bin after the batched download: %q %v", i, data, err)
-		}
+		files[fmt.Sprintf("o-%04d.bin", i)] = body
 	}
-	if _, err := os.Lstat(filepath.Join(root, ".aeronautes-stage-"+id)); !os.IsNotExist(err) {
-		t.Fatalf("stage left behind: %v", err)
-	}
+	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), files)
 	saved := uploadRecoveryRead(t, h.database, id)
 	if !saved.ItemsCaptured || int64(len(saved.Items)) != n || saved.ItemTotals != (jobs.ItemTotals{Items: n, Planned: n, Admitted: n}) {
 		t.Fatalf("records after the batched download: captured=%v items=%d totals=%+v", saved.ItemsCaptured, len(saved.Items), saved.ItemTotals)

@@ -1,7 +1,6 @@
 package systemtest
 
 import (
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -77,7 +76,6 @@ func downloadDirAliases(t *testing.T, h *Harness, c dirAliasServiceCase) {
 	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
 	beforeA := h.SnapshotNamespace(h.Primary)
 	trace := copyCompletionProxy(t, h, h.Primary, "")
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { return nil })
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
 	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/"})
 	if err != nil || picked == nil {

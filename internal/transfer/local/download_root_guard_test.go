@@ -56,7 +56,7 @@ func TestDownloadRejectsChangedDestination(t *testing.T) {
 			}
 			// Even an empty internally supplied plan must not bypass the root
 			// contract; no source or engine is needed before rejecting it.
-			report, err := Download(t.Context(), nil, nil, "", "media", "", captured, "root-guard", &DownloadPreflight{}, nil)
+			report, err := Download(t.Context(), nil, nil, "", "media", "", captured, &DownloadPreflight{}, nil)
 			if report != nil || err == nil || err.Error() != downloadRootTestRefusal {
 				t.Errorf("executor admitted a changed destination: %+v %v", report, err)
 			}

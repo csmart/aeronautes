@@ -14,7 +14,7 @@ export function folderSummary(picked: Pick<PickedFilesDTO, "folder" | "files" | 
     ? `Nothing to upload: folder "${picked.folder}" holds no files`
     : `Folder "${picked.folder}": ${files} ${files === 1 ? "file" : "files"} to upload into ${into}${picked.folder}/`];
   if (picked.skipped > 0) {
-    parts.push(`${picked.skipped} ${picked.skipped === 1 ? "entry" : "entries"} skipped (links, other special entries and a download's own staging are left out)`);
+    parts.push(`${picked.skipped} ${picked.skipped === 1 ? "entry" : "entries"} skipped (links, other special entries and a download's own partial files are left out)`);
   }
   if (picked.emptyDirectories > 0) {
     parts.push(`${picked.emptyDirectories} empty ${picked.emptyDirectories === 1 ? "directory is" : "directories are"} not uploaded`);

@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -63,29 +66,10 @@ func seed(mock *swifttest.Server, container, name, content string) {
 	})
 }
 
-// fsEngine is the test engine: local↔mock-swift over the sessions.
-// plannedWithIdentities gives a hand-built plan the source identities the
-// preflight captures for every planned file, so the engine route can
-// verify what the test engine stages against the source (ADR 0070).
-func plannedWithIdentities(t *testing.T, session *swiftcontrol.Session, container string, plan *DownloadPreflight) *DownloadPreflight {
-	t.Helper()
-	if session == nil {
-		return plan
-	}
-	plan.nativeSource = map[string]downloadSourceIdentity{}
-	for _, item := range plan.Items {
-		if item.Dir {
-			continue
-		}
-		detail, err := session.ObjectDetail(t.Context(), container, item.Name)
-		if err != nil {
-			t.Fatalf("capture identity of %q: %v", item.Name, err)
-		}
-		plan.nativeSource[item.Name] = headSourceIdentity(detail)
-	}
-	return plan
-}
-
+// fsEngine is the test engine: local↔mock-swift over the sessions. It
+// prints the lines the pinned engine prints (docs/rclone.md): one for each
+// file it writes, and, for a download, which it is always told to run with
+// the destination's existing files left alone, one for each file it leaves.
 type fsEngine struct {
 	session *swiftcontrol.Session
 }
@@ -119,17 +103,26 @@ func (e *fsEngine) Copy(ctx context.Context, src, dst string, names []string, on
 				onEvent(rclone.Event{Level: "info", Object: name, Msg: "Copied (new)"})
 			}
 		case !srcLocal && dstLocal: // download
+			target := filepath.Join(dstP, name)
+			if _, err := os.Lstat(target); err == nil {
+				if onEvent != nil {
+					onEvent(rclone.Event{Level: "debug", Object: name, Msg: "Destination exists, skipping"})
+				}
+				continue
+			}
 			body, _, err := e.session.OpenObject(ctx, srcC, srcP+name)
 			if err != nil {
 				return &rclone.Result{ExitCode: 1}, nil
 			}
-			target := filepath.Join(dstP, name)
 			_ = os.MkdirAll(filepath.Dir(target), 0o755)
 			var buf bytes.Buffer
 			_, _ = buf.ReadFrom(body)
 			body.Close()
 			if err := os.WriteFile(target, buf.Bytes(), 0o644); err != nil {
 				return &rclone.Result{ExitCode: 1}, nil
+			}
+			if onEvent != nil {
+				onEvent(rclone.Event{Level: "info", Object: name, Msg: "Copied (new)"})
 			}
 		}
 	}
@@ -280,7 +273,7 @@ func TestDownloadExecutes(t *testing.T) {
 	if report.Rejected() {
 		t.Fatalf("unexpected rejection: %+v", report.Problems)
 	}
-	result, err := Download(ctx, s, &fsEngine{s}, "aeronautes_src:media", "media", "snap/", destDir, "test-job", report, nil)
+	result, err := Download(ctx, s, &fsEngine{s}, "aeronautes_src:media", "media", "snap/", destDir, report, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,41 +330,67 @@ func TestPreflightRejectsCrossPlatformHazards(t *testing.T) {
 	}
 }
 
+// The application's own download gives the final name only to a whole read
+// (ADR 0122 decision 5): a body the store stops sending part way, or one a
+// cancel ends, leaves nothing at the name and no temporary beside it.
 func TestNativeDownloadNeverLeavesPartials(t *testing.T) {
-	// A read that dies mid-copy must leave NOTHING at the final name;
-	// a short read must refuse; a clean copy lands atomically.
-	session, mock := session(t)
-	seed(mock, "media", "ok.bin", "complete-content")
-	dest := t.TempDir()
-
-	// Short read: item.Size larger than the object → refuse + no file.
-	destination := testDestination(t, dest)
-	outcome := nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "short.bin", Size: 9999}, destination, filepath.Join(dest, ".aeronautes-part-short"), downloadSourceIdentity{}, nil)
-	placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
-	if placed || err == nil || !strings.Contains(err.Error(), "short") {
-		t.Fatalf("short download = %v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(dest, "short.bin")); statErr == nil {
-		t.Fatal("short download left a file at the final name")
-	}
-	// Clean copy lands with exact bytes.
-	outcome = nativeDownload(context.Background(), session, "media",
-		DownloadItem{Name: "ok.bin", RelPath: "ok.bin", Size: int64(len("complete-content"))}, destination, filepath.Join(dest, ".aeronautes-part-ok"), downloadSourceIdentity{}, nil)
-	closeDownloadPublication(t, outcome)
-	if outcome.Result != transfercopy.ResultCopied || outcome.err() != nil {
-		t.Fatal(outcome.err())
-	}
-	data, err := os.ReadFile(filepath.Join(dest, "ok.bin"))
-	if err != nil || string(data) != "complete-content" {
-		t.Fatalf("landed bytes = %q %v", data, err)
-	}
-	// No temp litter.
-	entries, _ := os.ReadDir(dest)
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".aeronautes-part-") {
-			t.Fatalf("temp litter %s", e.Name())
-		}
+	const name, body = "scope/n.bin", "complete-content"
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+		code   transfercopy.Code
+	}{
+		{name: "the store stops part way", code: transfercopy.CodeIO},
+		{name: "a cancel part way", cancel: true, code: transfercopy.CodeCancelled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := swifttest.New("test:tester", "testing")
+			mock.AddContainer("media", "standard")
+			seed(mock, "media", name, body)
+			dest := t.TempDir()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			// The headers promise every byte and half are sent. The read is
+			// ended only once the temporary exists, so the case is about a
+			// read the application had begun writing.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/media/"+name) {
+					mock.ServeHTTP(w, r)
+					return
+				}
+				w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(body[:len(body)/2]))
+				w.(http.Flusher).Flush()
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+					if entries, _ := os.ReadDir(filepath.Join(dest, "deep")); len(entries) == 1 && strings.HasPrefix(entries[0].Name(), downloadPartPrefix) {
+						break
+					}
+				}
+				if tc.cancel {
+					cancel()
+					<-r.Context().Done()
+				}
+				panic(http.ErrAbortHandler)
+			}))
+			t.Cleanup(server.Close)
+			s, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: server.URL + "/auth/v1.0", Username: "test:tester", APIKey: "testing"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			item := DownloadItem{Name: name, RelPath: filepath.Join("deep", "n.bin"), Size: int64(len(body)), Route: "native"}
+			outcome := nativeDownload(ctx, s, "media", item, testDestination(t, dest))
+			if outcome.Result != transfercopy.ResultFailed || outcome.Effect != transfercopy.EffectNotAttempted || outcome.Diagnostic.Code != tc.code || outcome.verification != nil {
+				t.Fatalf("a part read was recorded %+v (%v), want failed, not attempted, %s", outcome.Observation, outcome.err(), tc.code)
+			}
+			if entries, err := os.ReadDir(filepath.Join(dest, "deep")); err != nil || len(entries) != 0 {
+				t.Fatalf("a part read left %v in the folder (%v), want nothing at the name and no temporary", entries, err)
+			}
+			// The folder made for the file stays, and is reported (ADR 0043).
+			if !reflect.DeepEqual(outcome.created, []string{"deep"}) {
+				t.Fatalf("the folders made were reported as %q, want the one made", outcome.created)
+			}
+		})
 	}
 }
 

@@ -59,7 +59,7 @@ func TestEncodedDynamicManifestRealSwift(t *testing.T) {
 	if err != nil || down.Rejected() {
 		t.Fatalf("download preflight: %v %+v", err, down)
 	}
-	report, err := localtransfer.Download(ctx, h.Session, source, "aeronautes_src:"+container, container, "up/", destDir, "it-encoded-down", down, nil)
+	report, err := localtransfer.Download(ctx, h.Session, source, "aeronautes_src:"+container, container, "up/", destDir, down, nil)
 	if err != nil || report.Done != 1 || len(report.Failures) != 0 {
 		t.Fatalf("download: %v %+v", err, report)
 	}

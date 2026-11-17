@@ -6,53 +6,46 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
+	"github.com/csmart/aeronautes/internal/systemtest/oracle"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
-// ADR 0070: an engine download publishes only bytes that match the source
-// it was planned from. These cases run the production runner with the
-// pinned engine into the held stage and apply one fault after the child
-// has returned, at the seams the retained assessment probe used: the
-// staged bytes, the staged entry, the source object and the published
-// file. Every fault must refuse before publication with the staged entry
-// retained, except a published replacement, which the final-publication
-// fact must report; the controls must still place and verify.
+// ADR 0122 decision 5 with the production runner and the pinned engine bound
+// to the held folder, as a download runs it: a plain object, a dynamic and a
+// static large object and a link each download whole into the chosen folder.
+// A source rewritten after the preview downloads as it now is, because
+// nothing is compared against the listing. A static object with a segment
+// removed is one the store will not serve whole: that file fails with the
+// engine's error line, whatever the store answered for it, and nothing is
+// left at its name.
 
-// engineBindingEngine delegates bytes and process lifetime to the pinned
-// production runner and applies its fault only after the child returned.
+// engineBindingEngine gives the pinned runner the held folder, which is the
+// only way a download hands the engine its destination on this platform.
 type engineBindingEngine struct {
 	runner *rclone.Runner
 	remote rclone.Remote
-	after  func(*os.File) error
-	result *rclone.Result
 }
 
-func (e *engineBindingEngine) Copy(context.Context, string, string, []string, func(rclone.Event)) (*rclone.Result, error) {
-	return nil, errors.New("engine binding cases must use the held stage anchor")
+func (e engineBindingEngine) Copy(context.Context, string, string, []string, func(rclone.Event)) (*rclone.Result, error) {
+	return nil, errors.New("engine binding cases must use the held folder")
 }
 
-func (e *engineBindingEngine) CopyInto(ctx context.Context, source, _ string, anchor *os.File, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	r, err := e.runner.CopyInto(ctx, []rclone.Remote{e.remote}, source, anchor, names, onEvent)
-	e.result = r
-	if err != nil || transfercopy.ResultFailure(r) != nil {
-		return r, err
-	}
-	if e.after != nil {
-		if err := e.after(anchor); err != nil {
-			return nil, err
-		}
-	}
-	return r, nil
+func (e engineBindingEngine) CopyInto(ctx context.Context, source, _ string, anchor *os.File, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+	return e.runner.CopyInto(ctx, []rclone.Remote{e.remote}, source, anchor, names, onEvent)
 }
 
 func engineBindingInvert(b []byte) []byte {
@@ -69,13 +62,15 @@ func engineBindingCase(t *testing.T, h *Harness, class, mode string) {
 	if official == "" {
 		t.Skip("AERONAUTES_OFFICIAL_RCLONE_DIR not set")
 	}
+	if mode == "segment_missing" && h.MockPrimary != nil {
+		t.Skip("how a static manifest is served without one of its segments is the real store's behaviour")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	c := h.Container(h.Primary, "engine-binding")
 	segments := h.Container(h.Primary, "engine-parts")
 	other := h.Container(h.Secondary, "engine-collateral")
-	left, right := bytes.Repeat([]byte("A"), 32), bytes.Repeat([]byte("B"), 32)
-	body := append(append([]byte(nil), left...), right...)
+	body := append(bytes.Repeat([]byte("A"), 32), bytes.Repeat([]byte("B"), 32)...)
 	name := "scope/a.bin"
 	seedSource := func(value []byte) {
 		switch class {
@@ -98,7 +93,8 @@ func engineBindingCase(t *testing.T, h *Harness, class, mode string) {
 		}
 	}
 	seedSource(body)
-	h.Seed(h.Primary, c, "scope/z-control.bin", []byte("valid control"), nil)
+	control := []byte("valid control")
+	h.Seed(h.Primary, c, "scope/z-control.bin", control, nil)
 	h.Seed(h.Primary, c, "outside", []byte("source sentinel"), nil)
 	h.Seed(h.Secondary, other, "outside", []byte("other account sentinel"), nil)
 	session, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: h.Primary.authURL, Username: h.Primary.user, APIKey: h.Primary.key})
@@ -119,181 +115,103 @@ func engineBindingCase(t *testing.T, h *Harness, class, mode string) {
 	if plan.Items[0].Size != 64 {
 		t.Fatalf("class %s planned size %d, want logical 64", class, plan.Items[0].Size)
 	}
-	expectedStage := body
-	if mode == "source_replaced" {
-		expectedStage = engineBindingInvert(body)
-		seedSource(expectedStage)
+	// What the store holds when the engine reads it, after the preview.
+	want := body
+	switch mode {
+	case "source_replaced":
+		want = engineBindingInvert(body)
+		seedSource(want)
+	case "segment_missing":
+		if status := h.rawDeleteChecked(h.Primary, "/"+segments+"/subject/1"); status/100 != 2 {
+			t.Fatalf("remove the second segment: status %d", status)
+		}
 	}
-	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
-	runner, err := rclone.NewRunner(rclone.Options{Binary: filepath.Join(official, "rclone"), Transfers: 1, Checkers: 1})
+	var beforeA *oracle.AccountSnapshot
+	if mode != "segment_missing" {
+		beforeA = h.SnapshotNamespace(h.Primary)
+	}
+	beforeB := h.SnapshotNamespace(h.Secondary)
+	runner, err := rclone.NewRunner(rclone.Options{Binary: filepath.Join(official, "rclone"), Transfers: 1, Checkers: 1, LeaveExisting: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &engineBindingEngine{runner: runner, remote: rclone.Remote{Name: "aeronautes_src", StorageURL: h.Primary.storageURL, Token: h.Primary.token}}
-	faultReached := false
-	var pin *os.File
-	t.Cleanup(func() {
-		if pin != nil {
-			if err := pin.Close(); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	// refusedBytes is what the stage must still hold after a refusal.
-	refusedBytes := expectedStage
-	e.after = func(anchor *os.File) error {
-		staged := filepath.Join(fmt.Sprintf("/proc/self/fd/%d", anchor.Fd()), "a.bin")
-		actual, err := os.ReadFile(staged)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(actual, expectedStage) {
-			return fmt.Errorf("child's staged bytes differ from fixture before fault: got %x want %x", md5.Sum(actual), md5.Sum(expectedStage))
-		}
-		changed := []byte(nil)
-		switch mode {
-		case "corrupt", "stage_replaced":
-			changed = engineBindingInvert(body)
-		case "reordered":
-			changed = append(append([]byte(nil), right...), left...)
-		case "missing_with_duplicate":
-			changed = append(append([]byte(nil), left...), left...)
-		case "short":
-			changed = left
-		}
-		if changed == nil {
-			return nil
-		}
-		if mode == "stage_replaced" {
-			pin, err = os.Open(staged)
-			if err != nil {
-				return err
-			}
-			if err := os.Remove(staged); err != nil {
-				return err
-			}
-		}
-		if err := os.WriteFile(staged, changed, 0600); err != nil {
-			return err
-		}
-		refusedBytes = changed
-		faultReached = true
-		return nil
-	}
+	engine := engineBindingEngine{runner: runner, remote: rclone.Remote{Name: "aeronautes_src", StorageURL: h.Primary.storageURL, Token: h.Primary.token}}
 	executed, verified := map[string]transfercopy.Observation{}, map[string]transfercopy.Observation{}
-	publications := map[string]transfercopy.Observation{}
 	recorder := &local.DownloadRecorder{
-		Admit:       func(local.DownloadAdmission) error { return nil },
-		Execute:     func(i local.DownloadItem, o transfercopy.Observation) error { executed[i.Name] = o; return nil },
-		Verify:      func(i local.DownloadItem, o transfercopy.Observation) error { verified[i.Name] = o; return nil },
-		Publication: func(i local.DownloadItem, o transfercopy.Observation) error { publications[i.Name] = o; return nil },
+		Admit:   func(local.DownloadAdmission) error { return nil },
+		Execute: func(i local.DownloadItem, o transfercopy.Observation) error { executed[i.Name] = o; return nil },
+		Verify:  func(i local.DownloadItem, o transfercopy.Observation) error { verified[i.Name] = o; return nil },
 	}
-	progress := func(done, total, n int64) {
-		if mode != "published_replaced" || done != 1 || faultReached {
-			return
-		}
-		path := filepath.Join(root, "a.bin")
-		pin, err = os.Open(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, engineBindingInvert(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-		old, err := pin.Stat()
-		if err != nil {
-			t.Fatal(err)
-		}
-		now, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if os.SameFile(old, now) {
-			t.Fatal("publication fixture did not substitute a distinct pinned inode")
-		}
-		faultReached = true
-	}
-	report, runErr := local.Download(ctx, session, e, "aeronautes_src:"+c, c, "scope/", root, "binding", plan, progress, recorder)
-	if e.result == nil || transfercopy.ResultFailure(e.result) != nil {
-		t.Fatalf("real engine did not succeed before placement: result=%+v error=%v", e.result, runErr)
-	}
-	if mode != "control" && mode != "source_replaced" && !faultReached {
-		t.Fatal("required fault was not reached")
-	}
+	report, runErr := local.Download(ctx, session, engine, "aeronautes_src:"+c, c, "scope/", root, plan, nil, recorder)
 	if runErr != nil {
 		t.Fatalf("executor failed outside the item outcome: %v", runErr)
 	}
-	control, err := os.ReadFile(filepath.Join(root, "z-control.bin"))
-	if err != nil || string(control) != "valid control" {
-		t.Fatalf("valid control changed: %q %v", control, err)
+	// The witness reads every object whole, which a static manifest with a
+	// missing segment refuses, so that case's own account is not witnessed.
+	if mode != "segment_missing" {
+		h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	}
-	sentinel, err := os.ReadFile(filepath.Join(root, "keep"))
-	if err != nil || string(sentinel) != "local sentinel" {
-		t.Fatalf("local collateral changed: %q %v", sentinel, err)
-	}
-	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
-	actual, readErr := os.ReadFile(filepath.Join(root, "a.bin"))
-	stagedPath := filepath.Join(root, ".aeronautes-stage-binding", "a.bin")
-	staged, stagedErr := os.ReadFile(stagedPath)
-	t.Logf("engine binding class=%s mode=%s pinned=%s done=%d verified=%d failures=%+v execute=%+v verify=%+v final=%+v published=%d read=%v staged=%d stagedErr=%v cleanup=%+v", class, mode, runner.Version(), report.Done, report.Verified, report.Failures, executed[name], verified[name], publications[name], len(actual), readErr, len(staged), stagedErr, report.StageCleanup)
-	if mode == "control" {
-		if readErr != nil || !bytes.Equal(actual, body) || report.Done != 2 || report.Verified != 2 || len(report.Failures) != 0 {
-			t.Fatalf("matching engine control refused: %+v read=%v", report, readErr)
+	t.Logf("engine binding class=%s mode=%s pinned=%s report=%+v execute=%+v verify=%+v", class, mode, runner.Version(), report, executed[name], verified[name])
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, entry := range entries {
+		listed = append(listed, entry.Name())
+	}
+	sort.Strings(listed)
+	wantListed := []string{"a.bin", "keep", "z-control.bin"}
+	if mode == "segment_missing" {
+		wantListed = []string{"keep", "z-control.bin"}
+	}
+	if !reflect.DeepEqual(listed, wantListed) {
+		t.Fatalf("the folder holds %q, want %q and nothing of the engine's own", listed, wantListed)
+	}
+	for file, content := range map[string][]byte{"keep": []byte("local sentinel"), "z-control.bin": control} {
+		if got := engineBindingDigest(t, filepath.Join(root, file)); got != sha256.Sum256(content) {
+			t.Fatalf("%s does not hold its bytes", file)
 		}
-		if publications[name].Result != transfercopy.ResultVerified {
-			t.Fatalf("control lacks its final-publication fact: %+v", publications[name])
+	}
+	if mode == "segment_missing" {
+		got := executed[name]
+		if got.Result != transfercopy.ResultFailed || got.Effect != transfercopy.EffectUnresolved || len(report.Failures) != 1 ||
+			report.Failures[0].Name != name || !strings.HasPrefix(report.Failures[0].Err, "Failed to copy: ") {
+			t.Fatalf("a source the store would not serve whole: recorded %+v, failures %+v", got, report.Failures)
 		}
-		if !errors.Is(stagedErr, os.ErrNotExist) || report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Refused != 0 {
-			t.Fatalf("control left stage residue: stagedErr=%v cleanup=%+v", stagedErr, report.StageCleanup)
+		if _, recorded := verified[name]; recorded || report.Done != 1 {
+			t.Fatalf("a failed file was verified or counted: verify=%+v done=%d", verified[name], report.Done)
 		}
 		return
 	}
-	if mode == "published_replaced" {
-		// The bytes were verified and published; the replacement of the
-		// published name is the final-publication fact's finding, and
-		// the occupant is not this executor's to unlink (ADR 0045).
-		if verified[name].Result != transfercopy.ResultVerified || publications[name].Result != transfercopy.ResultFailed || publications[name].Effect != transfercopy.EffectUnresolved {
-			t.Fatalf("published replacement not reported by the final-publication fact: verify=%+v final=%+v", verified[name], publications[name])
-		}
-		if report.Verified != 1 || len(report.Failures) != 1 || report.Failures[0].Name != name || report.Failures[0].Stage != "place" {
-			t.Fatalf("published replacement not counted against verification: %+v", report)
-		}
-		if readErr != nil || !bytes.Equal(actual, engineBindingInvert(body)) {
-			t.Fatalf("the replacement occupant was touched: read=%v bytes=%x", readErr, actual)
-		}
-		return
+	if engineBindingDigest(t, filepath.Join(root, "a.bin")) != sha256.Sum256(want) {
+		t.Fatalf("a.bin does not hold the %s object's bytes as the store held them at the download", class)
 	}
-	// Every other fault refuses before publication: nothing at the target
-	// name, the item unverified with effect unresolved, and the staged
-	// entry retained with the refused bytes, exempt from cleanup.
-	if !errors.Is(readErr, os.ErrNotExist) {
-		t.Fatalf("%s %s published %d bytes (read=%v)", class, mode, len(actual), readErr)
+	if report.Done != 2 || report.Verified != 2 || len(report.Failures) != 0 || executed[name].Result != transfercopy.ResultCopied ||
+		verified[name].Result != transfercopy.ResultVerified {
+		t.Fatalf("a whole download was not recorded copied: report=%+v execute=%+v verify=%+v", report, executed[name], verified[name])
 	}
-	if verified[name].Result != transfercopy.ResultFailed || verified[name].Diagnostic.Code != transfercopy.CodeUnverified || executed[name].Effect != transfercopy.EffectUnresolved {
-		t.Fatalf("%s %s did not report unverified/unresolved: execute=%+v verify=%+v", class, mode, executed[name], verified[name])
+}
+
+func engineBindingDigest(t *testing.T, path string) [sha256.Size]byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if report.Verified != 1 || report.Done != 1 || len(report.Failures) != 1 || report.Failures[0].Name != name {
-		t.Fatalf("%s %s report counts wrong: %+v", class, mode, report)
-	}
-	if _, published := publications[name]; published {
-		t.Fatalf("%s %s got a publication fact without a publication: %+v", class, mode, publications[name])
-	}
-	if stagedErr != nil || !bytes.Equal(staged, refusedBytes) {
-		t.Fatalf("%s %s did not retain the refused bytes in the stage: err=%v got %x want %x", class, mode, stagedErr, md5.Sum(staged), md5.Sum(refusedBytes))
-	}
-	if report.StageCleanup == nil || !report.StageCleanup.Retained || report.StageCleanup.Refused != 1 || report.StageCleanup.Issues != 0 {
-		t.Fatalf("%s %s cleanup did not exempt the refused entry cleanly: %+v", class, mode, report.StageCleanup)
-	}
+	return sha256.Sum256(data)
 }
 
 func engineBindingCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
 	for _, class := range []string{"plain", "dlo", "slo", "link"} {
 		t.Run(class, func(t *testing.T) {
-			for _, mode := range []string{"control", "corrupt", "reordered", "missing_with_duplicate", "short", "stage_replaced", "source_replaced", "published_replaced"} {
+			modes := []string{"control", "source_replaced"}
+			if class == "slo" {
+				modes = append(modes, "segment_missing")
+			}
+			for _, mode := range modes {
 				t.Run(mode, func(t *testing.T) { engineBindingCase(t, makeHarness(t), class, mode) })
 			}
 		})

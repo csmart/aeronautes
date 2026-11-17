@@ -713,11 +713,12 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		}
 	} else if stoppedBeside {
 		// The cancelled download keeps its admitted facts and what it
-		// observed, places nothing, and says its stage was left as it was;
-		// public totals remain unavailable after the refused completion.
+		// observed, writes nothing, and says its stopped engine may have left
+		// a partial file (ADR 0122 decision 5); public totals remain
+		// unavailable after the refused completion.
 		wantFirstState = "cancelled"
 		wantFirstCounters = jobs.Counters{ObjectsPlanned: 1, ObjectsFailed: 1, BytesPlanned: 10}
-		const retained = "download stage retained after required item recording failed; cleanup was not attempted"
+		const retained = "the transfer engine did not end normally: a file it was writing may remain in the selected directory under a name ending .partial"
 		unavailable := h.jobStore.Available()
 		if unavailable == nil || !strings.Contains(firstState.Job.Error, retained) || !strings.HasSuffix(firstState.Job.Error, unavailable.Error()) || firstState.Job.FinishedAt == "" ||
 			len(firstState.Audit) != 1 || firstState.Audit[0].Operation != "transfer.local.cancelled" ||
@@ -740,8 +741,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if item.Key != "hold/first.bin" || item.JobID != first || !item.Planned || !item.Admitted || item.ListedBytes != 10 ||
 		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "hold/first.bin"}) ||
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, "first.bin")}) ||
-		item.Staging == nil || *item.Staging != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, ".aeronautes-stage-"+first, "first.bin")}) ||
-		item.Execution == nil {
+		item.Staging != nil || item.Execution == nil {
 		t.Fatalf("running download lost its exact item identity: %+v", item)
 	}
 	if stoppedBeside {
@@ -752,7 +752,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		}
 	} else if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}) ||
 		item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
-		t.Fatalf("running download lost its exact placement/verification history: %+v", item)
+		t.Fatalf("running download lost its exact copied/verified history: %+v", item)
 	}
 	if fault == "control" {
 		assertDownloadItemPages(t, h, first, map[string]jobs.ItemRecord{item.Key: item}, firstState.ItemTotals)
@@ -768,8 +768,9 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		copyCompletionRefuseNew(t, h, src, dst, 2)
 	}
 	if stoppedBeside {
-		// Nothing was placed, and the stage is still there for inspection.
-		assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), nil, ".aeronautes-stage-"+first)
+		// Its engine was stopped before the held response arrived, so the
+		// folder is as it was.
+		assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), nil)
 	} else {
 		assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), map[string][]byte{"first.bin": []byte("hold bytes")})
 	}

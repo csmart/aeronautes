@@ -547,7 +547,7 @@ func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection)
 	for _, rel := range walk.SkippedSample {
 		report.Problems = append(report.Problems, local.Problem{
 			Name: walk.Folder + "/" + rel, Kind: "skipped",
-			Detail: "a link, another special entry or a download's own staging, which a folder upload leaves out; not uploaded"})
+			Detail: "a link, another special entry or a download's own partial file, which a folder upload leaves out; not uploaded"})
 	}
 	if walk.Skipped > len(walk.SkippedSample) {
 		report.Problems = append(report.Problems, local.Problem{
@@ -921,8 +921,8 @@ func (b boundLocal) Copy(ctx context.Context, src, dst string, names []string, o
 	return b.runner.Copy(ctx, remotes, src, dst, names, onEvent)
 }
 
-// CopyInto anchors the child's destination to the held stage directory
-// where the runner supports it (local.AnchoredEngine).
+// CopyInto anchors the child's destination to the held folder where the
+// runner supports it (local.AnchoredEngine).
 func (b boundLocal) CopyInto(ctx context.Context, src, dst string, anchor *os.File, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 	remotes, err := b.source(ctx)
 	if err != nil {
@@ -1138,12 +1138,17 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 		s.destinations.release(reservation)
 		_ = destination.Close()
 	})
-	engine, err := s.localEngine(ctx, session, "aeronautes_src", settings.options())
+	options := settings.options()
+	// The engine writes each file in the folder itself and leaves alone one
+	// that is there, which it reports in a line of its own (ADR 0122
+	// decision 5): a download never replaces a local file.
+	options.LeaveExisting = true
+	engine, err := s.localEngine(ctx, session, "aeronautes_src", options)
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
-	if boundary := s.downloadStageBoundary; boundary != nil {
-		engine = wrapDownloadStageBoundary(engine, boundary)
+	if before := s.downloadBoundary; before != nil {
+		engine = wrapDownloadBoundary(engine, before)
 	}
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeDownload,
@@ -1171,8 +1176,8 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
 		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
-			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, job.ID, preflight,
-				s.downloadProgress(innerCtx, job.ID, onProgress), s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
+			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, preflight,
+				onProgress, s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
 		})
 	}, func(cancelCtx context.Context) {
 		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
@@ -1199,22 +1204,23 @@ type disclosure struct {
 	message, audit string
 }
 
-// localDisclosures is what the report obliges a finished job to say: the
-// stage cleanup's outcome, a destination the picked spelling no longer
-// names, and directories an unfinished job left behind. The first two turn
-// a complete job partial, because the operator must look before trusting
-// the records; the third is a fact about the disk and never changes the
-// state.
+// localDisclosures is what the report obliges a finished job to say: a
+// download's engine that did not end normally, a destination the picked
+// spelling no longer names, and directories an unfinished job left behind.
+// The second turns a complete job partial, because the operator must look
+// before trusting the records; the others are facts about the disk and
+// never change the state.
 func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, jobs.State) {
 	if report == nil {
 		return nil, state
 	}
 	var out []disclosure
-	if d, ok := stageDisclosure(report.StageCleanup); ok {
-		out = append(out, d)
-		if state == jobs.StateComplete {
-			state = jobs.StatePartial
-		}
+	// Interrupted, the engine removes the file it was writing; killed, it
+	// leaves it (ADR 0122 decision 5). Nothing looks, so this says what may
+	// be there and how to know it.
+	if report.EngineStopped {
+		left := "the transfer engine did not end normally: a file it was writing may remain in the selected directory under a name ending .partial"
+		out = append(out, disclosure{message: left, audit: left})
 	}
 	// Effects went into the directory picked, but the recorded paths keep
 	// the picked spelling, which no longer names it.
@@ -1248,35 +1254,6 @@ func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, job
 		out = append(out, disclosure{message: created, audit: recorded})
 	}
 	return out, state
-}
-
-// stageDisclosure states one of three outcomes, and never asserts the other
-// two: cleanup did not run, or it ran and left residue, or it ran and left
-// none (ADR 0048). Selecting on Retained alone once claimed a recording
-// failure whenever cleanup ran and deliberately left files behind.
-func stageDisclosure(cleanup *local.StageCleanupResult) (disclosure, bool) {
-	if cleanup == nil || (cleanup.Issues == 0 && !cleanup.Retained) {
-		return disclosure{}, false
-	}
-	switch {
-	case !cleanup.Attempted:
-		audit := "download stage retained after required item recording failed; cleanup was not attempted"
-		return disclosure{message: audit, audit: audit}, true
-	case cleanup.Retained && cleanup.Issues == 0 && cleanup.Refused > 0:
-		// Cleanup ran cleanly and kept only the entries whose bytes were
-		// refused verification, for the operator (ADR 0070).
-		audit := fmt.Sprintf("download stage retained: %d entries refused verification and kept for inspection", cleanup.Refused)
-		return disclosure{message: audit, audit: audit}, true
-	case cleanup.Retained:
-		audit := fmt.Sprintf("download stage retained after cleanup: %d issues", cleanup.Issues)
-		if cleanup.Refused > 0 {
-			audit += fmt.Sprintf(", %d entries refused verification", cleanup.Refused)
-		}
-		return disclosure{message: fmt.Sprintf("%s (first: %s)", audit, cleanup.FirstError), audit: audit}, true
-	default:
-		audit := fmt.Sprintf("download stage cleanup: %d issues", cleanup.Issues)
-		return disclosure{message: fmt.Sprintf("%s (first: %s)", audit, cleanup.FirstError), audit: audit}, true
-	}
 }
 
 func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, version int, counters jobs.Counters, state jobs.State, message, auditSummary string) {
@@ -1410,7 +1387,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	case err != nil && errors.Is(err, context.Canceled) && report != nil && report.Done == 0 && onlyCancellations(report.Failures):
 		// Nothing landed and every failure is the cancellation itself:
 		// the job was cancelled, and its message still names what was
-		// interrupted so the retained stage or temporary is disclosed.
+		// interrupted.
 		finish(jobs.StateCancelled, failures)
 	case err != nil && report != nil && (report.Done > 0 || len(report.Failures) > 0):
 		message := err.Error()

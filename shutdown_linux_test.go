@@ -111,7 +111,7 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 			t.Fatalf("picker descriptor baseline = %d, want 1", pickerHandles)
 		}
 		entered := make(chan context.Context, 1)
-		app.WireDownloadStageBoundary(transfer, func(ctx context.Context, _ string) error {
+		app.WireDownloadEngineBoundary(transfer, func(ctx context.Context, _ string) error {
 			entered <- ctx
 			<-gate
 			return ctx.Err()
@@ -141,13 +141,12 @@ func testDesktopHeldDownload(t *testing.T, callback, runError bool) {
 		shutdown.closeDatabase = func() error {
 			defer close(closed)
 			job, err := jobService.Get(t.Context(), saved.ID, jobID)
-			if err != nil || job.State != "partial" || job.FinishedAt == "" ||
+			if err != nil || job.State != "cancelled" || job.FinishedAt == "" ||
 				job.Counters.ObjectsPlanned != 1 || job.Counters.ObjectsFailed != 1 ||
 				job.Counters.ObjectsCopied != 0 || job.Counters.ObjectsVerified != 0 ||
 				// The cancelled job's terminal record is what this asserts the
-				// ordering against. It no longer carries a directory-not-empty
-				// rmdir failure, because cleanup removes the files this job
-				// staged and the stage goes with them (ADR 0048).
+				// ordering against: held before its engine started, the file
+				// was not attempted (ADR 0122 decision 5).
 				!strings.Contains(job.Error, "context canceled") {
 				t.Errorf("database close preceded terminal job: job=%+v err=%v", job, err)
 			}

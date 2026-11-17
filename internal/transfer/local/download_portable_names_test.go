@@ -146,7 +146,7 @@ func TestDownloadPortableNamesDirect(t *testing.T) {
 							slices.Reverse(items)
 						}
 						before := downloadDestinationSnapshot(t, owned)
-						plan := plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items})
+						plan := &DownloadPreflight{Items: items}
 						requests := mock.Requests()
 						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
 						var admissions []DownloadAdmission
@@ -155,13 +155,12 @@ func TestDownloadPortableNamesDirect(t *testing.T) {
 						var recorders []*DownloadRecorder
 						if recorded {
 							recorders = []*DownloadRecorder{{
-								Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-								Admit:       func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute:     func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:      func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
+								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
+								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
+								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
 							}}
 						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan,
+						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
 							func(int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if fixture.refused != "" {
@@ -191,7 +190,6 @@ func TestDownloadPortableNamesDirect(t *testing.T) {
 						wantCalls := 0
 						if route == "rclone" && files > 0 {
 							wantCalls = 1
-							want.StageCleanup = &StageCleanupResult{Attempted: true}
 						}
 						if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
 							t.Fatalf("portable near-miss control failed: report=%+v error=%v Copy calls=%d progress=%d", report, err, engine.calls, progressCalls)

@@ -12,8 +12,8 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 )
 
-// Maintained regression for ADR 0043. A cancel at the native staging
-// boundary still stops wherever it stops, so which effects occur is not
+// Maintained regression for ADR 0043. A cancel while the native route
+// reads the body still stops wherever it stops, so which effects occur is not
 // fixed. What must hold on every run is that the item is never reported
 // uncertain when nothing was created for it, and that the directories
 // the job says it made are exactly the ones now on disk.
@@ -78,9 +78,9 @@ func downloadCancelDeltaCase(t *testing.T, h *Harness, mode string) {
 			t.Fatalf("the cancelled item lost its execution record: %+v", item)
 		}
 		observed := item.Execution.ItemObservation
-		// The temporary's exclusive creation is below every check that
-		// can fire here, so no file effect for this item is possible and
-		// none may be reported as uncertain.
+		// The cancel lands while the body is read into the temporary, which
+		// is removed, so the item leaves no file and none may be reported
+		// as uncertain.
 		if observed.Effect == jobs.EffectUnresolved {
 			t.Errorf("a cancel before the temporary exists was reported uncertain: %+v", observed)
 		}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -64,8 +62,7 @@ func newBatchFixture(t *testing.T, count int) (*batchFixture, *swiftcontrol.Sess
 	}
 	f.plan = plan
 	f.recorder = &DownloadRecorder{
-		Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-		Admit:       func(DownloadAdmission) error { return nil },
+		Admit: func(DownloadAdmission) error { return nil },
 		Execute: func(item DownloadItem, o transfercopy.Observation) error {
 			f.executed[item.Name] = o
 			return nil
@@ -103,32 +100,31 @@ func (f *batchFixture) expectExecute(t *testing.T, from, to int, effect transfer
 }
 
 // ADR 0074 decision 3: the engine-routed names go to the child in
-// batches of DefaultBatchNames in plan order, and every batch is placed
-// before the next child starts.
+// batches of DefaultBatchNames in plan order, and every file of a batch has
+// its outcome before the next child starts.
 func TestDownloadBatchesEngineNames(t *testing.T) {
 	count := 2*transfercopy.DefaultBatchNames + 1
 	f, source := newBatchFixture(t, count)
 	engine := &batchCountingEngine{Engine: &fsEngine{session: source}}
-	placedBeforeNext := true
+	recordedBeforeNext := true
 	engine.after = func(call int) {
 		if call == 2 {
-			// The first batch was placed before the second child ran.
 			for _, name := range f.names[:transfercopy.DefaultBatchNames] {
-				if _, err := os.Stat(filepath.Join(f.root, name)); err != nil {
-					placedBeforeNext = false
+				if f.executed["scope/"+name].Result != transfercopy.ResultCopied {
+					recordedBeforeNext = false
 				}
 			}
 		}
 	}
-	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
-	if err != nil || report.Done != int64(count) || len(report.Failures) != 0 || report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 {
+	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, f.plan, nil, f.recorder)
+	if err != nil || report.Done != int64(count) || len(report.Failures) != 0 {
 		t.Fatalf("batched download: %+v %v", report, err)
 	}
 	if got := lengths(engine.calls); len(got) != 3 || got[0] != transfercopy.DefaultBatchNames || got[1] != transfercopy.DefaultBatchNames || got[2] != 1 {
 		t.Fatalf("children were given %v names", got)
 	}
-	if !placedBeforeNext {
-		t.Fatal("the second child started before the first batch was placed")
+	if !recordedBeforeNext {
+		t.Fatal("the second child ran before the first batch's files had their outcome")
 	}
 	var given []string
 	for _, call := range engine.calls {
@@ -140,34 +136,27 @@ func TestDownloadBatchesEngineNames(t *testing.T) {
 		}
 	}
 	f.expectExecute(t, 0, count, transfercopy.EffectReportedApplied, "", true)
-	if _, err := os.Lstat(filepath.Join(f.root, ".aeronautes-stage-fixture")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stage left behind: %v", err)
-	}
 }
 
-// A child that fails ends the run: its batch is unresolved, the batches
-// before it stay placed and recorded, and the batches after it were
-// never given to a child.
-func TestDownloadBatchFailureLeavesLaterBatchesUnattempted(t *testing.T) {
+// A child that fails leaves its batch unknown and does not change what the
+// children before it said; the next batch is given to a child of its own,
+// as a copy's is, because there is no stage whose residue to bound.
+func TestDownloadBatchFailureKeepsEachBatchsOutcome(t *testing.T) {
 	n := transfercopy.DefaultBatchNames
 	f, source := newBatchFixture(t, 2*n+1)
 	engine := &batchCountingEngine{Engine: &fsEngine{session: source}, failOn: 2}
-	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
+	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, f.plan, nil, f.recorder)
 	// The report keeps a bounded sample of failures; the records carry
 	// every item.
-	if err != nil || report.Done != int64(n) || report.Verified != int64(n) || len(report.Failures) == 0 || len(engine.calls) != 2 {
-		t.Fatalf("failed second batch: done=%d verified=%d failures=%d calls=%d %v", report.Done, report.Verified, len(report.Failures), len(engine.calls), err)
+	if err != nil || report.Done != int64(n+1) || report.Verified != int64(n+1) || len(report.Failures) == 0 || len(engine.calls) != 3 || !report.EngineStopped {
+		t.Fatalf("failed second batch: done=%d verified=%d failures=%d calls=%d stopped=%v %v", report.Done, report.Verified, len(report.Failures), len(engine.calls), report.EngineStopped, err)
 	}
 	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
 	f.expectExecute(t, n, 2*n, transfercopy.EffectUnresolved, transfercopy.StageEngine, false)
-	f.expectExecute(t, 2*n, 2*n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
-	if report.StageCleanup == nil || report.StageCleanup.Retained || report.StageCleanup.Issues != 0 {
-		t.Fatalf("stage after a failed batch: %+v", report.StageCleanup)
-	}
+	f.expectExecute(t, 2*n, 2*n+1, transfercopy.EffectReportedApplied, "", true)
 }
 
-// A cancel seen after a child returns leaves that batch's staged bytes
-// unplaced with the record a cancel inside placement gives, and the
+// A cancel seen after a child returns keeps what that child said, and the
 // batches after it were never given to a child.
 func TestDownloadCancelBetweenBatchesLeavesLaterBatchesUnattempted(t *testing.T) {
 	n := transfercopy.DefaultBatchNames
@@ -180,39 +169,12 @@ func TestDownloadCancelBetweenBatchesLeavesLaterBatchesUnattempted(t *testing.T)
 			cancel()
 		}
 	}
-	report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
-	if !errors.Is(err, context.Canceled) || report.Done != 0 || len(engine.calls) != 1 {
+	report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", f.root, f.plan, nil, f.recorder)
+	if !errors.Is(err, context.Canceled) || report.Done != int64(n) || len(engine.calls) != 1 {
 		t.Fatalf("cancel between batches: %+v calls=%d %v", report, len(engine.calls), err)
 	}
-	f.expectExecute(t, 0, n, transfercopy.EffectUnresolved, transfercopy.StageCommit, false)
+	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
 	f.expectExecute(t, n, 2*n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
-}
-
-// A stage the name no longer denotes after a child ran leaves that
-// batch unverified and gives no later batch to a child.
-func TestDownloadDisplacedStageStopsLaterBatches(t *testing.T) {
-	n := transfercopy.DefaultBatchNames
-	f, source := newBatchFixture(t, n+1)
-	engine := &batchCountingEngine{Engine: &fsEngine{session: source}}
-	stage := filepath.Join(f.root, ".aeronautes-stage-fixture")
-	engine.after = func(call int) {
-		if call == 1 {
-			if err := os.Rename(stage, stage+".moved"); err != nil {
-				t.Error(err)
-			}
-		}
-	}
-	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
-	if err != nil || report.Done != 0 || len(engine.calls) != 1 {
-		t.Fatalf("displaced stage: %+v calls=%d %v", report, len(engine.calls), err)
-	}
-	for _, name := range f.names[:n] {
-		o, ok := f.verified["scope/"+name]
-		if !ok || o.Diagnostic.Stage != transfercopy.StageVerification || o.Diagnostic.Code != transfercopy.CodeUnverified {
-			t.Fatalf("%s after displacement = %+v (recorded %v)", name, o, ok)
-		}
-	}
-	f.expectExecute(t, n, n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
 }
 
 // The batch closes on the name that reaches either bound, in plan order.
@@ -257,9 +219,9 @@ func TestDownloadBatchesByNamesAndPlannedBytes(t *testing.T) {
 }
 
 // ADR 0104 decision 1: the download route asks to pause at the head of each
-// engine batch and nowhere else, so not while a delivered batch is being
-// placed. A cancellation returned from that wait leaves the batch before it
-// placed and the batch after it never given to a child.
+// engine batch and nowhere else. A cancellation returned from that wait
+// leaves the batch before it downloaded and the batch after it never given
+// to a child.
 func TestDownloadAsksToPauseAtBatchHeadsOnly(t *testing.T) {
 	n := transfercopy.DefaultBatchNames
 	f, source := newBatchFixture(t, n+1)
@@ -275,13 +237,9 @@ func TestDownloadAsksToPauseAtBatchHeadsOnly(t *testing.T) {
 		}
 		return nil
 	}
-	report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", f.root, "fixture", f.plan, nil, f.recorder)
+	report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", f.root, f.plan, nil, f.recorder)
 	if !errors.Is(err, context.Canceled) || asked != 2 || len(engine.calls) != 1 || report.Done != int64(n) {
-		t.Fatalf("report = %+v, %v; asked %d times with %d children, want one batch placed and the cancel at the next head", report, err, asked, len(engine.calls))
-	}
-	// A cancel cleans the stage, where a lost record would have kept it.
-	if report.StageCleanup == nil || !report.StageCleanup.Attempted || report.StageCleanup.Retained {
-		t.Fatalf("stage cleanup = %+v, want the cancel's cleanup", report.StageCleanup)
+		t.Fatalf("report = %+v, %v; asked %d times with %d children, want one batch downloaded and the cancel at the next head", report, err, asked, len(engine.calls))
 	}
 	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
 	f.expectExecute(t, n, n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
