@@ -36,7 +36,6 @@ func downloadDestinationCases(t *testing.T, makeHarness func(*testing.T) *Harnes
 			t.Run("queued/"+route+"/"+fault, func(t *testing.T) { downloadDestinationQueued(t, makeHarness(t), route, fault) })
 		}
 	}
-	t.Run("queued/engine/file_appeared", func(t *testing.T) { downloadDestinationQueued(t, makeHarness(t), "engine", "file_appeared") })
 }
 
 func TestDownloadDestinationMock(t *testing.T) {
@@ -47,6 +46,19 @@ func TestDownloadDestinationMock(t *testing.T) {
 func TestDownloadDestinationRealSwift(t *testing.T) {
 	t.Parallel()
 	downloadDestinationCases(t, New)
+}
+
+// A file that appeared while the download was queued is the one way a
+// download job ends in a conflict, so these top-level tests, which may
+// credit the scenario contract, carry that case (ADR 0122 decision 13).
+func TestDownloadOfAFileThatAppearedMock(t *testing.T) {
+	t.Parallel()
+	downloadDestinationQueued(t, findMockHarness(t), "engine", "file_appeared")
+}
+
+func TestDownloadOfAFileThatAppearedRealSwift(t *testing.T) {
+	t.Parallel()
+	downloadDestinationQueued(t, New(t), "engine", "file_appeared")
 }
 
 func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {

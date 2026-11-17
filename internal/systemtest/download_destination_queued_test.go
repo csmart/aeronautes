@@ -87,7 +87,8 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("holding download's engine never read its file")
 	}
-	id, err := h.Transfer.StartDownload(t.Context(), request)
+	started := h.StartDownload(t.Context(), request)
+	id, err := started.JobID(), started.Err()
 	if err != nil || id == "" {
 		t.Fatalf("initially valid queued download: %q error=%v", id, err)
 	}
@@ -126,6 +127,9 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 		if gets := trace.selectedGets(); len(gets) != 1 || gets["hold/first.bin"] == 0 {
 			t.Errorf("the operator's file was read for: %v", gets)
 		}
+		// The one way a download job ends in a conflict (ADR 0122 decision
+		// 13): this case credits that cell of the scenario contract.
+		started.CreditJobConflict()
 		return
 	}
 	if fault == "parent_file" {

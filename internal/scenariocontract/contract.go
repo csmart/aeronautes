@@ -176,14 +176,19 @@ var inventory = map[string]Action{
 	// binds a selection to a scope and writes nothing.
 	"TransferService.PickUploadDirectory": {Kind: Session},
 	"TransferService.PickDownloadDir":     {Kind: Session},
-	"TransferService.StartCopy":           {Kind: Job},
-	"TransferService.StartMirror":         {Kind: Job},
-	"TransferService.StartUpload":         {Kind: Job},
-	"TransferService.StartDownload":       {Kind: Job},
-	"TransferService.RerunJob":            {Kind: Job},
-	"TransferService.CancelJob":           {Kind: Session},
-	"TransferService.PauseJob":            {Kind: Session},
-	"TransferService.ResumeJob":           {Kind: Session},
+	// ADR 0122 decision 13: an upload never records a conflict, a copy
+	// records an unconfirmed difference as refused, a re-run only starts a
+	// copy, and Mirror refuses every start, so those four rows have no
+	// conflict scenario. A download keeps it: a file that appeared since
+	// the preview is left alone and recorded as one.
+	"TransferService.StartCopy":     {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial", "retry"}},
+	"TransferService.StartMirror":   {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial", "retry"}},
+	"TransferService.StartUpload":   {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial", "retry"}},
+	"TransferService.StartDownload": {Kind: Job},
+	"TransferService.RerunJob":      {Kind: Job, Scenarios: []string{"happy", "refusal", "cancel", "partial", "retry"}},
+	"TransferService.CancelJob":     {Kind: Session},
+	"TransferService.PauseJob":      {Kind: Session},
+	"TransferService.ResumeJob":     {Kind: Session},
 	// DeleteService
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
