@@ -52,6 +52,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   and verified before any Mirror deletion; `--files-from` only filters the source and MUST NOT be
   relied on to override rclone's own equality test. `--ignore-existing` MUST NOT be used for a Copy
   selected set. (§28.4)
+  An upload or a download the operator confirmed may replace what differs is the one exception: its
+  engine is not forced, and compares each name as rclone copy does ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 12).
 - **K-SEC-007** — rclone tokens MUST be passed by environment named-remote config only, never in argv;
   the child MUST run with a job-scoped empty config, never inheriting the user's `rclone.conf`. (§26.2)
 - **K-SEC-008** — Per-bookmark TLS policy MUST be applied per-remote, never process-globally.
@@ -64,7 +66,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   `X-Object-Manifest`; if data-only, the planner MUST preview every dropped category. (§27.4)
 - **K-XFER-011** — Swift→local download MUST run a complete collision preflight and apply a per-target
   materialization policy; it MUST NOT write-then-discover collisions. (§27.5)
-  It MUST NOT replace a local file: the engine is told to leave one that exists, and the application's own write links without replacing ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5).
+  Unless the operator confirmed replacing, it MUST NOT replace a local file: the engine is told to leave one that exists, and the application's own write links without replacing ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5).
+  Once the operator confirmed it in the backend's native question, it replaces what differs: the engine compares each file as rclone copy does instead of leaving existing files alone, and the application's own write renames its temporary file over the name (decision 12).
   The engine route runs only where the engine can be anchored to the held folder.
 - **K-XFER-012** — `no-large-objects` MUST NOT be a user toggle, MUST NOT be an authorization or
   eligibility input for anything, and MUST be refused for any destructive scope; internal

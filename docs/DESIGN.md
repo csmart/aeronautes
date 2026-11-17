@@ -1780,6 +1780,7 @@ Mirror:
 The selected-file invocation also needs the traversal decision in [ADR 0022](adr/0022-complete-rclone-selection.md).
 Pair `--files-from-raw` with `--no-traverse` and `--ignore-times` so the pinned engine addresses the selected names directly instead of rediscovering source membership through provider listings.
 This applies to remote Copy and local upload/download; single-object `CopyTo` is unchanged.
+An upload or a download the operator confirmed may replace what differs is not forced: its engine compares each name as rclone copy does and replaces only what differs ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 12).
 Missing selected sources may still be omitted without an engine error, so stage checks and independent completion verification remain required.
 
 The preview must be honest about the conservative set, e.g.:

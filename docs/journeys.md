@@ -99,10 +99,11 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Edit | give a container a history location and its archive | a history location keeps what is deleted, and every segment (Swift cloud only) | the delete dialogs that follow name the archive, and what is deleted arrives there |
 | Edit | container metadata, quotas, a versions location, CORS and TempURL keys; account metadata; a large object's metadata; an edit that conflicts | not yet; layer 1 journey 4 edits object, container and account metadata | |
 | Upload | a folder holding a file that uploads in segments, with a per-job chunk size | upload a folder with a segmented file and browse it | the job completes, the uploaded names are listed, and the inspector shows the large-object kind the job recorded |
-| Upload | replace existing objects, with the native confirmation answered by the run | upload it again and confirm the overwrite | the download that follows returns the second upload's bytes |
+| Upload | replace existing objects that differ, with the native confirmation answered by the run | upload it again and confirm the overwrite | the download that follows returns the second upload's bytes |
 | Upload | the kind of large object chosen for one upload | delete a static and a dynamic large object, each with its segments | each object's delete dialog names the kind of manifest the job recorded |
 | Upload | chosen files instead of a folder | not yet | |
 | Download | a whole container into a local folder | download it back | each file's SHA-256 is that of the file uploaded |
+| Download | replace existing files, with the native confirmation answered by the run, over files that are already the same | download it again over the same files and confirm the replacement | the job says every file is already the same, and each file's SHA-256 is unchanged |
 | Download | one object, a folder or a selection | not yet; layer 1 journey 3 | |
 | Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
 | Copy | a folder's copy starts under the folder's own name | upload a folder with a segmented file and browse it | for the store's own folder row, the copy dialog's destination path starts as the folder's name; nothing is sent |
