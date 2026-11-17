@@ -89,7 +89,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Containers | the Backstage mode; load more containers; what each settings badge says; stopping a scan | not yet | |
 | Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
 | Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
-| Listing | selecting rows leaves the toolbar and the list where they were | a selection holding a folder is warned before a copy | the list and three of the toolbar's buttons are in the same place with nothing selected, with one object selected and read, and with two rows selected |
+| Listing | selecting rows leaves the toolbar and the list where they were | a selection of a file and a folder is copied and downloaded with the folder's contents | the list and three of the toolbar's buttons are in the same place with nothing selected, with one object selected and read, and with two rows selected |
 | Listing | load more objects; the filter; "Find in container"; "Count objects"; marker folders; Escape clearing a selection | not yet | |
 | Inspector | an object's large-object kind | upload a folder with a segmented file and browse it | it is the kind the job recorded |
 | Inspector | an object's user metadata; a container's public notice | edit an object's metadata; make the container public and private again | read after connecting again |
@@ -107,8 +107,8 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Download | one object, a folder or a selection | not yet; layer 1 journey 3 | |
 | Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
 | Copy | a folder's copy starts under the folder's own name | upload a folder with a segmented file and browse it | for the store's own folder row, the copy dialog's destination path starts as the folder's name; nothing is sent |
-| Copy | a selection of a file and a folder is warned that the folder is left out, before the copy dialog opens | a selection holding a folder is warned before a copy | the warning names the folder and says it and everything in it will not be copied; after Cancel no copy dialog is open, and nothing is sent |
-| Copy | going on from that warning with the objects only; the warning before a download, and for folders selected alone | not yet; the frontend's own tests cover them | |
+| Copy | a selection of a file and a folder, taken with everything in the folder | a selection of a file and a folder is copied and downloaded with the folder's contents | the copy's folder holds the file and the folder's file, and each downloaded file's SHA-256 is that of the file uploaded |
+| Download | a selection of a file and a folder | the same journey | the same |
 | Copy | run a copy, within an account or across two; create the destination container; replace existing objects | not yet; layer 1 journey 2 runs the copies | |
 | Jobs | follow a job to its end and read its details | the upload and download journeys, and the prefix and container deletes of the delete journey (an object delete is not a job) | the job's state is "complete" |
 | Jobs | pause, resume and cancel a job; per-object records; history and "Recent changes" | not yet | |
