@@ -6,7 +6,7 @@ The same message asked that deleting a large object in a container that keeps ve
 Tier 1 under DESIGN §65.12.
 **Scope:** the starting value of the segments option in the bulk deletion dialog (ADR 0119) and in the one-object manifest dialog ([ADR 0095](0095-prefix-deletion-by-the-per-name-protocol.md) decision 8); `DeleteService.DeleteManifestWithSegments`, which gains the refusal ADR 0119 decision 3 gave the bulk route; and, in a bulk deletion with the option, when a dynamic manifest is read (decision 6).
 How segments are bounded, compared and recorded does not change.
-The selected-set deletion, the object and marker dialogs, Copy, Mirror and the upload's reclamation ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) are not changed.
+The object and marker dialogs, Copy, Mirror and the upload's reclamation ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) are not changed; the selected-set deletion takes this default since [ADR 0093](0093-selected-set-deletion.md) decision 8 (17 November 2026).
 
 ## What exists, and what was found
 

@@ -4,9 +4,10 @@
 Amended on 15 November 2026 by [ADR 0120](0120-segments-go-by-default-and-versions-keep-them.md), which answers this record's closing question: the option starts ticked, except in a container that is or may be another container's archive, so decision 2's "unticked whenever the dialog opens" no longer holds.
 It also widens decision 4's wait: with the option, the members in flight settle before every dynamic manifest, wherever its segments are, and the manifest is read again after they have.
 Every other rule here stands.
+Amended on 17 November 2026 by [ADR 0093](0093-selected-set-deletion.md) decisions 8 and 9: a selected-set deletion offers the same option, and a prefix deletion is typed with the word delete before the container and prefix.
 Tier 1 under DESIGN §65.12.
 **Scope:** `DeleteService.StartDelete` in its three modes, a prefix, a container's contents and a container, and the dialog that starts them.
-The selected-set deletion, the single-object dialogs, Copy, Mirror and the upload's reclamation ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) are not changed.
+The single-object dialogs, Copy, Mirror and the upload's reclamation ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 5) are not changed.
 
 ## The requirement, and what exists
 
@@ -102,7 +103,7 @@ So this record builds the explicit force action for a bulk deletion and nothing 
 ## What this does not touch
 
 The option is off unless ticked, and with it off no request, record or word differs from today.
-A selected set, one object, one marker and one manifest are deleted as before; one large object is still deleted with its segments from Backstage.
+One object, one marker and one manifest are deleted as before, and a selected set as [ADR 0093](0093-selected-set-deletion.md) decision 8 now says; one large object is still deleted with its segments from Backstage.
 No `?multipart-manifest=delete` and no bulk-delete request is sent.
 The segments container is never deleted by this job, whatever it holds afterwards.
 K-SEG-005 is unchanged, and so is the valuable-data release hold.
