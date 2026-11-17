@@ -9,8 +9,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - Phase gates (`DESIGN.md` §60) should list the requirement IDs they verify.
 - IDs are prefixed `K-` and are **stable**. The prefix is historical (the former working name); do not rename them to match Aeronautes.
 - [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) (16 November 2026) replaces staging, the comparison before a write and the read after it, step by step.
-  K-XFER-008, K-XFER-014, K-SEG-005 and K-CON-001 are rewritten for the steps carried out so far: deletions, uploads and copies.
-  Another entry that still speaks of a stage or a staged object describes downloads, or is history until that record's last step rewrites it.
+  K-XFER-008, K-XFER-014, K-SEG-005 and K-CON-001 are rewritten for the steps carried out so far: deletions, uploads, copies and downloads.
+  Another entry that still speaks of a stage or a staged object is history until that record's last step rewrites it.
 
 ## Security & secrets
 
@@ -64,6 +64,8 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   `X-Object-Manifest`; if data-only, the planner MUST preview every dropped category. (§27.4)
 - **K-XFER-011** — Swift→local download MUST run a complete collision preflight and apply a per-target
   materialization policy; it MUST NOT write-then-discover collisions. (§27.5)
+  It MUST NOT replace a local file: the engine is told to leave one that exists, and the application's own write links without replacing ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5).
+  The engine route runs only where the engine can be anchored to the held folder.
 - **K-XFER-012** — `no-large-objects` MUST NOT be a user toggle, MUST NOT be an authorization or
   eligibility input for anything, and MUST be refused for any destructive scope; internal
   checksum-path optimisation only, on a scope Aeronautes itself currently classifies fully plain. (§43.4)

@@ -34,7 +34,7 @@ Layer 2, at the end of this page, drives the real frontend in a browser (ADR 011
    The segmented file is chosen static in odd rounds and dynamic in even rounds, so two rounds or more cover both choices on both clouds (ADR 0111).
    A static choice is published static on the Swift cloud and dynamic on the Ceph RGW cloud, which does not return static manifests (decision 10).
 2. Copy a whole container from one cloud to the other, with two objects, one of them written in segments, carrying metadata of their own that has to arrive with them, and run the same copy again, which has to write nothing; copy a selection of two of N; copy within a container into a subfolder; copy a folder up to the container's top.
-3. Download a folder, a selection and a large object; compare every file's digest with the source.
+3. Download a folder, a selection and a large object; compare every file's digest with the source, and check that the folder the copy is downloaded into holds the files and nothing else.
 4. Edit object and container metadata and the run's own account metadata key, and read them back; set and clear a read ACL on the run's container with the acknowledgement.
 5. Delete one object, a marker, a manifest with its segments, a selection, a prefix, a container's contents and the container.
 6. Switch between the two bookmarks repeatedly; check that the listing and remembered settings follow the account and that no sign-in repeats.
