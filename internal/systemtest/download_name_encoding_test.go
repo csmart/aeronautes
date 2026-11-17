@@ -1,11 +1,9 @@
 package systemtest
 
 import (
-	"context"
 	"path/filepath"
 	"sort"
 	"strconv"
-	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -94,8 +92,6 @@ func downloadNameEncoding(t *testing.T, h *Harness, c nameEncodingCase) {
 	h.Seed(h.Primary, source, "outside-selection", []byte("unselected remote sentinel"), nil)
 	beforeA := h.SnapshotNamespace(h.Primary)
 	trace := copyCompletionProxy(t, h, h.Primary, "")
-	stageCalls := &atomic.Int32{}
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { stageCalls.Add(1); return nil })
 	app.WireFilePicker(h.Transfer, listingFilePicker{dir: selected})
 	picked, err := h.Transfer.PickDownloadDir(t.Context(), app.SelectionScopeDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: "scope/"})
 	if err != nil || picked == nil {
@@ -142,11 +138,6 @@ func downloadNameEncoding(t *testing.T, h *Harness, c nameEncodingCase) {
 		}
 	}
 	assertListingLocalDelta(t, before, after, files, dirs...)
-	// The engine ran once, for the safe control, and never for a name
-	// it cannot carry.
-	if stageCalls.Load() != 1 {
-		t.Errorf("engine boundary observed %d times", stageCalls.Load())
-	}
 	if len(trace.writeSnapshot()) != 0 {
 		t.Errorf("download changed remote data: %v", trace.writeSnapshot())
 	}

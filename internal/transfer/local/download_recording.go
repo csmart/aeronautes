@@ -3,7 +3,6 @@ package local
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -11,13 +10,16 @@ import (
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
-// DownloadRecorder acknowledges exact locations before dependent work.
-// The original item preserves identity without a second selection map.
+// DownloadRecorder is the durable record of one download run: each item
+// admitted before any work for it, and what the engine or the store answered
+// for it (ADR 0122 decision 7). The original item preserves identity
+// without a second selection map.
 type DownloadRecorder struct {
-	Admit       func(DownloadAdmission) error
-	Execute     func(DownloadItem, transfercopy.Observation) error
-	Verify      func(DownloadItem, transfercopy.Observation) error
-	Publication func(DownloadItem, transfercopy.Observation) error
+	Admit   func(DownloadAdmission) error
+	Execute func(DownloadItem, transfercopy.Observation) error
+	// Verify records the item's second record, which states the answer that
+	// was taken; nothing is read to make it.
+	Verify func(DownloadItem, transfercopy.Observation) error
 	// Pause is asked at the head of each unit and nowhere else: before an
 	// engine batch is handed to a child and before a native-routed item starts
 	// (ADR 0104 decision 1). It returns at once unless the job has been asked
@@ -28,18 +30,11 @@ type DownloadRecorder struct {
 	// longer be written, and stops the run as a lost record does. A route
 	// with no hook never pauses.
 	Pause func(ctx context.Context) error
-	// Stopped reports why this job's records can no longer be written, or
-	// nil while they can. The route asks it once, where it would clean its
-	// stage: when the store has stopped, for this job's record or another's,
-	// nothing is removed and the stage is reported as retained, as it is
-	// when this run's own record failed (ADR 0048 decision 7, ADR 0105
-	// decision 9). A route with no hook cleans as it always did.
-	Stopped func() error
 }
 
+// DownloadAdmission is one item admitted to the job before any work for it.
 type DownloadAdmission struct {
-	Item        DownloadItem
-	StagingPath string
+	Item DownloadItem
 }
 
 type downloadIssue struct {
@@ -53,21 +48,11 @@ type downloadResult struct {
 	label        string
 	failure      error
 	issues       []downloadIssue
-	// partialKept marks a native item whose temporary was left in place,
-	// unplaced, because the job store had stopped.
-	partialKept bool
 	// created names the directories the ancestor walk made for this
 	// item, relative to the held root, observed rather than inferred
 	// (ADR 0043). It is reported whatever the item's own outcome is,
 	// because the directories exist either way.
 	created []string
-	// Keep the inode alive until the separate final-publication check;
-	// an early verification acknowledgement must not release it.
-	published    *os.File
-	publishedRel string
-	// retainStaged marks an engine entry whose bytes were refused and
-	// stay in the stage for the operator, exempt from cleanup (ADR 0070).
-	retainStaged bool
 }
 
 func downloadFailed(effect transfercopy.Effect, stage transfercopy.Stage, code transfercopy.Code, label string, err error) downloadResult {
@@ -120,8 +105,8 @@ func downloadRecorder(recorders []*DownloadRecorder) (*DownloadRecorder, error) 
 	if len(recorders) == 0 {
 		return nil, nil
 	}
-	if len(recorders) != 1 || recorders[0] == nil || recorders[0].Admit == nil || recorders[0].Execute == nil || recorders[0].Verify == nil || recorders[0].Publication == nil {
-		return nil, errors.New("recorded download requires admission, execution, verification and publication callbacks")
+	if len(recorders) != 1 || recorders[0] == nil || recorders[0].Admit == nil || recorders[0].Execute == nil || recorders[0].Verify == nil {
+		return nil, errors.New("recorded download requires admission, execution and verification callbacks")
 	}
 	return recorders[0], nil
 }
@@ -156,11 +141,6 @@ func (item DownloadItem) LocalPath(root, prefix string) (string, error) {
 	return filepath.Join(root, item.RelPath), nil
 }
 
-type nativePublished struct {
-	item   DownloadItem
-	copied downloadResult
-}
-
 // pause parks the run at a unit head when the job has been asked to pause
 // (ADR 0104); a run with no hook never pauses.
 func (d *downloadRun) pause(ctx context.Context) error {
@@ -172,18 +152,14 @@ func (d *downloadRun) pause(ctx context.Context) error {
 		return err
 	}
 	// Not a cancel: the records can no longer be written, so the run stops as
-	// a lost record stops it, and its stage is kept (ADR 0048 decision 7).
+	// a lost record stops it.
 	return d.stop(err)
 }
 
 type downloadRun struct {
-	recorder      *DownloadRecorder
-	report        *Report
-	stopped       error
-	pendingNative []nativePublished
-	// retained names the staged entries, by relative path, whose bytes
-	// were refused and must survive the stage cleanup (ADR 0070).
-	retained map[string]bool
+	recorder *DownloadRecorder
+	report   *Report
+	stopped  error
 }
 
 func (d *downloadRun) stop(err error) error {
@@ -193,11 +169,11 @@ func (d *downloadRun) stop(err error) error {
 	return d.stopped
 }
 
-func (d *downloadRun) admit(item DownloadItem, staging string) error {
+func (d *downloadRun) admit(item DownloadItem) error {
 	if d.recorder == nil {
 		return nil
 	}
-	return d.stop(d.recorder.Admit(DownloadAdmission{Item: item, StagingPath: staging}))
+	return d.stop(d.recorder.Admit(DownloadAdmission{Item: item}))
 }
 
 func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
@@ -227,22 +203,13 @@ func (d *downloadRun) observe(item DownloadItem, result downloadResult) error {
 	}
 	if d.recorder != nil {
 		if err := d.recorder.Execute(item, result.Observation); err != nil {
-			if result.published != nil {
-				err = errors.Join(err, result.published.Close())
-			}
 			return d.stop(err)
 		}
 	}
 	if d.recorder != nil && result.verification != nil {
 		if err := d.recorder.Verify(item, *result.verification); err != nil {
-			if result.published != nil {
-				err = errors.Join(err, result.published.Close())
-			}
 			return d.stop(err)
 		}
-	}
-	if result.published != nil && result.Result == transfercopy.ResultCopied {
-		d.pendingNative = append(d.pendingNative, nativePublished{item: item, copied: result})
 	}
 	return nil
 }

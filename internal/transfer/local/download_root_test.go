@@ -1,7 +1,6 @@
 package local
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -162,78 +161,24 @@ func TestDestinationRootOpenDirectory(t *testing.T) {
 	}
 }
 
-func TestPublishVerifiedRefusesSubstitution(t *testing.T) {
-	base := t.TempDir()
-	destination := testDestination(t, base)
-	if err := os.MkdirAll(filepath.Join(base, "stage", "dir"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(base, "dir"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(base, "stage", "dir"), "file", "substitute bytes")
-	writeFile(t, base, "verified", "verified bytes")
-	verified, err := os.Stat(filepath.Join(base, "verified"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	publish := publication{root: destination,
-		stagedRoot: testDirectory(t, destination, filepath.Join("stage", "dir")), stagedBase: "file", stagedRel: filepath.Join("stage", "dir", "file"), stagedDisplay: filepath.Join(base, "stage", "dir", "file"),
-		targetRoot: testDirectory(t, destination, "dir"), targetBase: "file", targetRel: filepath.Join("dir", "file"), targetDisplay: filepath.Join(base, "dir", "file")}
-	// The staged entry is not the file that was verified: the link to the
-	// substitute is created and removed again, and the failure says so.
-	err = publish.publishVerified(verified)
-	if err == nil || !strings.Contains(err.Error(), "was substituted between verification and publication") {
-		t.Fatalf("substitution was published: %v", err)
-	}
-	if _, err := os.Lstat(filepath.Join(base, "dir", "file")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("link to the substitute was kept: %v", err)
-	}
-	// The verified file itself publishes, and a second publication refuses
-	// to replace it.
-	staged, err := os.Stat(filepath.Join(base, "stage", "dir", "file"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := publish.publishVerified(staged); err != nil {
-		t.Fatal(err)
-	}
-	if data, err := os.ReadFile(filepath.Join(base, "dir", "file")); err != nil || string(data) != "substitute bytes" {
-		t.Fatalf("published bytes differ: %q %v", data, err)
-	}
-	if err := publish.publishVerified(staged); !errors.Is(err, os.ErrExist) || !strings.Contains(err.Error(), "link "+filepath.Join(base, "stage", "dir", "file")+" "+filepath.Join(base, "dir", "file")) {
-		t.Fatalf("existing target was not kept, or the refusal lost the pathnames: %v", err)
-	}
-}
-
-func TestStageRemovalPrimitives(t *testing.T) {
+// The application's own download removes its temporary by name through the
+// held folder, and never removes a directory that took that name.
+func TestTemporaryRemovalNeverRemovesADirectory(t *testing.T) {
 	base := t.TempDir()
 	destination := testDestination(t, base)
 	if err := os.Mkdir(filepath.Join(base, "empty"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(base, "full", "child"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	writeFile(t, base, "file", "bytes")
 	root := testDirectory(t, destination, ".")
-	if err := removeDirAt(root, "file", filepath.Join(base, "file")); err == nil {
-		t.Fatal("directory removal unlinked a file")
-	}
-	if err := unlinkFileAt(root, "empty", filepath.Join(base, "empty")); err == nil {
-		t.Fatal("file removal removed a directory")
-	}
-	if err := removeDirAt(root, "full", filepath.Join(base, "full")); err == nil || !strings.Contains(err.Error(), filepath.Join(base, "full")) {
-		t.Fatalf("directory removal removed a non-empty directory or lost its pathname: %v", err)
-	}
-	if err := removeDirAt(root, "empty", filepath.Join(base, "empty")); err != nil {
-		t.Fatal(err)
+	if err := unlinkFileAt(root, "empty", filepath.Join(base, "empty")); err == nil || !strings.Contains(err.Error(), filepath.Join(base, "empty")) {
+		t.Fatalf("file removal removed a directory or lost its pathname: %v", err)
 	}
 	if err := unlinkFileAt(root, "file", filepath.Join(base, "file")); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(base)
-	if err != nil || len(entries) != 1 || entries[0].Name() != "full" {
+	if err != nil || len(entries) != 1 || entries[0].Name() != "empty" {
 		t.Fatalf("unexpected entries after removal: %v %v", entries, err)
 	}
 }

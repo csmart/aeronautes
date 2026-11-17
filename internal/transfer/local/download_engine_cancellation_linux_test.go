@@ -79,17 +79,19 @@ func TestDownloadEngineCancellationClassification(t *testing.T) {
 			admitted := 0
 			executed := map[string]transfercopy.Observation{}
 			recorder := &DownloadRecorder{
-				Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-				Admit:       func(DownloadAdmission) error { admitted++; return nil },
+				Admit: func(DownloadAdmission) error { admitted++; return nil },
 				Execute: func(item DownloadItem, observation transfercopy.Observation) error {
 					executed[item.Name] = observation
 					return nil
 				},
 				Verify: func(DownloadItem, transfercopy.Observation) error { t.Error("failed engine item verified"); return nil },
 			}
-			report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", root, "fixture", plan, nil, recorder)
-			if errors.Is(err, context.Canceled) != test.wantCancel || !test.wantCancel && err != nil {
-				t.Fatalf("run cancellation=%v want=%v error=%v", errors.Is(err, context.Canceled), test.wantCancel, err)
+			report, err := Download(ctx, source, engine, "remote:media", "media", "scope/", root, plan, nil, recorder)
+			// The run ends with the context's own state; whether a file
+			// failed for the cancel or for an independent engine failure is
+			// in its record, which is what the job's state is chosen from.
+			if !errors.Is(err, ctx.Err()) {
+				t.Fatalf("run ended %v with the context at %v", err, ctx.Err())
 			}
 			if report == nil || admitted != 2 || len(executed) != 2 || len(report.Failures) != 2 || report.Done != 0 || report.Bytes != 0 {
 				t.Fatalf("lost engine outcomes: report=%+v admitted=%d executed=%+v", report, admitted, executed)
@@ -104,7 +106,7 @@ func TestDownloadEngineCancellationClassification(t *testing.T) {
 					t.Errorf("%s observation=%+v want=%+v", name, got, want)
 				}
 				if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
-					t.Errorf("engine failure placed %s: %v", name, err)
+					t.Errorf("engine failure left a file at %s: %v", name, err)
 				}
 			}
 			for _, failure := range report.Failures {
@@ -112,10 +114,12 @@ func TestDownloadEngineCancellationClassification(t *testing.T) {
 					t.Errorf("failure cancellation=%v want=%v", failure.Cancelled, test.wantCancel)
 				}
 			}
-			if report.StageCleanup == nil || report.StageCleanup.Issues != 1 {
-				t.Fatalf("retained stage omitted: %+v", report.StageCleanup)
+			// The application removes nothing the engine left, and says that
+			// the engine did not end normally (ADR 0122 decision 5).
+			if !report.EngineStopped {
+				t.Fatalf("the report does not say the engine stopped: %+v", report)
 			}
-			for name, want := range map[string]string{"sentinel": "unchanged", ".aeronautes-stage-fixture/a.partial": "partial bytes"} {
+			for name, want := range map[string]string{"sentinel": "unchanged", "a.partial": "partial bytes"} {
 				if data, err := os.ReadFile(filepath.Join(root, name)); err != nil || string(data) != want {
 					t.Errorf("retained file %s: %q %v", name, data, err)
 				}

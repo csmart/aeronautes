@@ -26,7 +26,19 @@ func etagValue(e string) string { return strings.Trim(e, `"`) }
 // manifest that is the assembled logical stream. The returned detail is
 // built from the response headers (Class still identifies a manifest).
 func (s *Session) OpenObject(ctx context.Context, container, name string) (io.ReadCloser, *ObjectDetail, error) {
-	file, headers, err := s.conn.ObjectOpen(ctx, container, name, false, nil)
+	return s.openObject(ctx, container, name, false)
+}
+
+// OpenObjectChecked is OpenObject with the store's entity tag checked
+// against the bytes read: when the whole body of a plain object has been
+// read, closing it reports bytes whose MD5 is not the tag. A large object's
+// tag is made from its segments' tags, so the library does not check it.
+func (s *Session) OpenObjectChecked(ctx context.Context, container, name string) (io.ReadCloser, *ObjectDetail, error) {
+	return s.openObject(ctx, container, name, true)
+}
+
+func (s *Session) openObject(ctx context.Context, container, name string, checkHash bool) (io.ReadCloser, *ObjectDetail, error) {
+	file, headers, err := s.conn.ObjectOpen(ctx, container, name, checkHash, nil)
 	if err != nil {
 		return nil, nil, Normalize(err)
 	}

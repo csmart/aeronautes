@@ -52,18 +52,11 @@ func WireConfirmer(s *MutateService, confirmer PublicACLConfirmer) {
 	s.setConfirmer(confirmer)
 }
 
-// Configure before starting jobs. Each download captures this boundary
-// so an owned fixture can acknowledge engine exit before placement;
-// keeping it off the service methods excludes it from the bridge.
-func WireDownloadStageBoundary(s *TransferService, boundary func(context.Context, string) error) {
-	s.downloadStageBoundary = boundary
-}
-
-// WireDownloadPlacementBoundary lets an owned fixture act after each
-// download item outcome, so a cancel can land between two placements;
-// like the stage boundary it is composition, never a bridge method.
-func WireDownloadPlacementBoundary(s *TransferService, boundary func(ctx context.Context, jobID string, done, total int64)) {
-	s.downloadPlacementBoundary = boundary
+// WireDownloadEngineBoundary lets an owned fixture hold a download before
+// each of its engine children starts; returning an error stops that child.
+// It is composition, never a bridge method. Configure before starting jobs.
+func WireDownloadEngineBoundary(s *TransferService, before func(context.Context, string) error) {
+	s.downloadBoundary = before
 }
 
 // RunStartupRetention applies the persisted §51 retention policy.

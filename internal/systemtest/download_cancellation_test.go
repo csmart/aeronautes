@@ -1,6 +1,7 @@
 package systemtest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -22,6 +23,50 @@ import (
 // The native route is selected by an engine-reserved rune; the name is
 // otherwise ordinary and materializes on every supported host.
 const downloadCancelNative = "scope/n／native.bin"
+
+// downloadCancelEngineHeld sorts after the other engine files of its case,
+// so the engine has written them whole before its read of this one is held.
+const downloadCancelEngineHeld = "scope/z-held.bin"
+
+func downloadCancelLarge() []byte {
+	body := make([]byte, 256*1024)
+	for i := range body {
+		body[i] = byte('a' + i%26)
+	}
+	return body
+}
+
+// downloadCancelAwaitEngine waits until the engine has the given files whole
+// at their names and a partial file of its own for the held one, which is
+// the moment a cancel interrupts it while it writes.
+func downloadCancelAwaitEngine(t *testing.T, root string, whole map[string][]byte) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		done, partial := 0, false
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".partial") {
+				partial = true
+			}
+			if body, ok := whole[entry.Name()]; ok {
+				if data, err := os.ReadFile(filepath.Join(root, entry.Name())); err == nil && bytes.Equal(data, body) {
+					done++
+				}
+			}
+		}
+		if done == len(whole) && partial {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the engine did not reach the held file with the others written: entries=%v", entries)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 type downloadCancelHold struct {
 	after   int64
@@ -148,14 +193,13 @@ func downloadCancelStart(t *testing.T, h *Harness, container, prefix, root strin
 }
 
 type downloadCancelWant struct {
-	staging      string
 	execution    *jobs.ItemObservation
 	verification *jobs.ItemObservation
 }
 
 var (
 	downloadCancelNotAttempted = &jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeCancelled}}
-	downloadCancelUnplaced     = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeCancelled}}
+	downloadCancelUnknown      = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageEngine, Code: jobs.CodeCancelled}}
 	downloadCancelNativeRead   = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageSourceRead, Code: jobs.CodeCancelled}}
 	downloadCancelVerified     = &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
 )
@@ -165,7 +209,7 @@ func downloadCancelCopied(bytes int64) *jobs.ItemObservation {
 }
 
 // assertDownloadCancelItems checks every durable item record against the
-// expected observations and staging locations, then the public pages.
+// expected observations, then the public pages.
 func assertDownloadCancelItems(t *testing.T, h *Harness, id, container, root string, saved uploadRecoveryState, want map[string]downloadCancelWant, totals jobs.ItemTotals) {
 	t.Helper()
 	if !saved.ItemsCaptured || saved.ItemTotals != totals || len(saved.Items) != len(want) {
@@ -178,11 +222,6 @@ func assertDownloadCancelItems(t *testing.T, h *Harness, id, container, root str
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: item.Key}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(item.Key, "scope/")))}) {
 			t.Fatalf("cancellation changed an item identity: %+v", item)
-		}
-		if item.Staging == nil || item.Staging.Kind != jobs.ItemLocal ||
-			expected.staging != "" && item.Staging.LocalPath != filepath.Join(root, expected.staging) ||
-			expected.staging == "" && !strings.HasPrefix(item.Staging.LocalPath, filepath.Join(root, ".aeronautes-part-")) {
-			t.Fatalf("cancellation lost the staging location: %+v want %q", item.Staging, expected.staging)
 		}
 		if (item.Execution == nil) != (expected.execution == nil) || expected.execution != nil && item.Execution.ItemObservation != *expected.execution ||
 			(item.Verification == nil) != (expected.verification == nil) || expected.verification != nil && item.Verification.ItemObservation != *expected.verification {
@@ -227,12 +266,10 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 		}
 		h.Seed(h.Primary, container, "scope/a.bin", a, nil)
 		h.Seed(h.Primary, container, downloadCancelNative, body, nil)
-	case "stage_boundary":
-		h.Seed(h.Primary, container, "scope/a.bin", a, nil)
-		h.Seed(h.Primary, container, "scope/nested/b.bin", b, nil)
-	case "placement_boundary":
+	case "engine_running":
 		h.Seed(h.Primary, container, "scope/a.bin", a, nil)
 		h.Seed(h.Primary, container, "scope/b.bin", b, nil)
+		h.Seed(h.Primary, container, downloadCancelEngineHeld, downloadCancelLarge(), nil)
 	}
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	localBefore := snapshotListingLocal(t, root)
@@ -290,43 +327,37 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 		if err := h.Transfer.CancelJob(t.Context(), id); err != nil {
 			t.Fatal(err)
 		}
-	case "stage_boundary":
-		trace = &uploadDeleteTrace{}
-		idCh := make(chan string, 1)
-		app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error {
-			jobID := <-idCh
-			idCh <- jobID
-			return h.Transfer.CancelJob(context.Background(), jobID)
-		})
+	case "engine_running":
+		// The engine is held part way through the last file's body, after it
+		// has written the first two whole, so the cancel interrupts the real
+		// child while it is writing a file of its own.
+		hold, held := downloadCancelBodyProxy(t, h, container, downloadCancelEngineHeld, 64*1024)
+		trace = held
 		id = downloadCancelStart(t, h, container, "scope/", root)
-		idCh <- id
-	case "placement_boundary":
-		trace = &uploadDeleteTrace{}
-		app.WireDownloadPlacementBoundary(h.Transfer, func(ctx context.Context, jobID string, done, total int64) {
-			if done == 1 {
-				if err := h.Transfer.CancelJob(context.Background(), jobID); err != nil {
-					t.Errorf("cancel between placements: %v", err)
-				}
-			}
-		})
-		id = downloadCancelStart(t, h, container, "scope/", root)
+		select {
+		case <-hold.reached:
+		case <-time.After(30 * time.Second):
+			t.Fatal("the engine's read of the held file never reached the hold")
+		}
+		downloadCancelAwaitEngine(t, root, map[string][]byte{"a.bin": a, "b.bin": b})
+		if err := h.Transfer.CancelJob(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
 	}
-	stageName := ".aeronautes-stage-" + id
 	var state string
 	var counters jobs.Counters
 	var fragments []string
 	var want map[string]downloadCancelWant
 	var totals jobs.ItemTotals
 	var files map[string][]byte
-	var dirs []string
 	switch mode {
 	case "native_held_headers":
 		state = "cancelled"
 		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 26, ObjectsFailed: 1, NativeRouted: 1}
 		fragments = []string{"transfer failures (first: " + downloadCancelNative + ":", "context canceled"}
 		want = map[string]downloadCancelWant{
-			"scope/a.bin":        {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelNotAttempted},
-			"scope/b.bin":        {staging: filepath.Join(stageName, "b.bin"), execution: downloadCancelNotAttempted},
+			"scope/a.bin":        {execution: downloadCancelNotAttempted},
+			"scope/b.bin":        {execution: downloadCancelNotAttempted},
 			downloadCancelNative: {execution: downloadCancelNativeRead},
 		}
 		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Problems: 3}
@@ -335,43 +366,32 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 7 + 256*1024, ObjectsFailed: 1, NativeRouted: 1}
 		fragments = []string{"transfer failures (first: " + downloadCancelNative + ": context canceled)"}
 		want = map[string]downloadCancelWant{
-			"scope/a.bin":        {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelNotAttempted},
+			"scope/a.bin":        {execution: downloadCancelNotAttempted},
 			downloadCancelNative: {execution: downloadCancelNativeRead},
 		}
 		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Problems: 2}
-	case "stage_boundary":
-		state = "cancelled"
-		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 14, ObjectsFailed: 2}
-		// A cancel removes the files it staged, so the stage goes with them
-		// and there is no cleanup issue to report (ADR 0048).
-		fragments = []string{"transfer failures (first: scope/a.bin: context canceled)"}
-		want = map[string]downloadCancelWant{
-			"scope/a.bin":        {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelUnplaced},
-			"scope/nested/b.bin": {staging: filepath.Join(stageName, "nested", "b.bin"), execution: downloadCancelUnplaced},
-		}
-		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 2, Unresolved: 2, Problems: 2}
-		files = map[string][]byte{}
-		dirs = nil
-	case "placement_boundary":
+	case "engine_running":
+		// What the engine reported is downloaded; the file it was writing is
+		// unknown, and the interrupted engine removed its partial file
+		// (ADR 0122 decision 5). The job says such a file may remain,
+		// because it cannot know the engine was not killed.
 		state = "partial"
-		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 14, ObjectsCopied: 1, ObjectsVerified: 1, BytesCopied: 7, ObjectsFailed: 1}
-		fragments = []string{"transfer failures (first: scope/b.bin: context canceled)", "context canceled"}
+		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 14 + int64(len(downloadCancelLarge())), ObjectsCopied: 2, ObjectsVerified: 2, BytesCopied: 14, ObjectsFailed: 1}
+		fragments = []string{"transfer failures (first: " + downloadCancelEngineHeld + ": context canceled)", "a name ending .partial"}
 		want = map[string]downloadCancelWant{
-			"scope/a.bin": {staging: filepath.Join(stageName, "a.bin"), execution: downloadCancelCopied(7), verification: downloadCancelVerified},
-			"scope/b.bin": {staging: filepath.Join(stageName, "b.bin"), execution: downloadCancelUnplaced},
+			"scope/a.bin":            {execution: downloadCancelCopied(7), verification: downloadCancelVerified},
+			"scope/b.bin":            {execution: downloadCancelCopied(7), verification: downloadCancelVerified},
+			downloadCancelEngineHeld: {execution: downloadCancelUnknown},
 		}
-		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Unresolved: 1, Problems: 1}
-		// The placed file stays; the unplaced item's staged bytes are this
-		// job's own scratch and go with the stage (ADR 0048).
-		files = map[string][]byte{"a.bin": a}
-		dirs = nil
+		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Unresolved: 1, Problems: 1}
+		files = map[string][]byte{"a.bin": a, "b.bin": b}
 	}
 	saved := interruptionOutcome(t, h, id, state, counters, fragments...)
 	if len(saved.Rows) != 0 || saved.Status != (app.RecoveryStatusDTO{}) || saved.Job.RecoveryRecords != 0 {
 		t.Fatalf("download cancellation invented recovery facts: %+v", saved)
 	}
 	assertDownloadCancelItems(t, h, id, container, root, saved, want, totals)
-	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), files, dirs...)
+	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), files)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 	if writes := trace.writeSnapshot(); len(writes) != 0 {
@@ -382,7 +402,7 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 	if trace.requestCount() != requests {
 		t.Error("reopen contacted the remote account")
 	}
-	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), files, dirs...)
+	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), files)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 }
@@ -447,7 +467,7 @@ func downloadCancellationQueued(t *testing.T, h *Harness) {
 }
 
 func downloadCancellationCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, mode := range []string{"native_held_headers", "native_mid_body", "stage_boundary", "placement_boundary"} {
+	for _, mode := range []string{"native_held_headers", "native_mid_body", "engine_running"} {
 		t.Run(mode, func(t *testing.T) { downloadCancellationCase(t, makeHarness(t), mode) })
 	}
 	t.Run("queued_cancel", func(t *testing.T) { downloadCancellationQueued(t, makeHarness(t)) })

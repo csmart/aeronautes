@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,11 +14,8 @@ import (
 )
 
 func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
-	for _, phase := range []string{"admit", "execute", "verify", "publication"} {
-		for _, fault := range []string{"key", "path", "relative_root", "source", "container", "bookmark", "bytes", "prefix", "relative", "dot", "empty_component", "directory_size", "directory_name", "stage_relative", "stage_cleaned", "stage_other_root", "stage_other_item", "stage_native_name", "stage_native_parent", "stage_directory"} {
-			if phase != "admit" && strings.HasPrefix(fault, "stage_") {
-				continue
-			}
+	for _, phase := range []string{"admit", "execute", "verify"} {
+		for _, fault := range []string{"key", "path", "relative_root", "source", "container", "bookmark", "bytes", "prefix", "relative", "dot", "empty_component", "directory_size", "directory_name"} {
 			t.Run(phase+"_"+fault, func(t *testing.T) {
 				h := newHarness(t)
 				job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeDownload, ItemRecordsVersion: 1})
@@ -29,8 +24,7 @@ func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 				}
 				root := t.TempDir()
 				req := DownloadRequestDTO{BookmarkID: "captured", Container: "media", Prefix: "scope/"}
-				admission := local.DownloadAdmission{Item: local.DownloadItem{Name: "scope/source", RelPath: "source", Size: 5},
-					StagingPath: filepath.Join(root, ".aeronautes-stage-"+job.ID, "source")}
+				admission := local.DownloadAdmission{Item: local.DownloadItem{Name: "scope/source", RelPath: "source", Size: 5}}
 				switch fault {
 				case "key":
 					admission.Item.Name = "scope/invalid\xff"
@@ -58,22 +52,6 @@ func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					admission.Item.Name, admission.Item.Dir = "scope/source/", true
 				case "directory_name":
 					admission.Item.Dir, admission.Item.Size = true, 0
-				case "stage_relative":
-					admission.StagingPath = "relative"
-				case "stage_cleaned":
-					admission.StagingPath = filepath.Dir(admission.StagingPath) + "/sub/../source"
-				case "stage_other_root":
-					admission.StagingPath = filepath.Join(t.TempDir(), ".aeronautes-stage-"+job.ID, "source")
-				case "stage_other_item":
-					admission.StagingPath += "-other"
-				case "stage_native_name":
-					admission.Item.Route = "native"
-					admission.StagingPath = filepath.Join(root, "somewhere")
-				case "stage_native_parent":
-					admission.Item.Route = "native"
-					admission.StagingPath = filepath.Join(root, "other", ".aeronautes-part-fixture")
-				case "stage_directory":
-					admission.Item.Name, admission.Item.Dir, admission.Item.Size = "scope/source/", true, 0
 				}
 				if err := h.db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 					for _, table := range []string{"job_items", "job_item_observations", "job_item_publications"} {
@@ -93,8 +71,6 @@ func TestDownloadItemAdapterRejectsInvalidIdentityBeforeWrite(t *testing.T) {
 					err = recorder.Execute(admission.Item, transfercopy.Observation{Result: transfercopy.ResultNotAttempted, Effect: transfercopy.EffectNotAttempted})
 				case "verify":
 					err = recorder.Verify(admission.Item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted})
-				case "publication":
-					err = recorder.Publication(admission.Item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted})
 				}
 				if !errors.Is(err, jobs.ErrInvalidItemRecord) || h.transfer.jobs.Available() != nil {
 					t.Fatalf("invalid download representation reached storage or was accepted: %v latch=%v", err, h.transfer.jobs.Available())
@@ -130,22 +106,16 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 			for i := range count {
 				name := fmt.Sprintf("source-%04d", i)
 				item := local.DownloadItem{Name: req.Prefix + name, RelPath: name, Size: 5}
-				staging := filepath.Join(root, ".aeronautes-stage-"+job.ID, name)
 				if native {
 					item.Route = "native"
-					staging = filepath.Join(root, ".aeronautes-part-"+name)
 				}
-				if err := recorder.Admit(local.DownloadAdmission{Item: item, StagingPath: staging}); err != nil {
+				if err := recorder.Admit(local.DownloadAdmission{Item: item}); err != nil {
 					t.Fatal(err)
 				}
 				if err := recorder.Execute(item, transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 5}); err != nil {
 					t.Fatal(err)
 				}
 				if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
-					t.Fatal(err)
-				}
-				// Both routes owe the final-publication fact (ADR 0061, ADR 0070).
-				if err := recorder.Publication(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -158,7 +128,7 @@ func TestDownloadItemRecordingCost(t *testing.T) {
 			if finished, err := store.Get(t.Context(), job.ID); err != nil || finished.State != jobs.StateComplete || finished.Counters != counters {
 				t.Fatalf("recording cost control did not finish: %+v %v", finished, err)
 			}
-			writes := count * 4
+			writes := count * 3
 			encoded, err := json.Marshal(map[string]any{"native": native, "names": count, "acknowledged_writes": writes, "recording_ms": float64(recording) / float64(time.Millisecond), "completion_ms": float64(time.Since(started)-recording) / float64(time.Millisecond)})
 			if err != nil {
 				t.Fatal(err)
@@ -179,7 +149,7 @@ func TestDownloadItemFailedNameCountsBothPhasesOnce(t *testing.T) {
 	req := DownloadRequestDTO{BookmarkID: "captured", Container: "media", Prefix: "scope\n/"}
 	item := local.DownloadItem{Name: req.Prefix + "source", RelPath: "source", Size: 5, Route: "native"}
 	recorder := h.transfer.downloadItemRecorder(t.Context(), job.ID, req, root)
-	if err := recorder.Admit(local.DownloadAdmission{Item: item, StagingPath: filepath.Join(root, ".aeronautes-part-fixture")}); err != nil {
+	if err := recorder.Admit(local.DownloadAdmission{Item: item}); err != nil {
 		t.Fatal(err)
 	}
 	for _, observation := range []struct {

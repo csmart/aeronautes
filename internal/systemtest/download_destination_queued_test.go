@@ -2,14 +2,12 @@ package systemtest
 
 import (
 	"bytes"
-	"context"
-	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,7 +36,21 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 		h.Seed(h.Primary, source, prefix+relative, body, nil)
 	}
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
-	trace := downloadRecordsProxy(t, h, source, "", nil)
+	// The holding job's engine is held at its read of its one file, so the
+	// selected job queues behind it and its destination can change first.
+	reached, release := make(chan struct{}), make(chan struct{})
+	var reachedOnce, releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	trace := downloadRecordsProxy(t, h, source, "", nil, func(method, object string) {
+		if method != http.MethodGet || object != "hold/first.bin" {
+			return
+		}
+		reachedOnce.Do(func() { close(reached) })
+		select {
+		case <-release:
+		case <-time.After(30 * time.Second):
+		}
+	})
 	settings, err := h.Settings.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -65,37 +77,15 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	if err != nil || preflight == nil || preflight.Rejected || preflight.Objects != count {
 		t.Fatalf("queued fixture was not initially admissible: %+v error=%v", preflight, err)
 	}
-	reached, release := make(chan string, 1), make(chan struct{})
-	var releaseOnce sync.Once
-	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	var calls atomic.Int32
-	app.WireDownloadStageBoundary(h.Transfer, func(ctx context.Context, stage string) error {
-		if calls.Add(1) != 1 {
-			return nil
-		}
-		reached <- stage
-		select {
-		case <-release:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(30 * time.Second):
-			return errors.New("owned download queue barrier expired")
-		}
-	})
 	firstBefore := snapshotListingLocal(t, firstRoot)
 	first, err := h.Transfer.StartDownload(t.Context(), firstRequest)
 	if err != nil || first == "" {
 		t.Fatalf("holding download: %q error=%v", first, err)
 	}
 	select {
-	case stage := <-reached:
-		data, err := os.ReadFile(filepath.Join(stage, "first.bin"))
-		if err != nil || !bytes.Equal(data, holdBody) || stage != filepath.Join(firstRoot, ".aeronautes-stage-"+first) {
-			t.Fatalf("queue barrier preceded the actual child's complete staged bytes: %q error=%v", data, err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("holding download did not reach the stage boundary")
+	case <-reached:
+	case <-time.After(30 * time.Second):
+		t.Fatal("holding download's engine never read its file")
 	}
 	id, err := h.Transfer.StartDownload(t.Context(), request)
 	if err != nil || id == "" {
@@ -105,9 +95,12 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("fixture changed the destination after execution already began: %+v error=%v", queued, err)
 	}
-	if fault == "parent_file" {
+	switch fault {
+	case "parent_file":
 		seedListingLocal(t, owned, "selected/nested", []byte("late parent file"))
-	} else {
+	case "file_appeared":
+		seedListingLocal(t, owned, "selected/"+relative, []byte("the operator's own file"))
+	default:
 		if err := os.Remove(filepath.Join(selected, "keep")); err != nil {
 			t.Fatal(err)
 		}
@@ -121,6 +114,34 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	saved, firstSaved := uploadRecoveryRead(t, h.database, id), uploadRecoveryRead(t, h.database, first)
+	if fault == "file_appeared" {
+		// ADR 0122 decision 5: a file that has appeared since the preview is
+		// left alone and reported as not downloaded because it exists; the
+		// job is not refused as a whole.
+		conflict := jobs.ItemObservation{Result: jobs.ItemConflict, Effect: jobs.EffectNotAttempted, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeConflict}}
+		if saved.Job.State != "partial" || len(saved.Items) != 1 || saved.Items[0].Execution == nil || saved.Items[0].Execution.ItemObservation != conflict {
+			t.Errorf("a file that appeared while the job was queued: job=%+v items=%+v, want partial with the file a conflict", saved.Job, saved.Items)
+		}
+		assertListingLocalDelta(t, before, snapshotListingLocal(t, owned), nil)
+		if gets := trace.selectedGets(); len(gets) != 1 || gets["hold/first.bin"] == 0 {
+			t.Errorf("the operator's file was read for: %v", gets)
+		}
+		return
+	}
+	if fault == "parent_file" {
+		// ADR 0122 decision 5: a folder that is no longer a folder fails the
+		// item under it, and nothing is written there; the job is not
+		// refused as a whole.
+		item := jobs.ItemRecord{}
+		if len(saved.Items) == 1 {
+			item = saved.Items[0]
+		}
+		if saved.Job.State != "partial" || len(saved.Items) != 1 || item.Execution == nil || item.Execution.Result != jobs.ItemFailed || saved.Job.Counters.ObjectsCopied != 0 {
+			t.Errorf("a folder that became a file while the job was queued: job=%+v items=%+v, want partial with the item failed", saved.Job, saved.Items)
+		}
+		assertListingLocalDelta(t, before, snapshotListingLocal(t, owned), nil)
+		return
+	}
 	visible, err := h.Jobs.Get(t.Context(), h.Primary.BookmarkID, id)
 	want := jobs.Counters{ObjectsPlanned: count, BytesPlanned: count * int64(len(body))}
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) || saved.Job.State != "failed" || saved.Job.Counters != want || saved.Job.StartedAt == "" || saved.Job.FinishedAt == "" ||
@@ -136,7 +157,6 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 	firstItem := firstSaved.Items[0]
 	if firstItem.Key != "hold/first.bin" || firstItem.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: firstItem.Key}) ||
 		firstItem.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(firstRoot, "first.bin")}) ||
-		firstItem.Staging == nil || *firstItem.Staging != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(firstRoot, ".aeronautes-stage-"+first, "first.bin")}) ||
 		!firstItem.Planned || !firstItem.Admitted || firstItem.ListedBytes != int64(len(holdBody)) || firstItem.Execution == nil ||
 		firstItem.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(holdBody))}) ||
 		firstItem.Verification == nil || firstItem.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
@@ -169,8 +189,8 @@ func downloadDestinationQueued(t *testing.T, h *Harness, route, fault string) {
 		}
 	}
 	gets := trace.selectedGets()
-	if calls.Load() != 1 || len(gets) != 1 || gets["hold/first.bin"] == 0 || len(trace.traffic.writeSnapshot()) != 0 {
-		t.Errorf("queued refusal dispatched later content or writes: child returns=%d gets=%v writes=%v", calls.Load(), gets, trace.traffic.writeSnapshot())
+	if len(gets) != 1 || gets["hold/first.bin"] == 0 || len(trace.traffic.writeSnapshot()) != 0 {
+		t.Errorf("queued refusal dispatched later content or writes: gets=%v writes=%v", gets, trace.traffic.writeSnapshot())
 	}
 	assertListingLocalDelta(t, before, snapshotListingLocal(t, owned), nil)
 	assertListingLocalDelta(t, firstBefore, snapshotListingLocal(t, firstRoot), map[string][]byte{"first.bin": holdBody})

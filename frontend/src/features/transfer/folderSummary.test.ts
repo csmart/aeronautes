@@ -11,13 +11,13 @@ describe("folderSummary", () => {
 
   it("says what the walk left out", () => {
     expect(folderSummary({ folder: "photos", files: ["photos/a.jpg"], skipped: 2, emptyDirectories: 1 }, "media/")).toBe(
-      'Folder "photos": 1 file to upload into media/photos/; 2 entries skipped (links, other special entries and a download\'s own staging are left out); 1 empty directory is not uploaded.',
+      'Folder "photos": 1 file to upload into media/photos/; 2 entries skipped (links, other special entries and a download\'s own partial files are left out); 1 empty directory is not uploaded.',
     );
   });
 
   it("says when there is nothing to upload", () => {
     expect(folderSummary({ folder: "hollow", files: null as unknown as string[], skipped: 1, emptyDirectories: 3 }, "media/")).toBe(
-      'Nothing to upload: folder "hollow" holds no files; 1 entry skipped (links, other special entries and a download\'s own staging are left out); 3 empty directories are not uploaded.',
+      'Nothing to upload: folder "hollow" holds no files; 1 entry skipped (links, other special entries and a download\'s own partial files are left out); 3 empty directories are not uploaded.',
     );
   });
 

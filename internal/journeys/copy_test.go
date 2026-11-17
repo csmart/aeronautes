@@ -206,6 +206,19 @@ func copyJourney(w *world, from, to *account, round int) {
 	if diff := same(got, digests); diff != "" {
 		t.Fatalf("downloaded files differ from the originals: %s", diff)
 	}
+	// The engine wrote straight into the folder: it holds the files and
+	// nothing of the application's own, no stage and no partial file.
+	entries, err := os.ReadDir(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(digests) {
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("the download folder holds %q, want only the %d downloaded files", names, len(digests))
+	}
 }
 
 // failure is realcloud.Failure that tolerates no error.

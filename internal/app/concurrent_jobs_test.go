@@ -11,9 +11,9 @@ import (
 )
 
 // ADR 0105: under the default budget two downloads into sibling directories
-// run together. Both are held in their engines at the same time, each with
-// its own stage in its own directory, while a third start waits in the queue;
-// released, each completes with its own file and nothing else left behind.
+// run together. Both are held in their engines at the same time while a third
+// start waits in the queue; released, each completes with its own file and
+// nothing else in its directory.
 func TestTwoDownloadsRunTogetherIntoSiblingDirectories(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
@@ -49,11 +49,6 @@ func TestTwoDownloadsRunTogetherIntoSiblingDirectories(t *testing.T) {
 	if job, err := h.jobsSvc.Get(ctx, bookmark, waiting.id); err != nil || job.State != "queued" {
 		t.Fatalf("the third download = %+v, %v; want queued behind the two that are running", job, err)
 	}
-	for _, d := range together {
-		if _, err := os.Stat(filepath.Join(d.dir, ".aeronautes-stage-"+d.id)); err != nil {
-			t.Fatalf("download %s holds no stage of its own while it runs: %v", d.id, err)
-		}
-	}
 	block.unblock()
 	for _, d := range append(together, waiting) {
 		if job := awaitTerminal(t, h, d.id); job.State != "complete" {
@@ -61,7 +56,7 @@ func TestTwoDownloadsRunTogetherIntoSiblingDirectories(t *testing.T) {
 		}
 		entries, err := os.ReadDir(d.dir)
 		if err != nil || len(entries) != 1 || entries[0].Name() != d.file {
-			t.Fatalf("%s holds %v, %v; want only its own file and no stage", d.dir, entries, err)
+			t.Fatalf("%s holds %v, %v; want only its own file", d.dir, entries, err)
 		}
 		if data, err := os.ReadFile(filepath.Join(d.dir, d.file)); err != nil || string(data) != d.content {
 			t.Fatalf("%s holds %q, %v; want this download's bytes", d.file, data, err)

@@ -21,48 +21,53 @@ import (
 
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/jobs"
-	"github.com/csmart/aeronautes/internal/swiftcontrol"
-	"github.com/ncw/swift/v2"
 )
 
-type downloadCloseEOFReader struct {
+// A name the engine cannot carry is read by the application in one GET into
+// a temporary file beside its final name, and linked to that name; the
+// temporary is removed however the item ends (ADR 0122 decision 5). These
+// cases hold the body before its last byte so the folder can be made
+// read-only before the link: the link is then refused and the temporary
+// cannot be removed, which the item must say, with the temporary left where
+// it is.
+
+// downloadCloseHoldReader passes all but the last byte, then waits to be
+// released. The response keeps its length, so the client cannot finish the
+// body before the last byte arrives.
+type downloadCloseHoldReader struct {
 	io.ReadCloser
+	before  int64
+	sent    int64
 	arrived chan<- struct{}
 	release <-chan struct{}
 	once    sync.Once
 }
 
-func (r *downloadCloseEOFReader) Read(p []byte) (int, error) {
-	n, err := r.ReadCloser.Read(p)
-	if n > 0 && errors.Is(err, io.EOF) {
-		return n, nil
-	}
-	if errors.Is(err, io.EOF) {
+func (r *downloadCloseHoldReader) Read(p []byte) (int, error) {
+	if r.sent >= r.before {
 		r.once.Do(func() {
 			close(r.arrived)
 			select {
 			case <-r.release:
 			case <-time.After(10 * time.Second):
-				err = errors.New("download EOF barrier timed out")
 			}
 		})
+	} else if remaining := r.before - r.sent; int64(len(p)) > remaining {
+		p = p[:remaining]
 	}
+	n, err := r.ReadCloser.Read(p)
+	r.sent += int64(n)
 	return n, err
 }
 
 func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	t.Helper()
-	fault, collision := strings.HasPrefix(scenario, "source_close"), scenario == "link"
-	cleanup := strings.HasSuffix(scenario, "_cleanup")
+	cleanup := scenario == "cleanup"
 	source := h.Container(h.Primary, "download-close-source")
 	other := h.Container(h.Secondary, "download-close-other")
 	prefix, name := "scope\n/", "proof.bin"
-	sourceBody := []byte("selected source bytes")
-	body := sourceBody
-	if fault {
-		body = body[:len(body)-1]
-	}
-	h.Seed(h.Primary, source, prefix+name, sourceBody, nil)
+	body := []byte("selected source bytes")
+	h.Seed(h.Primary, source, prefix+name, body, nil)
 	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
 	h.Seed(h.Secondary, other, "outside", []byte("other account"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
@@ -84,26 +89,19 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy := httputil.NewSingleHostReverseProxy(&target)
 	proxy.Transport = transport
-	eof, release := make(chan struct{}), make(chan struct{})
+	// Each byte passed reaches the client at once, so the temporary holds
+	// all but the last while the body is held.
+	proxy.FlushInterval = -1
+	held, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	resume := func() { releaseOnce.Do(func() { close(release) }) }
 	t.Cleanup(resume)
-	var gets, lengthHeads atomic.Int32
+	var gets, heads atomic.Int32
 	proxy.ModifyResponse = func(response *http.Response) error {
 		if response.Request.Method == http.MethodGet && response.Request.URL.Path == selectedPath && response.StatusCode == http.StatusOK {
-			if fault {
-				// Keep the source identity intact so this fault reaches the
-				// streamed body and Close rather than source admission.
-				response.Body = struct {
-					io.Reader
-					io.Closer
-				}{io.LimitReader(response.Body, int64(len(body))), response.Body}
-			}
 			if gets.Add(1) == 1 && cleanup {
-				response.Body = &downloadCloseEOFReader{ReadCloser: response.Body, arrived: eof, release: release}
+				response.Body = &downloadCloseHoldReader{ReadCloser: response.Body, before: int64(len(body) - 1), arrived: held, release: release}
 			}
-			response.Header.Del("Content-Length")
-			response.ContentLength = -1
 		}
 		return nil
 	}
@@ -119,12 +117,8 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 			trace.writes = append(trace.writes, r.Method+" "+r.URL.Path)
 		}
 		trace.mu.Unlock()
-		if r.Method == http.MethodHead && r.URL.Path == selectedPath && gets.Load() > 0 {
-			if lengthHeads.Add(1) == 1 && collision {
-				if err := os.WriteFile(filepath.Join(destination, name), []byte("concurrent creator"), 0o600); err != nil {
-					t.Errorf("create target after preflight: %v", err)
-				}
-			}
+		if r.Method == http.MethodHead && r.URL.Path == selectedPath {
+			heads.Add(1)
 		}
 		proxy.ServeHTTP(w, r)
 	}))
@@ -158,9 +152,9 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	var retained string
 	if cleanup {
 		select {
-		case <-eof:
+		case <-held:
 		case <-time.After(10 * time.Second):
-			t.Fatal("native download did not reach the streamed EOF barrier")
+			t.Fatal("native download did not reach the hold before the last byte")
 		}
 		deadline := time.Now().Add(5 * time.Second)
 		for {
@@ -170,7 +164,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 			}
 			if len(paths) == 1 {
 				data, err := os.ReadFile(paths[0])
-				if err == nil && bytes.Equal(data, body) {
+				if err == nil && bytes.Equal(data, body[:len(body)-1]) {
 					retained = paths[0]
 					break
 				}
@@ -186,7 +180,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 			}
 		})
 		if _, err := os.Lstat(filepath.Join(destination, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("native file appeared before EOF and closure: %v", err)
+			t.Fatalf("native file appeared before its last byte: %v", err)
 		}
 		if err := os.Chmod(destination, 0o555); err != nil {
 			t.Fatal(err)
@@ -201,86 +195,44 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 		}
 	}
 	saved := uploadRecoveryRead(t, h.database, id)
-	if gets.Load() != 1 || lengthHeads.Load() != 1 {
-		t.Fatalf("close probe missed actual wire length check: gets=%d heads=%d", gets.Load(), lengthHeads.Load())
+	// One GET, and nothing read about the name before or after it.
+	if gets.Load() != 1 || heads.Load() != 0 {
+		t.Fatalf("the native route read the source other than once: gets=%d heads=%d", gets.Load(), heads.Load())
 	}
 	delta := map[string][]byte{}
-	if fault && !cleanup && !collision {
-		// The proxy ends the body before the source's advertised length,
-		// so the comparison rejects it and its bytes are retained as
-		// unresolved residue (ADR 0045). This fault previously cleaned the
-		// temporary up; it no longer does, because a rejected download
-		// must not reach a cleanup whose identity check cannot tell our
-		// own file from a replacement that reused its inode.
-		paths, globErr := filepath.Glob(filepath.Join(destination, ".aeronautes-part-*"))
-		if globErr != nil || len(paths) != 1 {
-			t.Fatalf("a rejected download did not retain exactly one temporary: %v %v", paths, globErr)
-		}
-		held, readErr := os.ReadFile(paths[0])
-		if readErr != nil || !bytes.Equal(held, body) {
-			t.Fatalf("the retained temporary does not hold the served bytes: %v %q", readErr, held)
-		}
-		retained = paths[0]
-		delta["selected/"+filepath.Base(retained)] = body
-	}
-	if cleanup {
-		delta["selected/"+filepath.Base(retained)] = body
-	}
-	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(sourceBody)), NativeRouted: 1}
+	want := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: int64(len(body)), NativeRouted: 1}
 	state, result := "complete", "applied"
-	if fault || collision || cleanup {
+	totals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
+	execution := jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}
+	verification := &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
+	if cleanup {
 		want.ObjectsFailed = 1
-		if collision {
-			want.ObjectsFailed = 0
-		}
 		state, result = "partial", "verify_mismatch"
-		if collision {
-			delta["selected/proof.bin"] = []byte("concurrent creator")
-		} else if _, err := os.Lstat(filepath.Join(destination, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("source close failure placed a final file: %v", err)
+		delta["selected/"+filepath.Base(retained)] = body
+		if _, err := os.Lstat(filepath.Join(destination, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("a refused link placed a final file: %v", err)
 		}
+		totals.Failed, totals.Unresolved, totals.Problems = 1, 1, 1
+		execution = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeIO}}
+		verification = nil
 	} else {
 		want.ObjectsCopied, want.ObjectsVerified, want.BytesCopied = 1, 1, int64(len(body))
 		delta["selected/proof.bin"] = body
-		placed, err := os.ReadFile(filepath.Join(destination, name))
-		if err != nil || !bytes.Equal(placed, body) {
-			t.Fatalf("close control lacks complete destination bytes: %q %v", placed, err)
-		}
 	}
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), delta)
 	if saved.Job.State != state || saved.Job.Counters != want || !saved.ItemsCaptured || len(saved.Items) != 1 || len(saved.Rows) != 0 {
 		t.Fatalf("native close outcome differs: %+v", saved)
 	}
-	totals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
-	execution := jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}
-	verification := &jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}
-	if fault || collision || cleanup {
-		totals.Unresolved, totals.Problems = 1, 1
-		execution = jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectUnresolved, Diagnostic: jobs.ItemDiagnostic{Stage: jobs.StageCommit, Code: jobs.CodeIO}}
-		verification = nil
-		if collision {
-			totals.Conflicts = 1
-			execution.Result, execution.Diagnostic.Code = jobs.ItemConflict, jobs.CodeConflict
-		} else {
-			totals.Failed = 1
-		}
-		if fault {
-			execution.Diagnostic = jobs.ItemDiagnostic{Stage: jobs.StageVerification, Code: jobs.CodeUnverified}
-			verification = &jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted, Diagnostic: execution.Diagnostic}
-		}
-	}
 	item := saved.Items[0]
-	if saved.ItemTotals != totals || item.Key != prefix+name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(sourceBody)) ||
+	if saved.ItemTotals != totals || item.Key != prefix+name || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
 		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: prefix + name}) ||
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(destination, name)}) ||
-		item.Staging == nil || item.Staging.Kind != jobs.ItemLocal || filepath.Dir(item.Staging.LocalPath) != destination ||
-		!strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-") || retained != "" && item.Staging.LocalPath != retained ||
 		item.Execution == nil || item.Execution.ItemObservation != execution ||
 		(item.Verification == nil) != (verification == nil) || verification != nil && item.Verification.ItemObservation != *verification {
-		t.Fatalf("native close records lost exact placement, closure or cleanup facts: %+v", saved)
+		t.Fatalf("native close records differ: %+v", saved)
 	}
 	assertDownloadItemPages(t, h, id, map[string]jobs.ItemRecord{item.Key: item}, totals)
-	summary := fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", totals.Failed, totals.Conflicts, totals.Unresolved, totals.Problems)
+	summary := fmt.Sprintf(" · item outcomes: %d failed names, 0 conflicts, 0 refusals, %d unresolved, 0 unverified, %d with problems", totals.Failed, totals.Unresolved, totals.Problems)
 	if len(saved.Audit) != 1 || saved.Audit[0].Operation != "transfer.local."+state || saved.Audit[0].Result != result || saved.Audit[0].Resource != "job "+id || saved.Audit[0].Summary != summary {
 		t.Fatalf("native close audit differs: %+v", saved.Audit)
 	}
@@ -292,39 +244,13 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	if err != nil || !reflect.DeepEqual(visible, saved.Job) {
 		t.Fatalf("close probe public/durable mismatch: %+v %v", visible, err)
 	}
-	witness, err := swiftcontrol.New(swiftcontrol.Config{AuthURL: h.Primary.authURL, Username: h.Primary.user, APIKey: h.Primary.key, StorageURLOverride: front.URL + storage.EscapedPath()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	stream, _, err := witness.OpenObject(t.Context(), source, prefix+name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	read, readErr := io.ReadAll(stream)
-	closeErr := stream.Close()
-	if readErr != nil || !bytes.Equal(read, body) || fault != errors.Is(closeErr, swift.ObjectCorrupted) || !fault && closeErr != nil {
-		t.Fatalf("independent close witness differs: read=%q read_error=%v close_error=%v", read, readErr, closeErr)
-	}
-	if fault && !strings.Contains(saved.Job.Error, "Object Corrupted") {
-		t.Errorf("download lost stream close corruption reason: %+v", saved.Job)
-	}
-	if collision && !strings.Contains(saved.Job.Error, "file exists") {
-		t.Errorf("download lost no-replace refusal: %+v", saved.Job)
-	}
-	// A rejected download no longer attempts cleanup at all, so there is
-	// no refusal to record: its temporary is retained by decision rather
-	// than because a removal failed (ADR 0045). The refusal assertion
-	// still applies to the cleanup variant that does attempt a removal.
-	if cleanup && fault && strings.Contains(saved.Job.Error, "remove download temporary file") {
-		t.Errorf("a rejected download attempted a cleanup it should not have: %+v", saved.Job)
-	}
-	if cleanup && !fault && (!strings.Contains(saved.Job.Error, "remove download temporary file") || !strings.Contains(saved.Job.Error, "permission denied")) {
-		t.Errorf("download lost temporary cleanup refusal: %+v", saved.Job)
-	}
-	if scenario == "link_cleanup" && !strings.Contains(saved.Job.Error, "link ") {
-		t.Errorf("cleanup erased final link refusal: %+v", saved.Job)
-	}
-	if !fault && !collision && !cleanup && (saved.Job.State != "complete" || saved.Job.Error != "") {
+	if cleanup {
+		for _, reason := range []string{name + ": permission denied", "remove download temporary file"} {
+			if !strings.Contains(saved.Job.Error, reason) {
+				t.Errorf("the job does not say %q about the refused link and the temporary left behind: %q", reason, saved.Job.Error)
+			}
+		}
+	} else if saved.Job.Error != "" {
 		t.Errorf("download close control did not complete: %+v", saved.Job)
 	}
 	requests := trace.requestCount()
@@ -341,7 +267,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, root), delta)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
-	encoded, err := json.Marshal(map[string]any{"fault": fault, "wire_close_corrupt": errors.Is(closeErr, swift.ObjectCorrupted), "read_bytes": len(read), "saved": saved})
+	encoded, err := json.Marshal(map[string]any{"scenario": scenario, "saved": saved})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +275,7 @@ func downloadCloseRun(t *testing.T, h *Harness, scenario string) {
 }
 
 func downloadCloseCases(t *testing.T, makeHarness func(*testing.T) *Harness) {
-	for _, scenario := range []string{"control", "source_close", "link", "source_close_cleanup", "link_cleanup"} {
+	for _, scenario := range []string{"control", "cleanup"} {
 		t.Run(scenario, func(t *testing.T) {
 			downloadCloseRun(t, makeHarness(t), scenario)
 		})

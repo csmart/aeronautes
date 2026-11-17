@@ -116,19 +116,46 @@ func TestDownloadDestinationEntry(t *testing.T) {
 					var recorders []*DownloadRecorder
 					if recorded {
 						recorders = []*DownloadRecorder{{
-							Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-							Admit:       func(DownloadAdmission) error { callbacks++; return nil },
-							Execute:     func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
-							Verify:      func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
+							Admit:   func(DownloadAdmission) error { callbacks++; return nil },
+							Execute: func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
+							Verify:  func(DownloadItem, transfercopy.Observation) error { callbacks++; return nil },
 						}}
 					}
-					report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, "fixture", plan,
+					report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
 						func(int64, int64, int64) { callbacks++ }, recorders...)
-					if err == nil || report != nil || engine.calls != 0 || mock.Requests() != requests || callbacks != 0 {
-						t.Errorf("existing hazard admitted part of a direct plan: report=%+v error=%v engine=%d requests=%d callbacks=%d", report, err, engine.calls, mock.Requests()-requests, callbacks)
+					after := downloadDestinationSnapshot(t, owned)
+					if fault == "missing_root" || fault == "root_file" {
+						// A chosen folder that is gone refuses the whole run before
+						// anything is asked or written.
+						if err == nil || report != nil || engine.calls != 0 || mock.Requests() != requests || callbacks != 0 {
+							t.Errorf("a run into a folder that is gone went ahead: report=%+v error=%v engine=%d requests=%d callbacks=%d", report, err, engine.calls, mock.Requests()-requests, callbacks)
+						}
+						if !reflect.DeepEqual(before, after) {
+							t.Errorf("a refused run changed entries: before=%+v after=%+v", before, after)
+						}
+						return
 					}
-					if after := downloadDestinationSnapshot(t, owned); !reflect.DeepEqual(before, after) {
-						t.Errorf("refused direct plan changed selected or outside entries: before=%+v after=%+v", before, after)
+					// Any other hazard is met by the item it concerns (ADR 0122
+					// decision 5): that item is not done, the other one is, and
+					// every entry that was there before, the hazard itself and
+					// everything outside the chosen folder, is as it was.
+					hazard := plan.Items[1].Name
+					if err != nil || report == nil || report.Done != 1 || len(report.Failures) != 1 || report.Failures[0].Name != hazard {
+						t.Fatalf("the run did not meet the hazard on its own item: report=%+v error=%v", report, err)
+					}
+					for path, state := range before {
+						if after[path] != state {
+							t.Errorf("entry %q changed: %+v, was %+v", path, after[path], state)
+						}
+					}
+					for path := range after {
+						if _, existed := before[path]; !existed && path != filepath.Join(root, "first") {
+							t.Errorf("entry %q was created", path)
+						}
+					}
+					first, statErr := os.Lstat(filepath.Join(root, "first"))
+					if statErr != nil || first.IsDir() != (route == "marker") {
+						t.Errorf("the item without a hazard was not done: %v %v", first, statErr)
 					}
 				})
 			}
@@ -156,12 +183,11 @@ func TestDownloadDestinationEmptyEntry(t *testing.T) {
 				before := downloadDestinationSnapshot(t, owned)
 				calls := 0
 				recorder := &DownloadRecorder{
-					Publication: func(DownloadItem, transfercopy.Observation) error { return nil },
-					Admit:       func(DownloadAdmission) error { calls++; return nil },
-					Execute:     func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
-					Verify:      func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Admit:   func(DownloadAdmission) error { calls++; return nil },
+					Execute: func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
+					Verify:  func(DownloadItem, transfercopy.Observation) error { calls++; return nil },
 				}
-				report, err := Download(t.Context(), nil, nil, "", "media", "scope/", root, "fixture", plan, nil, recorder)
+				report, err := Download(t.Context(), nil, nil, "", "media", "scope/", root, plan, nil, recorder)
 				if state != "directory" {
 					if err == nil || report != nil || calls != 0 {
 						t.Errorf("empty or root-marker plan admitted an unavailable root: %+v calls=%d error=%v", report, calls, err)

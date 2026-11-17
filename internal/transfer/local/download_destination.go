@@ -60,14 +60,3 @@ func inspectDownloadPath(root *os.Root, item DownloadItem) *Problem {
 	}
 	return nil
 }
-
-// checkDownloadDestination re-inspects every planned path through the
-// held handle immediately before the first effect.
-func checkDownloadDestination(root *os.Root, items []DownloadItem) error {
-	for _, item := range items {
-		if problem := inspectDownloadPath(root, item); problem != nil {
-			return fmt.Errorf("download destination refused %q: %s", problem.Name, problem.Detail)
-		}
-	}
-	return nil
-}

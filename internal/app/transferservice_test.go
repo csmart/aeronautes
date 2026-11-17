@@ -234,8 +234,8 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 	}
 	for _, name := range names {
 		// The engine says where it puts an object's segments and which
-		// objects it wrote, by the name each was listed under; an upload
-		// and a copy take its word for both (ADR 0122 decision 7).
+		// objects it wrote, by the name each was listed under; every
+		// transfer takes its word for both (ADR 0122 decision 7).
 		e.said = func(level, msg string) {
 			if onEvent != nil {
 				onEvent(rclone.Event{Level: level, Object: name, Msg: msg})
@@ -244,9 +244,7 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 		if err := e.transfer(ctx, src+"/"+name, dst+"/"+name); err != nil {
 			return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
 		}
-		if !localPath(dst) {
-			e.said("info", "Copied (new)")
-		}
+		e.said("info", "Copied (new)")
 	}
 	result := &rclone.Result{SegmentPrefixes: e.captured}
 	e.captured = nil

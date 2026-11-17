@@ -96,7 +96,7 @@ func TestDownloadNameLimitsExecutorAdmission(t *testing.T) {
 	root := t.TempDir()
 	engine := &countedEngine{}
 	plan := &DownloadPreflight{Items: []DownloadItem{{Name: "scope/" + long300, RelPath: long300, Size: 5, Route: "rclone"}}, Objects: 1, TotalBytes: 5}
-	report, err := Download(t.Context(), source, engine, "aeronautes_src:media", "media", "scope/", root, "name-limits", plan, nil)
+	report, err := Download(t.Context(), source, engine, "aeronautes_src:media", "media", "scope/", root, plan, nil)
 	if err == nil || report != nil || engine.calls != 0 {
 		t.Fatalf("executor admitted an over-long component: %+v %v calls=%d", report, err, engine.calls)
 	}

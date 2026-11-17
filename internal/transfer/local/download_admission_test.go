@@ -3,6 +3,7 @@ package local
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,13 @@ type downloadAdmissionTransport func(*http.Request) (*http.Response, error)
 func (f downloadAdmissionTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
+
+type downloadCloseReader struct {
+	io.Reader
+	close func() error
+}
+
+func (r downloadCloseReader) Close() error { return r.close() }
 
 func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 	for _, admission := range []string{"mkdir", "temporary"} {
@@ -58,13 +66,12 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 				}
 				// The selected directory is always a directory the handle can
 				// hold; the parent that cannot be created is a file beneath it.
-				item, temporary := DownloadItem{Name: "selected", RelPath: "final", Size: 21}, filepath.Join(dest, ".aeronautes-part-fixture")
+				item := DownloadItem{Name: "selected", RelPath: "final", Size: 21}
 				if admission == "mkdir" {
 					if err := os.WriteFile(filepath.Join(dest, "parent"), []byte("existing destination file"), 0o600); err != nil {
 						t.Fatal(err)
 					}
 					item.RelPath = filepath.Join("parent", "final")
-					temporary = filepath.Join(dest, "parent", ".aeronautes-part-fixture")
 				} else {
 					if err := os.WriteFile(filepath.Join(dest, "keep"), []byte("local sentinel"), 0o600); err != nil {
 						t.Fatal(err)
@@ -78,7 +85,7 @@ func TestNativeDownloadAdmissionClosesSource(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				outcome := nativeDownload(t.Context(), source, "media", item, testDestination(t, dest), temporary, downloadSourceIdentity{}, nil)
+				outcome := nativeDownload(t.Context(), source, "media", item, testDestination(t, dest))
 				placed, err := outcome.Result == transfercopy.ResultCopied, outcome.err()
 				if placed || err == nil || gets.Load() != 1 || closes.Load() != 1 {
 					t.Fatalf("admission did not close the actual GET exactly once: placed=%v gets=%d closes=%d error=%v", placed, gets.Load(), closes.Load(), err)

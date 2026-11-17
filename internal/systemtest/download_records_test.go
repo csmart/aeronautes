@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,7 +35,11 @@ func (t *downloadRecordsTrace) selectedGets() map[string]int {
 	return result
 }
 
-func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, names map[string]bool, beforeGet ...func(string)) *downloadRecordsTrace {
+// downloadRecordsProxy fronts the primary account, counts each GET of a
+// name under prefix, refuses the GETs of names, and runs each hook on every
+// request for an object of container before it is forwarded, so a hook can
+// hold a request or act while it is held.
+func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, names map[string]bool, beforeRequest ...func(method, object string)) *downloadRecordsTrace {
 	t.Helper()
 	storage, err := url.Parse(h.Primary.storageURL)
 	if err != nil {
@@ -59,15 +65,17 @@ func downloadRecordsProxy(t *testing.T, h *Harness, container, prefix string, na
 			trace.traffic.writes = append(trace.traffic.writes, r.Method+" "+r.URL.Path)
 		}
 		trace.traffic.mu.Unlock()
+		if object, ok := strings.CutPrefix(r.URL.Path, storage.Path+"/"+container+"/"); ok {
+			for _, hook := range beforeRequest {
+				hook(r.Method, object)
+			}
+		}
 		scope := storage.Path + "/" + container + "/" + prefix
 		name, selected := strings.CutPrefix(r.URL.Path, scope)
 		if r.Method == http.MethodGet && selected {
 			trace.mu.Lock()
 			trace.gets[name]++
 			trace.mu.Unlock()
-			for _, hook := range beforeGet {
-				hook(name)
-			}
 		}
 		if r.Method == http.MethodGet && selected && names[name] {
 			trace.mu.Lock()
@@ -108,7 +116,6 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	aliases := h.Container(h.Primary, "download-identity-aliases")
 	other := h.Container(h.Secondary, "download-identity-other")
 	h.Seed(h.Primary, source, "outside", []byte("unselected source"), nil)
-	h.Seed(h.Primary, source, ".aeronautes/stage/other-job/keep", []byte("other stage"), nil)
 	h.Seed(h.Secondary, other, "keep", []byte("other account"), nil)
 	shared := []byte("shared bytes")
 	h.Seed(h.Primary, segments, "shared/0", shared, nil)
@@ -135,7 +142,6 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	root := t.TempDir()
 	seedListingLocal(t, root, "selected/sentinel", []byte("existing destination"))
-	seedListingLocal(t, root, "selected/.aeronautes-stage-other-job/keep", []byte("other local stage"))
 	seedListingLocal(t, root, "outside/keep", []byte("outside selection"))
 	localBefore := snapshotListingLocal(t, root)
 	destination := filepath.Join(root, "selected")
@@ -160,43 +166,38 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 			t.Fatalf("unexpected captured download identity or route: %+v", item)
 		}
 	}
-	var trace *uploadDeleteTrace
-	var refused *downloadRecordsTrace
-	var release func()
 	expected := map[string][]byte{"selected/" + successful: originals[successful]}
+	var refused *downloadRecordsTrace
 	if native {
 		refused = downloadRecordsProxy(t, h, source, prefix, selected)
-		trace = &refused.traffic
-		release = func() {}
 	} else {
-		heldName := successful
-		if count > 0 {
-			heldName = "f-0000-étude�.bin"
+		// The engine's first request is its look at the source folder, made
+		// before it looks at any local name and after the run's own checks.
+		// Held there, the operator's files appear in the folder the engine is
+		// about to write (ADR 0122 decision 5).
+		collisions := map[string][]byte{}
+		for name := range selected {
+			collisions[name] = []byte("owned collision: " + name)
+			expected["selected/"+name] = collisions[name]
 		}
-		barrier, ended, hits, traffic := interruptionProxy(t, h, source, http.MethodGet, prefix+heldName, nil)
-		trace = traffic
-		release = func() {
-			if event, err := barrier.Wait(t.Context()); err != nil || event.StatusCode != http.StatusOK {
-				t.Fatalf("download placement barrier: %+v %v", event, err)
+		folder := strings.TrimSuffix(prefix, "/")
+		var once sync.Once
+		refused = downloadRecordsProxy(t, h, source, prefix, nil, func(method, object string) {
+			if method != http.MethodHead || object != folder {
+				return
 			}
-			for name := range selected {
-				body := []byte("owned collision: " + name)
-				seedListingLocal(t, root, "selected/"+name, body)
-				expected["selected/"+name] = body
-			}
-			if err := barrier.Release(); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case <-ended:
-			case <-time.After(10 * time.Second):
-				t.Fatal("released download response did not return")
-			}
-			if hits.Load() != 1 || barrier.Err() != nil {
-				t.Fatalf("unexpected barrier retry or failure: %d %v", hits.Load(), barrier.Err())
-			}
-		}
+			// This runs on the proxy's goroutine, so it writes files and
+			// reports, and never stops the test from here.
+			once.Do(func() {
+				for name, body := range collisions {
+					if err := os.WriteFile(filepath.Join(destination, name), body, 0o644); err != nil {
+						t.Errorf("the operator's file %q: %v", name, err)
+					}
+				}
+			})
+		})
 	}
+	trace := &refused.traffic
 	// The fixture proxies above republish the bookmark, which moves its
 	// generation and retires the selection taken for the report. Choose
 	// again so the start carries a selection bound to the account as it
@@ -212,7 +213,6 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if err != nil || id == "" {
 		t.Fatalf("download was not admitted: %q %v", id, err)
 	}
-	release()
 	h.AwaitJob(id)
 	copyCompletionAwaitPins(t, h, h.Primary)
 	saved := uploadRecoveryRead(t, h.database, id)
@@ -234,14 +234,18 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 		t.Errorf("download loses exact failed-name totals: got=%+v want=%s %+v", saved.Job, state, want)
 	}
 	assertDownloadRecords(t, h, id, source, prefix, destination, selected, originals, native, saved)
-	// Cleanup removes the files this job staged, so an engine download with
-	// failed items leaves neither the staged copies nor the stage (ADR 0048).
-	var dirs []string
-	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected, dirs...)
+	// The operator's files are as they made them, the rest downloaded, and
+	// nothing else is in the folder.
+	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 	if writes := trace.writeSnapshot(); len(writes) != 0 {
 		t.Fatalf("download mutated remote storage: %v", writes)
+	}
+	// The engine read only the file it downloaded; it left the operator's
+	// files without reading their objects.
+	if gets := refused.selectedGets(); !native && !reflect.DeepEqual(gets, map[string]int{successful: 1}) {
+		t.Fatalf("the engine read %v, want only %q", gets, successful)
 	}
 	if native {
 		refused.mu.Lock()
@@ -268,7 +272,7 @@ func downloadRecordsRun(t *testing.T, h *Harness, count int, native bool) {
 	if trace.requestCount() != requests {
 		t.Fatal("orderly download reopen generated storage traffic")
 	}
-	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected, dirs...)
+	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected)
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))
 }

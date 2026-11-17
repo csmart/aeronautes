@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"path/filepath"
-	"strings"
 
 	"github.com/csmart/aeronautes/internal/jobs"
 	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
@@ -27,34 +25,16 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 		Pause: func(live context.Context) error {
 			return s.runner.checkpoint(live, jobID, req.BookmarkID)
 		},
-		Stopped: s.jobs.Available,
 		Admit: func(admission local.DownloadAdmission) error {
 			identity, err := downloadItemIdentity(req, root, admission.Item)
 			if err != nil {
 				return err
 			}
-			staging := admission.StagingPath
-			if admission.Item.Dir {
-				if staging != "" {
-					return jobs.ErrInvalidItemRecord
-				}
-			} else if !filepath.IsAbs(staging) || filepath.Clean(staging) != staging {
-				return jobs.ErrInvalidItemRecord
-			} else if admission.Item.Route == "native" {
-				if filepath.Dir(staging) != filepath.Dir(identity.Destination.LocalPath) || !strings.HasPrefix(filepath.Base(staging), ".aeronautes-part-") {
-					return jobs.ErrInvalidItemRecord
-				}
-			} else if staging != filepath.Join(root, ".aeronautes-stage-"+jobID, admission.Item.RelPath) {
-				return jobs.ErrInvalidItemRecord
-			}
+			// A download writes each file in the folder itself (ADR 0122
+			// decision 5), so an item has no staging location and no
+			// separate record of a final publication.
 			intent := jobs.ItemIntent{ItemIdentity: identity,
-				ListedBytes: admission.Item.Size, Planned: true, Admitted: true,
-				// Every placed file carries a final-publication fact, on the
-				// native route (ADR 0061) and the engine route (ADR 0070).
-				PublicationRequired: !admission.Item.Dir}
-			if admission.StagingPath != "" {
-				intent.Staging = &jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: admission.StagingPath}
-			}
+				ListedBytes: admission.Item.Size, Planned: true, Admitted: true}
 			if err := intent.Validate(); err != nil {
 				return err
 			}
@@ -79,16 +59,6 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 				return err
 			}
 			return s.jobs.RecordComparison(ctx, jobID, identity, copyItemObservation(observation))
-		},
-		Publication: func(item local.DownloadItem, observation transfercopy.Observation) error {
-			identity, err := downloadItemIdentity(req, root, item)
-			if err != nil {
-				return err
-			}
-			if err := identity.Validate(); err != nil {
-				return err
-			}
-			return s.jobs.RecordPublication(ctx, jobID, identity, copyItemObservation(observation))
 		},
 	}
 }

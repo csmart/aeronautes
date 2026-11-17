@@ -365,7 +365,7 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 	h.Seed(h.Primary, container, "scope/file.bin", []byte("selected bytes"), nil)
 	h.Seed(h.Primary, container, "keep", []byte("primary sentinel"), nil)
 	h.Seed(h.Secondary, other, "keep", []byte("secondary sentinel"), nil)
-	hasDir := mode != "error_control"
+	hasDir := mode != "engine_error"
 	if hasDir {
 		h.Seed(h.Primary, container, "scope/folder/", nil, map[string]string{"Content-Type": "application/directory"})
 	}
@@ -397,13 +397,11 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 	if err != nil || queued.State != "queued" || queued.StartedAt != "" {
 		t.Fatalf("second download was not held after preflight: %+v %v", queued, err)
 	}
-	stageName := ".aeronautes-stage-" + id
 	if mode != "complete_control" {
-		seedListingLocal(t, root, stageName, []byte("stage refusal sentinel"))
-	}
-	if mode == "failure_then_error" {
-		// An existing marker collision now refuses at executor entry.
-		// Keep this oracle about a failed marker followed by a stage error.
+		// The queued job's folder can no longer be written: its marker is
+		// refused by the application, and its file by the real engine, which
+		// says so in an error line that is that file's outcome (ADR 0122
+		// decision 5).
 		if err := os.Chmod(root, 0o500); err != nil {
 			t.Fatal(err)
 		}
@@ -444,7 +442,7 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 	var files map[string][]byte
 	if hasDir {
 		want.ObjectsPlanned++
-		if mode == "failure_then_error" {
+		if mode == "failure_then_engine_error" {
 			want.ObjectsFailed = 1
 			fragments = append(fragments, "transfer failures (first: scope/folder/:", filepath.Join(root, "folder"))
 		} else {
@@ -460,9 +458,10 @@ func interruptedDownload(t *testing.T, h *Harness, mode string) {
 		want.BytesCopied = 14
 		files = map[string][]byte{"file.bin": []byte("selected bytes")}
 	} else {
-		fragments = append(fragments, filepath.Join(root, stageName))
-		if mode == "error_control" {
-			state = "failed"
+		want.ObjectsFailed++
+		fragments = append(fragments, "permission denied")
+		if mode == "engine_error" {
+			fragments = append(fragments, "transfer failures (first: scope/file.bin:")
 		}
 	}
 	saved := interruptionOutcome(t, h, id, state, want, fragments...)
@@ -489,7 +488,7 @@ func localInterruptionCases(t *testing.T, makeHarness func(*testing.T) *Harness)
 	for _, mode := range []string{"failure_then_cancel", "success_then_cancel", "failure_control", "complete_control"} {
 		t.Run("upload_"+mode, func(t *testing.T) { interruptedUpload(t, makeHarness(t), mode) })
 	}
-	for _, mode := range []string{"failure_then_error", "success_then_error", "error_control", "complete_control"} {
+	for _, mode := range []string{"failure_then_engine_error", "engine_error", "complete_control"} {
 		t.Run("download_"+mode, func(t *testing.T) { interruptedDownload(t, makeHarness(t), mode) })
 	}
 }

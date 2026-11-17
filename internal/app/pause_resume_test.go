@@ -297,8 +297,8 @@ func TestCancellingAPausedUploadKeepsWhatItDidAndDidNot(t *testing.T) {
 
 // pausedDownload starts a download of one natively routed object and two
 // engine-routed ones, asks it to pause while the native object is being read,
-// and returns once the job is paused: the native item is placed, and the
-// engine batch waits at its head with the job's stage already open.
+// and returns once the job is paused: the native item is downloaded, and the
+// engine batch waits at its head.
 func pausedDownload(t *testing.T) (h *harness, bookmark, id, dir string) {
 	t.Helper()
 	h = newHarness(t)
@@ -350,136 +350,84 @@ func placedFiles(t *testing.T, dir string) int {
 	return len(entries)
 }
 
-// stageOf is the one entry of a download's directory that is not what it
-// placed: the job's stage, open while the job is paused before its batch.
-func stageOf(t *testing.T, dir string) string {
-	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stage := ""
-	for _, entry := range entries {
-		if entry.Name() != "sub" {
-			if stage != "" {
-				t.Fatalf("the directory holds more than a stage beside what was placed: %v", entries)
-			}
-			stage = filepath.Join(dir, entry.Name())
-		}
-	}
-	return stage
-}
-
 // ADR 0104 on the download route: a pause asked inside a native-routed item
 // takes effect at the head of the next unit and not inside this one, so the
-// item is placed and the engine batch is not given to a child; a resume
-// places the rest into the same captured directory.
+// item is downloaded and the engine batch is not given to a child; a resume
+// downloads the rest into the same captured directory.
 func TestDownloadPausesAtTheNextUnitAndResumes(t *testing.T) {
 	h, bookmark, id, dir := pausedDownload(t)
 	results, admitted := executedItems(t, h, bookmark, id)
 	if admitted != 3 || len(results) != 1 || placedFiles(t, dir) != 1 {
 		t.Fatalf("paused with %d of %d items executed and %d files placed, want the native item alone: %v", len(results), admitted, placedFiles(t, dir), results)
 	}
-	if stageOf(t, dir) == "" {
-		t.Error("the paused job has no stage open for the batch it is about to run")
-	}
 	if err := h.transfer.ResumeJob(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, id)
-	if job.State != "complete" || job.Counters.ObjectsCopied != 3 || placedFiles(t, dir) != 3 || stageOf(t, dir) != "" {
-		t.Fatalf("resumed download = %+v with %d files placed and stage %q", job, placedFiles(t, dir), stageOf(t, dir))
+	if job.State != "complete" || job.Counters.ObjectsCopied != 3 || placedFiles(t, dir) != 3 {
+		t.Fatalf("resumed download = %+v with %d files downloaded", job, placedFiles(t, dir))
 	}
 }
 
 // ADR 0104 decision 4, for a download: a paused job cancelled while another
-// job holds the slot finishes its own local work without waiting, by the
-// guarded cleanup any cancel runs. A stage that is still the job's own is
-// removed; one that holds an entry the job did not put there is kept and
-// said to be; either way what was placed stays, the batch never given to a
-// child is recorded as not attempted, nothing is sent, and the directory is
-// free for another download once the job has ended.
+// job holds the slot finishes without waiting for it. What was downloaded
+// stays, the batch never given to a child is recorded as not attempted,
+// nothing is sent, and the directory is free for another download once the
+// job has ended.
 func TestCancellingAPausedDownloadFinishesWithoutTheSlot(t *testing.T) {
-	for _, c := range []struct {
-		name    string
-		foreign bool
-	}{{"its own stage is removed", false}, {"a stage holding another's entry is kept", true}} {
-		t.Run(c.name, func(t *testing.T) {
-			h, bookmark, id, dir := pausedDownload(t)
-			ctx := context.Background()
-			stage := stageOf(t, dir)
-			if stage == "" {
-				t.Fatal("the paused job has no stage open")
-			}
-			if c.foreign {
-				if err := os.WriteFile(filepath.Join(stage, "not-this-job's"), []byte("left here by someone else"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
+	h, bookmark, id, dir := pausedDownload(t)
+	ctx := context.Background()
 
-			// Another download, into a directory that does not overlap,
-			// takes the slot and is held inside its engine.
-			holding := newEngineBarrier(t)
-			h.installEngine(holding)
-			seedObject(h.mock, "media", "other/p.bin", "y", nil)
-			h.transfer.setFilePicker(fakePicker{dir: t.TempDir()})
-			picked, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "other/"})
-			if err != nil || picked == nil {
-				t.Fatalf("pick: %+v %v", picked, err)
-			}
-			second, err := h.transfer.StartDownload(ctx, DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "other/", DestDirToken: picked.Token})
-			if err != nil {
-				t.Fatal(err)
-			}
-			awaitEngine(t, h, holding, second)
+	// Another download, into a directory that does not overlap,
+	// takes the slot and is held inside its engine.
+	holding := newEngineBarrier(t)
+	h.installEngine(holding)
+	seedObject(h.mock, "media", "other/p.bin", "y", nil)
+	h.transfer.setFilePicker(fakePicker{dir: t.TempDir()})
+	picked, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "other/"})
+	if err != nil || picked == nil {
+		t.Fatalf("pick: %+v %v", picked, err)
+	}
+	second, err := h.transfer.StartDownload(ctx, DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "other/", DestDirToken: picked.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitEngine(t, h, holding, second)
 
-			sent := len(h.mock.RequestLog())
-			if err := h.transfer.CancelJob(ctx, id); err != nil {
-				t.Fatal(err)
-			}
-			job := awaitTerminal(t, h, id)
-			if job.State != "partial" || job.Counters.ObjectsCopied != 1 || placedFiles(t, dir) != 1 {
-				t.Fatalf("cancelled paused download = %+v with %d files placed", job, placedFiles(t, dir))
-			}
-			if grown := h.mock.RequestLog()[sent:]; len(grown) != 0 {
-				t.Errorf("the cancel sent requests: %v", grown)
-			}
-			results, admitted := executedItems(t, h, bookmark, id)
-			if admitted != 3 || results["scope/sub/e-1.bin"] != "not_attempted" || results["scope/sub/e-2.bin"] != "not_attempted" {
-				t.Errorf("the batch never given to a child is not recorded as not attempted: %d admitted, %v", admitted, results)
-			}
-			if kept := stageOf(t, dir) != ""; kept != c.foreign {
-				t.Errorf("stage kept = %v, want %v", kept, c.foreign)
-			}
-			if c.foreign {
-				if _, err := os.Stat(filepath.Join(stage, "not-this-job's")); err != nil {
-					t.Errorf("the entry the job did not put there is gone: %v", err)
-				}
-				if !strings.Contains(job.Error, "retained") {
-					t.Errorf("the job does not say its stage was kept: %q", job.Error)
-				}
-			}
+	sent := len(h.mock.RequestLog())
+	if err := h.transfer.CancelJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	job := awaitTerminal(t, h, id)
+	if job.State != "partial" || job.Counters.ObjectsCopied != 1 || placedFiles(t, dir) != 1 {
+		t.Fatalf("cancelled paused download = %+v with %d files placed", job, placedFiles(t, dir))
+	}
+	if grown := h.mock.RequestLog()[sent:]; len(grown) != 0 {
+		t.Errorf("the cancel sent requests: %v", grown)
+	}
+	results, admitted := executedItems(t, h, bookmark, id)
+	if admitted != 3 || results["scope/sub/e-1.bin"] != "not_attempted" || results["scope/sub/e-2.bin"] != "not_attempted" {
+		t.Errorf("the batch never given to a child is not recorded as not attempted: %d admitted, %v", admitted, results)
+	}
 
-			// The reservation went with the job: the same directory is
-			// admitted for a new download while the other job still holds
-			// the slot.
-			seedObject(h.mock, "media", "third/q.bin", "z", nil)
-			h.transfer.setFilePicker(fakePicker{dir: dir})
-			again, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "third/"})
-			if err != nil || again == nil {
-				t.Fatalf("pick: %+v %v", again, err)
-			}
-			third, err := h.transfer.StartDownload(ctx, DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "third/", DestDirToken: again.Token})
-			if err != nil {
-				t.Fatalf("the cancelled job still holds its directory: %v", err)
-			}
-			holding.unblock()
-			for _, later := range []string{second, third} {
-				if job := awaitTerminal(t, h, later); job.State != "complete" {
-					t.Errorf("job %s = %+v", later, job)
-				}
-			}
-		})
+	// The reservation went with the job: the same directory is
+	// admitted for a new download while the other job still holds
+	// the slot.
+	seedObject(h.mock, "media", "third/q.bin", "z", nil)
+	h.transfer.setFilePicker(fakePicker{dir: dir})
+	again, err := h.transfer.PickDownloadDir(ctx, SelectionScopeDTO{BookmarkID: bookmark, Container: "media", Prefix: "third/"})
+	if err != nil || again == nil {
+		t.Fatalf("pick: %+v %v", again, err)
+	}
+	third, err := h.transfer.StartDownload(ctx, DownloadRequestDTO{BookmarkID: bookmark, Container: "media", Prefix: "third/", DestDirToken: again.Token})
+	if err != nil {
+		t.Fatalf("the cancelled job still holds its directory: %v", err)
+	}
+	holding.unblock()
+	for _, later := range []string{second, third} {
+		if job := awaitTerminal(t, h, later); job.State != "complete" {
+			t.Errorf("job %s = %+v", later, job)
+		}
 	}
 }
 

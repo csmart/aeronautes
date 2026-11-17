@@ -2,12 +2,10 @@ package systemtest
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/app"
@@ -38,6 +36,7 @@ func downloadDestinationCases(t *testing.T, makeHarness func(*testing.T) *Harnes
 			t.Run("queued/"+route+"/"+fault, func(t *testing.T) { downloadDestinationQueued(t, makeHarness(t), route, fault) })
 		}
 	}
+	t.Run("queued/engine/file_appeared", func(t *testing.T) { downloadDestinationQueued(t, makeHarness(t), "engine", "file_appeared") })
 }
 
 func TestDownloadDestinationMock(t *testing.T) {
@@ -179,8 +178,6 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 	if !reflect.DeepEqual(beforeLocal, snapshotListingLocal(t, owned)) || !reflect.DeepEqual(beforeCounts, downloadRootGuardCounts(t, h)) {
 		t.Error("preflight changed owned filesystem or transfer records")
 	}
-	var stageCalls atomic.Int32
-	app.WireDownloadStageBoundary(h.Transfer, func(context.Context, string) error { stageCalls.Add(1); return nil })
 	id, startErr := h.Transfer.StartDownload(t.Context(), request)
 	var saved uploadRecoveryState
 	if id != "" {
@@ -219,8 +216,8 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 		if id != "" || startErr == nil || !strings.Contains(startErr.Error(), "preflight found problems") {
 			t.Errorf("Start admitted an existing destination hazard: id=%q error=%v", id, startErr)
 		}
-		if !reflect.DeepEqual(beforeCounts, downloadRootGuardCounts(t, h)) || len(trace.selectedGets()) != 0 || stageCalls.Load() != 0 {
-			t.Errorf("destination refusal admitted records or content work: counts=%v -> %v gets=%v child returns=%d", beforeCounts, downloadRootGuardCounts(t, h), trace.selectedGets(), stageCalls.Load())
+		if !reflect.DeepEqual(beforeCounts, downloadRootGuardCounts(t, h)) || len(trace.selectedGets()) != 0 {
+			t.Errorf("destination refusal admitted records or content work: counts=%v -> %v gets=%v", beforeCounts, downloadRootGuardCounts(t, h), trace.selectedGets())
 		}
 		assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, owned), nil)
 		return
@@ -254,13 +251,8 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: name}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(captured, rel)}) ||
 			item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}) ||
-			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) || (item.Staging == nil) != (route == "marker") {
+			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 			t.Fatalf("safe control changed selected identity, route or recorded observations: plan=%+v item=%+v", planned, item)
-		}
-		if item.Staging != nil && (item.Staging.Kind != jobs.ItemLocal || !filepath.IsAbs(item.Staging.LocalPath) ||
-			route == "engine" && item.Staging.LocalPath != filepath.Join(captured, ".aeronautes-stage-"+id, rel) ||
-			route == "native" && (filepath.Dir(item.Staging.LocalPath) != filepath.Dir(filepath.Join(captured, rel)) || !strings.HasPrefix(filepath.Base(item.Staging.LocalPath), ".aeronautes-part-"))) {
-			t.Fatalf("safe control lost exact staging location: %+v", item.Staging)
 		}
 	}
 	files := map[string][]byte{}
@@ -272,8 +264,7 @@ func downloadDestinationService(t *testing.T, h *Harness, route, fault string) {
 	}
 	assertListingLocalDelta(t, beforeLocal, snapshotListingLocal(t, owned), files, newDirectories...)
 	gets := trace.selectedGets()
-	if route == "engine" && (stageCalls.Load() != 1 || gets[relative] == 0) || route != "engine" && stageCalls.Load() != 0 ||
-		route == "native" && gets[relative] != 1 || (route == "empty" || route == "marker") && len(gets) != 0 {
-		t.Errorf("safe control content route differs: child returns=%d gets=%v", stageCalls.Load(), gets)
+	if route == "engine" && gets[relative] == 0 || route == "native" && gets[relative] != 1 || (route == "empty" || route == "marker") && len(gets) != 0 {
+		t.Errorf("safe control content route differs: gets=%v", gets)
 	}
 }

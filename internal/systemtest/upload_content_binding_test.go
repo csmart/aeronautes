@@ -31,6 +31,20 @@ import (
 // length check on the route still passes and only the content can catch
 // it.
 
+// engineReservedRune is respelled by the pinned engine, so a name
+// carrying it is planned onto the native route.
+const engineReservedRune = "‛"
+
+func invertBytes(b []byte) []byte {
+	out := make([]byte, len(b))
+	for i, c := range b {
+		out[i] = c ^ 0xFF
+	}
+	return out
+}
+
+func passBytes(b []byte) []byte { return b }
+
 // uploadProxy fronts one account's storage URL and rewrites the body of
 // PUT requests whose path ends in the given suffix.
 type uploadProxy struct {

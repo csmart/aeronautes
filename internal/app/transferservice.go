@@ -124,11 +124,10 @@ type TransferService struct {
 	// the pinned rclone. Tests inject fakes here. The source yields
 	// remotes PER SPAWN — implementations must call it for every child
 	// so token refresh reaches long jobs (§26.2).
-	engineFactory         func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
-	downloadStageBoundary func(context.Context, string) error
-	// downloadPlacementBoundary, when wired, observes each progress step
-	// of a download so a fixture can act between two placements.
-	downloadPlacementBoundary func(ctx context.Context, jobID string, done, total int64)
+	engineFactory func(source transfercopy.RemoteSource, opts rclone.Options) (transfercopy.Engine, error)
+	// downloadBoundary, when wired, is asked before each engine child of
+	// a download starts (WireDownloadEngineBoundary).
+	downloadBoundary func(context.Context, string) error
 
 	// recommendations is the §42 per-bookmark lookup feeding Auto.
 	recommendations func(bookmarkID string) *TransferSettingsDTO

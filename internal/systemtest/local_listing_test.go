@@ -234,6 +234,9 @@ func shortListingDownload(t *testing.T, h *Harness) {
 	for name, body := range files {
 		expected["download/"+name] = body
 	}
+	// Exactly the files, by digest, and their folder: the engine writes each
+	// file at its name, and nothing of its own or of a stage is left (ADR 0122
+	// decision 5).
 	assertListingLocalDelta(t, localBefore, snapshotListingLocal(t, root), expected, "download/nested")
 	h.AssertNoCollateral(beforeA, h.SnapshotNamespace(h.Primary))
 	h.AssertNoCollateral(beforeB, h.SnapshotNamespace(h.Secondary))

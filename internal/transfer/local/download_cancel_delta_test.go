@@ -2,78 +2,49 @@ package local
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
-	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
+	"github.com/csmart/aeronautes/internal/transfer/rclone"
 )
 
-// Maintained regressions for ADR 0043. A cancel at the native staging
-// boundary reports what certainly did not happen as not attempted, and
-// the directories the ancestor walk actually made are reported from
-// observed creation rather than from a directory existing afterwards.
-
-// cancelAfterFirstCheck reports no cancellation to the first ctx.Err()
-// and cancellation to every later one, which places the cancel exactly
-// between the ancestor walk and the temporary's exclusive creation.
-// The executor consults the context only through Err() here, so this
-// selects the boundary instead of racing for it.
-type cancelAfterFirstCheck struct {
-	context.Context
-	checks int
-}
-
-func (c *cancelAfterFirstCheck) Err() error {
-	c.checks++
-	if c.checks == 1 {
-		return nil
-	}
-	return context.Canceled
-}
-
-// heldBody must not be read: the boundary under test is before the
-// temporary exists, so nothing has anywhere to be written.
-type heldBody struct{ closed bool }
-
-func (b *heldBody) Read([]byte) (int, error) { return 0, errors.New("body must not be read") }
-func (b *heldBody) Close() error             { b.closed = true; return nil }
-
-func TestNativeStagingCancelIsNotAttempted(t *testing.T) {
-	root := t.TempDir()
-	destination, err := OpenDestinationRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer destination.Close()
-	ctx := &cancelAfterFirstCheck{Context: t.Context()}
-	item := DownloadItem{Name: "scope/deep/inner/f.bin", RelPath: filepath.Join("deep", "inner", "f.bin"), Size: 7, Route: "native"}
-	body := &heldBody{}
-	// The body is never read at this boundary, so no content expectation
-	// applies; an empty ladder keeps this case about the cancel.
-	outcome := nativeDownloadBody(ctx, body, item, destination, filepath.Join(root, "deep", "inner", ".aeronautes-part-x"), transfercopy.Ladder{}, nil)
-	if ctx.checks < 2 {
-		t.Fatalf("the boundary under test was not reached: %d checks", ctx.checks)
-	}
-
-	if outcome.Result != transfercopy.ResultNotAttempted || outcome.Effect != transfercopy.EffectNotAttempted {
-		t.Fatalf("a cancel before the temporary exists is not uncertain: %+v", outcome.Observation)
-	}
-	if outcome.Diagnostic.Stage != transfercopy.StageSourceRead || outcome.Diagnostic.Code != transfercopy.CodeCancelled {
-		t.Fatalf("cancel record differs from the neighbouring checks: %+v", outcome.Diagnostic)
-	}
-	if !body.closed {
-		t.Fatal("the held body was not closed when the cancel was observed")
-	}
-	// Nothing may exist for the item itself.
-	if entries, err := os.ReadDir(filepath.Join(root, "deep", "inner")); err != nil || len(entries) != 0 {
-		t.Fatalf("a cancelled item left an entry behind: %v %v", entries, err)
-	}
-	// The ancestors the walk made are reported, from observed creation.
-	if !slices.Equal(outcome.created, []string{"deep", filepath.Join("deep", "inner")}) {
-		t.Fatalf("created ancestors were not reported in order: %v", outcome.created)
+// Maintained regressions for ADR 0043. The folders a download makes for a
+// file are reported from observed creation, and only where the file did not
+// download: a file that downloaded has its folders and its own record.
+func TestTheFoldersMadeForAFileThatDidNotDownloadAreReported(t *testing.T) {
+	for _, written := range []bool{false, true} {
+		t.Run(map[bool]string{false: "the engine did not write it", true: "the engine wrote it"}[written], func(t *testing.T) {
+			s, mock := session(t)
+			seed(mock, "media", "scope/deep/inner/f.bin", "f bytes")
+			dest := t.TempDir()
+			preflight, err := PreflightDownload(t.Context(), s, "media", "scope/", dest)
+			if err != nil || preflight.Rejected() {
+				t.Fatalf("preflight: %+v %v", preflight, err)
+			}
+			engine := &scriptedEngine{run: (&fsEngine{s}).Copy}
+			if !written {
+				// Ended cleanly with no line for the file: not downloaded.
+				engine.run = func(context.Context, string, string, []string, func(rclone.Event)) (*rclone.Result, error) {
+					return &rclone.Result{}, nil
+				}
+			}
+			report, err := Download(t.Context(), s, engine, "aeronautes_src:media", "media", "scope/", dest, preflight, nil)
+			if err != nil || report.Done != map[bool]int64{false: 0, true: 1}[written] {
+				t.Fatalf("report = %+v, %v", report, err)
+			}
+			var want []string
+			if !written {
+				want = []string{"deep", filepath.Join("deep", "inner")}
+			}
+			if !slices.Equal(report.CreatedDirectorySamples, want) || report.CreatedDirectories != int64(len(want)) {
+				t.Fatalf("created folders reported = %d %q, want %q", report.CreatedDirectories, report.CreatedDirectorySamples, want)
+			}
+			if info, err := os.Stat(filepath.Join(dest, "deep", "inner")); err != nil || !info.IsDir() {
+				t.Fatalf("the folders were not made before the engine ran: %v", err)
+			}
+		})
 	}
 }
 
@@ -167,34 +138,5 @@ func TestComponentCreatedIsObserved(t *testing.T) {
 				t.Fatalf("componentCreated(%v, %v) = %v, want %v", c.absent, c.mkdirErr, got, c.want)
 			}
 		})
-	}
-}
-
-// A walk told not to create must never create. Stage cleanup walks this
-// way, and a cleanup that materialises the directory it was inspecting
-// would leave the operator a directory nobody asked for.
-func TestNonCreatingWalkCreatesNothing(t *testing.T) {
-	root := t.TempDir()
-	destination, err := OpenDestinationRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer destination.Close()
-
-	dir, created, err := destination.openDirectory(filepath.Join("nope", "deeper"), false)
-	if err == nil {
-		dir.Close()
-		t.Fatal("a non-creating walk over an absent path was not refused")
-	}
-	if len(created) != 0 {
-		t.Fatalf("a non-creating walk reported creations: %v", created)
-	}
-	for _, rel := range []string{"nope", filepath.Join("nope", "deeper")} {
-		if _, err := os.Lstat(filepath.Join(root, rel)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("a non-creating walk created %q: %v", rel, err)
-		}
-	}
-	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
-		t.Fatalf("a non-creating walk changed the selected directory: %v %v", entries, err)
 	}
 }

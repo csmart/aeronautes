@@ -9,11 +9,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func openNativePublicationPin(parent *os.Root, base string) (*os.File, error) {
-	// A substitute must not redirect this read or block it as a FIFO.
-	return parent.OpenFile(base, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
-}
-
 // sameDevice reports whether both entries live on the filesystem of
 // the held root. A bind mount of the same filesystem shares the device
 // number; Linux additionally refuses mount roots by attribute.
@@ -40,19 +35,6 @@ func withDirectoryFD(root *os.Root, fn func(fd int) error) error {
 	return fn(int(dir.Fd()))
 }
 
-// link creates the hard link relative to both directory descriptors, so
-// no pathname is resolved between inspection and the effect.
-func (p publication) link() error {
-	return withDirectoryFD(p.stagedRoot, func(stagedFD int) error {
-		return withDirectoryFD(p.targetRoot, func(targetFD int) error {
-			if err := unix.Linkat(stagedFD, p.stagedBase, targetFD, p.targetBase, 0); err != nil {
-				return &os.LinkError{Op: "link", Old: p.stagedDisplay, New: p.targetDisplay, Err: err}
-			}
-			return nil
-		})
-	})
-}
-
 // unlinkFileAt removes a non-directory entry by name relative to the
 // handle; a directory that took the name is never removed. Errors name
 // the entry's captured pathname.
@@ -60,17 +42,6 @@ func unlinkFileAt(parent *os.Root, base, display string) error {
 	return withDirectoryFD(parent, func(fd int) error {
 		if err := unix.Unlinkat(fd, base, 0); err != nil {
 			return &os.PathError{Op: "remove", Path: display, Err: err}
-		}
-		return nil
-	})
-}
-
-// removeDirAt removes an empty directory by name relative to the handle;
-// a file that took the name is never unlinked.
-func removeDirAt(parent *os.Root, base, display string) error {
-	return withDirectoryFD(parent, func(fd int) error {
-		if err := unix.Unlinkat(fd, base, unix.AT_REMOVEDIR); err != nil {
-			return &os.PathError{Op: "rmdir", Path: display, Err: err}
 		}
 		return nil
 	})

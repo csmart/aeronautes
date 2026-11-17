@@ -148,8 +148,8 @@ func TestDownloadDirAliasesDirect(t *testing.T) {
 				total += item.Size
 			}
 			engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
-			report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", root, "aliases",
-				plannedWithIdentities(t, source, "media", &DownloadPreflight{Items: items, Objects: int64(len(items)), TotalBytes: total}), nil)
+			report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", root,
+				&DownloadPreflight{Items: items, Objects: int64(len(items)), TotalBytes: total}, nil)
 			after := downloadDestinationSnapshot(t, owned)
 			if c.refusedKind != "" {
 				if err == nil || report != nil || engine.calls != 0 || !reflect.DeepEqual(before, after) {
