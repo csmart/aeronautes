@@ -30,13 +30,13 @@ The role limit is additional authority control; a local token without these rest
 | --- | --- | --- |
 | Source account | `GET`, `HEAD` | Fixed upstream account; no mutation methods |
 | Destination account reads | `GET`, `HEAD` | Fixed upstream account; preserve exact listing parameters; a read may name an empty path segment, which a write may not |
-| Upload or copy destination | `PUT`, `DELETE` | The `Copy` of an upload or of a copy writes each object at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept |
+| Upload or copy destination | `PUT`, `DELETE`; `POST` to an object for a child told to compare | The `Copy` of an upload or of a copy writes each object at its name ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4): everything under the destination folder in the container and in its sidecar container, or the whole of both for a destination at the container's top; every `DELETE`, bulk included, is refused where a replaced large object's segments must be kept. A child of a confirmed upload, told to compare, may `POST` to an object it may write, which is how it sets the time of one it found the same but for its time (decision 12); a `POST` to a container, or carrying a manifest header, is refused |
 | Destination staged objects | `PUT`, `DELETE` | Exact `CopyTo` staged name or fresh `Copy` batch prefix; never a live name or another invocation's stage. No job asks for this scope since the copy step of ADR 0122; it stays until that record's removal step |
 | Destination generated segments | `PUT`, `DELETE` | Matching sidecar container and segment paths rooted in that invocation's staged object/batch path; the sidecar container alone is not authority to delete its other segments |
 | Destination account abort cleanup | `DELETE` with `bulk-delete=1` | Bounded complete `text/plain` body; validate every URL-encoded `/container/object` against the same staged/segment scope before forwarding; refuse the whole request on any invalid or out-of-scope name |
 | Matching sidecar container | Zero-body creation `PUT`; `GET`/`HEAD` | The gateway issues a fresh authenticated destination-container HEAD at validation time; require its one exact policy value, or no header when the HEAD omitted it; refuse other policy/ACL/metadata/versioning/history changes; no container deletion |
 | Anonymous capability request | `GET` on the exact library-derived `/info` path | No upstream token; this class comes from the wire-library contract and was not emitted in the run below |
-| Everything else | Refused locally | `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
+| Everything else | Refused locally | Any other `POST`, `COPY`, unscoped bulk delete, absolute request targets and out-of-scope paths remain forbidden unless a separate reviewed requirement changes this table |
 
 DLO `PUT` requests, staged or at an upload's own name, must keep `X-Object-Manifest` inside the sidecar container, under the manifest object's own name.
 Bulk-delete validation decodes each name once according to Swift's wire format, refuses malformed encoding and container-only entries, and applies explicit byte and name-count limits before any upstream request.
@@ -104,7 +104,7 @@ Names containing any rune of the pinned set (U+201B, U+2400–U+241F, U+2421, U+
 | Flag | Driven by | Spike verification |
 |---|---|---|
 | `--files-from-raw <list>` | the planned selected set (§28.4). **`--files-from0` does not exist in 1.74.3**; raw is unprocessed but newline-delimited, so newline-bearing names can never ride rclone — they route native (§14.3) | ✓ space-edged names exact through raw list |
-| `--ignore-times` | forced-set contract: transfer exactly the planned set, no mtime skipping (§28.4) | ✓ re-copied unchanged objects |
+| `--ignore-times` | forced-set contract: transfer exactly the planned set, no mtime skipping (§28.4); left out for an upload or a download the operator confirmed may replace what differs, whose engine compares each name as rclone copy does ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 12) | ✓ re-copied unchanged objects |
 | `--no-traverse` with `--files-from-raw` | selected names are addressed directly; applies to remote Copy and local upload/download under [ADR 0022](adr/0022-complete-rclone-selection.md) | [Maintained parent/after/removed-option evidence](experiments/2026-09-07-selected-set-copy.md#maintained-implementation-and-evidence): complete capped mixed Copy, nested/DLO/SLO content and exact local transfers through the actual pin |
 | `--use-json-log -vv` | progress + **generated segment prefix capture** (`Uploading segment file "<obj>/<ts>-<random>/<seq>" into "<container>_segments"`) feeding §26.4 ownership evidence | ✓ prefix captured in real time |
 | `--retries N --low-level-retries N` | bounded failure budget (§26.2: control must return quickly) | ✓ 401 returns in ~2.6 s default, ~50 ms at 1/1 |
@@ -204,6 +204,24 @@ forbidden rather than merely unnecessary.
     an interrupt the child removes it and exits 130; on a kill it stays;
   - a source that cannot be read whole gets an error line for that file, a non-zero exit,
     its partial file removed, and nothing at the final name.
+- Without `--ignore-times`, in both directions, measured 2026-11-17 on the owned Swift with
+  the runner's other flags, for a confirmed upload or download
+  ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 12):
+  - a name of another size is replaced, `Copied (replaced existing)`; a local file by
+    renaming the partial file over it, so a hard link to the old file still reads the old
+    bytes;
+  - a name of the same size and modification time is left, with the debug line
+    `Unchanged skipping`, also when its bytes differ;
+  - a name of the same size with only another time, whose MD5 matches, gets the info line
+    `Updated modification time in destination` and then `Unchanged skipping`; to a store
+    that is a POST to the object, which the application's gateway lets through only for
+    such a run and only to an object under the destination folder; one whose MD5 differs
+    is replaced (`md5 differ`);
+  - a dynamic or static large object, and a file the engine uploads in segments, has no
+    MD5 (`Src hash empty` or `Dst hash empty`), so one whose time alone differs is sent
+    again in full and replaced;
+  - with `--ignore-times` every existing name is transferred again and reported
+    `Copied (replaced existing)`.
 
 Re-run the seam spike suite on any pin upgrade; the unsafe-name classification (dot
 segments included) is verified per version by the compatibility matrix below.
