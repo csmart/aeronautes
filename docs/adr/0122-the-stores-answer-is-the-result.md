@@ -2,6 +2,7 @@
 
 **Status:** Accepted on 16 November 2026 for 0.5.0, on the operator's decisions of that day, made during the candidate's test run.
 Tier 1 under DESIGN §65.12, because it changes what every upload, copy, download and deletion sends and what each reports.
+Amended on 17 November 2026 by decision 12, on the operator's decision of that day that a transfer follows rclone's semantics: after one confirmation an upload or a download replaces what differs, as rclone copy does.
 **Scope:** how a transfer or a deletion writes and deletes names, what it reads around its own requests, and what a job records.
 It replaces the staging and commit steps, the conditions and re-reads around a write, and the comparison and verifying reads around a deletion.
 It does not change the previews, the acknowledgements and typed words, what versioning keeps, or the rules for segments that large objects share.
@@ -175,12 +176,32 @@ The operator ran rclone alone against the same store and saw what it does: each 
     Every other pair the baseline protected stays credited by the system tests on a real Swift: a refusal a caller can cause, a partial job whose member the store refused, and a cancellation that lands between members.
     No other action's row changes in this step, and the replacement baseline is built by ADR 0069's drift route in the change that carries the step out.
     A later step that changes a row names its identities here in the same way.
+12. **After one confirmation, an upload or a download replaces what differs, as rclone copy does** (17 November 2026).
+    The operator decided on 17 November that a transfer follows the engine's own semantics ("we are using rclone, we should follow the same semantics"), and chose that copies, uploads and downloads replace what differs after one native confirmation, the preview naming what may be replaced.
+    A copy already does so by decision 4 and is not changed here.
+    **Without the confirmation nothing changes.**
+    An upload's preview refuses a name that is live, a download's preview refuses a file that exists, and a download's engine leaves a file that exists alone (decision 5).
+    **The confirmation.**
+    A download gains the acknowledgement an upload has ([ADR 0081](0081-upload-overwrite-acknowledgement.md) decision 1): with it, the preview names each planned file whose name holds a regular file as one that may be replaced, and refuses outright, as before, a directory, a link or anything else at a file's name or on the way to it, because replacing that is not replacing a file.
+    The start then asks the one native confirmation, raised by the backend as for an upload: for a download it names the chosen folder, the bookmark, account and container the files come from, the number of files that may be replaced and the first names; declined, nothing is written and no job starts.
+    For both, the question says that each named file or object is replaced when it differs from the source, as rclone copy decides: one of another size is replaced; one of the same size and time is left as it is; and one of the same size whose time alone differs keeps its bytes and has its time set to the source's when its MD5 matches, and is replaced when it does not or when there is no MD5 to compare, as for a large object. For a download it also says that a replaced local file is gone, and an upload's question keeps what it says about versions and segments.
+    **What the engine is given.**
+    A confirmed upload or download is run without `--ignore-times`, and a confirmed download without `--ignore-existing`, so the engine compares each name as rclone copy does by default.
+    Measured on the pinned engine, in both directions on the owned Swift: a name whose size differs is replaced, "Copied (replaced existing)", a local file by renaming the engine's partial file over it; a name whose size and modification time are the same is left alone, "Unchanged skipping"; a name of the same size whose time differs and whose MD5 is the same has only its time set to the source's, "Updated modification time in destination", and is left otherwise alone; one whose MD5 differs is replaced ("md5 differ"); and a large object, for which the store gives no MD5, is replaced whenever its time differs ("Src hash empty" or "Dst hash empty"), measured for a dynamic and a static large object downloaded and a segmented upload.
+    Every other run keeps the flags it has.
+    A large file the engine leaves alone is not published again: the static manifest of [ADR 0111](0111-segmented-uploads-as-static-large-objects.md) is written only for a file the engine reports written. A large object never has its time alone set, because it has no MD5 to compare, so no request that sets a time is sent to a manifest.
+    **What a name's outcome is**, from the engine's lines as in decisions 3 and 5: replaced is done and counted as a replacement; left alone because it is the same, with or without its time set, is done and counted as already the same, not as copied and not as failed; a new name is done as before.
+    **The application's own route** for a name the engine cannot carry does not compare: after the confirmation it replaces what is there, an upload by its PUT and a download by renaming its temporary file over the name, and counts it as a replacement.
+    **What this gives up.**
+    A file or object whose bytes changed but whose size and modification time did not is not replaced, as with rclone copy used alone; `--checksum` is not used, because a large object has no whole-content MD5 at the store and rclone would then compare it by size alone.
+    A large object whose bytes are the same and whose time alone differs is sent again in full.
+    A name that appears after the preview is compared and replaced on the same terms without being named in the question.
 
 ## What this gives up
 
 It is written down so that nobody reads the old promise into the new behaviour.
 
-- A name that another writer creates or changes between the preview and the request is written over, or deleted, without notice.
+- A name that another writer creates or changes between the preview and the request is written over, or deleted, without notice; after decision 12's confirmation an upload or a download compares it as rclone copy does instead, and leaves it when it is the same.
 - An object the store still serves for a moment after it accepted the DELETE is reported deleted, which it is.
 - A transfer that fails part-way has written some names and not others, and says which; nothing is rolled back.
 - A large upload that is stopped can leave segments behind.
@@ -204,7 +225,9 @@ Each step leaves the application whole, and is its own reviewed change.
 2. Uploads in place.
 3. Copies in place, with the stamp gone.
 4. Downloads in place.
-5. Removal of what no longer has a caller, and the design document.
+5. After one confirmation, uploads and downloads replace what differs (decision 12, added 17 November 2026).
+6. A selected folder is copied or downloaded with everything in it ([ADR 0108](0108-copy-and-download-what-is-selected.md) decision 7, added 17 November 2026).
+7. Removal of what no longer has a caller, and the design document.
 
 ## Required proof before implementation is accepted
 
@@ -217,3 +240,4 @@ Tier 1, stated here for the whole and repeated in each step for its part.
 - An upload's bytes that do not match the declared digest are refused by the store and reported failed, with the name left as it was.
 - The browser journeys and the service journeys pass on the mock and on both real stores, and every upload, copy and download journey compares digests with the source.
 - The system tests against a real Swift pass for each step.
+- For decision 12 (17 November 2026): Go, upload and download, against the fake engine that prints the real engine's lines: confirmed, each of replaced, unchanged and time-set gives its outcome and counter; declined, nothing is written and no job exists; unconfirmed, the preview refuses and names the name, and the flags are unchanged; a directory or a link at a download's file name is refused even when acknowledged; the application's own route replaces after the confirmation and does not without it; a large file left alone is not published again. Runner: confirmed runs have neither flag, every other run keeps its flags. System, on the owned Swift with the real engine: a confirmed download and a confirmed upload over a folder holding one same, one resized and one touched file replace only the resized one, set the touched one's time, and leave the same one, and a touched dynamic and a touched static large object are replaced whole, by a download and by an upload; an unconfirmed download leaves a file that appeared after the preview alone. Frontend: the download dialog offers "Replace existing files…" when its preview has collisions and nothing else, the request carries the acknowledgement, and the summary counts already-the-same files. Journeys: a confirmed download over an earlier download of the same folder replaces nothing and reports every file already the same, on the mock and both clouds.
