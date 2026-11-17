@@ -284,10 +284,10 @@ func (o ItemObservation) valid(phase string, admitted bool) bool {
 	case ItemSame, ItemNotAttempted:
 		return o.Effect == EffectNotAttempted
 	case ItemRefused:
-		// A staged overwrite refused at the fixed point leaves the engine's
-		// staged bytes unresolved (ADR 0030), so an admitted refusal may carry
-		// the unresolved effect; an immediate (native) or planning-time refusal
-		// attempts nothing and stays not-attempted.
+		// An earlier build refused a staged overwrite at its fixed point with
+		// the engine's staged bytes unresolved (ADR 0030), and such a row must
+		// still read (ADR 0122 decision 9); a refusal now attempts nothing and
+		// stays not-attempted.
 		return o.Effect == EffectNotAttempted || (admitted && o.Effect == EffectUnresolved)
 	case ItemCopied:
 		return admitted && (o.Effect == EffectReportedApplied || o.Effect == EffectUnresolved)

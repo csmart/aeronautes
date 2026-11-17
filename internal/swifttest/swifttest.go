@@ -1737,7 +1737,7 @@ func (s *Server) deleteSLOWithSegments(w http.ResponseWriter, container, name st
 }
 
 // copyObject implements server-side COPY for PLAIN sources only: the
-// stage-and-commit path never copies a manifest (a manifest COPY on
+// application never sends a COPY of a manifest (a manifest COPY on
 // real Swift assembles the logical object — a different operation the
 // executor must never reach for). Source metadata is carried; headers
 // on the request are applied on top (real COPY semantics).

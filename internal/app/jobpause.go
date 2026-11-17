@@ -125,8 +125,7 @@ func (r *jobRunner) checkpoint(ctx context.Context, jobID, bookmarkID string) er
 	// was parked. Its remaining units are already admitted, so nothing else
 	// would stop it publishing them; the launch asks the same before a body
 	// starts. It is asked before the cancel, so that a run stopped for this
-	// is ended as a lost record ends it, with its stage kept, and never
-	// cleaned up as a cancel is (ADR 0048 decision 7).
+	// is ended as a lost record ends it, and not as a cancel.
 	if err := r.jobs.Available(); err != nil {
 		return fmt.Errorf("job %s ends at its pause: %w", jobID, err)
 	}

@@ -82,11 +82,11 @@ type Counters struct {
 	ObjectsFailed   int64 `json:"objectsFailed"`
 	BytesPlanned    int64 `json:"bytesPlanned"`
 	BytesCopied     int64 `json:"bytesCopied"`
-	// Overwrites remains for historical jobs; current Copy refuses them.
-	// An acknowledged upload sets it, where it counts verified publications
-	// to names its preflight found live rather than proven displaced
-	// objects (ADR 0081 decision 7).
-	// Refusals are separate from failed or verified copy attempts.
+	// Overwrites counts the writes an upload, a copy or a download made,
+	// after the operator confirmed replacing, to names its preview found in
+	// use, once the engine or the store answered for them; it is not a count
+	// of proven displaced objects (ADR 0081 decision 7, ADR 0122 decision
+	// 12). Refusals are counted separately.
 	Overwrites        int64 `json:"overwrites"`
 	OverwritesRefused int64 `json:"overwritesRefused"`
 	// ObjectsSame counts the names left as they were because they were

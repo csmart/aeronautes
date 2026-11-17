@@ -30,9 +30,6 @@ func (s *TransferService) downloadItemRecorder(ctx context.Context, jobID string
 			if err != nil {
 				return err
 			}
-			// A download writes each file in the folder itself (ADR 0122
-			// decision 5), so an item has no staging location and no
-			// separate record of a final publication.
 			intent := jobs.ItemIntent{ItemIdentity: identity,
 				ListedBytes: admission.Item.Size, Planned: true, Admitted: true}
 			if err := intent.Validate(); err != nil {

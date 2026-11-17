@@ -18,8 +18,8 @@ import (
 // file pick names its base name; a folder pick names the folder and the
 // file's path below it, slash-separated (ADR 0103 decision 2).
 //
-// The name's last component is the file's own base name. The engine stages a
-// file under its base name, so two sources staging apart (decision 4) rests
+// The name's last component is the file's own base name. The engine writes a
+// file under its base name, so keeping two sources apart (decision 4) rests
 // on it, and the preflight refuses a source that breaks it.
 type UploadSource struct {
 	Path string
@@ -39,8 +39,8 @@ type DirectorySelection struct {
 	// sort it, and nothing downstream depends on the order.
 	Sources []UploadSource
 	// Skipped counts what the walk leaves out: links and other non-regular
-	// entries, which it never follows, and a download's own stage directory
-	// and partial files. SkippedSample names the first maxFailures of them.
+	// entries, which it never follows, and a download's own partial files.
+	// SkippedSample names the first maxFailures of them.
 	Skipped       int
 	SkippedSample []string
 	// EmptyDirectories counts directories with no entry at all, which
