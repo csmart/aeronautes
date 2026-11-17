@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "fc24836897588352a1e1ab64ba2286f0ff9a0fa3",
+    "commit": "8089391c23f2431539b869544682cd418d46c2e4",
     "go_version": "go1.27.4",
-    "run_id": "43829040045",
+    "run_id": "44051411474",
     "run_attempt": "1"
   },
-  "contractHash": "24c93c2fb2a70337",
+  "contractHash": "d943816d615bf15e",
   "actions": [
     {
       "action": "AppService.About",
@@ -522,7 +522,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial",
         "retry"
@@ -541,7 +540,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial",
         "retry"
@@ -565,7 +563,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial",
         "retry"
@@ -577,7 +574,6 @@
       "required": [
         "happy",
         "refusal",
-        "conflict",
         "cancel",
         "partial",
         "retry"
@@ -919,6 +915,10 @@
     },
     {
       "action": "TransferService.StartDownload",
+      "scenario": "conflict"
+    },
+    {
+      "action": "TransferService.StartDownload",
       "scenario": "happy"
     },
     {
@@ -931,10 +931,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-16-deletion-answer-baseline.md",
-    "mainReportSHA256": "dcecf7ef0d04e447a7bbf43a1e3c9f38fc9d7fefd4e859d576ea95754219552b",
-    "mainReceiptSHA256": "ad7186ddce902765c3a6aed96433328a85684fa4f5dcd97cc1d8d496e70e91be",
-    "heavyReportSHA256": "682204355594d271d2fa0e43ea8bfc1b08cd35d68f816b822a24711f03b544dd",
-    "heavyReceiptSHA256": "82b14cbc12c4b94deab929f9f4f760b06defe62cc54b657ec9a482a3274a0c48"
+    "reference": "docs/experiments/2026-11-17-removal-baseline.md",
+    "mainReportSHA256": "e35cfad1d2ba63b2afa28d8833e57007e78c9c4c6f90d5639f36acaaf2bb3a1d",
+    "mainReceiptSHA256": "ec3bb054fee658099dd51adcc64c1d4af6b78c7ba6f1e6b311a4d5fe07eacd76",
+    "heavyReportSHA256": "ecd09aed1502b12491e7deb981761df1133e1f41146216dc2a3f12956ae90e68",
+    "heavyReceiptSHA256": "16ceca2bdb2cc4fd4818b7d6d0436ed6d41643a8296d987ef0d8c6b07ca64aac"
   }
 }
