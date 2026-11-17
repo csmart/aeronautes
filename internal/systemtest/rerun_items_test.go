@@ -76,7 +76,7 @@ func rerunItemsRefuse(t *testing.T, h *Harness) {
 			}
 		}
 		if err := store.RecoveryAdd(t.Context(), jobs.RecoveryRecord{JobID: job.ID, BookmarkID: h.Secondary.BookmarkID,
-			Kind: jobs.RecoveryCommitting, Container: segments, Prefix: "shared/", Object: aliases + "/dlo"}); err != nil {
+			Kind: jobs.RecoveryCaptured, Container: segments, Prefix: "shared/"}); err != nil {
 			t.Fatal(err)
 		}
 		finishRerunFixture(t, h, store, job)

@@ -195,7 +195,7 @@ func TestItemObservationFailureRetainsIntent(t *testing.T) {
 	if err := s.AdmitItems(t.Context(), job.ID, []ItemIntent{intent}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecoveryAdd(t.Context(), RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: RecoveryStaging, Container: "stage", Prefix: job.ID}); err != nil {
+	if err := s.RecoveryAdd(t.Context(), RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: RecoveryCaptured, Container: "stage", Prefix: job.ID}); err != nil {
 		t.Fatal(err)
 	}
 	before := readAllItems(t, s, job.ID, 0)

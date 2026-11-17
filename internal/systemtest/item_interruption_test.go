@@ -124,8 +124,8 @@ func TestInterruptedItemRecordsReopen(t *testing.T) {
 			jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 10}); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.RecoveryAdd(t.Context(), jobs.RecoveryRecord{JobID: job.ID, BookmarkID: "dest-binding", Kind: jobs.RecoveryCommitting,
-			Container: "dest-segments", Prefix: ".staging/" + job.ID + "/", Object: "dest/live"}); err != nil {
+		if err := store.RecoveryAdd(t.Context(), jobs.RecoveryRecord{JobID: job.ID, BookmarkID: "dest-binding", Kind: jobs.RecoveryCaptured,
+			Container: "dest-segments", Prefix: ".staging/" + job.ID + "/"}); err != nil {
 			t.Fatal(err)
 		}
 	}

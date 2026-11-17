@@ -1364,9 +1364,6 @@ type InterruptedDisclosureDTO struct {
 	Items         InterruptedItemFactsDTO `json:"items"`
 	// RecoveryRecords may indicate remote residue where the route writes them.
 	RecoveryRecords int64 `json:"recoveryRecords"`
-	// InconclusiveCommits counts names whose commit ledger is inconclusive —
-	// not failures (ADR 0031 line 75).
-	InconclusiveCommits int64 `json:"inconclusiveCommits"`
 	// PlacesLocalResidue is true for a route that places bytes in the operator's
 	// own filesystem (download); what is there now is theirs to inspect, and ADR
 	// 0020 forbids a sweep. The renderer uses it to explain a zero
@@ -1447,9 +1444,8 @@ func interruptedDisclosureDTO(e jobs.InterruptedDisclosure) InterruptedDisclosur
 			Deleted:     e.Items.Deleted,
 			Unsettled:   e.Items.Unsettled,
 		},
-		RecoveryRecords:     e.RecoveryRecords,
-		InconclusiveCommits: e.InconclusiveCommits,
-		PlacesLocalResidue:  placesLocalResidue(e.Type),
+		RecoveryRecords:    e.RecoveryRecords,
+		PlacesLocalResidue: placesLocalResidue(e.Type),
 	}
 }
 

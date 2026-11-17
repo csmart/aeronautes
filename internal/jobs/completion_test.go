@@ -26,7 +26,7 @@ func TestCompletionAtomicity(t *testing.T) {
 			if err := s.SetError(t.Context(), job.ID, "previous status"); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.RecoveryAdd(t.Context(), RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: RecoveryStaging, Container: "dest", Prefix: "stage/"}); err != nil {
+			if err := s.RecoveryAdd(t.Context(), RecoveryRecord{JobID: job.ID, BookmarkID: bookmark, Kind: RecoveryCaptured, Container: "dest", Prefix: "stage/"}); err != nil {
 				t.Fatal(err)
 			}
 			before, err := s.Get(t.Context(), job.ID)

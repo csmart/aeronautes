@@ -337,10 +337,8 @@ func TestInterruptedDisclosuresSelectsUndisclosedNewestFirst(t *testing.T) {
 }
 
 // ADR 0088 decision 5: each entry reports what the retained facts prove. An
-// admitted job carries its item ledger, its recovery residue, and — the case
-// that needs the most care — a committing name never committed shows as ONE
-// inconclusive commit, not a failure. A job that never left the queue proves
-// nothing was attempted and has no ledger at all.
+// admitted job carries its item ledger and its recovery residue. A job that
+// never left the queue proves nothing was attempted and has no ledger at all.
 func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
 	ctx := context.Background()
 	s, bm := newStore(t)
@@ -358,10 +356,8 @@ func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range []RecoveryRecord{
-		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryStaging, Container: "c", Prefix: "stage"},
-		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitting, Container: "c", Prefix: "p1", Object: "c/one"},
-		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitting, Container: "c", Prefix: "p2", Object: "c/two"},
-		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCommitted, Container: "c", Prefix: "p2"},
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCaptured, Container: "c", Prefix: "p1"},
+		{JobID: admitted.ID, BookmarkID: bm, Kind: RecoveryCaptured, Container: "c", Prefix: "p2"},
 	} {
 		if err := s.RecoveryAdd(ctx, r); err != nil {
 			t.Fatal(err)
@@ -389,11 +385,8 @@ func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
 		t.Fatalf("admitted item facts = captured:%v items:%d admitted:%d, want true/2/2",
 			a.ItemsCaptured, a.Items.Items, a.Items.Admitted)
 	}
-	if a.RecoveryRecords != 4 {
-		t.Fatalf("admitted RecoveryRecords = %d, want 4", a.RecoveryRecords)
-	}
-	if a.InconclusiveCommits != 1 {
-		t.Fatalf("admitted InconclusiveCommits = %d, want exactly 1 (p1 committing, never committed)", a.InconclusiveCommits)
+	if a.RecoveryRecords != 2 {
+		t.Fatalf("admitted RecoveryRecords = %d, want 2", a.RecoveryRecords)
 	}
 	// No execution was recorded, so nothing was attempted yet and the positive
 	// facts are zero — a distinct fact from the recovery residue above.
@@ -409,8 +402,8 @@ func TestInterruptedDisclosuresReportsPerEntryFacts(t *testing.T) {
 	if q.ItemsCaptured || q.Items.Items != 0 {
 		t.Fatalf("queued job must carry no item ledger: captured:%v items:%d", q.ItemsCaptured, q.Items.Items)
 	}
-	if q.RecoveryRecords != 0 || q.InconclusiveCommits != 0 {
-		t.Fatalf("queued job residue = recovery:%d inconclusive:%d, want 0/0", q.RecoveryRecords, q.InconclusiveCommits)
+	if q.RecoveryRecords != 0 {
+		t.Fatalf("queued job residue = recovery:%d, want 0", q.RecoveryRecords)
 	}
 	if q.Attempted || q.Copied != 0 {
 		t.Fatalf("queued job with no ledger must read as not attempted: attempted:%v copied:%d", q.Attempted, q.Copied)

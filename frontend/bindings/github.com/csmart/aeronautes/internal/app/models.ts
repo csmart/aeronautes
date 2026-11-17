@@ -988,12 +988,6 @@ export interface InterruptedDisclosureDTO {
     "recoveryRecords": number;
 
     /**
-     * InconclusiveCommits counts names whose commit ledger is inconclusive —
-     * not failures (ADR 0031 line 75).
-     */
-    "inconclusiveCommits": number;
-
-    /**
      * PlacesLocalResidue is true for a route that places bytes in the operator's
      * own filesystem (download); what is there now is theirs to inspect, and ADR
      * 0020 forbids a sweep. The renderer uses it to explain a zero
