@@ -72,7 +72,7 @@ func TestUploadDecidesOnceWhetherReplacedSegmentsGo(t *testing.T) {
 			if len(asked) != 1 || !strings.Contains(asked[0].Fragments, tc.says) {
 				t.Fatalf("the question said %+v, want it to say %q", asked, tc.says)
 			}
-			if len(*seen) != 1 || !(*seen)[0].LiveDestination || (*seen)[0].KeepReplacedSegments != tc.keeps {
+			if len(*seen) != 1 || (*seen)[0].KeepReplacedSegments != tc.keeps {
 				t.Fatalf("engine options = %+v, want the names themselves as the destination and replaced segments kept = %v", *seen, tc.keeps)
 			}
 		})

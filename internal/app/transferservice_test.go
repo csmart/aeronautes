@@ -53,8 +53,8 @@ type httpEngine struct {
 	chunk    int
 	n        int
 	captured []rclone.SegmentPrefix
-	// said is how the file being transferred reports itself: set for each
-	// name of a Copy, nil for a CopyTo.
+	// said is how the file being transferred reports itself, set for each
+	// name of a Copy.
 	said func(level, msg string)
 }
 
@@ -254,16 +254,6 @@ func (e *httpEngine) Copy(ctx context.Context, src, dst string, names []string, 
 // localPath reports whether a spec is a plain filesystem path (upload
 // source / download destination) rather than a remote spec.
 func localPath(spec string) bool { return strings.HasPrefix(spec, "/") }
-
-func (e *httpEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	e.said = nil
-	if err := e.transfer(ctx, src, dst); err != nil {
-		return &rclone.Result{ExitCode: 1, Errors: []string{err.Error()}}, nil
-	}
-	result := &rclone.Result{SegmentPrefixes: e.captured}
-	e.captured = nil
-	return result, nil
-}
 
 func (h *harness) installEngine(block *engineBarrier) *[]rclone.Options {
 	return h.installChunkingEngine(block, 0)

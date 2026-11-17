@@ -40,7 +40,7 @@ func TestRcloneMatrix(t *testing.T) {
 		Binary: binary, AllowVersionMismatch: true,
 		// The product points the engine at the names themselves (ADR 0122
 		// decisions 3 and 4), so that is what a candidate is measured at.
-		ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2,
+		ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2,
 	})
 	if err != nil {
 		t.Fatal(err)

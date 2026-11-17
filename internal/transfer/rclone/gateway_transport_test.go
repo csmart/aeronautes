@@ -202,7 +202,7 @@ func TestGatewayStreamsBeforeTheProducerFinishes(t *testing.T) {
 				}
 			}))
 			defer upstream.Close()
-			scope := &gatewayScope{container: "owned", object: gatewayStage}
+			scope := &gatewayScope{container: "owned", object: gatewayFolder}
 			gateway, local, err := newStorageGateway(ctx, Remote{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "fixture-token"}, scope, 64)
 			if err != nil {
 				t.Fatal(err)
@@ -228,7 +228,7 @@ func TestGatewayStreamsBeforeTheProducerFinishes(t *testing.T) {
 					_, _ = io.CopyN(writer, zeroStream{}, size-int64(len(firstChunk)))
 				}()
 			}
-			req, err := http.NewRequestWithContext(ctx, method, local.StorageURL+"/owned/"+gatewayStage+"/one", body)
+			req, err := http.NewRequestWithContext(ctx, method, local.StorageURL+"/owned/"+gatewayFolder+"/one", body)
 			if err != nil {
 				t.Fatal(err)
 			}

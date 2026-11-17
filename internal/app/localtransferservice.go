@@ -1043,10 +1043,8 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		return "", err
 	}
 	options := settings.options()
-	// The engine writes each file at its name (ADR 0122 decision 3), and
-	// removes a replaced large object's old segments only where keepsReplaced
-	// allowed it.
-	options.LiveDestination = true
+	// The engine removes a replaced large object's old segments only where
+	// keepsReplaced allowed it (ADR 0122 decision 3).
 	options.KeepReplacedSegments = keepsSegments
 	// Confirmed, the engine compares each name as rclone copy does and
 	// replaces only what differs (ADR 0122 decision 12).

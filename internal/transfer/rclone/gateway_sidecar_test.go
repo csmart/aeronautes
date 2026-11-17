@@ -61,7 +61,7 @@ func TestGatewayBindsSidecarPolicyToFreshDestinationHead(t *testing.T) {
 				w.WriteHeader(http.StatusForbidden)
 			}))
 			defer upstream.Close()
-			gateway, remote, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}, &gatewayScope{container: "owned", object: gatewayStage}, 64)
+			gateway, remote, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}, &gatewayScope{container: "owned", object: gatewayFolder}, 64)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +102,7 @@ func TestGatewayIgnoresEarlierOrUnrelatedPolicyEvidence(t *testing.T) {
 		w.WriteHeader(204)
 	}))
 	defer upstream.Close()
-	gateway, remote, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}, &gatewayScope{container: "owned", object: gatewayStage}, 64)
+	gateway, remote, err := newStorageGateway(t.Context(), Remote{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}, &gatewayScope{container: "owned", object: gatewayFolder}, 64)
 	if err != nil {
 		t.Fatal(err)
 	}

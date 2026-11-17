@@ -25,7 +25,7 @@ func TestEncodedDynamicManifestRealSwift(t *testing.T) {
 	h := harness(t)
 	ctx := context.Background()
 	// An upload's engine writes each file at its name (ADR 0122 decision 3).
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
