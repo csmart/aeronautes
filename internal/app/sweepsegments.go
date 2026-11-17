@@ -32,6 +32,33 @@ func refuseSegmentsWhereVersionsAreKept(ctx context.Context, session *swiftcontr
 	return nil
 }
 
+// namespaceInScope places a dynamic large object's segment namespace against
+// what the job deletes: inside it, so its segments are rows the job deletes
+// anyway; or strictly wider than it, so sweeping the namespace would delete
+// names nobody asked for. Both end in a slash, or the scope is the whole
+// container, so this compares whole path parts. A selection's scope is its
+// selected folders; one with none holds no namespace and is inside none.
+func (r *prefixSweep) namespaceInScope(segContainer, namespace string) (inside, wider bool) {
+	if segContainer != r.container {
+		return false, false
+	}
+	scopes := []string{r.prefix}
+	if r.selection {
+		scopes = r.folders
+	}
+	for _, scope := range scopes {
+		if strings.HasPrefix(namespace, scope) {
+			return true, false
+		}
+	}
+	for _, scope := range scopes {
+		if strings.HasPrefix(scope, namespace) {
+			return false, true
+		}
+	}
+	return false, false
+}
+
 // largeObject deletes one row of the scope together with its segments, when
 // the row is a large object whose segments the rules can bound: the manifest
 // first, and the segments it named, read here once, only when the store's
@@ -85,7 +112,8 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			return r.leave(ctx, m, "its manifest names no segment prefix, so its segments have no bounded scope")
 		}
 		namespace = dloNamespace(segPrefix)
-		if segContainer == r.container && strings.HasPrefix(namespace, r.prefix) {
+		inside, wider := r.namespaceInScope(segContainer, namespace)
+		if inside {
 			// The namespace is the scope or lies inside it, so its segments
 			// are rows of the scope and the sweep deletes them as it deletes
 			// every other row. Both end in a slash, or the scope is the whole
@@ -95,7 +123,7 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 			r.member(ctx, background, m)
 			return true, false
 		}
-		if segContainer == r.container && strings.HasPrefix(r.prefix, namespace) {
+		if wider {
 			// Strictly wider than the scope: sweeping it would delete names
 			// the operator did not ask for, segments or not.
 			return r.leave(ctx, m, "its segments' namespace is wider than the scope being deleted")

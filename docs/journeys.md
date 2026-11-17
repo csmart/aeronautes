@@ -89,7 +89,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Containers | the Backstage mode; load more containers; what each settings badge says; stopping a scan | not yet | |
 | Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
 | Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
-| Listing | selecting rows leaves the toolbar and the list where they were | a selection of a file and a folder is copied and downloaded with the folder's contents | the list and three of the toolbar's buttons are in the same place with nothing selected, with one object selected and read, and with two rows selected |
+| Listing | selecting rows leaves the toolbar and the list where they were | a selection of a file and a folder is copied, downloaded and deleted with the folder's contents | the list and three of the toolbar's buttons are in the same place with nothing selected, with one object selected and read, and with two rows selected |
 | Listing | load more objects; the filter; "Find in container"; "Count objects"; marker folders; Escape clearing a selection | not yet | |
 | Inspector | an object's large-object kind | upload a folder with a segmented file and browse it | it is the kind the job recorded |
 | Inspector | an object's user metadata; a container's public notice | edit an object's metadata; make the container public and private again | read after connecting again |
@@ -107,12 +107,13 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Download | one object, a folder or a selection | not yet; layer 1 journey 3 | |
 | Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
 | Copy | a folder's copy starts under the folder's own name | upload a folder with a segmented file and browse it | for the store's own folder row, the copy dialog's destination path starts as the folder's name; nothing is sent |
-| Copy | a selection of a file and a folder, taken with everything in the folder | a selection of a file and a folder is copied and downloaded with the folder's contents | the copy's folder holds the file and the folder's file, and each downloaded file's SHA-256 is that of the file uploaded |
+| Copy | a selection of a file and a folder, taken with everything in the folder | a selection of a file and a folder is copied, downloaded and deleted with the folder's contents | the copy's folder holds the file and the folder's file, and each downloaded file's SHA-256 is that of the file uploaded |
 | Download | a selection of a file and a folder | the same journey | the same |
 | Copy | run a copy, within an account or across two; create the destination container; replace existing objects | not yet; layer 1 journey 2 runs the copies | |
 | Jobs | follow a job to its end and read its details | the upload and download journeys, and the prefix and container deletes of the delete journey (an object delete is not a job) | the job's state is "complete" |
 | Jobs | pause, resume and cancel a job; per-object records; history and "Recent changes" | not yet | |
-| Delete | an object, confirmed with a button | delete an object, the prefix and the container | its row is gone |
+| Delete | an object, confirmed by typing `delete` and its name | delete an object, the prefix and the container | its row is gone |
+| Delete | a selection of a file and a folder, the folder with everything in it, typed as `delete` and the number of rows | a selection of a file and a folder is copied, downloaded and deleted with the folder's contents | the dialog counts what the folder holds, and the listing is empty after the job |
 | Delete | a prefix and a container, each from its own action and with its own typed words | delete an object, the prefix and the container | each dialog is headed by its one job; the listing is empty, and the container is gone after connecting again |
 | Delete | a container named like the open one's segments container is named before a deletion and offered after it | delete an object, the prefix and the container | the notice is read in the dialog, its button opens that container, and neither container is listed once the run has deleted that one too |
 | Delete | a prefix with the segments of its large objects, the option left ticked and its words typed | delete an object, the prefix and the container | a fresh preview of the segments container, once the dialog has led there, counts no objects |
@@ -121,7 +122,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Delete | an object and a large object where the container keeps history, with no segments option offered | a history location keeps what is deleted, and every segment (Swift cloud only) | the run's own session finds each in the archive with its deletion marker, and every segment still listed |
 | Delete | a container that keeps history, then its archive with the option ticked | a history location keeps what is deleted, and every segment; deleting the archive takes the versions and their segments (Swift cloud only) | the archive holds what the container held and every segment is still listed; then neither container is listed and no segment is |
 | Delete | "Empty container…" from a container's menu | find a container named like a segment store behind its heading | the dialog opens with the caution; nothing is sent |
-| Delete | the segments option unticked by hand, or in another container's archive; emptying a container carried through; a selection; a marker | not yet; layer 1 journey 5 | |
+| Delete | the segments option unticked by hand, or in another container's archive; emptying a container carried through; a selection's segments option; a marker | not yet; layer 1 journey 5 | |
 | Menus | a container row's menu | open a copy from a container's context menu; find a container named like a segment store behind its heading | the chosen entry opens its dialog |
 | Menus | an object's and a folder's menu; "Copy name" | not yet | |
 | Settings | open Settings and import from it | import bookmarks from an rclone config (mock only) | as for the import above |

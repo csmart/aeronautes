@@ -126,7 +126,10 @@ test.describe.serial("segments where versions are kept", () => {
     await inspector(page).getByRole("button", { name: "Delete object…" }).click();
     const objectDialog = page.getByRole("alertdialog", { name: "Delete object" });
     await expect(objectDialog.getByText(`This container keeps history in ${archive}`)).toBeVisible();
-    await objectDialog.getByLabel(/to confirm/).fill("delete file00.bin");
+    // The words are "delete" and the object's whole name, its folder included.
+    const words = objectDialog.getByLabel(/to confirm/);
+    await expect(words).toHaveAttribute("placeholder", /^delete .*file00\.bin$/);
+    await words.fill((await words.getAttribute("placeholder"))!);
     await objectDialog.getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
     await expect.poll(() => versions(target, `${folder}file00.bin`), lag).toBe(2);

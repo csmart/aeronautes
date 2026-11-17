@@ -194,8 +194,9 @@ export interface SelectedDeleteOperation {
   listingScope: ListingScope;
   /** The scope revision the dialog was opened from. */
   scope: number;
+  /** The selected rows, objects and folders, unique by kind and name; a
+   * folder stands for everything in it (ADR 0093 decision 8). */
   members: ListingRowDTO[];
-  excludedPrefixes: string[];
   /** The most members one selection admits (ADR 0072 decision 4, the
    * download object ceiling setting). */
   ceiling: number;
@@ -2281,11 +2282,11 @@ export class BrowserState {
     }
   }
 
-  /** Open the selected-set deletion (ADR 0093 decision 5) around a snapshot
-   * of what is selected now: the scope the rows were listed under, the
-   * container, the object rows with the facts they were listed with, unique
-   * by name, and the prefix rows left out. False when fewer than two rows
-   * are selected or none of them is an object. */
+  /** Open the selected-set deletion (ADR 0093 decisions 5 and 8) around a
+   * snapshot of what is selected now: the scope the rows were listed under,
+   * the container, and the rows, objects with the facts they were listed
+   * with and folders, unique by kind and name. False when fewer than two
+   * rows are selected. */
   openSelectedDelete(): boolean {
     const container = this.containerName;
     const listingScope = this.#entriesScope;
@@ -2293,18 +2294,14 @@ export class BrowserState {
     if (!container || !listingScope || this.connecting || rows.length < 2) return false;
     const members: ListingRowDTO[] = [];
     const seen = new Set<string>();
-    const excludedPrefixes: string[] = [];
     for (const row of rows) {
-      if (row.kind !== "object") {
-        excludedPrefixes.push(row.name);
-      } else if (!seen.has(row.name)) {
-        seen.add(row.name);
+      if (!seen.has(rowIdentity(row))) {
+        seen.add(rowIdentity(row));
         members.push({ ...row });
       }
     }
-    if (members.length === 0) return false;
     this.selectedDelete = {
-      container, listingScope: { ...listingScope }, scope: this.#scopeRevision, members, excludedPrefixes,
+      container, listingScope: { ...listingScope }, scope: this.#scopeRevision, members,
       ceiling: this.selectionCeiling, status: "pending", jobId: null, error: null,
     };
     return true;
@@ -2325,28 +2322,26 @@ export class BrowserState {
       return "the view moved, so the selection it was made from is gone";
     }
     const live = new Map(this.chosenRows.map((row) => [rowIdentity(row), row]));
-    if (live.size !== op.members.length + op.excludedPrefixes.length) return "the selection changed";
-    for (const prefix of op.excludedPrefixes) {
-      if (!live.has("prefix:" + prefix)) return "the selection changed";
-    }
+    if (live.size !== op.members.length) return "the selection changed";
     for (const member of op.members) {
-      const row = live.get("object:" + member.name);
+      const row = live.get(rowIdentity(member));
       if (!row) return "the selection changed";
-      if (!sameListingFacts(row, member)) return `${member.name} changed since it was listed`;
+      if (member.kind === "object" && !sameListingFacts(row, member)) return `${member.name} changed since it was listed`;
     }
     return null;
   }
 
   /** Start the opened selected-set deletion once, from the snapshot alone,
    * with the count the operator typed; the job id lands on the operation
-   * and the selection it was made from is released. */
-  async runSelectedDelete(confirm: string): Promise<void> {
+   * and the selection it was made from is released. segments is whether
+   * each large object loses its segments too. */
+  async runSelectedDelete(confirm: string, segments = false): Promise<void> {
     const op = this.selectedDelete;
     if (!op || op.status !== "pending" || this.selectedDeleteProblem() !== null) return;
     op.status = "running";
     try {
       const jobId = await this.startSelectedDelete({
-        scope: { ...op.listingScope }, container: op.container, members: op.members.map((m) => ({ ...m })), confirm,
+        scope: { ...op.listingScope }, container: op.container, members: op.members.map((m) => ({ ...m })), segments, confirm,
       });
       if (this.selectedDelete !== op) return;
       op.jobId = jobId;

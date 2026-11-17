@@ -9,7 +9,7 @@ import { digestOf, expect, finish, localFolder, objectRow, openContainer, openFo
 // list where they were. Then ADR 0108 decision 7: a selected folder is taken
 // with everything in it, so a selection of the file and the folder is copied
 // and downloaded whole, the folder's name kept, and nothing opens first.
-test("a selection of a file and a folder is copied and downloaded with the folder's contents", async ({ page }, info) => {
+test("a selection of a file and a folder is copied, downloaded and deleted with the folder's contents", async ({ page }, info) => {
   const container = await ownContainer(info.project.name, "ui-selection");
   const folder = localFolder();
   const top = writeFiles(folder, [16], 1);
@@ -78,4 +78,27 @@ test("a selection of a file and a folder is copied and downloaded with the folde
   await expect(objectRow(page, "file00.bin")).toBeVisible();
   await openFolder(page, "inner");
   await expect(objectRow(page, "file00.bin")).toBeVisible();
+
+  // ADR 0093 decisions 8 and 9: the same selection of the copy's file and
+  // folder is deleted as one job, the folder with everything in it, confirmed
+  // by typing the word delete and the number of selected rows.
+  await page.getByRole("button", { name: "Up one level" }).click();
+  await objectRow(page, "file00.bin").click();
+  await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: /^inner\/ / }).click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "Delete selected…" }).click();
+  const deletion = page.getByRole("alertdialog", { name: "Delete selected" });
+  await expect(deletion.getByRole("heading", { name: "Delete 1 object and 1 folder" })).toBeVisible();
+  await expect(deletion.getByText(/inner\/: 1 object, 32 B now/)).toBeVisible();
+  const confirm = deletion.getByLabel(/to confirm/);
+  await expect(confirm).toHaveAttribute("placeholder", "delete 2");
+  await confirm.fill("delete 2");
+  await deletion.getByRole("button", { name: "Delete 1 object and 1 folder" }).click();
+  const started = await deletion.getByText(/is job \S+\./).textContent();
+  const id = /is job (\S+)\./.exec(started!)![1];
+  await deletion.getByRole("button", { name: "Show in jobs" }).click();
+  const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
+  await expect(row.getByText(/^(complete|partial|cancelled|failed)$/)).toHaveText("complete", { timeout: 8 * 60 * 1000 });
+  await page.getByRole("button", { name: /▾ hide/ }).click();
+  await page.getByRole("button", { name: "Refresh listing" }).click();
+  await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(0);
 });

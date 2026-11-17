@@ -127,10 +127,10 @@ import { isLink } from "../browser/browserState.svelte";
         Listed facts only; nothing is read for a summary. Ctrl or Cmd with a click toggles a row, Shift with a click
         extends the selection, Ctrl or Cmd with A selects every loaded row, and Escape clears it.
       </p>
-      {#if v1Offers.objectDelete && objects.length > 0}
+      {#if v1Offers.objectDelete}
         <p class="teach">
-          Delete selected… in the working list deletes the objects as one job, one request each, whatever each name
-          holds when its request arrives; prefix rows are left out.
+          Delete selected… in the working list deletes the objects, and each folder with everything in it, as one
+          job, one request each, whatever each name holds when its request arrives.
         </p>
       {/if}
     </section>

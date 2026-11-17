@@ -172,7 +172,10 @@ test.describe.serial("transfer", () => {
     await objectRow(page, "file00.bin").click();
     await inspector(page).getByRole("button", { name: "Delete object…" }).click();
     const objectDialog = page.getByRole("alertdialog", { name: "Delete object" });
-    await objectDialog.getByLabel(/to confirm/).fill("delete file00.bin");
+    // The words are "delete" and the object's whole name, its folder included.
+    const words = objectDialog.getByLabel(/to confirm/);
+    await expect(words).toHaveAttribute("placeholder", /^delete .*file00\.bin$/);
+    await words.fill((await words.getAttribute("placeholder"))!);
     await objectDialog.getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
 

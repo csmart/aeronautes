@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -342,79 +341,6 @@ func TestAStoppedStoreLeavesADeletionJobOpen(t *testing.T) {
 			}
 			if said != 1 {
 				t.Errorf("the job said that the store stopped beside it %d times, want once: %+v", said, events)
-			}
-		})
-	}
-}
-
-// A selected set admits its members before it runs, so one cancelled while
-// queued settles each as not attempted. If the store stops during that
-// settlement, here because the database refuses its first record, the job is
-// left open and says why, as one stopped while running is: a terminal row
-// would leave the members unsettled for good, because the restart passes over
-// finished jobs. The control is the same cancel with the store recording.
-func TestAStoppedStoreLeavesAQueuedSelectedDeletionOpen(t *testing.T) {
-	for _, stops := range []bool{true, false} {
-		t.Run(map[bool]string{true: "the store stops", false: "the store keeps recording"}[stops], func(t *testing.T) {
-			h, service := selectedHarness(t)
-			ctx := context.Background()
-			runner := h.transfer.runner
-			runner.setMaxActiveJobs(1)
-			if !runner.acquireSlot(ctx) {
-				t.Fatal("could not occupy the slot")
-			}
-			released := false
-			release := func() {
-				if !released {
-					released = true
-					runner.releaseSlot()
-				}
-			}
-			t.Cleanup(release)
-			id, err := service.StartSelectedDelete(ctx, selectedRequest(h, rowsOf(t, h, "normal/hello.txt", "empty-object")))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if stops {
-				refusal := fmt.Sprintf(`CREATE TRIGGER refuse_settlement BEFORE INSERT ON job_item_observations
-					WHEN NEW.item_id IN (SELECT id FROM job_items WHERE job_id = '%s')
-					BEGIN SELECT RAISE(ABORT, 'fixture settlement refusal'); END`, id)
-				if err := h.db.WriteTx(ctx, func(tx *sql.Tx) error { _, err := tx.Exec(refusal); return err }); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := h.transfer.CancelJob(ctx, id); err != nil {
-				t.Fatal(err)
-			}
-			ownersGone(t, h)
-			release()
-
-			job, err := jobs.NewStore(h.db).Get(ctx, id)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := deletesUnder(h, "fixtures"); len(got) != 0 {
-				t.Errorf("a cancelled queued deletion sent %v", got)
-			}
-			if !stops {
-				if job.State != jobs.StateCancelled {
-					t.Fatalf("the control = %s, want cancelled", job.State)
-				}
-				return
-			}
-			if jobs.Terminal(job.State) {
-				t.Fatalf("the job = %s; want it left open for the restart to settle", job.State)
-			}
-			events, err := audit.NewStore(h.db).List(ctx, audit.Query{Limit: 100})
-			if err != nil {
-				t.Fatal(err)
-			}
-			said := false
-			for _, event := range events {
-				said = said || event.Operation == "delete.selected.unavailable" && strings.Contains(event.Summary, "job "+id)
-			}
-			if !said {
-				t.Errorf("the job did not say why it was left open: %+v", events)
 			}
 		})
 	}

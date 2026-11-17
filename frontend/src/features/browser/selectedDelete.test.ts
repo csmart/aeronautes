@@ -192,8 +192,9 @@ describe("the working list", () => {
 
     expect(labels(f.root)).toContain("Delete selected…");
     click(button("Delete selected…", f.root));
-    expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["external-dlo", "external-slo"]);
-    expect(f.browser.selectedDelete?.excludedPrefixes).toEqual(["fake/"]);
+    // A selected folder is a member, deleted with everything in it (ADR 0093
+    // decision 8).
+    expect(f.browser.selectedDelete?.members.map((m) => m.name)).toEqual(["external-dlo", "external-slo", "fake/"]);
   });
 
   async function list() {
@@ -255,10 +256,11 @@ describe("the working list", () => {
 });
 
 describe("the selected-set dialog", () => {
-  async function dialog(facts: ContainerSettingsDTO | null | "real" = "real") {
+  async function dialog(facts: ContainerSettingsDTO | null | "real" = "real", prepare?: (fake: Awaited<ReturnType<typeof state>>["fake"]) => void) {
     const f = await state();
     applyEnabledCapabilities(["Object deletion"]);
     if (facts !== "real") vi.spyOn(f.browser, "containerFacts").mockResolvedValue(facts);
+    prepare?.(f.fake);
     f.browser.select(f.index("empty-object"));
     f.browser.toggleRow(f.index("external-slo"));
     f.browser.toggleRow(f.index("normal/"));
@@ -273,36 +275,44 @@ describe("the selected-set dialog", () => {
     return { ...f, op, snapshot, done };
   }
 
-  it("lists the members, the prefix rows left out, the ceiling and the versioning consequence, and confirms only with the typed count", async () => {
+  it("lists the objects and the folder with what it holds, the ceiling and the versioning consequence, and confirms only with its words", async () => {
     const facts: ContainerSettingsDTO = { publicRead: false, publicListing: false, referrerGrants: [], sharedWrite: false, staticWeb: false,
       versioningMode: "versions_location", versioningArchive: "the-archive", quota: false, cors: false, readAcl: "", writeAcl: "", observedAt: "", generation: 1 };
     const f = await dialog(facts);
     const text = (f.root.textContent ?? "").replace(/\s+/g, " ");
-    expect(text).toContain("Delete 2 selected objects");
+    expect(text).toContain("Delete 2 objects and 1 folder");
     expect(text).toContain("empty-object");
     expect(text).toContain("external-slo");
-    expect(text).toContain("Not included: 1 prefix row");
-    expect(text).toContain("normal/");
-    expect(text).toContain("at most 250,000 objects");
+    // The folder's line is the folder deletion's own preview of it.
+    expect(text).toContain("normal/: 42 objects");
+    expect(text).toContain("2 possible manifests now");
+    expect(text).toContain("Everything under each selected folder goes, including anything written there before the job lists it");
+    expect(text).not.toContain("Not included");
+    expect(text).toContain("at most 250,000 objects, counting what its folders hold");
     expect(text).toContain("keeps versions in the-archive");
     expect(text).toContain("if something else has written to a name since it was listed, that is what goes");
-    expect(text).toContain("A manifest is deleted without its segments, and a link as the link it is");
+    // A container that keeps versions keeps segments, so the option is not
+    // offered and the two objects that may be manifests and the folder's
+    // two are deleted without them.
+    expect(f.root.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(text).toContain("Their segments cannot be deleted with them here: this container keeps versions");
+    expect(text).toContain("The 4 possible manifests are deleted without their segments");
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    const confirm = button("Delete 2 objects", f.root);
+    const confirm = button("Delete 2 objects and 1 folder", f.root);
     expect(confirm.disabled).toBe(true);
-    type(f.root, "delete 3");
+    type(f.root, "delete 2");
     expect(confirm.disabled).toBe(true);
-    type(f.root, "2");
+    type(f.root, "3");
     expect(confirm.disabled).toBe(true);
     click(confirm);
     await settle();
     expect(start).not.toHaveBeenCalled();
-    type(f.root, "delete 2");
+    type(f.root, "delete 3");
     expect(confirm.disabled).toBe(false);
     click(confirm);
     await settle();
     expect(start).toHaveBeenCalledOnce();
-    expect(start.mock.calls[0][0]).toEqual({ scope: { bookmarkId: f.bookmark.id, generation: 1 }, container: "fixtures", members: f.snapshot, confirm: "delete 2" });
+    expect(start.mock.calls[0][0]).toEqual({ scope: { bookmarkId: f.bookmark.id, generation: 1 }, container: "fixtures", members: f.snapshot, segments: false, confirm: "delete 3" });
     expect(f.op.status).toBe("done");
     expect(f.op.jobId).toBe("job-1");
     expect(f.root.textContent).toContain("Deletion started");
@@ -321,9 +331,69 @@ describe("the selected-set dialog", () => {
     expect(names(f.browser.entries)).not.toContain("empty-object");
     expect(names(f.browser.entries)).not.toContain("external-slo");
     expect(names(f.browser.entries)).toContain("external-dlo");
-    expect(names(f.browser.entries)).toContain("normal/");
+    expect(names(f.browser.entries)).not.toContain("normal/");
     click(button("Close", f.root));
     expect(f.done).toHaveBeenCalledOnce();
+  });
+
+  const unversioned: ContainerSettingsDTO = { publicRead: false, publicListing: false, referrerGrants: [], sharedWrite: false, staticWeb: false,
+    versioningMode: "off", versioningArchive: "", quota: false, cors: false, readAcl: "", writeAcl: "", observedAt: "", generation: 1 };
+
+  it("starts the segments option unticked for objects alone, because no folder preview read the archive scan", async () => {
+    const f = await state();
+    applyEnabledCapabilities(["Object deletion"]);
+    vi.spyOn(f.browser, "containerFacts").mockResolvedValue(unversioned);
+    const preview = vi.spyOn(f.fake, "previewDelete");
+    f.browser.select(f.index("empty-object"));
+    f.browser.toggleRow(f.index("external-slo"));
+    await settle();
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    mounted.add(mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } }));
+    flushSync(); await settle();
+    expect(preview).not.toHaveBeenCalled();
+    expect(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+    expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.placeholder).toBe("delete 2");
+    expect(f.root.textContent).toContain("was not read");
+  });
+
+  it("deletes segments too by default where the container keeps no versions, and the option has its own words", async () => {
+    const f = await dialog(unversioned);
+    const option = f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const confirm = f.root.querySelector<HTMLInputElement>(".confirm input")!;
+    expect(option.checked).toBe(true);
+    expect(confirm.placeholder).toBe("delete 3 and segments");
+    expect(f.root.textContent).toContain("lose their segments after them");
+    type(f.root, "delete 3");
+    expect(button("Delete 2 objects and 1 folder", f.root).disabled).toBe(true);
+    option.click(); flushSync();
+    expect(confirm.placeholder).toBe("delete 3");
+    expect(f.root.textContent).toContain("are deleted without their segments");
+    option.click(); flushSync();
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    type(f.root, "delete 3 and segments");
+    click(button("Delete 2 objects and 1 folder", f.root));
+    await settle();
+    expect(start.mock.calls[0][0]).toMatchObject({ segments: true, confirm: "delete 3 and segments" });
+  });
+
+  it("starts the segments option unticked where a folder's preview names another container's archive", async () => {
+    const f = await dialog(unversioned, (fake) => {
+      const real = fake.previewDelete;
+      fake.previewDelete = async (req) => ({ ...(await real(req)), archiveOf: ["owner"] });
+    });
+    expect(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+    expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.placeholder).toBe("delete 3");
+    expect(f.root.textContent).toContain("It starts unticked here");
+  });
+
+  it("offers the deletion for folders selected alone", async () => {
+    const f = await state();
+    applyEnabledCapabilities(["Object deletion"]);
+    f.browser.select(f.index("normal/"));
+    f.browser.toggleRow(f.index("fake/"));
+    await settle();
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    expect(f.browser.selectedDelete!.members.map((m) => [m.kind, m.name])).toEqual([["prefix", "fake/"], ["prefix", "normal/"]]);
   });
 
   it("states the operator's selection ceiling, the download object ceiling setting", async () => {
@@ -339,7 +409,7 @@ describe("the selected-set dialog", () => {
     const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
     mounted.add(component);
     flushSync(); await settle();
-    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("at most 1,000 objects; the ceiling is set in Settings");
+    expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("at most 1,000 objects, counting what its folders hold; the ceiling is set in Settings");
   });
 
   it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {
@@ -371,7 +441,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation without deleting when the view moves", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "delete 2");
+    type(f.root, "delete 3");
     await f.browser.openContainer("slo-parts");
     await settle();
     expect(f.root.textContent).toContain("Nothing was deleted");
@@ -384,7 +454,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation when the selection changes to other names with the same count, for good", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "delete 2");
+    type(f.root, "delete 3");
     f.browser.toggleRow(f.index("external-dlo"));
     f.browser.toggleRow(f.index("external-slo"));
     await settle();
@@ -403,7 +473,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation when a refresh changes one member's listed entity tag with the same count", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "delete 2");
+    type(f.root, "delete 3");
     const real = f.fake.objects;
     f.fake.objects = async (...args) => {
       const page = await real(...args);
@@ -420,12 +490,12 @@ describe("the selected-set dialog", () => {
   it("shows a refused start and stays open for another try", async () => {
     const f = await dialog(null);
     f.fake.startSelectedDelete = vi.fn(async () => { throw new Error("the members could not be recorded, so nothing was sent"); });
-    type(f.root, "delete 2");
-    click(button("Delete 2 objects", f.root));
+    type(f.root, "delete 3");
+    click(button("Delete 2 objects and 1 folder", f.root));
     await settle();
     expect(f.root.textContent).toContain("nothing was sent");
     expect(f.op.status).toBe("pending");
-    expect(labels(f.root)).toContain("Delete 2 objects");
+    expect(labels(f.root)).toContain("Delete 2 objects and 1 folder");
     expect(f.browser.selectionCount).toBe(3);
   });
 });
@@ -457,7 +527,7 @@ describe("the Delete key and the selection shortcuts", () => {
     s.row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true })); flushSync(); await settle();
     expect(s.foot.textContent).toContain("2 selected");
     s.listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
-    expect(document.querySelector('[aria-label="Delete selected objects"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Delete selected"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Delete object"]')).toBeNull();
     expect(api.startSelectedDelete).not.toHaveBeenCalled();
   });
@@ -469,7 +539,7 @@ describe("the Delete key and the selection shortcuts", () => {
     s.row("empty-object").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); flushSync(); await settle();
     s.row("external-dlo").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ctrlKey: true })); flushSync(); await settle();
     s.listbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })); flushSync(); await settle();
-    expect(document.querySelector('[aria-label="Delete selected objects"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Delete selected"]')).not.toBeNull();
     expect(api.startSelectedDelete).not.toHaveBeenCalled();
   });
 

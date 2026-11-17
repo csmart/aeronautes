@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -72,6 +74,17 @@ func itemsOf(t *testing.T, h *harness, jobID string) map[string]jobs.ItemRecord 
 	return out
 }
 
+// itemsByName is a selection's items by object name: an item's key also
+// names its container, because a large object's segments may be in another.
+func itemsByName(t *testing.T, h *harness, jobID string) map[string]jobs.ItemRecord {
+	t.Helper()
+	out := map[string]jobs.ItemRecord{}
+	for _, item := range itemsOf(t, h, jobID) {
+		out[item.Source.Object] = item
+	}
+	return out
+}
+
 func deletesUnder(h *harness, container string) []string {
 	var out []string
 	for _, line := range h.mock.RequestLog() {
@@ -96,7 +109,10 @@ func TestSelectedDeleteRefusesBeforeAnyJobRow(t *testing.T) {
 		"moved generation":   {Scope: ListingScopeDTO{BookmarkID: current.BookmarkID, Generation: current.Generation + 7}, Container: "fixtures", Members: one, Confirm: "delete 1"},
 		"another bookmark":   {Scope: ListingScopeDTO{BookmarkID: "not-the-active-one", Generation: current.Generation}, Container: "fixtures", Members: one, Confirm: "delete 1"},
 		"no members":         {Scope: current, Container: "fixtures", Confirm: "delete 0"},
-		"a prefix member":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "prefix", Name: "implied/"}}, Confirm: "delete 1"},
+		"another kind":       {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "container", Name: "implied/"}}, Confirm: "delete 1"},
+		"a folder no slash":  {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "prefix", Name: "implied"}}, Confirm: "delete 1"},
+		"inside a folder":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "prefix", Name: "implied/"}, {Kind: "object", Name: "implied/child.txt"}}, Confirm: "delete 2"},
+		"segments unasked":   {Scope: current, Container: "fixtures", Members: one, Confirm: "delete 1 and segments"},
 		"an empty name":      {Scope: current, Container: "fixtures", Members: []ListingRowDTO{{Kind: "object", Name: ""}}, Confirm: "delete 1"},
 		"a repeated name":    {Scope: current, Container: "fixtures", Members: []ListingRowDTO{rows[0], rows[0]}, Confirm: "delete 2"},
 		"wrong confirmation": {Scope: current, Container: "fixtures", Members: rows, Confirm: "delete 1"},
@@ -156,7 +172,7 @@ func TestSelectedDeleteDeletesEveryMemberExactly(t *testing.T) {
 			t.Fatalf("%s: segments = %d, %v; want 3 untouched", store, len(page.Rows), err)
 		}
 	}
-	items := itemsOf(t, h, jobID)
+	items := itemsByName(t, h, jobID)
 	for _, name := range names {
 		item := items[name]
 		if item.Execution == nil || item.Execution.Result != jobs.ItemDeleted || item.IssuedAt.IsZero() {
@@ -271,7 +287,7 @@ func TestSelectedDeleteCountsARedirectedDeleteAsARequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	item := itemsOf(t, h, jobID)[rows[0].Name]
+	item := itemsByName(t, h, jobID)[rows[0].Name]
 	if deletes.Load() != 1 {
 		t.Fatalf("the response gate saw %d DELETEs, want exactly one", deletes.Load())
 	}
@@ -303,7 +319,7 @@ func TestSelectedDeleteCountsAnUnverifiedMemberOnceWhenCancelled(t *testing.T) {
 	}
 	ready <- jobID
 	job := awaitTerminal(t, h, jobID)
-	items := itemsOf(t, h, jobID)
+	items := itemsByName(t, h, jobID)
 	first, later := items[rows[0].Name], items[rows[1].Name]
 	if first.Execution == nil || first.Execution.Result != jobs.ItemUnverified || later.Execution == nil || later.Execution.Result != jobs.ItemNotAttempted {
 		t.Fatalf("fixture did not settle one unverified DELETE and one untouched member: first=%+v later=%+v", first, later)
@@ -354,7 +370,7 @@ func TestSelectedDeleteSettlesEachMemberOnItsOwn(t *testing.T) {
 	if job.State != "partial" || job.Counters.ObjectsDeleted != 2 || !strings.Contains(job.Error, "2 of 3 members deleted; 1 failed, 0 unknown") {
 		t.Fatalf("job = %+v", job)
 	}
-	items := itemsOf(t, h, jobID)
+	items := itemsByName(t, h, jobID)
 	if refused := items["empty-object"].Execution; refused == nil || refused.Result != jobs.ItemFailed || refused.Diagnostic.Code != jobs.CodeForbidden || refused.Diagnostic.HTTPStatus != http.StatusForbidden {
 		t.Fatalf("refused item = %+v", items["empty-object"])
 	}
@@ -404,7 +420,7 @@ func TestSelectedDeleteLostReplyIsUnverifiedAndPartial(t *testing.T) {
 	if job.State != "partial" || !strings.Contains(job.Error, "1 unknown") {
 		t.Fatalf("job = %+v", job)
 	}
-	items := itemsOf(t, h, jobID)
+	items := itemsByName(t, h, jobID)
 	lost := items["normal/hello.txt"]
 	if lost.Execution == nil || lost.Execution.Result != jobs.ItemUnverified || lost.Execution.Effect != jobs.EffectUnresolved {
 		t.Fatalf("lost item = %+v", lost)
@@ -441,7 +457,7 @@ func TestSelectedDeleteCancelsBetweenMembers(t *testing.T) {
 		if job.State != "partial" || job.Counters.ObjectsDeleted != 1 || !strings.Contains(job.Error, "cancelled after 1 of 4") {
 			t.Fatalf("job = %+v", job)
 		}
-		items := itemsOf(t, h, jobID)
+		items := itemsByName(t, h, jobID)
 		if items["normal/hello.txt"].Execution == nil || items["normal/hello.txt"].Execution.Result != jobs.ItemDeleted {
 			t.Fatalf("the member in flight did not finish: %+v", items["normal/hello.txt"])
 		}
@@ -537,7 +553,7 @@ func TestSelectedDeleteLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 	}
 	items := map[string]jobs.ItemRecord{}
 	for _, item := range page.Items {
-		items[item.Key] = item
+		items[item.Source.Object] = item
 	}
 	if first := items["normal/hello.txt"]; first.Execution != nil || first.IssuedAt.IsZero() {
 		t.Fatalf("the member in flight is not left unresolved: %+v", first)
@@ -553,3 +569,204 @@ func TestSelectedDeleteLeavesTheJobOpenWhenARecordIsLost(t *testing.T) {
 }
 
 func awaitTick() { time.Sleep(10 * time.Millisecond) }
+
+// A selected folder is deleted with everything in it, its marker included,
+// beside the selected objects; a name that only begins like the folder
+// stays, and a folder with nothing in it deletes nothing (ADR 0093 decision
+// 8). The ceiling counts what the folders hold, and a set beyond it ends the
+// job before any DELETE.
+func TestSelectedDeleteTakesAFolderWhole(t *testing.T) {
+	h, service := selectedHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	for _, name := range []string{"a.txt", "b.txt", "dir/", "dir/one", "dir/sub/two", "dirx", "dir-kept/three"} {
+		seedObject(h.mock, "media", name, "x", nil)
+	}
+	members := []ListingRowDTO{{Kind: "object", Name: "a.txt", Bytes: 1}, {Kind: "prefix", Name: "dir/"}, {Kind: "prefix", Name: "ghost/"}}
+	request := SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Members: members, Confirm: "delete 3"}
+
+	service.ceiling = func(context.Context) int { return 3 }
+	refused, err := service.StartSelectedDelete(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, refused); job.State != "failed" || !strings.Contains(job.Error, `"dir/"`) || !strings.Contains(job.Error, "ceiling of 3") {
+		t.Fatalf("over the ceiling once the folder is counted: %+v", job)
+	}
+	if deletes := deletesUnder(h, "media"); len(deletes) != 0 {
+		t.Fatalf("a set over the ceiling sent DELETEs: %v", deletes)
+	}
+
+	service.ceiling = nil
+	jobID, err := service.StartSelectedDelete(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitTerminal(t, h, jobID); job.State != "complete" || job.Counters.ObjectsDeleted != 4 {
+		t.Fatalf("job = %+v", job)
+	}
+	left := rowsIn(t, h, "media")
+	// The listing is delimited, so dir-kept/ stands for the object under it.
+	if strings.Join(left, ",") != "b.txt,dir-kept/,dirx" {
+		t.Fatalf("left %v, want the unselected object and the names that only begin like the folder", left)
+	}
+}
+
+// A large object in a selection loses its segments as a folder deletion's
+// does, with the option, and keeps them without it (ADR 0093 decision 8).
+func TestSelectedDeleteTakesSegmentsWithTheOption(t *testing.T) {
+	for _, segments := range []bool{true, false} {
+		h, service := selectedHarness(t)
+		ctx := context.Background()
+		h.mock.AddContainer("media", "standard")
+		h.mock.AddContainer("media_segments", "standard")
+		seedObject(h.mock, "media_segments", "big/000001", "0123456789", nil)
+		h.mock.PutObject("media", "dir/big.slo", swifttest.Object{
+			Bytes: 10, SLO: true, SLOEtag: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f", ContentType: "application/octet-stream",
+			SLOManifestJSON: fmt.Sprintf(`[{"name":"/media_segments/big/000001","hash":"%s","bytes":10}]`, md5hex("0123456789")),
+		})
+		req := SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Segments: segments,
+			Members: []ListingRowDTO{{Kind: "prefix", Name: "dir/"}}}
+		req.Confirm = selectedConfirmation(req)
+		jobID, err := service.StartSelectedDelete(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job := awaitTerminal(t, h, jobID); job.State != "complete" {
+			t.Fatalf("segments %v: job = %+v", segments, job)
+		}
+		kept := len(rowsIn(t, h, "media_segments")) == 1
+		if kept == segments {
+			t.Fatalf("segments %v: the segment kept = %v", segments, kept)
+		}
+	}
+}
+
+// allNames is every object name in a container, from a deep listing.
+func allNames(t *testing.T, h *harness, container string) map[string]bool {
+	t.Helper()
+	session, err := h.transfer.connections.SessionFor(t.Context(), h.bookmarkID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for entry, err := range session.Objects(t.Context(), container, swiftcontrol.ObjectListOptions{Deep: true}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if object, ok := entry.(swiftcontrol.ObjectEntry); ok {
+			names[object.Name] = true
+		}
+	}
+	return names
+}
+
+// rowsIn is the rows a delimited listing of a container's top shows.
+func rowsIn(t *testing.T, h *harness, container string) []string {
+	t.Helper()
+	page, err := h.browse.Objects(context.Background(), h.bookmarkID(), container, "", "", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, row := range page.Rows {
+		names = append(names, row.Name)
+	}
+	return names
+}
+
+// A dynamic large object's segments in a selection, with the option: inside a
+// selected folder they are rows the job deletes anyway; under a namespace
+// wider than the selected folder they are left and the job is partial; and
+// for a selection of objects alone, whose scope is no prefix, they are swept
+// under their own namespace (ADR 0093 decision 8).
+func TestSelectedDeleteBoundsADynamicManifestsSegments(t *testing.T) {
+	cases := []struct {
+		name     string
+		manifest string // the object's name
+		segments string // its X-Object-Manifest, in this container
+		member   ListingRowDTO
+		state    string
+		kept     bool
+	}{
+		{"inside the selected folder", "dir/video", "dir/segs/", ListingRowDTO{Kind: "prefix", Name: "dir/"}, "complete", false},
+		{"wider than the selected folder", "dir/sub/video", "dir/", ListingRowDTO{Kind: "prefix", Name: "dir/sub/"}, "partial", true},
+		{"objects alone", "video", "segs/", ListingRowDTO{Kind: "object", Name: "video"}, "complete", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, service := selectedHarness(t)
+			ctx := context.Background()
+			h.mock.AddContainer("media", "standard")
+			seedObject(h.mock, "media", tc.segments+"000001", "segment", nil)
+			h.mock.PutObject("media", tc.manifest, swifttest.Object{Manifest: "media/" + tc.segments})
+			req := SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Segments: true, Members: []ListingRowDTO{tc.member}}
+			req.Confirm = selectedConfirmation(req)
+			jobID, err := service.StartSelectedDelete(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job := awaitTerminal(t, h, jobID); string(job.State) != tc.state {
+				t.Fatalf("job = %+v, want %s", job, tc.state)
+			}
+			names := allNames(t, h, "media")
+			if names[tc.manifest] {
+				t.Fatalf("the manifest %s is still there", tc.manifest)
+			}
+			if kept := names[tc.segments+"000001"]; kept != tc.kept {
+				t.Fatalf("the segment kept = %v, want %v", kept, tc.kept)
+			}
+		})
+	}
+}
+
+// With the segments option on, a large object's own requests wait for the
+// member before it, so a cancellation landing during that member's DELETE
+// leaves the manifest unrequested (ADR 0093 decision 4).
+func TestSelectedDeleteWithSegmentsKeepsOneMemberInFlight(t *testing.T) {
+	h, service := selectedHarness(t)
+	ctx := context.Background()
+	h.mock.AddContainer("media", "standard")
+	h.mock.AddContainer("media_segments", "standard")
+	seedObject(h.mock, "media", "a.txt", "alpha", nil)
+	seedObject(h.mock, "media_segments", "big/000001", "0123456789", nil)
+	h.mock.PutObject("media", "big.slo", swifttest.Object{
+		Bytes: 10, SLO: true, SLOEtag: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f", ContentType: "application/octet-stream",
+		SLOManifestJSON: fmt.Sprintf(`[{"name":"/media_segments/big/000001","hash":"%s","bytes":10}]`, md5hex("0123456789")),
+	})
+	ready := make(chan string, 1)
+	manifestRead := make(chan struct{}, 1)
+	var once sync.Once
+	h.mock.BeforeRequest = func(method, path string) {
+		if strings.HasSuffix(path, "/big.slo") && method != "DELETE" {
+			select {
+			case manifestRead <- struct{}{}:
+			default:
+			}
+		}
+		if method == "DELETE" && strings.HasSuffix(path, "/a.txt") {
+			once.Do(func() {
+				// A caller that does not wait would read the manifest now.
+				select {
+				case <-manifestRead:
+				case <-time.After(300 * time.Millisecond):
+				}
+				if err := h.transfer.CancelJob(ctx, <-ready); err != nil {
+					t.Error(err)
+				}
+			})
+		}
+	}
+	req := SelectedDeleteRequestDTO{Scope: h.portrait(), Container: "media", Segments: true,
+		Members: []ListingRowDTO{{Kind: "object", Name: "a.txt", Bytes: 5}, {Kind: "object", Name: "big.slo", Bytes: 10, SLOListed: true}}}
+	req.Confirm = selectedConfirmation(req)
+	jobID, err := service.StartSelectedDelete(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready <- jobID
+	awaitTerminal(t, h, jobID)
+	if deletes := deletesUnder(h, "media"); len(deletes) != 1 {
+		t.Fatalf("DELETEs = %v, want a.txt's only", deletes)
+	}
+}

@@ -1061,18 +1061,20 @@ export function newFakeApi(): Api {
       if (members.length === 0) throw new Error("nothing is selected; a selected-set deletion needs at least one object");
       const seen = new Set<string>();
       for (const member of members) {
-        if (member.kind !== "object") {
-          throw new Error(`${JSON.stringify(member.name)} is a ${member.kind} row, not an object; a prefix is deleted by the bulk deletion that owns it`);
+        if (member.kind !== "object" && member.kind !== "prefix") {
+          throw new Error(`${JSON.stringify(member.name)} is a ${member.kind} row; only objects and folders are deleted here`);
         }
         if (member.name === "") throw new Error("a member needs its name; an empty name would address the container itself");
         if (seen.has(member.name)) throw new Error(`${JSON.stringify(member.name)} is selected twice; a member is deleted once`);
         seen.add(member.name);
       }
-      requireTyped(req.confirm, `delete ${members.length}`);
-      // The fake deletes every member as listed and ends the job at once;
-      // the real job compares each member first and records what it found.
-      const names = new Set(members.map((m) => m.name));
-      objects[req.container] = (objects[req.container] ?? []).filter((o) => !names.has(o.name));
+      requireTyped(req.confirm, `delete ${members.length}${req.segments ? " and segments" : ""}`);
+      // The fake deletes every member, and everything under a selected
+      // folder, and ends the job at once.
+      const names = new Set(members.filter((m) => m.kind === "object").map((m) => m.name));
+      const folders = members.filter((m) => m.kind === "prefix").map((m) => m.name);
+      objects[req.container] = (objects[req.container] ?? [])
+        .filter((o) => !names.has(o.name) && !folders.some((folder) => o.name.startsWith(folder)));
       const id = `job-${jobs.length + 1}`;
       jobs.push({
         id, type: "delete_selected", state: "complete", source: req.container, destination: "(deleted)",
