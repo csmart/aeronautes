@@ -123,7 +123,7 @@ func TestCopyOfMembersWithOneMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := awaitTerminal(t, h, jobID)
-	if job.State != "partial" || job.Counters.ObjectsCopied != 1 || !strings.Contains(job.Error, "1 of the selected objects were no longer at the source") {
+	if job.State != "partial" || job.Counters.ObjectsCopied != 1 || !strings.Contains(job.Error, "1 of the selected objects and folders were no longer at the source") {
 		t.Fatalf("job = %+v", job)
 	}
 }

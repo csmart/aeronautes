@@ -58,34 +58,36 @@ it.each([
   expect(browser.transferSource.members).toEqual(members);
 });
 
-// Folder rows in a selection are not members. What the window says about the
-// folders left out, before either dialog opens, is in
-// selectionFolderWarning.test.ts.
-it("leaves folder rows out of a selection's members", () => {
+// A folder row in a selection is a member, by its name ending in "/", taken
+// with everything in it (ADR 0108 decision 7), and nothing opens first.
+it("takes a selection's folder rows as members", () => {
   const { browser } = browserAt("files/");
   browser.select(0);
   browser.toggleRow(1);
-  expect(browser.transferSource).toMatchObject({ kind: "selected", members: ["files/a"], excludedFolders: 1 });
+  expect(browser.transferSource).toEqual({ kind: "selected", prefix: "files/", members: ["files/sub/", "files/a"] });
+  browser.openTransfer("copy");
+  expect(browser.transferOpen).toBe(true);
 });
 
-// The copy dialog names the selected objects and sends exactly them.
-it("copies the chosen objects and says which", async () => {
+// The copy dialog names the selected objects and folders and sends exactly them.
+it("copies the chosen objects and folders and says which", async () => {
   const { api, browser } = browserAt("files/");
-  browser.select(1);
+  browser.select(0);
+  browser.toggleRow(1);
   browser.toggleRow(2);
   api.planCopy = vi.fn(api.planCopy);
   const root = document.createElement("div");
   document.body.append(root);
   mounted.add(mount(TransferDialog, { target: root, props: { browser, onClose: vi.fn() } }));
   flushSync();
-  expect(root.querySelector('[aria-label="Source scope"]')?.textContent).toContain("2 selected objects: a, b");
+  expect(root.querySelector('[aria-label="Source scope"]')?.textContent).toContain("2 objects and 1 folder selected: sub/, a, b");
   const container = root.querySelector<HTMLInputElement>('input[placeholder="container"]')!;
   container.value = "backup";
   container.dispatchEvent(new Event("input", { bubbles: true }));
   flushSync();
   [...root.querySelectorAll<HTMLButtonElement>("footer button")].find((b) => b.textContent?.trim() === "Preview")!.click();
   flushSync();
-  expect(vi.mocked(api.planCopy).mock.calls[0][0]).toMatchObject({ sourcePrefix: "files/", members: ["files/a", "files/b"], destContainer: "backup" });
+  expect(vi.mocked(api.planCopy).mock.calls[0][0]).toMatchObject({ sourcePrefix: "files/", members: ["files/sub/", "files/a", "files/b"], destContainer: "backup" });
 });
 
 // A preview that found fewer of the selected objects than were chosen says
@@ -109,22 +111,23 @@ it("says in the preview how many selected objects are gone", async () => {
   button("Preview").click();
   for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
   const notes = () => root.querySelector(".preview .notes")?.textContent?.replace(/\s+/g, " ");
-  expect(notes()).toContain("1 of the selected objects was no longer at the source; the others are copied");
+  expect(notes()).toContain("1 of the selected objects and folders was no longer at the source; the others are copied");
   expect(button("Start copy").disabled).toBe(false);
 
   // With every selected object gone, nothing is copied, and the note says so.
   api.planCopy = vi.fn(async (req) => ({ ...(await plan(req)), missingMembers: 2 }));
   button("Preview").click();
   for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
-  expect(notes()).toContain("2 of the selected objects were no longer at the source; nothing is copied");
+  expect(notes()).toContain("2 of the selected objects and folders were no longer at the source; nothing is copied");
   expect(button("Start copy").disabled).toBe(false);
 });
 
 // A download follows the selection the same way; an upload, with the same
 // rows chosen, still goes into the folder being browsed and names no members.
-it.each(["download", "upload"] as const)("sends the chosen objects only for a download (%s)", async (mode) => {
+it.each(["download", "upload"] as const)("sends the chosen objects and folders only for a download (%s)", async (mode) => {
   const { api, browser } = browserAt("files/");
-  browser.select(1);
+  browser.select(0);
+  browser.toggleRow(1);
   browser.toggleRow(2);
   browser.localTransfer = mode;
   api.pickDownloadDir = vi.fn().mockResolvedValue({ token: "dir", dir: "chosen" });
@@ -138,8 +141,8 @@ it.each(["download", "upload"] as const)("sends the chosen objects only for a do
   root.querySelector<HTMLButtonElement>("footer button")!.click();
   for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
   if (mode === "download") {
-    expect(root.querySelector("h2")?.textContent).toContain("Download 2 selected objects from media/files/");
-    expect(vi.mocked(api.preflightDownload).mock.calls[0][0]).toMatchObject({ prefix: "files/", members: ["files/a", "files/b"] });
+    expect(root.querySelector("h2")?.textContent).toContain("Download 2 objects and 1 folder from media/files/");
+    expect(vi.mocked(api.preflightDownload).mock.calls[0][0]).toMatchObject({ prefix: "files/", members: ["files/sub/", "files/a", "files/b"] });
   } else {
     expect(vi.mocked(api.preflightUpload).mock.calls[0][0]).toMatchObject({ prefix: "files/" });
     expect((vi.mocked(api.preflightUpload).mock.calls[0][0] as { members?: string[] }).members).toBeUndefined();
@@ -164,14 +167,13 @@ it("downloads a selected folder as its own scope", async () => {
   expect(request.members).toBeUndefined();
 });
 
-// A selection changed to folder rows alone while a dialog is open names no
-// objects, and an empty member list would mean the whole folder, so neither
-// dialog can preview or check it (ADR 0108 decision 1).
-it("refuses a selection of folders alone in an open dialog", () => {
+// Several folder rows alone are a selection like any other: both dialogs
+// can preview or check it, and send the folders (ADR 0108 decision 7).
+it("accepts a selection of folders alone", () => {
   const { browser } = browserAt("files/");
   browser.entries = [row("prefix", "files/sub/"), row("prefix", "files/other/"), row("object", "files/a"), row("object", "files/b")];
-  browser.select(2);
-  browser.toggleRow(3);
+  browser.select(0);
+  browser.toggleRow(1);
   const copyRoot = document.createElement("div");
   const downloadRoot = document.createElement("div");
   document.body.append(copyRoot, downloadRoot);
@@ -184,13 +186,10 @@ it("refuses a selection of folders alone in an open dialog", () => {
   flushSync();
   const preview = () => [...copyRoot.querySelectorAll<HTMLButtonElement>("footer button")].find((b) => b.textContent?.trim() === "Preview")!;
   const choose = () => downloadRoot.querySelector<HTMLButtonElement>("footer button")!;
+  expect(browser.transferSource.members).toEqual(["files/sub/", "files/other/"]);
   expect(preview().disabled).toBe(false);
   expect(choose().disabled).toBe(false);
-  browser.select(0);
-  browser.toggleRow(1);
-  flushSync();
-  expect(preview().disabled).toBe(true);
-  expect(choose().disabled).toBe(true);
+  expect(copyRoot.querySelector('[aria-label="Source scope"]')?.textContent).toContain("2 folders selected: sub/, other/");
 });
 
 // The members are part of the request, so changing the selection after a

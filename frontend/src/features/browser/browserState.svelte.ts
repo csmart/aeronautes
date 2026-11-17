@@ -158,10 +158,9 @@ export interface TransferSource {
   kind: "selected" | "object" | "folder" | "container";
   /** The source prefix: the browsed folder, or the selected folder. */
   prefix: string;
-  /** Full names of the objects acted on; empty means the whole prefix. */
+  /** Full names of the objects acted on, and of the folders, ending in "/",
+   * taken with everything in them; empty means the whole prefix. */
   members: string[];
-  /** Folder rows in a multi-selection, which are not members. */
-  excludedFolders: number;
 }
 
 /** Which shown-object deletion an operation is (ADR 0092, ADR 0094). */
@@ -282,9 +281,6 @@ export class BrowserState {
 
   // Transfer dialog (§27.1 Copy / §27.2 Mirror preview).
   transferOpen = $state(false);
-  // The copy or download held at its warning, because the selection leaves
-  // folders out (ADR 0108 decision 1); null when no warning is open.
-  transferWarning: "copy" | "download" | null = $state(null);
   // Local transfer dialog (§27.5); null = closed.
   #localTransfer: "upload" | "download" | null = $state(null);
   #localTransferRevision = $state(0);
@@ -600,7 +596,6 @@ export class BrowserState {
     this.filter = "";
     this.select(-1);
     this.transferOpen = false;
-    this.transferWarning = null;
     this.localTransfer = null;
     this.deleteOpen = null;
     this.objectDelete = null;
@@ -944,28 +939,19 @@ export class BrowserState {
   get transferSource(): TransferSource {
     const chosen = this.chosenRows;
     if (chosen.length >= 2) {
-      const members = [...new Set(chosen.filter((row) => row.kind === "object").map((row) => row.name))];
-      const excludedFolders = chosen.filter((row) => row.kind === "prefix").length;
-      return { kind: "selected", prefix: this.prefix, members, excludedFolders };
+      // A folder row's name ends in "/", which is what makes it a folder
+      // member, taken with everything in it (ADR 0108 decision 7).
+      const members = [...new Set(chosen.map((row) => row.name))];
+      return { kind: "selected", prefix: this.prefix, members };
     }
     const entry = this.selectedEntry;
-    if (entry?.kind === "object") return { kind: "object", prefix: this.prefix, members: [entry.name], excludedFolders: 0 };
-    if (entry?.kind === "prefix") return { kind: "folder", prefix: entry.name, members: [], excludedFolders: 0 };
-    return { kind: this.prefix === "" ? "container" : "folder", prefix: this.prefix, members: [], excludedFolders: 0 };
+    if (entry?.kind === "object") return { kind: "object", prefix: this.prefix, members: [entry.name] };
+    if (entry?.kind === "prefix") return { kind: "folder", prefix: entry.name, members: [] };
+    return { kind: this.prefix === "" ? "container" : "folder", prefix: this.prefix, members: [] };
   }
 
-  /** Copy or Download for what is selected. A multi-selection that holds a
-   * folder row leaves that folder out, so the operator reads a warning
-   * before either dialog opens (ADR 0108 decision 1). */
-  requestTransfer(action: "copy" | "download") {
-    if (this.transferSource.excludedFolders > 0) this.transferWarning = action;
-    else this.openTransfer(action);
-  }
-
-  /** Opens the copy or the download dialog itself: no warning was needed,
-   * or the operator read it and went on. */
+  /** Opens the copy or the download dialog for what is selected. */
   openTransfer(action: "copy" | "download") {
-    this.transferWarning = null;
     if (action === "copy") this.transferOpen = true;
     else this.localTransfer = "download";
   }

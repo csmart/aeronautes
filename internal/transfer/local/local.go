@@ -624,13 +624,7 @@ func preflightDownloadMembers(ctx context.Context, src *swiftcontrol.Session, co
 	byLower := map[string][]string{}
 	byCaseless := map[string][]string{}
 
-	var memberSet map[string]bool
-	if len(members) > 0 {
-		memberSet = make(map[string]bool, len(members))
-		for _, name := range members {
-			memberSet[name] = false
-		}
-	}
+	selection := plan.NewSelection(members)
 
 	var counted int64
 	for entry, err := range src.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
@@ -641,11 +635,8 @@ func preflightDownloadMembers(ctx context.Context, src *swiftcontrol.Session, co
 		if !ok {
 			continue
 		}
-		if memberSet != nil {
-			if _, member := memberSet[object.Name]; !member {
-				continue
-			}
-			memberSet[object.Name] = true
+		if !selection.Take(object.Name) {
+			continue
 		}
 		counted++
 		if objectCeiling > 0 && counted > objectCeiling {
@@ -754,9 +745,9 @@ func preflightDownloadMembers(ctx context.Context, src *swiftcontrol.Session, co
 		})
 	}
 
-	if missing := missingMember(members, memberSet); missing != "" {
+	if missing := selection.FirstMissing(); missing != "" {
 		report.Problems = append(report.Problems, Problem{Name: missing, Kind: "selection-missing", Reject: true,
-			Detail: "this selected object is no longer at the source; select the objects again"})
+			Detail: "this selected object or folder is no longer at the source; select again"})
 	}
 
 	routeAliasedDirectoriesNatively(prefix, names, candidates)
@@ -777,17 +768,6 @@ func preflightDownloadMembers(ctx context.Context, src *swiftcontrol.Session, co
 		report.TotalBytes += item.Size
 	}
 	return report, nil
-}
-
-// missingMember is the first member, in the order given, that the listing
-// did not hold, or "" when it held them all.
-func missingMember(members []string, seen map[string]bool) string {
-	for _, name := range members {
-		if !seen[name] {
-			return name
-		}
-	}
-	return ""
 }
 
 // routeAliasedDirectoriesNatively sends every file beneath a directory that

@@ -12,6 +12,7 @@
   import { formatBytes, formatCount } from "../../lib/format";
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
+  import { countOfSelected } from "./selectionSummary";
 
   let {
     browser,
@@ -72,11 +73,8 @@
   const source = $derived(browser.transferSource);
   const downloadSource = $derived(mode === "download" ? source : null);
 
-  // A multi-selection of folder rows alone names no objects; sending it would
-  // ask for the whole folder, so it cannot be downloaded.
-  const noMembers = $derived(downloadSource?.kind === "selected" && downloadSource.members.length === 0);
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
-    && !!browser.connectedBookmarkId && !!browser.containerName && !noMembers);
+    && !!browser.connectedBookmarkId && !!browser.containerName);
 
   const problemRows = $derived((current?.mode === "download" ? current.report.problemSamples : current?.report.problems) ?? []);
   const rejected = $derived(current?.mode === "download" ? current.report.rejected : problemRows.some((p) => p.reject));
@@ -263,7 +261,7 @@
         {mode === "upload"
           ? `Upload to ${browser.containerName}/${browser.prefix}`
           : downloadSource && downloadSource.members.length > 0
-            ? `Download ${downloadSource.members.length} selected ${downloadSource.members.length === 1 ? "object" : "objects"} from ${browser.containerName}/${downloadSource.prefix}`
+            ? `Download ${countOfSelected(downloadSource.members)} from ${browser.containerName}/${downloadSource.prefix}`
             : `Download ${browser.containerName}/${downloadSource?.prefix ?? browser.prefix}`}
       </h2>
       <button class="close" onclick={close} aria-label="Close">✕</button>
@@ -278,7 +276,7 @@
         {mode === "upload"
           ? "Choose files to upload into this prefix, or a folder to upload as a folder of its own name inside it; every collision is reported before anything is written."
           : downloadSource && downloadSource.members.length > 0
-            ? "Choose a destination directory; the selected objects are checked for collisions first."
+            ? "Choose a destination directory; what is selected, with everything in each selected folder, is checked for collisions first."
             : "Choose a destination directory; the whole scope is checked for collisions first."}
       </p>
       {#if folder}
