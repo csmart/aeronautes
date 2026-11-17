@@ -100,11 +100,11 @@ For a bulk operation, the planner may choose:
 - Swift bulk-delete;
 - Swift async/SLO-native operations;
 - bounded parallel native requests;
-- rclone copy — to planned-new or uniquely-staged destination names only (§28.6, §36);
+- rclone copy — writing each object at its name (§28.6, §36);
 - a future proven server-side fast path.
 
-rclone never overwrites or deletes an existing object; every overwrite, deletion, and manifest
-commit is Aeronautes-native (§28.6, §36).
+rclone writes over a name the preview found in use only after the operator confirmed replacing it (a name another program creates after the preview is written over without a question, as ADR 0122 gives up), and the only objects it deletes are a replaced large object's old segments, where its gateway lets it ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3, 4 and 12).
+Every other deletion is Aeronautes-native (§28.6, §36).
 
 Architectural purity must not force a materially slower implementation when an equally safe faster path exists.
 
@@ -119,7 +119,7 @@ For high-impact operations:
 3. preview or analyse where practical;
 4. ask for appropriate confirmation;
 5. execute using the fastest safe engine;
-6. verify the resulting namespace;
+6. take the store's answer to each request as its result, without reading the namespace again ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 1);
 7. report partial failures precisely.
 
 ### 3.5 Advanced, not intimidating
@@ -541,8 +541,10 @@ is **not** the final design.
 
 The final design is:
 
-> **The control plane decides what may happen and verifies what happened.  
+> **The control plane decides what may happen and reports what the store or the engine answered.\
 > The execution engine may be Swift-native or rclone.**
+
+The control plane does not read a name again, before or after its own request, to learn whether another writer changed it ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 1).
 
 This allows Aeronautes to be both safe and extremely fast.
 
@@ -920,8 +922,7 @@ spike ran this suite through the pinned rclone (v1.74.3, Swift→Swift cross-acc
   all-spaces — via `--files-from-raw`, which does not trim), `+`, `%`, `?`, `#`, `%2F`, and
   Unicode. This classification is pin-specific: re-run the suite on any rclone upgrade.
 - **The worst finding**: rclone dropped the three unsafe identities and still **exited 0**.
-  Exit codes are useless for completeness; per-object verification of the planned set against
-  destination listings (§28.4) is mandatory, not prudent.
+  Exit codes are useless for completeness, so each name's outcome is the engine's own line for it: a name it says nothing about is not counted as written, and is unknown when the engine itself failed ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 to 5).
 
 Any identity rclone cannot preserve is routed through the native path.
 Aeronautes must **never silently skip or normalize** an object name.
@@ -981,8 +982,7 @@ Rules:
   never compare with locale-aware collation);
 - emit New / Changed / Unchanged / Destination-only verdicts as the join advances, so preview
   counts and the forced transfer set stream out with bounded memory;
-- neither side is a snapshot: both namespaces can mutate while the join runs (§15.3); the result
-  is advisory, and execution-time behaviour must stay safe regardless (§28.6).
+- neither side is a snapshot: both namespaces can mutate while the join runs (§15.3); the result is advisory, and a name that another writer changes after the join is written over as it stands when its request arrives ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md), "What this gives up").
 
 ### 15.3 Consistency model
 
@@ -992,10 +992,8 @@ under load), while **HEAD/GET of a named object is authoritative**.
 
 Consequences, wired through the rest of this document:
 
-- listing-based verification (§32) uses **bounded retries** before concluding anything;
-- stage-and-commit verification (§28.6 step 5) MUST confirm **segment-listing completeness**
-  (expected segment count/bytes) before declaring success — a freshly-committed DLO read through a
-  stale listing can assemble a **short object**;
+- a deletion takes the store's answer to each DELETE and lists nothing afterwards to check it (§32, [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 6), so a lagging listing cannot turn a deletion that worked into a partial one;
+- a freshly written DLO read through a stale listing can assemble a **short object**; nothing reads one back to confirm it (ADR 0122 decision 1), and the engine's own size check after a segmented write, which reads through such a listing, is off for a copy and for an upload that segments (finding F35; ADR 0122 decision 4, [ADR 0111](adr/0111-segmented-uploads-as-static-large-objects.md) decision 2);
 - Copy/Mirror preflight comparisons (§15.2, §28.4) are advisory, not snapshots;
 - crash reconciliation (§26.4) may not yet see just-written segments; treat "not listed" as "not
   proven absent";
@@ -1218,7 +1216,7 @@ only when a real cluster requires it.
 
 [ADR 0102](adr/0102-versioning-matrix-fixed-point-and-archives.md) records what 0.5.0 measured and decided on this pin.
 The legacy modes stay editable where `/info` allows them and modern versioning stays display-only.
-A replacement by upload or copy is committed only while the destination container still reports the versioning its confirmation was composed from.
+An upload or a copy reads the destination container's versioning once, at its start: the confirmation states what that read found, and it decides for the whole job whether the engine may remove a replaced large object's old segments ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4).
 A bulk deletion's preview names the containers that keep their versions in the container being deleted from.
 
 ---
@@ -1414,7 +1412,8 @@ Notes:
 - **5 GiB is safe against standard Swift.** Swift's default `max_file_size` is `5368709122` bytes — 2 bytes *above* 5 GiB — so a 5 GiB object/segment is under the limit and does **not** 413 (rclone ships the same 5 GiB default for exactly this reason). The rule is simply that the chunk size must not exceed the cluster's advertised `max_file_size`: read it from `/info` when available and lower the chunk size only if a particular cluster reports a smaller maximum.
 - **Never tiny.** 64 MiB (or similar) remains forbidden as a production default (§64); small chunk sizes may be used intentionally for tests.
 - **Segmented uploads are static by default (ADR 0111).** rclone's Swift backend creates only **Dynamic** Large Objects (`X-Object-Manifest`), whose size and content Swift computes from an eventually consistent listing on every read.
-  So the engine uploads the segments under an Aeronautes-tracked segment location and stages its DLO, and the upload's commit pairs each segment with the local file's chunk and publishes a **Static** Large Object naming them.
+  So the engine uploads the file in segments and writes its DLO at the file's name, and the application then writes a **Static** Large Object over it, one request naming the same segments with each chunk's size and MD5 from the local file ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3).
+  The store checks each entry against the segment it names; a manifest it refuses fails the file, and the object stays the DLO the engine wrote.
   A bookmark or a job can choose a DLO instead, and a cluster whose readable `/info` does not offer static large objects gets one; the preview and the job record name which.
   A container that keeps versions gets one too, because the static manifest is written over the engine's dynamic one and would leave it behind as a version ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3).
   Copies that segment still write DLOs.
@@ -1464,10 +1463,11 @@ Do not expose a generic shell interface to the frontend.
 
 ### 26.2 Credentials/config
 
-Each `Runner.Copy` and `Runner.CopyTo` invocation uses a scoped storage gateway per remote; see [ADR 0014](adr/0014-child-storage-gateway.md).
+Each `Runner.Copy` and `Runner.CopyInto` invocation uses a scoped storage gateway per remote; see [ADR 0014](adr/0014-child-storage-gateway.md).
 Aeronautes captures the real upstream URL, token and TLS policy in the parent, while rclone receives a literal loopback URL and fresh random local bearer token.
 The gateway performs one upstream round trip, refuses redirects and strips redirect/authentication response headers.
-It permits source reads and destination writes only within this invocation's stage and matching generated segment scope.
+It permits source reads, and destination writes only under the destination folder, in the container and in that container's segments container ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 2 and 3).
+It refuses the child's deletes where a replaced large object's old segments must stay.
 The [request policy](rclone.md#gateway-request-policy) records the bounded bulk-cleanup and sidecar-policy exceptions.
 The child environment remains readable by the same OS user; possession of a local token delegates the gateway's allowed requests for its bounded lifetime.
 Neither real nor local tokens may enter argv, the job config, SQLite, the renderer or diagnostics.
@@ -1519,14 +1519,14 @@ The compatibility matrix remains the instrument for choosing a pin upgrade.
 
 Cancelling a transfer — or the process dying — while a large object is uploading can leave **orphaned segments** at the destination: segment objects with no manifest, i.e. exactly the backstage mess the product exists to prevent. This is a first-class flow, not a setting. Graceful cancellation and hard interruption are **not** the same and must be handled differently.
 
-**Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reconciles destination state and reports `Cancelled` / `Partial`. **Seam-spike measurement (v1.74.3): cleanup is best-effort, not perfect** — a SIGINT mid-segmentation cleaned the manifest and all but **one residual segment** (an in-flight PUT completing after cleanup), and a SIGKILL left nine orphaned segments and no manifest, exactly as this section predicts. Reconciliation therefore runs after *graceful* cancellation too, never only after hard interruption.
+**Graceful cancellation (preferred).** Cancel by signalling the child (context cancel / interrupt) so rclone can abort the upload and clean up its own uploaded segments — rclone does this by default unless told to leave parts on error, so Aeronautes must **not** set `--swift-leave-parts-on-error`. Then Aeronautes reports `Cancelled` / `Partial`; the segment prefixes the engine reported were recorded as it ran, and nothing is removed automatically ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 8). **Seam-spike measurement (v1.74.3): cleanup is best-effort, not perfect** — a SIGINT mid-segmentation cleaned the manifest and all but **one residual segment** (an in-flight PUT completing after cleanup), and a SIGKILL left nine orphaned segments and no manifest, exactly as this section predicts. Those records are therefore kept after *graceful* cancellation too, not only after hard interruption.
 
 **Hard interruption (kill / crash / power loss) is not a safe boundary.**
 rclone had no chance to clean up, so orphaned segments may exist.
 For rclone-executed uploads, Aeronautes does not choose the segment prefix: rclone generates it under `<container>_segments` or `.file-segments/`.
 The v1.74.3 seam experiment observed `<object>/<date>-<time>-<22-char-random>/<seq>` and captured the actual prefix from the child's JSON debug stream.
 That evidence records creation provenance, not exclusive deletion authority.
-[ADR 0020](adr/0020-recovery-containment.md) requires recovery and post-job reconciliation to retain uncertain staging objects, segments and records, including after graceful cancellation.
+[ADR 0020](adr/0020-recovery-containment.md) requires recovery and post-job reconciliation to retain uncertain segments and records, including after graceful cancellation; since ADR 0122 no job writes a staging object.
 Neither a captured prefix nor an absent recorded live reference permits automatic reclamation.
 The required containment path is:
 
@@ -1541,7 +1541,7 @@ DO NOT auto-delete
 ```
 
 Reconciliation performs no automatic deletion under ADR 0020.
-It retains uncertain staging and segment data and all recovery records; explicit force cleanup remains a separate action with sharing risk disclosed.
+It retains uncertain segment data and all recovery records; explicit force cleanup remains a separate action with sharing risk disclosed.
 
 One named exception exists and is not a general licence: an **acknowledged local upload**, or since its own step of ADR 0122 an **acknowledged copy**, that replaces a large object.
 Since 16 November 2026 the transfer engine writes over the name and removes the predecessor's old segments itself, as it does when used alone ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3, which replaces [ADR 0081](adr/0081-upload-overwrite-acknowledgement.md) decision 5).
@@ -1564,12 +1564,12 @@ Semantics:
 > Add missing objects and update changed objects.  
 > Keep destination-only objects.
 
-**Current availability:** Copy adds missing objects through conditional creation and refuses changed existing destinations before staging (ADR 0020).
-The update semantics above remain a product requirement gated on P14's concurrency protocol.
-An uncertain pair is checked: proven equality skips it, a missing destination permits conditional creation, and an unequal existing destination is refused.
+**Current availability:** Copy writes each object at its name, and the engine's or the store's answer is its outcome ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4).
+A name the two listings show with the same size and tag is skipped, a name only the source has is copied, and a name the listings show as different is replaced when the operator confirmed replacing on the one native confirmation, and refused when they did not.
+A pair the listings cannot compare, an empty row or a large object, is read once on each side: the same length and entity tag are the same content, a destination that is no longer there is a first copy, and anything else is a replacement.
 Any job containing a refused overwrite finishes `partial`, even if nothing copied or a later error or cancellation occurs.
-The job preserves actual copied totals, counts refused overwrites separately and excludes their exact execution-time identities from verification.
-The preview identifies changed objects as refused and uncertain objects as awaiting a decision; listed comparison bytes are not a transfer estimate.
+The job keeps the actual copied totals and counts refused overwrites separately.
+The preview counts changed objects as refused, or as to be replaced once the operator chose replacing, and uncertain objects as to be checked; listed comparison bytes are not a transfer estimate.
 Versioning does not authorise an overwrite or change refusal behaviour.
 Copy preserves destination-only objects; do not describe this limited containment as proof that the whole transfer workflow is non-destructive or release-ready.
 
@@ -1634,7 +1634,9 @@ Cross-account Mirror remains a v1 product requirement with execution refused pen
 
 rclone's Swift backend does **not** carry arbitrary object metadata across a manual download/upload (its `Object` implements `MimeTyper`, not rclone's `Metadataer`; `Object.Update` sets a fresh mtime + content type and streams bytes). **Seam-spike confirmation (v1.74.3, cross-account):** a copied object arrived with only `Content-Type` and rclone's own `X-Object-Meta-Mtime` — custom `X-Object-Meta-*` was dropped, `-M`/`--metadata` changed nothing; and a copied DLO correctly received its **own** freshly generated destination manifest. So a cross-bookmark Copy that relied on rclone alone would silently drop `X-Object-Meta-*`, `Content-Encoding`, `Content-Disposition`, and expiry even when the bytes verify.
 
-v1 Copy therefore **preserves object metadata explicitly**: after rclone moves the bytes, Aeronautes HEADs the source and applies a defined **writable** header set to the destination (a Swift POST, or the manifest PUT in the stage-and-commit path, §17.1's preserved-header table). The destination large object keeps its **own** generated `X-Object-Manifest`, never the source's; read-only/system headers and the source's DLO/SLO control headers are not copied. This is a per-object extra round-trip; the planner shows it. If a deployment intentionally chooses data-only copy, the planner MUST **preview every metadata category that will be dropped**. (K-XFER-010; plain/DLO/SLO cross-account fixtures for user metadata, content headers, expiry, and re-segmentation.)
+v1 Copy therefore **preserves object metadata explicitly**: Aeronautes reads each name once at the source before the engine copies it and, after rclone moves the bytes, applies a defined **writable** header set to the destination in one Swift POST (§17.1's preserved-header table), sending none where the engine delivered all there was ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4).
+The POST to an object the engine wrote in segments names the segment path the engine reported, because one without the manifest header turns a DLO into an empty object, and a source link is carried as a link by Aeronautes in one request.
+The destination large object keeps its **own** generated `X-Object-Manifest`, never the source's; read-only/system headers and the source's DLO/SLO control headers are not copied. This is a per-object extra round-trip; the planner shows it. If a deployment intentionally chooses data-only copy, the planner MUST **preview every metadata category that will be dropped**. (K-XFER-010; plain/DLO/SLO cross-account fixtures for user metadata, content headers, expiry, and re-segmentation.)
 
 ### 27.5 Swift→local materialization
 
@@ -1722,7 +1724,9 @@ Therefore a naive MD5 comparison — including whatever an execution engine does
 - never let a Mirror **delete** a destination object on the basis of an ambiguous large-object equality result.
 
 This section governs both the preview counts and any decision to delegate execution.
-The preview's equality here is content equality from the listing and stays advisory (§15); a copy's executor skips an existing destination only when it is a full-fidelity replica — content equality **and** the §27.4 carried set (content type, content headers, expiry, user metadata) and link identity, read from the authoritative HEAD it already takes. A difference is not skipped: a destination the preview presented as a collision takes the acknowledged overwrite path, and a listing-`Same` object refuses (it is never offered for acknowledgement), per [ADR 0096](adr/0096-copy-skip-requires-full-fidelity.md).
+The preview's equality here is content equality from the listing and stays advisory (§15).
+A copy skips a name the two listings show with the same size and tag and sends nothing for it; a difference in metadata alone is not a difference, so such an object is not written again to refresh its headers ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4, which replaces the full-fidelity skip of [ADR 0096](adr/0096-copy-skip-requires-full-fidelity.md)).
+A name the listings show as different is replaced when the operator confirmed replacing, and refused when they did not (§27.1).
 Mirror execution rules below are future re-enablement requirements; every current Mirror start refuses under ADR 0020.
 
 **Comparison model.** Represent every object comparison as a typed result plus evidence, not a boolean:
@@ -1737,27 +1741,16 @@ ComparisonEvidence
   PlainContentETag           # plain object MD5 match
   IdenticalSLOManifest       # identical segment set / sizes / ETags
   IdenticalDLOFingerprint    # same segment container+prefix, listing fingerprint
-  AeronautesTransferRecord         # Aeronautes itself performed/verified this copy
-  DestinationFingerprint     # Aeronautes-written destination metadata proves source identity
   SizeOnly
   Unknown
 ```
 
 **Different manifests do not prove different content.** Because Aeronautes does *logical* replication, the destination is allowed to re-segment (a 2×5 GiB source may legitimately become 10×1 GiB at the destination). So an *identical* SLO manifest is strong proof of equality, but an *unequal* manifest is **not** proof of difference — it is `Unknown`, and Aeronautes falls back to size and, if it still cannot prove equality, transfers conservatively. Never map "manifest differs" to "delete/overwrite" on that basis alone.
 
-**`AeronautesTransferRecord` is machine-local — persist equality on the destination too.** The
-transfer-verification record lives in one workstation's SQLite, so on its own it makes
-re-segmented large-object equality re-derivable only on that machine: lose the database, run from
-a second workstation, or have a colleague run the same Mirror, and every such object compares
-`Unknown` and re-copies conservatively — terabytes through the client hairpin (§28.5). Therefore,
-by default (per-job opt-out), Aeronautes also records a **verification fingerprint on the
-destination object itself**: an `X-Object-Meta-Aeronautes-*` header carrying the source logical
-identity (logical size + source content fingerprint), written only where Aeronautes is already
-writing destination metadata — the §27.4 metadata apply and the §28.6 manifest commit. It is never
-a mutation of an object Aeronautes did not write. Any Aeronautes instance can then re-derive
-`EqualStrong` from a destination HEAD plus current source state (evidence:
-`DestinationFingerprint`). The exact header name/format is fixed at implementation and covered by
-the §57.2 contract fixtures.
+**No transfer record and no stamp decide equality.**
+An earlier design kept a machine-local record of each verified copy and wrote a verification fingerprint on the destination object, which a later copy read to decide whether it might skip.
+Since 16 November 2026 neither is used: no object is stamped and no stamp is read, the preview compares the two listings, and a pair they cannot compare is read once on each side ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4).
+A large object's tag is made from its segments' tags, so a copy cut at other places than its source compares as different, which costs a copy or a refusal the operator can answer and never skips a copy that was needed.
 
 **Execution model: Aeronautes always plans; rclone never decides.** Earlier drafts allowed raw
 `rclone sync` (delete phase disabled) to execute the copy half of a Mirror on a scan-proven
@@ -1769,19 +1762,17 @@ Mirror:
 
 - Aeronautes computes the transfer set itself (streaming merge-join, §15.2, with the comparison
   model above);
-- the copy half is `rclone copy` of the forced selected set (below), writing only planned-new or
-  uniquely-staged names (§28.6, §36); overwrites of changed objects — plain and large — commit
-  natively via stage-and-commit;
+- the copy half is `rclone copy` of the forced selected set (below), writing each object at its name: a new name, or one the listings show as different once the operator confirmed replacing ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4, §28.6, §36);
 - **destination-only deletion in a Mirror is always Aeronautes-native** (§28.6a) and manifest-only;
 - `Unknown` equality → classify as Changed/uncertain and transfer; **never delete on `Unknown`**.
 
-**A generated file list does not override rclone's own comparison.** `--files-from` only *filters the source namespace*; rclone still applies its destination equality test and will skip an object it considers identical — including one Aeronautes classified `Unknown` and needs transferred. So an Aeronautes-selected transfer set must be forced with a pinned, tested force-transfer mode (`--ignore-times`, or an equivalent per-object path), then the result **verified** before any Mirror deletion. Note the flag reality: rclone skips identical objects by default; `--ignore-existing` skips *changed* objects (wrong for Copy — never use it for the selected set). On restart, Aeronautes rebuilds the forced list from **unverified** objects only — subtract any destination object that already has a current Aeronautes verification record — so a verified object is never pointlessly re-staged and re-committed. rclone's default skip-identical is not sufficient for `Unknown` objects, so this subtraction is Aeronautes' job, not a flag. Every flag the planner depends on here goes into the Phase-0 seam experiment and the `docs/rclone.md` allowlist (§44.1).
+**A generated file list does not override rclone's own comparison.** `--files-from` only *filters the source namespace*; rclone still applies its destination equality test and will skip an object it considers identical — including one Aeronautes classified `Unknown` and needs transferred. So an Aeronautes-selected transfer set must be forced with a pinned, tested force-transfer mode (`--ignore-times`, or an equivalent per-object path), then the result **verified** before any Mirror deletion. Note the flag reality: rclone skips identical objects by default; `--ignore-existing` skips *changed* objects (wrong for a copy to a store, where the runner refuses it; an unconfirmed download uses it so that a local file that exists is left alone, [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5). A re-run of a copy starts a fresh copy of the same scope or members, whose preview compares the two listings again, so an object already copied and the same by its listing is skipped (ADR 0122 decision 4). Every flag the planner depends on here goes into the Phase-0 seam experiment and the `docs/rclone.md` allowlist (§44.1).
 
 The selected-file invocation also needs the traversal decision in [ADR 0022](adr/0022-complete-rclone-selection.md).
 Pair `--files-from-raw` with `--no-traverse` and `--ignore-times` so the pinned engine addresses the selected names directly instead of rediscovering source membership through provider listings.
-This applies to remote Copy and local upload/download; single-object `CopyTo` is unchanged.
+This applies to remote Copy and local upload/download.
 An upload or a download the operator confirmed may replace what differs is not forced: its engine compares each name as rclone copy does and replaces only what differs ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 12).
-Missing selected sources may still be omitted without an engine error, so stage checks and independent completion verification remain required.
+Missing selected sources may still be omitted without an engine error, so a name the engine says nothing about is not counted as written: it is unknown when the engine failed, and not copied, uploaded or downloaded when it did not ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 to 5).
 
 The preview must be honest about the conservative set, e.g.:
 
@@ -1811,19 +1802,18 @@ Swift explicitly allows a segment object to be referenced by more than one SLO m
 
 Two consequences, both locked for v1:
 
-**(a) The rclone boundary is absolute: Aeronautes performs every overwrite, deletion, manifest commit, bulk deletion, segment reclamation, and container deletion natively.**
-No raw `rclone sync` delete phase, `purge`, `delete` or rclone write to an existing live name is allowed, on any scope (§36).
+**(a) The rclone boundary: rclone is never given `sync`, `purge` or `delete`; it writes over a name the preview found in use only after the operator confirmed replacing it, and Aeronautes performs every other deletion, bulk deletion, segment reclamation and container deletion natively.**
+No raw `rclone sync` delete phase, `purge` or `delete` is allowed, on any scope (§36).
 No point-in-time scan can make a later rclone `Remove`/`Update` safe: a destination can become a shared-segment DLO/SLO after the scan, and rclone would then follow its current segments.
 Until 16 November 2026 every engine write went to a unique staging name and the live name was committed natively.
 By the operator's decision of that day the engine of an upload and of a copy writes each object at its name, and what the engine or the store answers is the object's outcome ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3 and 4).
+The engine's own `Update` therefore removes a replaced large object's old segments, as it does when used alone, and its gateway confines those deletes to the destination folder in the container and in its segments container and refuses them where the container keeps versions or the operator's setting keeps replaced segments (ADR 0122 decision 3); segments kept anywhere else stay.
 A native manifest-only DELETE does not follow segments, but it can still remove a replacement at that name or an object another manifest references.
-Stage-and-commit alone does not preserve a writer arriving after the final HEAD.
-Planned-new commits use the established conditional-create path and refuse a concurrently created destination; an unconditional fallback is forbidden.
-P05 now refuses every Mirror start and every unsupported Copy overwrite before staging under ADR 0020.
-All remaining live Copy commits use conditional creation, with no unconditional fallback; re-enablement requires an enforceable, tested concurrency protocol.
+No request carries a create-only condition, and nothing is read before or after a write to learn whether another writer changed the name: a name another writer changes between the preview and the request is written over (ADR 0122 decision 1 and "What this gives up").
+P05 still refuses every Mirror start under ADR 0020, and a Copy overwrite the operator did not confirm is refused (ADR 0122 decision 4).
 
 **HEAD-immediately-before-mutation is scoped to where identity matters, not a blanket rule.**
-An authoritative HEAD is required where semantics depend on current identity: commit checks, segment operations, inspector destructive actions and evidence recording.
+An authoritative read is taken only where a request needs to know what a name holds, never to watch for another writer: a large object deleted with its segments is read once for the segments its manifest names, a copy reads each side of a pair the listings cannot compare, and segment evidence is recorded from a read (ADR 0122 decisions 1, 4 and 6).
 It is an observation, not an atomic compare-and-mutate boundary, and cannot make unsupported identity-sensitive work safe.
 Do not add per-row HEADs to mass deletion and claim that the final-hop race is fixed.
 The P05 Mirror refusal and P14/P15 concurrency gates in ADR 0020 apply independently of audit sampling and native manifest-only semantics.
@@ -1845,32 +1835,18 @@ An account-wide scan is neither required nor a substitute for excluding a later 
 Explicit force cleanup remains a separate Backstage action with sharing risk disclosed, never automatic recovery or a promotion to exclusivity.
 ADR 0020 supersedes the earlier generated-prefix definition and requires P04 to retain uncertain data and recovery records.
 
-**Stage-and-commit protocol for overwriting a changed large object** (rclone moves the bytes; Aeronautes commits the tiny manifest — a DLO-header PUT, not an SLO composer, so it stays inside K-XFER-007):
+**Stage-and-commit protocol for overwriting a changed object** (history).
+Until 16 November 2026 a changed object was to be copied to a unique staging name, verified there and committed to the live name by a native manifest PUT or a conditioned PUT, with the durable states `before-stage → staged → committed → cleaned`.
+[ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 3, 4 and 10 replace that protocol: the engine writes the object at its name once the operator confirmed replacing, the answer is the outcome, and nothing is staged, verified or committed afterwards.
+A replaced large object's old segments go as consequence (a) above describes, and reclamation by Aeronautes itself still needs `ExclusiveOwnershipProof` (normally never).
 
-This protocol describes the data path, not a completed concurrency guarantee.
-Current Copy refuses these overwrites before staging; re-enabling them requires P14's reviewed final-effect boundary (ADR 0020).
+The planner MUST disclose in the plan/Impact rail when a destination object will be written as a **DLO** (including SLO sources — logical replication, §25): a DLO's reads depend on container-listing consistency (§15.3), a real fidelity difference the operator must see before execution, not discover after.
 
-1. HEAD/GET the live destination and persist the old manifest for reconciliation;
-2. `rclone copy` the source to a **new** unique staging name under an Aeronautes staging prefix, so rclone's `Update` never runs against the live name;
-3. verify the staged object (size / manifest / ETag per §28.4);
-4. native PUT of the destination `X-Object-Manifest` (DLO header) onto the live name, pointing at the new unique prefix, plus the §27.4 metadata set and the destination verification fingerprint (§28.4) — the destination may become a DLO even if the source was an SLO (logical replication, §25);
-5. verify the final logical object, including segment-listing completeness with bounded retries (§15.3);
-6. native DELETE of the **staging manifest only** (never `rclone Remove`);
-7. reclaim old destination segments only under `ExclusiveOwnershipProof` (normally never).
+This governs Copy and upload writes (§27.1, §25), Mirror deletion if re-enabled under P14 (§28.4), Empty Container / recursive delete (§33, §32), and SLO/DLO delete (§34, §35).
 
-**Plain overwrites are also unavailable.**
-The earlier stage-and-server-side-COPY implementation was removed because the final COPY could replace an external writer after the last HEAD.
-Any future plain overwrite needs P14's final-effect boundary as well as staged verification and metadata preservation.
-Current planned-new plain commits read the staged bytes and use a destination-conditioned PUT, while staged DLO commits use a conditioned manifest PUT.
-
-The eventual durable states `before-stage → staged → committed → cleaned` must distinguish safe retry from a second overwrite and handle versioned destinations and external writers.
-Earlier seam observations do not establish that restart or concurrency guarantee; P12/P14 still own those gates.
-
-The planner MUST disclose in the plan/Impact rail when a destination object will be committed as a **DLO** (including SLO sources — logical replication, §25): a DLO's reads depend on container-listing consistency (§15.3), a real fidelity difference the operator must see before execution, not discover after.
-
-This governs conditional Copy creation (§27.1), future Copy overwrites and Mirror deletion if re-enabled under P14 (§28.4), Empty Container / recursive delete (§33, §32), and SLO/DLO delete (§34, §35).
-
-Acceptance fixtures: two DLOs sharing a prefix and two SLOs sharing a (direct and nested) segment — overwriting or deleting either manifest through any engine must leave the other fully downloadable and hash-correct; plus a **race** fixture that turns a plain destination object into a shared-prefix DLO after preflight but before deletion, proving the Aeronautes-native manifest-only delete path never bulk-deletes the shared segments. (Requirements K-XFER-008, K-XFER-014, K-SEG-004.)
+Acceptance fixtures: two DLOs sharing a prefix and two SLOs sharing a (direct and nested) segment — deleting either manifest without its segments must leave the other fully downloadable and hash-correct.
+Overwriting one through the engine removes its old segments under the folder being written where replaced segments are reclaimed, and the other then loses its data, as the replacement question says; where the container keeps versions or reclaiming is off, the old segments stay and the other stays whole ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3).
+The fixtures include a **race** fixture that turns a plain destination object into a shared-prefix DLO after preflight but before deletion, proving the Aeronautes-native manifest-only delete path never bulk-deletes the shared segments. (Requirements K-XFER-008, K-XFER-014, K-SEG-004.)
 
 ---
 
@@ -2100,6 +2076,7 @@ Offer:
   The force is offered for one object from Backstage, and for every large object of a prefix or container deletion as that deletion's own option (§33, ADR 0119); each starts ticked and neither is offered where the container keeps versions (ADR 0120).
 
 **Implementation note (2026-08-30, review wave):** the shipped code does NOT send `?multipart-manifest=delete` — it would follow whatever manifest occupies the live name at execution time (a proof/delete TOCTOU), so segment deletion is manifest-only DELETE plus native deletion of exactly the proven identities, with a pre-delete manifest re-HEAD that refuses on identity change. The server-native fast path stays desirable once a live exclusivity binding exists (§65.10); until then correctness beats speed. (Requirement K-SEG-003; fixtures for direct, ranged, repeated, shared, and nested SLO segments.)
+Since 16 November 2026 nothing is read again just before the manifest's DELETE: the job deletes the name, whatever then holds it, and then the segments the operator reviewed, one DELETE each ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 6).
 
 ---
 
@@ -2128,9 +2105,9 @@ A name the destination already holds differently is written over only when the o
 
 Plus reads: downloads, and the source half of every copy.
 
-rclone is **never** used to overwrite a live name, delete an object, run a `sync` delete phase, `purge`, or delete a container. Earlier drafts allowed `rclone delete` (Empty Container) and `rclone purge` (Delete Container) on scan-proven plain-only scopes; ADR 0004 removed those carve-outs — the §28.6a race argument applies to them exactly as it applies to `sync`, and the §42 example numbers showed native bulk-delete outperforming purge anyway. The fastest safe path for destruction is the native one.
+rclone is **never** used to delete an object the operator chose, run a `sync` delete phase, `purge`, or delete a container; it writes over a live name only after the operator confirmed replacing it, and the only objects it deletes are a replaced large object's old segments, where its gateway lets it ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 3). Earlier drafts allowed `rclone delete` (Empty Container) and `rclone purge` (Delete Container) on scan-proven plain-only scopes; ADR 0004 removed those carve-outs — the §28.6a race argument applies to them exactly as it applies to `sync`, and the §42 example numbers showed native bulk-delete outperforming purge anyway. The fastest safe path for destruction is the native one.
 
-This makes "rclone moves bytes; Aeronautes destroys" literally true — which is also what keeps the UI's claims about any job honest (§44).
+Apart from a replaced large object's old segments, this keeps "rclone moves bytes; Aeronautes destroys" true — which is also what keeps the UI's claims about any job honest (§44).
 
 ---
 
@@ -2608,9 +2585,9 @@ Conceptual decision table:
 | Metadata/ACL/config | Aeronautes Swift client |
 | Small marker PUT | Aeronautes Swift client |
 | Upload/download | rclone |
-| Swift→Swift Copy | rclone stages eligible new names; native conditional creation commits them. Changed existing destinations are refused before staging (§28.6, ADR 0020) |
+| Swift→Swift Copy | rclone writes each object at its name; a name the listings show as the same is skipped, and a different one is replaced only after the operator confirmed replacing and refused otherwise (§27.1, ADR 0122 decision 4) |
 | Ordinary Mirror | Start is refused; the comparison preview is kept in the backend but not offered in the release's dialog. Re-enablement requires P14, and the eventual native delete boundary remains §28.6a (ADR 0020) |
-| Single object delete | Aeronautes-native, manifest-only; HEAD first (inspector-initiated, §28.6a) |
+| Single object delete | Aeronautes-native, manifest-only; one DELETE, whose answer is the result (inspector-initiated, §28.6a, ADR 0122 decision 6) |
 | SLO delete | manifest-only default; +segments by explicit force with sharing risk disclosed (§34, ADR 0020) |
 | Recursive prefix delete | Aeronautes-native bulk/parallel delete; manifest-only (§28.6a) |
 | Empty container | Aeronautes-native bulk/parallel delete only (§33) |
@@ -2656,6 +2633,8 @@ observe current state
      ↓
 retry only if safe
 ```
+
+A transfer or a deletion does not reconcile this way: a request that got no answer, or a server error, is recorded as unknown, and nothing is read to find out ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decisions 2 and 6).
 
 Normalized error:
 
@@ -3207,10 +3186,10 @@ Deliver:
 - local→Swift upload;
 - Swift→local download;
 - multi-file/directory upload (a folder pick walks the chosen directory under [ADR 0103](adr/0103-directory-upload.md));
-- Swift bookmark→Swift bookmark Copy (conditional creation of new names; an existing destination is replaced only on the acknowledged terms of [ADR 0087](adr/0087-copy-overwrite-on-upload-terms.md); a collision the plan found without that acknowledgement is refused before staging, and a destination that changes after the plan is refused at publication, §28.6);
+- Swift bookmark→Swift bookmark Copy (each object written at its name; an existing destination that differs is replaced only after the operator confirmed replacing, and refused otherwise, [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 4);
 - comparison model + streaming merge-join preview (§15.2, §28.4);
 - Smart preflight;
-- staging, verification, post-job reconciliation;
+- outcomes from the engine's and the store's answers, and retained recovery records (staging and its verification were delivered first and replaced by ADR 0122);
 - **Mirror preview (read-only)** — comparison counts and an explicit unavailable notice; execution remains refused pending P14;
 - progress;
 - cancellation;
@@ -3224,7 +3203,7 @@ The original Phase 6 implementation did not establish an enforceable external-wr
 
 Gate:
 
-Cross-account Copy must create eligible new objects conditionally and preserve refused existing destinations on real test accounts, with accurate partial outcomes and separate refused counts.
+Cross-account Copy must create new objects and preserve the existing destinations it was not confirmed to replace on real test accounts, with accurate partial outcomes and separate refused counts.
 Mirror preview must show the comparison and execution-unavailable notice without offering a destructive start.
 
 No persistent rclone credential file.
@@ -3450,7 +3429,7 @@ Normal UI must not allow:
 
 - heuristic-only segment classification to authorize destructive cleanup;
 - accidental recursive purge of a confirmed segment store;
-- rclone overwriting or deleting any existing object (§28.6, §36);
+- rclone overwriting an existing object the operator did not confirm replacing, or deleting anything but a replaced large object's old segments where its gateway lets it (§28.6, §36, ADR 0122 decisions 3, 4 and 12);
 - silent loss of object metadata;
 - silent DLO-manifest breakage during metadata edits;
 - TempURL/auth credentials in logs or SQLite;
@@ -4462,6 +4441,7 @@ The plan retains every finding, the ADR 0020 refusals, accepted v1 scope and all
 The [PR76 sensitive-label correction](experiments/2026-09-09-sensitive-labels.md#protected-delivery) connects Find, ACL add/raw, audit-filter and typed-confirmation labels to their current controls with per-instance IDs, preserving literal values, exact guards and explicit submission.
 It passed independent review and all five PR/master jobs; tab/shortcut patterns, native select and assistive-technology journeys, broader UI-11/P29 acceptance and the valuable-data release hold remain open.
 Earlier §65 implementation logs are historical evidence, not authority to resume unsafe cleanup.
+The staging, commit and placement steps, fixed-point checks, stamps, create-only conditions and verifying reads those logs and the dated sequences below describe were replaced on 16 November 2026 by [ADR 0122](adr/0122-the-stores-answer-is-the-result.md); the sections before §65 describe what each transfer and deletion does instead.
 Earlier logs of executable Mirror also describe historical code; current availability is the refusal rule in §27.2 and K-MIRROR-001.
 In particular, the generated-prefix sweep rules in §65.8 item 2 and §65.9 item 5, and §65.10's scan-based re-enablement suggestions, are superseded by the P01/P04 contract in ADR 0020.
 
