@@ -23,7 +23,7 @@ commit, phase by phase, following the design.
 
 - **The store's answer is the result (ADR 0122).**
   By the operator's decision of 16 November 2026 the application does not guard against another program writing to the same names: it sends a request, and what the store or the transfer engine answers is the outcome.
-  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules: deletions, uploads and copies so far, with downloads to follow.
+  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules: deletions, uploads, copies and downloads; the removal of what no longer has a caller follows.
   A deletion sends each name's DELETE and reads nothing before or after it.
 - **The rclone boundary.** rclone is never given `sync`, `purge` or `delete`.
   For an upload and for a copy it writes each object at its name, over what is there once the operator confirmed the replacement, and it removes a replaced large object's old segments only under the destination folder and only where the gateway lets it (ADR 0122 decisions 3 and 4).

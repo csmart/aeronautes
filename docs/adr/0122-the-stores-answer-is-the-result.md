@@ -123,6 +123,30 @@ The operator ran rclone alone against the same store and saw what it does: each 
 5. **A download writes each file in the folder the operator chose.**
    The engine writes there directly, as it does when used alone; there is no stage folder and no placing step.
    A download still does not replace a local file, because that file is on the operator's own disk and is not another writer on the store: the preview refuses one that exists, and the engine is told to skip a file that has appeared since, which the job reports as not downloaded because it exists.
+   **What the engine is given** (added with the download step, 16 November 2026).
+   The engine is anchored to the chosen folder, which has been held open since the pick, and is passed `--ignore-existing`.
+   Measured on the pinned engine: with that flag a file that exists is left untouched and the engine says so in a line that names it, and without it the file is replaced.
+   The engine looks at a name once, just before it writes the file: a file the operator creates in the moment between is replaced, and nothing here can know of it.
+   The flag stays forbidden for a copy to a store, where the plan decides what is replaced and the engine must not skip; the runner refuses it there.
+   The application makes the folders a file needs before the engine runs, one component at a time through the held folder, refusing a link or a mount point on the way and reporting the folders it made, as before ([ADR 0043](0043-download-created-directory-accounting.md)); the engine then writes files only.
+   The preview's refusals stay: a file that exists, a name the filesystem cannot hold, and two names the filesystem would merge are about the operator's disk and not about another writer.
+   **What a file's outcome is.**
+   The engine's line for a file means it was downloaded.
+   Its line that the destination exists means the file was left alone, which is recorded as a conflict.
+   Its error line means the file failed with that error.
+   A file it said nothing about is unknown when the engine itself did not end normally, and was not downloaded when it did: measured, a listed name that is no longer at the source gets no line and no error.
+   Nothing is read back, compared against the source's listing or segments, or pinned, and the separate record of a final publication is no longer made.
+   **The folders below the chosen folder.**
+   The engine is held to the chosen folder, not to the folders below it: it resolves each file's path itself, as rclone does when used alone, so a folder that another program replaces with a link while the engine writes is followed, and the file lands wherever the link points (found by the reworked system tests; the earlier route had the same gap inside its stage and refused to place such a file).
+   By the operator's decision of 17 November ("this uses rclone so it should function like rclone") a download works as rclone does here: nothing is checked after the engine has written, and keeping the engine inside each folder, which would take one engine child for every folder, is not done.
+   **A name the engine cannot carry** is read by the application in one GET into a temporary file beside its final name, and is given that name by a link, which does not replace: a file that appeared since the preview makes that a conflict and is left as it is.
+   For a plain object the store's own tag is checked against the bytes as they arrive, at no extra request, as the engine checks it on its route; bytes that do not match fail the file and leave nothing at its name.
+   **A file or folder that has changed since the preview** is met by the file it concerns: a file that has appeared is a conflict, and a folder that is no longer a folder fails the files under it; the run is not refused as a whole.
+   Only a chosen folder that is gone refuses the whole run.
+   **What a stopped download leaves.**
+   Measured on the pinned engine: interrupted, it removes the file it was writing; killed, it leaves that file in the folder under its own temporary name, which ends `.partial`.
+   The application removes nothing, and a job whose engine did not end normally says that such a file may be there.
+   **Where the engine route runs** is unchanged: only where the engine can be held to the chosen folder, which is Linux, and every engine file is refused elsewhere as before.
 6. **A deletion sends each name's DELETE and takes the answer.**
    Accepted is deleted.
    "Not found" is already gone: it is counted with the deleted, because the outcome asked for is that the name is gone, and it is not a failure.

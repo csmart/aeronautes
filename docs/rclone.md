@@ -129,7 +129,7 @@ Keep the flag before `--` and preserve the existing gateway, credentials, TLS, r
 | global `--ca-cert` / `--no-check-certificate` | process-global trust (§12.3, K-SEC-008) |
 | `--max-duration` | HARD kills mid-transfer, SOFT still overruns — bounded batches instead (§26.2) |
 | `sync`, `purge`, `delete`, `--swift-no-large-objects` toggling mid-job | the absolute destruction boundary (ADR 0004) and §25's single chunk knob. What that flag costs is measured in [the 2026-10-02 record](experiments/2026-10-02-engine-claims-measured.md): a replacement leaves the replaced object's segments behind, where the engine deletes them without it, and a read of an existing manifest fails the digest check |
-| `--ignore-existing` | the public `NeedTransfer` checks it before `--ignore-times` can matter, so a planned object would be skipped silently rather than transferred; a guard in `internal/transfer/rclone/runner_test.go` keeps it out of argv |
+| `--ignore-existing`, for a copy to a store | the public `NeedTransfer` checks it before `--ignore-times` can matter, so a planned object would be skipped silently rather than transferred; the runner refuses it for a remote destination and a guard in `internal/transfer/rclone/runner_test.go` keeps it out of that argv. A download into a local folder passes it on purpose ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5): there a file that exists must be left alone, and the engine says which files it left |
 
 ## Defaults this application depends on without setting them
 
@@ -144,14 +144,14 @@ something to be checked against; the enumeration and the reasoning are in
 | `--swift-use-segments-container` unset | `<container>_segments` sidecar; `=false` puts them in the DATA container under `.file-segments/` (measured 2026-10-02) | the transfer itself: the scoped gateway admits segment writes only to `<container>_segments` under the staged prefix and its manifest check requires that container by name, so the dotted placement is refused. The capture is not what breaks — it reads the container out of the child's own notice rather than assuming one |
 | `--swift-encoding` | `Slash,InvalidUtf8` | the names written change, and the native routing rules for unsafe names were measured under this value |
 | `--swift-fetch-until-empty-page` off, `--swift-partial-page-fetch-threshold` 0 | pagination as measured | listing completeness — mostly moot, because `--no-traverse --files-from-raw` means the engine does not list our sources |
-| `--inplace` off | temp name, then rename inside the private stage, and the temp is removed when the child is signalled — a cancelled download leaves nothing, where the flag leaves a truncated body under the final name (measured 2026-10-02) | stage residue after an interrupted child. NOT what keeps a partial body out of the final path: that is the child outcome, the stage identity and the native size/digest verification in `copyIntoStage`/`placeDownloaded` |
+| `--inplace` off | the child writes each file as `<name>.<8 hex>.partial` in its destination folder and renames it to the name when it is whole, so no partial body is ever under the final name; interrupted, the child removes the partial file, and killed, it stays in the chosen folder, where the flag would leave a truncated body under the final name (measured 2026-10-02 and 2026-11-16) | that a stopped download leaves at most a `.partial` file and never a short file under a final name; the job says when one may be there ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5) |
 | `--partial-suffix` | `.partial` | the temporary name a crash leaves for reconciliation and the operator to find |
 | `--local-no-check-updated` off | the check happens | a source file changing during an upload stops being detected |
 | `--local-no-sparse`, `--local-no-preallocate`, `--local-no-set-modtime` off | sparse, preallocated, modtime set | the on-disk shape of a partial download, and downloaded timestamps |
 | `--local-encoding` | `Slash,Dot` | local names written; the dot-segment behaviour measured 2026-08-29 follows from it |
 | `--multi-thread-cutoff` 256Mi, `--multi-thread-streams` 4, `--multi-thread-chunk-size` 64Mi | multi-stream above the cutoff | how many streams write one destination file at once, and its write granularity |
 | `--max-transfer` off, `--cutoff-mode` HARD | no policy truncation | a transfer would stop part way; HARD kills mid-transfer, the same objection that keeps `--max-duration` off the never-set list |
-| `--no-check-dest`, `--size-only`, `--no-update-modtime`, `--immutable` all off | comparison policy | little, because `--ignore-times` forces the transfer — stated so it is a decision rather than an inference. `--ignore-existing` is NOT in this row: it is checked before `--ignore-times` can matter and is forbidden outright (never-set table above) |
+| `--no-check-dest`, `--size-only`, `--no-update-modtime`, `--immutable` all off | comparison policy | little, because `--ignore-times` forces the transfer — stated so it is a decision rather than an inference. `--ignore-existing` is NOT in this row: it is checked before `--ignore-times` can matter, is forbidden for a copy to a store and is passed for a download (never-set table above) |
 
 None of these is passed on the command line. Two more that would belong here
 are instead in the never-set table above, because setting them either way is
@@ -187,6 +187,23 @@ forbidden rather than merely unnecessary.
   - writing over a large object removes that object's old segments;
   - a POST to the dynamic manifest that does not repeat `X-Object-Manifest` leaves an
     empty plain object; with the header the object stays whole and its metadata is replaced.
+- Store to a local folder, measured 2026-11-16 on the owned Swift with the download flags
+  ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5):
+  - one info line for each file written, `Copied (new)`, naming the object as it was
+    listed; folders are made as needed; a listed name that is not at the source gets no
+    line and the child exits 0;
+  - the file's modification time is the source's `X-Object-Meta-Mtime` when it has one,
+    and the time the source was last changed when it has none;
+  - a dynamic or static large object downloads whole, and a link downloads as its
+    target's bytes;
+  - a local file that exists is REPLACED with the flags above alone; with
+    `--ignore-existing` it is left untouched and the child prints a debug line for it,
+    `Destination exists, skipping`, and no `Copied` line; with `--immutable` it is left
+    untouched and the child exits 6 with an error line;
+  - while a file is written it is `<name>.<8 hex>.partial` in the destination folder; on
+    an interrupt the child removes it and exits 130; on a kill it stays;
+  - a source that cannot be read whole gets an error line for that file, a non-zero exit,
+    its partial file removed, and nothing at the final name.
 
 Re-run the seam spike suite on any pin upgrade; the unsafe-name classification (dot
 segments included) is verified per version by the compatibility matrix below.

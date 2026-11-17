@@ -3,6 +3,7 @@
 **Status:** Accepted and implemented with the native download recording correction.
 **Scope:** Correct the native-download recording conflict in [ADR 0060](0060-native-download-content-binding.md) while retaining [ADR 0033](0033-download-item-recording.md) required-record stop boundaries.
 Engine content binding and L07 cancellation expansion remain outside this decision.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: no final-publication record is made; an item's second record states the answer that was taken.
 
 ## Problem and oracle
 

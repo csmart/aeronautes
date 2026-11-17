@@ -3,6 +3,7 @@
 **Status:** Accepted after independent local review under the authorised audit remediation plan.
 **Scope:** Bounded pathname, placement and staging corrections before the separate download item-record migration.
 The reviewed prerequisite sequence governs the separate implementation changes below.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: a download has no stage to create and nothing to place, so this record's stage prerequisites no longer apply; the held destination and its displacement notes stay.
 
 ## Problem and oracle
 

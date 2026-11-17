@@ -2,6 +2,7 @@
 
 **Status:** Accepted for the cancelled download's own stage, which is delivered with this decision.
 Residue from a killed run remains a separate operator-facing action, and P20 does not close.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: a download has no stage to remove; a stopped engine's own temporary file is the engine's, and a job whose engine did not end normally says that such a file may remain.
 
 ## Context
 

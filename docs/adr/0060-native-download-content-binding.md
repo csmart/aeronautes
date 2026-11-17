@@ -3,6 +3,7 @@
 **Status:** Accepted for the native download remainder, which is delivered with this decision.
 This does not close L05, DS-04 or the valuable-data hold.
 [ADR 0061](0061-download-publication-facts.md) corrects the original verification timing by preserving immediate acknowledgement and recording final publication separately.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: the application's own download of a name the engine cannot carry is one GET into a temporary file and a link that does not replace; the comparison against the source and the pin of this record are no longer made.
 
 **Scope:** The remaining L05 cases on the native download route only: missing and reordered segments, and whole-job source and publication substitution.
 The engine download path stays unbound.

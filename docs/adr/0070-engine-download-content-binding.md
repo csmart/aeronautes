@@ -3,6 +3,7 @@
 **Status:** Accepted; implemented on 23 September 2026.
 The contract was reviewed independently before implementation; the [engine-binding record](../experiments/2026-09-22-engine-download-binding.md) carries the maintained proof and the mutants.
 This closes the engine-route gap that [ADR 0045](0045-route-content-binding.md) recorded and [ADR 0060](0060-native-download-content-binding.md) left unbound.
+Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: the engine writes each file in the chosen folder and its own line is the file's outcome; the staged comparison and placement of this record are no longer made.
 
 ## Context
 

@@ -1485,7 +1485,8 @@ This matches the "authenticate once" model, keeps the durable secret out of the 
 **Token expiry does not refresh inside a running rclone child**, so plan for it two ways.
 *Preferred — bounded batches:* stock one-shot rclone has **no drain** (`--max-duration HARD` kills active transfers; `SOFT` only stops *starting* new transfers after the deadline, so an in-flight large object can still run past expiry; signalling the child is a cancel, not a drain).
 So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor.
-Since 24 September 2026 the download route batches its engine-routed names the way the copy executor does, 500 names or 64 GiB of planned bytes per child, and places each batch before the next child starts ([ADR 0074](adr/0074-workload-bounds.md) decision 3).
+Since 24 September 2026 the download route batches its engine-routed names the way the copy executor does, 500 names or 64 GiB of planned bytes per child, and settles each batch before the next child starts ([ADR 0074](adr/0074-workload-bounds.md) decision 3).
+Since 16 November 2026 a download writes each file straight into the chosen folder, with no stage and no placing step ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5).
 Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target SwiftStack cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below.
 One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight.
 *Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process.
@@ -4102,7 +4103,7 @@ markers escaping ahead of the namespace checks, and a Save-invalidate patch that
 had silently no-oped. All fixed: prefixes have ONE canonical (slash-terminated)
 form across capture, records, loads, and sweep comparisons; local uploads stage
 and commit natively with full recovery records while downloads stage-and-place
-no-replace, and the RUNNER now refuses any remote destination outside an
+no-replace (all three write in place since ADR 0122), and the RUNNER now refuses any remote destination outside an
 .aeronautes staging namespace (the K-XFER-014 boundary is mechanized below every
 caller); preflight policy checks precede directory markers and file-vs-prefix
 uses real ancestor lookups; bookmark edits invalidate the cached session AND the
