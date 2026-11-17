@@ -2,7 +2,7 @@
 
 **Status:** Accepted on 16 November 2026 for 0.5.0, on the operator's decisions of that day, made during the candidate's test run.
 Tier 1 under DESIGN §65.12, because it changes what every upload, copy, download and deletion sends and what each reports.
-Amended on 17 November 2026 by decision 12, on the operator's decision of that day that a transfer follows rclone's semantics: after one confirmation an upload or a download replaces what differs, as rclone copy does.
+Amended on 17 November 2026 by decision 13, which lists what the removal step removes and keeps, and by decision 12, on the operator's decision of that day that a transfer follows rclone's semantics: after one confirmation an upload or a download replaces what differs, as rclone copy does.
 **Scope:** how a transfer or a deletion writes and deletes names, what it reads around its own requests, and what a job records.
 It replaces the staging and commit steps, the conditions and re-reads around a write, and the comparison and verifying reads around a deletion.
 It does not change the previews, the acknowledgements and typed words, what versioning keeps, or the rules for segments that large objects share.
@@ -198,6 +198,20 @@ The operator ran rclone alone against the same store and saw what it does: each 
     A large object whose bytes are the same and whose time alone differs is sent again in full.
     A name that appears after the preview is compared and replaced on the same terms without being named in the question.
 
+13. **What the removal step removes, and what stays** (added 17 November 2026, before step 7 of the order of the work).
+    Steps 1 to 6 left code and records that served only the staged model, with no live caller; this decision lists them so the removal is one reviewed change with a known edge.
+    **Removed, with their tests:**
+    - The engine's one-object copy (`Runner.CopyTo`, the copy package's `Engine.CopyTo`) and the gateway's exact-object scope that only it used; the runner's rule that a remote destination which is not live must lie under `.aeronautes/stage/`, with the option that says a destination is live, since every remote destination is now the names themselves; and the stage-namespace helpers. The refusal of a `..` segment stays.
+    - The recovery kinds `staging`, `committing` and `committed`, which only the staged model wrote, and the interrupted-job count of inconclusive commits that read them; only `captured`, the segment paths an engine reported, is still written. Applied migrations are history and are not edited.
+    - The item records of the staged model and everything that writes or reads them: the final-publication record, the predecessor, successor and acknowledged-baseline records of a deletion and an overwrite, an item's staging fields, the copy's content ladder and the store helpers only it and the removed verifying reads used; the small tag parser the copy still uses stays. The jobs drawer's lines for them go with them. A job an earlier build recorded stays readable as far as it is (decision 9): its rows still read, and the parts this build no longer reads are not shown.
+    - The `conflict` scenario from the rows of `TransferService.StartUpload`, `StartCopy`, `StartMirror` and `RerunJob` in `internal/scenariocontract`: an upload never records a conflict, since each name is replaced, left as the same after a confirmed comparison (decision 12), failed, unknown or not attempted; a copy records an unconfirmed difference as refused; a re-run only starts a copy; and Mirror refuses every start; so nothing can end in a conflict there. No test credited any of these cells and the preservation baseline of ADR 0069 protects none, so the drift route records the change and gives nothing up. `StartDownload` keeps `conflict`, which a file that appeared since the preview produces (decision 5): the queued-download system test shows that outcome today but emits no credit for it, and the removal change makes it emit the credit, so the cell is proved by a claim and not only by the outcome.
+    **Renamed:** the claim refusals that say a deletion may not take a name a running upload or copy writes under are named for the claim they check, not for a stage, and their messages say so.
+    **Kept, on purpose:**
+    - Each transfer item's second record, against the expectation in decision 7. It now states the answer taken, at no request to the store; the job's item totals, a re-run's refusal of a job with unverified items and the jobs drawer read it; and a download's check of a folder it made is a real second answer. Removing it would change what those readers say about every job for no operator-visible gain.
+    - The stage names `staging` and `placement` in the allowlist of an item's stage, so a row an earlier build wrote still reads.
+    - The application's own read of an object's whole content, which the service journeys use as an independent read; its comment is corrected.
+    **The design document** (`docs/DESIGN.md`) is rewritten where it describes staging, commit, the fixed point, stamps or verifying reads as current behaviour, to describe what ADR 0122 does instead, and the engine document's staged rows and `copyto` section go. Dated audit and experiment records are history and are not edited.
+
 ## What this gives up
 
 It is written down so that nobody reads the old promise into the new behaviour.
@@ -228,7 +242,7 @@ Each step leaves the application whole, and is its own reviewed change.
 4. Downloads in place.
 5. After one confirmation, uploads and downloads replace what differs (decision 12, added 17 November 2026).
 6. A selected folder is copied or downloaded with everything in it ([ADR 0108](0108-copy-and-download-what-is-selected.md) decision 7, added 17 November 2026).
-7. Removal of what no longer has a caller, and the design document.
+7. Removal of what no longer has a caller, and the design document (decision 13).
 
 ## Required proof before implementation is accepted
 
@@ -242,3 +256,4 @@ Tier 1, stated here for the whole and repeated in each step for its part.
 - The browser journeys and the service journeys pass on the mock and on both real stores, and every upload, copy and download journey compares digests with the source.
 - The system tests against a real Swift pass for each step.
 - For decision 12 (17 November 2026): Go, upload and download, against the fake engine that prints the real engine's lines: confirmed, each of replaced, unchanged and time-set gives its outcome and counter; declined, nothing is written and no job exists; unconfirmed, the preview refuses and names the name, and the flags are unchanged; a directory or a link at a download's file name is refused even when acknowledged; the application's own route replaces after the confirmation and does not without it; a large file left alone is not published again. Runner: confirmed runs have neither flag, every other run keeps its flags. System, on the owned Swift with the real engine: a confirmed download and a confirmed upload over a folder holding one same, one resized and one touched file replace only the resized one, set the touched one's time, and leave the same one, and a touched dynamic and a touched static large object are replaced whole, by a download and by an upload; an unconfirmed download leaves a file that appeared after the preview alone. Frontend: the download dialog offers "Replace existing files…" when its preview has collisions and nothing else, the request carries the acknowledgement, and the summary counts already-the-same files. Journeys: a confirmed download over an earlier download of the same folder replaces nothing and reports every file already the same, on the mock and both clouds.
+- For decision 13 (17 November 2026): the whole-tree gate, the browser and service journeys on the mock and both real stores, and the system tests on a real Swift pass as before; a search shows no non-test reference to a removed symbol; the scenario contract's validation passes with the changed rows and its drift is recorded by ADR 0069's route; an item list of a job written before this change (a fixture holding publication and predecessor rows) still reads.
