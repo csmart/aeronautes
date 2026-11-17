@@ -27,13 +27,18 @@ type gatewayScope struct {
 	// over a large object, deletes that object's old segments; this is how
 	// they are kept where they still belong to something (destinationRules).
 	keepsObjects bool
+	// setsTimes lets the child POST to an object it may write. Told to
+	// compare, the engine sets the time of an object it found the same but
+	// for its time, by a POST, as it does used alone (ADR 0122 decision 12).
+	setsTimes bool
 }
 
 // destinationRules say how a child may use its remote destination: one exact
 // object or everything under a path; a live destination, the names
-// themselves, or a staged one; and whether it may delete there at all.
+// themselves, or a staged one; whether it may delete there at all; and
+// whether it may set an object's time.
 type destinationRules struct {
-	exact, live, keepsObjects bool
+	exact, live, keepsObjects, setsTimes bool
 }
 
 func destinationScope(remote, destination string, rules destinationRules) (*gatewayScope, error) {
@@ -53,7 +58,7 @@ func destinationScope(remote, destination string, rules destinationRules) (*gate
 	if err := checkRemoteDest(destination, live); err != nil {
 		return nil, err
 	}
-	return &gatewayScope{container: container, object: object, exact: exact, keepsObjects: rules.keepsObjects}, nil
+	return &gatewayScope{container: container, object: object, exact: exact, keepsObjects: rules.keepsObjects, setsTimes: rules.setsTimes}, nil
 }
 
 // gatewayReadSafe is the rule for a path the child only reads. An empty

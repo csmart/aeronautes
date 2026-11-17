@@ -135,6 +135,7 @@ func TestGatewayConfinesAnUploadToItsDestination(t *testing.T) {
 	folder := &gatewayScope{container: "owned", object: "folder"}
 	top := &gatewayScope{container: "owned"}
 	keeps := &gatewayScope{container: "owned", object: "folder", keepsObjects: true}
+	compares := &gatewayScope{container: "owned", object: "folder", setsTimes: true}
 	for _, test := range []struct {
 		name, method, target string
 		scope                *gatewayScope
@@ -155,6 +156,12 @@ func TestGatewayConfinesAnUploadToItsDestination(t *testing.T) {
 		{"another sidecar from the top", "DELETE", "/other_segments/file/old/00000000", top, false},
 		{"a write where segments are kept", "PUT", "/owned/folder/file", keeps, true},
 		{"a delete where segments are kept", "DELETE", "/owned_segments/folder/file/old/00000000", keeps, false},
+		// ADR 0122 decision 12: a child told to compare sets an object's
+		// time by a POST, only to an object it may write.
+		{"a time set on a file under the folder", "POST", "/owned/folder/file", compares, true},
+		{"a time set where nothing compares", "POST", "/owned/folder/file", folder, false},
+		{"a time set beside the folder", "POST", "/owned/folder-other/file", compares, false},
+		{"a time set on the container", "POST", "/owned", compares, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newGatewayFixture(t, test.scope)

@@ -288,6 +288,11 @@ func (g *storageGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				refuse()
 				return
 			}
+		case http.MethodPost:
+			if g.scope == nil || !g.scope.setsTimes || !gatewayPathSafe(relative) || !g.scope.allowsWrite(req, relative) {
+				refuse()
+				return
+			}
 		default:
 			refuse()
 			return

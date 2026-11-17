@@ -204,6 +204,54 @@ func TestLeaveExistingOnlyForALocalDestination(t *testing.T) {
 	}
 }
 
+// ADR 0122 decision 12: a confirmed upload or download lets the engine compare
+// each name as rclone copy does, so it is not given the flag that forces every
+// transfer; every other run keeps it, and a copy between stores is refused the
+// option, because its plan decides what is the same.
+func TestCompareExistingDropsTheForcingFlagOnlyWhereItIsAllowed(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, dst string
+		compare, leave bool
+		forced         bool
+		refused        bool
+	}{
+		{name: "a confirmed download", src: "aeronautes_src:media", dst: t.TempDir(), compare: true},
+		{name: "a confirmed upload", src: t.TempDir(), dst: "aeronautes_dst:media/up", compare: true},
+		{name: "an unconfirmed download", src: "aeronautes_src:media", dst: t.TempDir(), leave: true, forced: true},
+		{name: "an unconfirmed upload", src: t.TempDir(), dst: "aeronautes_dst:media/up", forced: true},
+		{name: "a copy between stores", src: "aeronautes_src:media", dst: "aeronautes_dst:media", compare: true, refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := stub(t, "v1.74.3", "exit 0")
+			r, err := NewRunner(Options{Binary: bin, CompareExisting: tc.compare, LeaveExisting: tc.leave, LiveDestination: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = r.Copy(t.Context(), remotes(), tc.src, tc.dst, []string{"a"}, nil)
+			if tc.refused {
+				if err == nil {
+					t.Fatal("a copy between stores was told to compare")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			args, err := os.ReadFile(filepath.Join(dumpDir(bin), "args"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			argv := strings.Split(string(args), "\n")
+			if got := slices.Contains(argv, "--ignore-times"); got != tc.forced {
+				t.Errorf("--ignore-times passed = %t, want %t", got, tc.forced)
+			}
+			if got := slices.Contains(argv, "--ignore-existing"); got != tc.leave {
+				t.Errorf("--ignore-existing passed = %t, want %t", got, tc.leave)
+			}
+		})
+	}
+}
+
 func TestNewlineNamesRefused(t *testing.T) {
 	r, err := NewRunner(Options{Binary: stub(t, "v1.74.3", "exit 0")})
 	if err != nil {

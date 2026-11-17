@@ -175,6 +175,14 @@ type Options struct {
 	// refused it: there an object that exists is replaced or refused by
 	// the plan, never skipped by the engine (K-XFER-009).
 	LeaveExisting bool
+	// CompareExisting lets the child compare a name that exists, as rclone
+	// copy does used alone, instead of transferring every name it is given:
+	// it replaces what differs and leaves what is the same, each in a line
+	// of its own. It is for an upload or a download the operator confirmed
+	// may replace what differs (ADR 0122 decision 12). A copy between
+	// stores is refused it: its plan decides what is the same, and a name
+	// the child left would be reported as not copied.
+	CompareExisting bool
 	// ChunkSize is the §25 single knob (e.g. "5Gi"); "" leaves rclone's
 	// default in place.
 	ChunkSize string
@@ -326,23 +334,30 @@ func CopiedObject(event Event) (string, bool) {
 }
 
 // Answers is what the engine said about the objects of one copy, by the name
-// each was listed to it under: the ones it reported writing, the ones it
+// each was listed to it under: the ones it reported writing; the ones it
 // left alone because the destination had them (only a child told to leave
-// existing files alone says so), and the error it reported for one it could
-// not write.
+// existing files alone says so); the ones it left because they were the
+// same as the source (only a child told to compare says so); and the error
+// it reported for one it could not write.
 type Answers struct {
 	Copied  map[string]bool
 	Skipped map[string]bool
+	Same    map[string]bool
 	Refused map[string]string
 }
 
 func NewAnswers() Answers {
-	return Answers{Copied: map[string]bool{}, Skipped: map[string]bool{}, Refused: map[string]string{}}
+	return Answers{Copied: map[string]bool{}, Skipped: map[string]bool{}, Same: map[string]bool{}, Refused: map[string]string{}}
 }
 
-// leftExisting is the child's line for a destination file it left alone,
-// measured on the pinned engine with --ignore-existing.
-const leftExisting = "Destination exists, skipping"
+// The child's lines for a name it left, measured on the pinned engine (ADR
+// 0122 decisions 5 and 12): left alone under --ignore-existing, and left
+// because its size and time, or its size and MD5, are the source's, which
+// follows the line that set its time when only the time differed.
+const (
+	leftExisting  = "Destination exists, skipping"
+	leftUnchanged = "Unchanged skipping"
+)
 
 // Hear takes one child log event. An object's first error line is the one
 // kept.
@@ -353,6 +368,10 @@ func (a Answers) Hear(event Event) {
 	}
 	if event.Level == "debug" && event.Object != "" && event.Msg == leftExisting {
 		a.Skipped[event.Object] = true
+		return
+	}
+	if event.Level == "debug" && event.Object != "" && event.Msg == leftUnchanged {
+		a.Same[event.Object] = true
 		return
 	}
 	if event.Level == "error" && event.Object != "" && a.Refused[event.Object] == "" {
@@ -444,7 +463,7 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	defer os.RemoveAll(workDir)
 
 	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst,
-		destinationRules{live: r.opts.LiveDestination, keepsObjects: r.opts.KeepReplacedSegments}, r.gatewayCapacity())
+		destinationRules{live: r.opts.LiveDestination, keepsObjects: r.opts.KeepReplacedSegments, setsTimes: r.opts.CompareExisting}, r.gatewayCapacity())
 	if err != nil {
 		return nil, err
 	}
@@ -460,8 +479,13 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	}
 	// A filtered source traversal can lose planned names on short pages;
 	// files-from-raw plus no-traverse keeps the application's selection.
-	args := []string{"copy", "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s",
-		"--files-from-raw", listPath, "--config", configPath}
+	args := []string{"copy", "--no-traverse"}
+	if !r.opts.CompareExisting {
+		args = append(args, "--ignore-times")
+	} else if strings.HasPrefix(src, "aeronautes_") && strings.HasPrefix(dst, "aeronautes_") {
+		return nil, fmt.Errorf("a copy between stores is never told to compare existing objects (ADR 0122 decision 12)")
+	}
+	args = append(args, "--use-json-log", "-vv", "--stats", "1s", "--files-from-raw", listPath, "--config", configPath)
 	args = append(args, r.pacingArgs()...)
 	if r.opts.NoGzipEncoding {
 		args = append(args, "--no-gzip-encoding")
