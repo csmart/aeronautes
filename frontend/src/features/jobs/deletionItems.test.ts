@@ -26,9 +26,9 @@ function member(key: string, overrides: Partial<JobItemDTO>): JobItemDTO {
   return { id: key, key, keyDisplay: JSON.stringify(key),
     source: { kind: "swift", bookmarkId: "a", container: "fixtures", object: key, localPath: "", display: `"a" / "fixtures" / ${JSON.stringify(key)}` },
     destination: { kind: "", bookmarkId: "", container: "", object: "", localPath: "", display: '""' },
-    staging: null, planned: true, admitted: true, listedBytes: 10, createdAt: "2026-10-27T00:00:01Z", publicationRequired: false, publication: null,
-    predecessor: null, issuedAt: "2026-10-27T00:00:02Z", successor: null, execution: null, verification: null,
-    listedEtag: "5eb63bbbe01eeed093cb22bb8f5acdc3", listedSlo: false, baseline: { class: "plain", length: 10, etag: "5eb63bbbe01eeed093cb22bb8f5acdc3" }, ...overrides };
+    planned: true, admitted: true, listedBytes: 10, createdAt: "2026-10-27T00:00:01Z",
+    issuedAt: "2026-10-27T00:00:02Z", execution: null, verification: null,
+    listedEtag: "5eb63bbbe01eeed093cb22bb8f5acdc3", listedSlo: false, ...overrides };
 }
 
 const observation = (result: string, effect: string, stage = "", code = "", httpStatus = 0) =>
@@ -57,12 +57,12 @@ async function show(api: Api) {
 it("shows each member's outcome as the store's answer to its DELETE", async () => {
   const api = newFakeApi();
   const items = [
-    member("gone", { baseline: null, execution: observation("deleted", "reported_applied") }),
-    member("lost", { baseline: null, execution: observation("unverified", "unresolved", "commit", "unverified") }),
-    member("refused", { baseline: null, execution: observation("failed", "not_attempted", "commit", "forbidden", 403) }),
-    member("later", { baseline: null, issuedAt: "", execution: observation("not_attempted", "not_attempted") }),
-    member("in-flight", { baseline: null }),
-    member("never", { baseline: null, issuedAt: "" }),
+    member("gone", { execution: observation("deleted", "reported_applied") }),
+    member("lost", { execution: observation("unverified", "unresolved", "commit", "unverified") }),
+    member("refused", { execution: observation("failed", "not_attempted", "commit", "forbidden", 403) }),
+    member("later", { issuedAt: "", execution: observation("not_attempted", "not_attempted") }),
+    member("in-flight", {}),
+    member("never", { issuedAt: "" }),
   ];
   api.jobItems = async () => ({ status: "available", items, nextCursor: "" });
   api.jobItemTotals = async () => totals;
@@ -80,7 +80,6 @@ it("shows each member's outcome as the store's answer to its DELETE", async () =
   const body = document.body.textContent ?? "";
   expect(body).not.toContain("Destination");
   expect(body).not.toContain("Unverified copy");
-  expect(body).not.toContain("Final publication");
   const total = (label: string) => [...document.querySelectorAll(".totals dt")].find((dt) => dt.textContent === label)?.nextElementSibling?.textContent;
   expect(total("Deleted")).toBe("2");
   expect(total("Issued")).toBe("7");

@@ -36,9 +36,6 @@ func TestJobItemAccessBeyondRecentJobsAndLargeCursors(t *testing.T) {
 	intents := make([]jobs.ItemIntent, len(names))
 	for i, key := range names {
 		intents[i] = retainedIntent(key)
-		if i%2 == 0 {
-			intents[i].Staging = &jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: "dest-binding", Container: "dest", Object: ".staging/job/batch/" + key}
-		}
 	}
 	if err := store.AdmitItems(ctx, job.ID, intents); err != nil {
 		t.Fatal(err)
@@ -116,9 +113,6 @@ func TestJobItemAccessBeyondRecentJobsAndLargeCursors(t *testing.T) {
 				if item.Source.Display != `"source-binding" / "source" / `+strconv.Quote(intent.Source.Object) ||
 					item.Destination.Display != `"dest-binding" / "dest" / `+strconv.Quote(intent.Destination.Object) {
 					t.Fatalf("location boundaries hidden: %+v", item)
-				}
-				if (item.Staging == nil) != (intent.Staging == nil) || (item.Staging != nil && item.Staging.Object != intent.Staging.Object) {
-					t.Fatalf("staging identity changed: %+v", item)
 				}
 				if item.Execution == nil || item.Verification == nil || item.Execution.CreatedAt == "" || item.Verification.CreatedAt == "" {
 					t.Fatalf("missing observation: %+v", item)

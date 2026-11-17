@@ -3,7 +3,6 @@ package jobs
 import (
 	"errors"
 	"path/filepath"
-	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -46,16 +45,14 @@ type ItemIdentity struct {
 
 type ItemIntent struct {
 	ItemIdentity
-	Staging     *ItemLocation
 	Planned     bool
 	Admitted    bool
 	ListedBytes int64
 	// ListedETag and ListedSLO are the facts a deletion member was listed
-	// with beside its bytes (ADR 0093 decision 2): the baseline rule reads
-	// them and the record keeps what the operator saw. Empty for a transfer.
-	ListedETag          string
-	ListedSLO           bool
-	PublicationRequired bool
+	// with beside its bytes (ADR 0093 decision 2), kept as what the operator
+	// saw. Empty for a transfer.
+	ListedETag string
+	ListedSLO  bool
 }
 
 type ItemResult string
@@ -85,6 +82,9 @@ const (
 
 type ItemStage string
 
+// StageStaging and StagePlacement are no longer written. They stay in the
+// allowlist so that a row an earlier build wrote still reads (ADR 0122
+// decision 13).
 const (
 	StagePlanning     ItemStage = "planning"
 	StageSourceRead   ItemStage = "source_read"
@@ -147,25 +147,10 @@ type ItemRecord struct {
 	CreatedAt    time.Time
 	Execution    *RecordedObservation
 	Verification *RecordedObservation
-	Publication  *RecordedObservation
-	// Predecessor is what was live at the destination immediately before
-	// this item was published over it, read without its segment names
-	// (ADR 0081 decision 7). Nil when nothing was recorded, which is every
-	// item that did not replace anything.
-	Predecessor *ItemPredecessor
 	// IssuedAt is when a deletion member's issued mark was written, before its
 	// final HEAD (ADR 0039, ADR 0093 decision 4); zero when it never was. A
 	// member issued with no outcome may have been deleted.
 	IssuedAt time.Time
-	// Successor is what a deletion member's read found at the name: the
-	// verifying read's after the DELETE, or the comparison HEAD's when the
-	// member was found changed before any DELETE; nil when nothing was
-	// recorded.
-	Successor *ItemSuccessor
-	// Baseline is the identity the member's comparison was made against
-	// (ADR 0093 decision 3), written with its outcome; nil when the member
-	// never reached a comparison.
-	Baseline *MemberBaseline
 }
 
 type ItemPage struct {
@@ -222,21 +207,7 @@ func (i ItemIdentity) deletion() bool {
 }
 
 func (i ItemIntent) valid() bool {
-	if !i.ItemIdentity.valid() || i.ListedBytes < 0 || !utf8.ValidString(i.ListedETag) || i.Staging != nil && !i.Staging.valid() {
-		return false
-	}
-	return !i.PublicationRequired || i.Planned && i.Admitted && i.Source.Kind == ItemSwift &&
-		!strings.HasSuffix(i.Source.Object, "/") &&
-		i.Destination.Kind == ItemLocal && i.Staging != nil && i.Staging.Kind == ItemLocal &&
-		i.Staging.LocalPath != i.Destination.LocalPath
-}
-
-func (o ItemObservation) validPublication() bool {
-	if !o.Diagnostic.valid() || o.CopiedBytes != 0 {
-		return false
-	}
-	return o.Result == ItemVerified && o.Effect == EffectNotAttempted && o.Diagnostic == (ItemDiagnostic{}) ||
-		o.Result == ItemFailed && o.Effect == EffectUnresolved && o.Diagnostic.Stage == StageVerification && o.Diagnostic.Code != ""
+	return i.ItemIdentity.valid() && i.ListedBytes >= 0 && utf8.ValidString(i.ListedETag)
 }
 
 // validDeletion is the one observation a deletion member records, when its
@@ -260,77 +231,6 @@ func (o ItemObservation) validDeletion(phase string, admitted bool) bool {
 	default:
 		return false
 	}
-}
-
-// The read that observed a successor: the literal verifying read after the
-// member's DELETE, or the comparison HEAD that found the member changed
-// since it was listed before any DELETE was issued.
-const (
-	SuccessorAfter      = "after"
-	SuccessorComparison = "comparison"
-)
-
-// ItemSuccessor is what a read observed at a deletion member's name (ADR
-// 0093 decision 3): nothing, or the object there by class, length and entity
-// tag, and which read saw it. It is an observation and never an
-// identification of where that object came from.
-type ItemSuccessor struct {
-	Present   bool
-	Class     string
-	Length    int64
-	ETag      string
-	Role      string
-	CreatedAt time.Time
-}
-
-func (s ItemSuccessor) valid() bool {
-	if !utf8.ValidString(s.Class) || !utf8.ValidString(s.ETag) || s.Length < 0 {
-		return false
-	}
-	switch s.role() {
-	case SuccessorAfter:
-	case SuccessorComparison:
-		// The comparison refused the member because something stood there.
-		if !s.Present {
-			return false
-		}
-	default:
-		return false
-	}
-	if !s.Present {
-		return s.Class == "" && s.Length == 0 && s.ETag == ""
-	}
-	return s.Class != ""
-}
-
-// role defaults the verifying read, the one every deleted member has.
-func (s ItemSuccessor) role() string {
-	if s.Role == "" {
-		return SuccessorAfter
-	}
-	return s.Role
-}
-
-// sameAs compares two readings by their own facts, ignoring when each was
-// written, so the identical observation is idempotent and another is a conflict.
-func (s ItemSuccessor) sameAs(other ItemSuccessor) bool {
-	return s.Present == other.Present && s.Class == other.Class && s.Length == other.Length && s.ETag == other.ETag && s.role() == other.role()
-}
-
-// MemberBaseline is the identity a deletion member's comparison was made
-// against (ADR 0093 decision 3): the listed row as a plain object for an
-// ordinary member, or the HEAD taken first for a member listed as zero bytes
-// or as a static large object. It is written with the member's outcome and
-// is immutable, so a conflict keeps the identity it expected beside the one
-// it found. (ItemBaseline, elsewhere, is a transfer's acknowledged state.)
-type MemberBaseline struct {
-	Class  string
-	Length int64
-	ETag   string
-}
-
-func (b MemberBaseline) valid() bool {
-	return b.Class != "" && utf8.ValidString(b.Class) && utf8.ValidString(b.ETag) && b.Length >= 0
 }
 
 // Validate permits refusal before a write; invalid writes still latch the store.

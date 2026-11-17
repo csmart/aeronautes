@@ -98,8 +98,7 @@ func assertUploadRecoveryStop(t *testing.T, h *Harness, fault, id, dst string, b
 		key := "live/" + filepath.Base(paths[i])
 		if item.Key != key || item.JobID != id || !item.Planned || !item.Admitted || item.ListedBytes != int64(len(body)) ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
-			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: key}) ||
-			item.Staging != nil {
+			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: key}) {
 			t.Fatalf("required recovery refusal lost original identity: %+v", item)
 		}
 		assertUploadRecoveryStopObservation(t, item, fault, i, int64(len(body)))

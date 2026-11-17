@@ -194,9 +194,6 @@ func uploadSourcePaths(t *testing.T, h *Harness, tc uploadSourceCase) {
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: name}) || item.Execution == nil {
 		t.Fatalf("source record changed the captured identity: %+v", item)
 	}
-	if item.Staging != nil {
-		t.Fatalf("an upload recorded a stage name: %+v", item)
-	}
 	if copied {
 		if item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: 5}) ||
 			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {

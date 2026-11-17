@@ -99,7 +99,7 @@ func copyRecordFault(t *testing.T, h *Harness, mode string) {
 				t.Fatalf("engine batch lacks acknowledged admissions: %+v %v", page, err)
 			}
 			for _, item := range page.Items {
-				if !item.Admitted || item.Execution != nil || item.Staging != nil {
+				if !item.Admitted || item.Execution != nil {
 					t.Fatalf("a name the engine was given lost its admission, or has an outcome before the engine answered: %+v", item)
 				}
 			}
@@ -174,7 +174,7 @@ func assertCopyRecordFault(t *testing.T, h *Harness, mode, id, first, src, dst s
 		t.Fatalf("record refusal lost acknowledged facts or reported effects: %+v want=%s %+v %+v", saved, wantState, wantCounters, wantTotals)
 	}
 	for i, item := range saved.Items {
-		if item.Source.Object != "scope/"+item.Key || item.Destination.Object != "scope/"+item.Key || !item.Admitted || item.Staging != nil {
+		if item.Source.Object != "scope/"+item.Key || item.Destination.Object != "scope/"+item.Key || !item.Admitted {
 			t.Fatalf("record refusal fabricated or changed an identity, or recorded a stage name: %+v", item)
 		}
 		if (item.Execution == nil) != (outcomes[i] == nil) || (item.Execution != nil && item.Execution.ItemObservation != *outcomes[i]) {

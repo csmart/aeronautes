@@ -333,9 +333,7 @@ func (s *Store) InterruptedDisclosures(ctx context.Context, limit int) (Interrup
 }
 
 // disclosureItemFacts reads the acknowledged positive item facts for the ADR
-// 0088 notice: how many members were recorded copied; how many verified — a
-// publication-required member only once its final publication is verified too
-// (ADR 0061/0070), so a passed staged read is not mistaken for a finished one;
+// 0088 notice: how many members were recorded copied; how many verified;
 // their witnessed copied bytes; and how many were actually attempted. An
 // attempt is an execution outcome other than the synthetic not_attempted the
 // sweep writes for never-issued members, or an issued deletion member with no
@@ -343,16 +341,13 @@ func (s *Store) InterruptedDisclosures(ctx context.Context, limit int) (Interrup
 func disclosureItemFacts(ctx context.Context, tx *sql.Tx, jobID string) (copied, verified, copiedBytes, attempted int64, err error) {
 	err = tx.QueryRowContext(ctx, `SELECT
 		COALESCE(SUM(CASE WHEN e.result='copied' THEN 1 ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN v.result='verified'
-			AND (i.publication_required=0 OR (p.item_id IS NOT NULL AND p.result='verified'))
-			THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN v.result='verified' THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(COALESCE(e.copied_bytes,0)),0),
 		COALESCE(SUM(CASE WHEN (e.item_id IS NOT NULL AND e.result!='not_attempted')
 			OR i.issued_at IS NOT NULL THEN 1 ELSE 0 END),0)
 		FROM job_items i
 		LEFT JOIN job_item_observations e ON e.item_id=i.id AND e.phase='execution'
 		LEFT JOIN job_item_observations v ON v.item_id=i.id AND v.phase='verification'
-		LEFT JOIN job_item_publications p ON p.item_id=i.id
 		WHERE i.job_id=?`, jobID).Scan(&copied, &verified, &copiedBytes, &attempted)
 	return copied, verified, copiedBytes, attempted, err
 }

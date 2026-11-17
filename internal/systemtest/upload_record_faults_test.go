@@ -99,7 +99,7 @@ func uploadRecordFault(t *testing.T, h *Harness, mode string) {
 			t.Fatalf("invoked upload lacks acknowledged admissions: %+v %v", page, err)
 		}
 		for _, item := range page.Items {
-			if !item.Admitted || item.Execution != nil || item.Verification != nil || item.Staging != nil {
+			if !item.Admitted || item.Execution != nil || item.Verification != nil {
 				t.Fatalf("upload lost admission before response: %+v", item)
 			}
 		}
@@ -165,9 +165,6 @@ func assertUploadRecordFault(t *testing.T, h *Harness, mode, id, dst, prefix str
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dst, Object: key}) ||
 			!item.Planned || !item.Admitted || item.ListedBytes != 5 {
 			t.Fatalf("upload fault lost exact selection: %+v", item)
-		}
-		if item.Staging != nil {
-			t.Fatalf("an upload recorded a stage name: %+v", item)
 		}
 		assertUploadFaultObservation(t, item, mode, i)
 	}

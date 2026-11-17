@@ -53,7 +53,7 @@ func downloadEmptyRecords(t *testing.T, h *Harness, markers bool) {
 	byKey := map[string]jobs.ItemRecord{}
 	for _, item := range saved.Items {
 		relative, exists := names[item.Key]
-		if !exists || byKey[item.Key].ID != 0 || !item.Planned || !item.Admitted || item.ListedBytes != 0 || item.Staging != nil ||
+		if !exists || byKey[item.Key].ID != 0 || !item.Planned || !item.Admitted || item.ListedBytes != 0 ||
 			item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: source, Object: item.Key}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(destination, relative)}) ||
 			item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied}) ||

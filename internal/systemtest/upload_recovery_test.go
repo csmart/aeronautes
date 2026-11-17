@@ -387,7 +387,7 @@ func uploadRecoveryRun(t *testing.T, h *Harness, test uploadRecoveryCase) {
 		name := fmt.Sprintf("%03d.bin", i)
 		if item.Key != "live/"+name || item.Source != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: paths[i]}) ||
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: dest, Object: "live/" + name}) ||
-			item.Staging != nil || item.Execution == nil {
+			item.Execution == nil {
 			t.Fatalf("upload changed retained identity: %+v", item)
 		}
 		byKey[item.Key] = item

@@ -130,9 +130,6 @@ func assertUploadItemRecords(t *testing.T, h *Harness, id, dst string, failed, b
 			t.Fatalf("upload identity differs from backend selection: %+v path=%q", item, path)
 		}
 		byKey[item.Key] = item
-		if item.Staging != nil {
-			t.Fatalf("an upload recorded a stage name: %+v", item)
-		}
 		if i < failed {
 			if item.Execution.ItemObservation != refusal || item.Verification != nil {
 				t.Fatalf("a refused PUT was misrecorded or invented a second record: %+v want=%+v", item, refusal)
@@ -172,9 +169,6 @@ func assertUploadItemPages(t *testing.T, h *Harness, id string, stored map[strin
 				row.Destination.Kind != "swift" || row.Destination.BookmarkID != item.Destination.BookmarkID || row.Destination.Container != item.Destination.Container || row.Destination.Object != item.Destination.Object ||
 				row.Planned != item.Planned || row.Admitted != item.Admitted || row.ListedBytes != item.ListedBytes {
 				t.Fatalf("public upload identity differs: %+v", row)
-			}
-			if (row.Staging == nil) != (item.Staging == nil) || row.Staging != nil && (row.Staging.Object != item.Staging.Object || row.Staging.BookmarkID != item.Staging.BookmarkID || row.Staging.Container != item.Staging.Container) {
-				t.Fatalf("public upload stage differs: %+v", row)
 			}
 			assertUploadPublicObservation(t, row.Execution, item.Execution)
 			assertUploadPublicObservation(t, row.Verification, item.Verification)

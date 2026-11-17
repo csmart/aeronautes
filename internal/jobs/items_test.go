@@ -213,6 +213,45 @@ func TestItemRecordVersionAndEmpty(t *testing.T) {
 	}
 }
 
+// ADR 0122 decision 9: a job an earlier build recorded still reads. Its
+// staging and final-publication facts and the predecessor it saw belong to
+// the staged model, so this build leaves them out rather than refusing the
+// job or counting them.
+func TestItemRecordsOfAnEarlierBuildStillRead(t *testing.T) {
+	s, bookmark := newStore(t)
+	job := recordedJob(t, s, TypeDownload)
+	intent := transferIntent(bookmark, "old")
+	intent.Destination = ItemLocation{Kind: ItemLocal, LocalPath: filepath.Join(t.TempDir(), "old")}
+	if err := s.AdmitItems(t.Context(), job.ID, []ItemIntent{intent}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordExecution(t.Context(), job.ID, intent.Key, ItemObservation{Result: ItemCopied, Effect: EffectReportedApplied, CopiedBytes: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordComparison(t.Context(), job.ID, intent.ItemIdentity, ItemObservation{Result: ItemVerified, Effect: EffectNotAttempted}); err != nil {
+		t.Fatal(err)
+	}
+	item := fmt.Sprintf(`(SELECT id FROM job_items WHERE job_id='%s')`, job.ID)
+	itemSQL(t, s, `UPDATE job_items SET publication_required=1, staging_json='{"kind":"local","localPath":"/stage/old"}' WHERE id=`+item)
+	itemSQL(t, s, `INSERT INTO job_item_publications
+		(item_id, result, effect, diagnostic_stage, diagnostic_code, http_status, copied_bytes, created_at)
+		VALUES (`+item+`, 'failed', 'unresolved', 'verification', 'unverified', 0, 0, '2026-01-01T00:00:00Z')`)
+	itemSQL(t, s, `INSERT INTO job_item_predecessors
+		(item_id, present, etag, length, last_modified, class, prefix, counted,
+		 inline_entries, ranged_entries, nested_entries, exact, unread, created_at)
+		VALUES (`+item+`, 1, 'abc', 3, '', 'plain', '', 0, 0, 0, 0, 1, '', '2026-01-01T00:00:00Z')`)
+
+	items := readAllItems(t, s, job.ID, 0)
+	if len(items) != 1 || items[0].Execution == nil || items[0].Execution.Result != ItemCopied ||
+		items[0].Verification == nil || items[0].Verification.Result != ItemVerified {
+		t.Fatalf("an earlier build's item did not read: %+v", items)
+	}
+	totals, err := s.ReadItemTotals(t.Context(), job.ID)
+	if want := (ItemTotals{Items: 1, Planned: 1, Admitted: 1}); err != nil || totals != want {
+		t.Fatalf("totals = %+v, %v; want %+v", totals, err, want)
+	}
+}
+
 func TestItemIdentityVerbatimAndScope(t *testing.T) {
 	s, bookmark := newStore(t)
 	keys := []string{"", "line\nbreak", "nul\x00tail", "é", "e\u0301", "a//b", "a/b", " space ", "Case", "case", `back\slash`, "🐦"}
@@ -227,8 +266,6 @@ func TestItemIdentityVerbatimAndScope(t *testing.T) {
 			if kind == TypeDownload {
 				item.Destination = ItemLocation{Kind: ItemLocal, LocalPath: filepath.Join(t.TempDir(), fmt.Sprint(i))}
 			}
-			stage := ItemLocation{Kind: ItemSwift, BookmarkID: bookmark, Container: "staging", Object: job.ID + "/" + key}
-			item.Staging = &stage
 			intents = append(intents, item)
 		}
 		if err := s.AdmitItems(t.Context(), job.ID, intents); err != nil {
@@ -327,7 +364,7 @@ func assertItemUnavailable(t *testing.T, s *Store, jobID string, err error) {
 }
 
 func TestItemInvalidLocationsAndEncoding(t *testing.T) {
-	for _, fault := range []string{"key_utf8", "source_utf8", "destination_utf8", "stage_utf8", "kind", "swift_local", "swift_empty", "local_relative", "local_swift", "negative_bytes"} {
+	for _, fault := range []string{"key_utf8", "source_utf8", "destination_utf8", "kind", "swift_local", "swift_empty", "local_relative", "local_swift", "negative_bytes"} {
 		t.Run(fault, func(t *testing.T) {
 			s, bookmark := newStore(t)
 			job := recordedJob(t, s, TypeCopy)
@@ -339,10 +376,6 @@ func TestItemInvalidLocationsAndEncoding(t *testing.T) {
 				item.Source.Object = string([]byte{0xff})
 			case "destination_utf8":
 				item.Destination.BookmarkID = string([]byte{0xff})
-			case "stage_utf8":
-				stage := item.Source
-				stage.Container = string([]byte{0xff})
-				item.Staging = &stage
 			case "kind":
 				item.Source.Kind = "https://provider/?token=fixture"
 			case "swift_local":

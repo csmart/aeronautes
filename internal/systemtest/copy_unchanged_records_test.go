@@ -44,7 +44,7 @@ func copyUnchangedRecords(t *testing.T, h *Harness) {
 		key := fmt.Sprintf("same-%04d", i)
 		if item.Key != key || item.Source.Object != "scope/"+key || item.Source.BookmarkID != h.Primary.BookmarkID || item.Source.Container != src ||
 			item.Destination.Object != "scope/"+key || item.Destination.BookmarkID != h.Secondary.BookmarkID || item.Destination.Container != dst ||
-			item.Planned || item.Admitted || item.Staging != nil || item.Execution == nil || item.Verification == nil ||
+			item.Planned || item.Admitted || item.Execution == nil || item.Verification == nil ||
 			item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemSame, Effect: jobs.EffectNotAttempted}) ||
 			item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 			t.Fatalf("unchanged Copy misrepresented an exact identity or outcome: %+v", item)

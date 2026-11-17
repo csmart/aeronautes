@@ -280,7 +280,7 @@ func (r *prefixSweep) member(ctx, background context.Context, m sweepMember) {
 		return
 	}
 	observation := memberOutcome(r.session.DeleteName(background, m.container, m.name))
-	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, m.key(), observation, nil, nil); recErr != nil {
+	if recErr := r.s.jobs.RecordDeletion(background, r.jobID, m.key(), observation); recErr != nil {
 		r.latch(fmt.Sprintf("the outcome of %q could not be recorded after its request, so it is unresolved and no later member was issued: %v", m.name, recErr))
 		return
 	}
@@ -305,7 +305,7 @@ func (r *prefixSweep) notAttempted(ctx context.Context, m sweepMember) {
 	if r.lostReason() != "" {
 		return
 	}
-	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, m.key(), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+	if err := r.s.jobs.RecordDeletion(ctx, r.jobID, m.key(), jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}); err != nil {
 		applog.Errorf("job %s: member %q not attempted but unrecorded: %v", r.jobID, m.name, err)
 	}
 }

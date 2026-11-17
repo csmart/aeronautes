@@ -741,7 +741,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	if item.Key != "hold/first.bin" || item.JobID != first || !item.Planned || !item.Admitted || item.ListedBytes != 10 ||
 		item.Source != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: src, Object: "hold/first.bin"}) ||
 		item.Destination != (jobs.ItemLocation{Kind: jobs.ItemLocal, LocalPath: filepath.Join(root, "first.bin")}) ||
-		item.Staging != nil || item.Execution == nil {
+		item.Execution == nil {
 		t.Fatalf("running download lost its exact item identity: %+v", item)
 	}
 	if stoppedBeside {

@@ -107,11 +107,6 @@ func (s *Store) AdmitItems(ctx context.Context, jobID string, items []ItemIntent
 }
 
 func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) (int64, error) {
-	if item.PublicationRequired {
-		if err := publicationJob(ctx, tx, jobID); err != nil {
-			return 0, err
-		}
-	}
 	source, err := json.Marshal(item.Source)
 	if err != nil {
 		return 0, err
@@ -120,20 +115,12 @@ func insertItem(ctx context.Context, tx *sql.Tx, jobID string, item ItemIntent) 
 	if err != nil {
 		return 0, err
 	}
-	var staging any
-	if item.Staging != nil {
-		encoded, err := json.Marshal(item.Staging)
-		if err != nil {
-			return 0, err
-		}
-		staging = string(encoded)
-	}
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO job_items (job_id, item_key, source_json, destination_json, staging_json,
-			planned, admitted, listed_bytes, listed_etag, listed_slo, publication_required, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		jobID, item.Key, string(source), string(destination), staging, item.Planned, item.Admitted,
-		item.ListedBytes, item.ListedETag, item.ListedSLO, item.PublicationRequired, time.Now().UTC().Format(time.RFC3339Nano))
+		INSERT INTO job_items (job_id, item_key, source_json, destination_json,
+			planned, admitted, listed_bytes, listed_etag, listed_slo, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		jobID, item.Key, string(source), string(destination), item.Planned, item.Admitted,
+		item.ListedBytes, item.ListedETag, item.ListedSLO, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -186,8 +173,7 @@ func (s *Store) RecordComparison(ctx context.Context, jobID string, identity Ite
 }
 
 // transferItemJob admits a write that belongs to the transfer phases: a
-// deletion member records its one outcome through RecordDeletion, so the
-// successor it observed is saved in the same transaction.
+// deletion member records its one outcome through RecordDeletion.
 func transferItemJob(ctx context.Context, tx *sql.Tx, jobID string) error {
 	kind, err := itemJobType(ctx, tx, jobID, true)
 	if err != nil {
@@ -274,25 +260,18 @@ func appendObservation(ctx context.Context, tx *sql.Tx, item ItemRecord, phase s
 	return err
 }
 
-const selectItem = `SELECT id, job_id, item_key, source_json, destination_json, staging_json,
-	planned, admitted, listed_bytes, listed_etag, listed_slo, publication_required, created_at, issued_at,
-	baseline_class, baseline_length, baseline_etag FROM job_items`
+// The staging, publication and baseline columns an earlier build wrote are
+// not read: they belonged to the staged model (ADR 0122 decision 13).
+const selectItem = `SELECT id, job_id, item_key, source_json, destination_json,
+	planned, admitted, listed_bytes, listed_etag, listed_slo, created_at, issued_at FROM job_items`
 
 func scanItem(scan func(...any) error) (ItemRecord, error) {
 	var item ItemRecord
 	var source, destination, created string
-	var staging, issued sql.NullString
-	var baseline MemberBaseline
-	if err := scan(&item.ID, &item.JobID, &item.Key, &source, &destination, &staging,
-		&item.Planned, &item.Admitted, &item.ListedBytes, &item.ListedETag, &item.ListedSLO, &item.PublicationRequired, &created, &issued,
-		&baseline.Class, &baseline.Length, &baseline.ETag); err != nil {
+	var issued sql.NullString
+	if err := scan(&item.ID, &item.JobID, &item.Key, &source, &destination,
+		&item.Planned, &item.Admitted, &item.ListedBytes, &item.ListedETag, &item.ListedSLO, &created, &issued); err != nil {
 		return ItemRecord{}, err
-	}
-	if baseline.Class != "" {
-		if !baseline.valid() {
-			return ItemRecord{}, ErrInvalidItemRecord
-		}
-		item.Baseline = &baseline
 	}
 	if issued.Valid {
 		at, err := time.Parse(time.RFC3339Nano, issued.String)
@@ -306,12 +285,6 @@ func scanItem(scan func(...any) error) (ItemRecord, error) {
 	}
 	if err := decodeLocation(destination, &item.Destination); err != nil {
 		return ItemRecord{}, err
-	}
-	if staging.Valid {
-		item.Staging = new(ItemLocation)
-		if err := decodeLocation(staging.String, item.Staging); err != nil {
-			return ItemRecord{}, err
-		}
 	}
 	var err error
 	item.CreatedAt, err = time.Parse(time.RFC3339Nano, created)

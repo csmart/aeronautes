@@ -126,7 +126,7 @@ func (j *segmentJob) run(ctx context.Context) {
 func (j *segmentJob) settleNotAttempted(ctx context.Context, keys []string) bool {
 	for _, key := range keys {
 		if err := j.s.jobs.RecordDeletion(ctx, j.jobID, key,
-			jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+			jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}); err != nil {
 			j.lost(ctx, fmt.Sprintf("a not-attempted member could not be recorded: %v", err))
 			return false
 		}
@@ -192,7 +192,7 @@ func (j *segmentJob) deleteSegments(ctx, background context.Context) (bool, erro
 		}
 		if ctx.Err() != nil {
 			if err := j.s.jobs.RecordDeletion(background, j.jobID, key,
-				jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}, nil, nil); err != nil {
+				jobs.ItemObservation{Result: jobs.ItemNotAttempted, Effect: jobs.EffectNotAttempted}); err != nil {
 				applog.Errorf("job %s: segment %q not attempted but unrecorded: %v", j.jobID, key, err)
 				return true, nil
 			}
@@ -203,7 +203,7 @@ func (j *segmentJob) deleteSegments(ctx, background context.Context) (bool, erro
 			return false, nil
 		}
 		observation := memberOutcome(j.session.DeleteName(background, entry.Container, entry.Object))
-		if recErr := j.s.jobs.RecordDeletion(background, j.jobID, key, observation, nil, nil); recErr != nil {
+		if recErr := j.s.jobs.RecordDeletion(background, j.jobID, key, observation); recErr != nil {
 			// Boundary two: a later write failed after the manifest's deleted
 			// outcome committed. That record stands; the job is unavailable.
 			j.lost(background, fmt.Sprintf("a segment's outcome could not be recorded after its request: %v", recErr))

@@ -74,7 +74,7 @@ func copySegmentPathRecordRefusal(t *testing.T, h *Harness) {
 	}
 	for i, key := range []string{"a", "b"} {
 		item := saved.Items[i]
-		if item.Key != key || !item.Admitted || item.Source.Object != "scope/"+key || item.Destination.Object != "scope/"+key || item.Staging != nil ||
+		if item.Key != key || !item.Admitted || item.Source.Object != "scope/"+key || item.Destination.Object != "scope/"+key ||
 			item.Execution == nil || item.Execution.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemCopied, Effect: jobs.EffectReportedApplied, CopiedBytes: int64(len(body))}) ||
 			item.Verification == nil || item.Verification.ItemObservation != (jobs.ItemObservation{Result: jobs.ItemVerified, Effect: jobs.EffectNotAttempted}) {
 			t.Fatalf("an object the engine reported writing was not recorded as written: %+v", item)

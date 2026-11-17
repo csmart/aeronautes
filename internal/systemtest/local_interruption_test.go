@@ -322,9 +322,6 @@ func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode 
 			item.Destination != (jobs.ItemLocation{Kind: jobs.ItemSwift, BookmarkID: h.Primary.BookmarkID, Container: container, Object: key}) || item.Execution == nil {
 			t.Fatalf("interruption changed original upload identity: %+v", item)
 		}
-		if item.Staging != nil {
-			t.Fatalf("an upload recorded a stage name: %+v", item)
-		}
 		failure := i == 0 && strings.HasPrefix(mode, "failure") || i == 1 && mode != "complete_control"
 		if failure {
 			wantFailure := jobs.ItemObservation{Result: jobs.ItemFailed, Effect: jobs.EffectNotAttempted,
