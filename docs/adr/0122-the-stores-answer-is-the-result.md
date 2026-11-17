@@ -209,7 +209,7 @@ The operator ran rclone alone against the same store and saw what it does: each 
     **Kept, on purpose:**
     - Each transfer item's second record, against the expectation in decision 7. It now states the answer taken, at no request to the store; the job's item totals, a re-run's refusal of a job with unverified items and the jobs drawer read it; and a download's check of a folder it made is a real second answer. Removing it would change what those readers say about every job for no operator-visible gain.
     - The stage names `staging` and `placement` in the allowlist of an item's stage, so a row an earlier build wrote still reads.
-    - The application's own read of an object's whole content, which the service journeys use as an independent read; its comment is corrected.
+    - The application's own read of an object's whole content, which the service journeys use as an independent read, and its literal read of an object's headers, which a deletion test uses the same way; their comments are corrected.
     **The design document** (`docs/DESIGN.md`) is rewritten where it describes staging, commit, the fixed point, stamps or verifying reads as current behaviour, to describe what ADR 0122 does instead, and the engine document's staged rows and `copyto` section go. Dated audit and experiment records are history and are not edited.
 
 ## What this gives up

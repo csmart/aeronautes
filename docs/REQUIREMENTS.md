@@ -9,8 +9,7 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 - Phase gates (`DESIGN.md` §60) should list the requirement IDs they verify.
 - IDs are prefixed `K-` and are **stable**. The prefix is historical (the former working name); do not rename them to match Aeronautes.
 - [ADR 0122](adr/0122-the-stores-answer-is-the-result.md) (16 November 2026) replaces staging, the comparison before a write and the read after it, step by step.
-  K-XFER-008, K-XFER-014, K-SEG-005 and K-CON-001 are rewritten for the steps carried out so far: deletions, uploads, copies and downloads.
-  Another entry that still speaks of a stage or a staged object is history until that record's last step rewrites it.
+  K-XFER-002, K-XFER-007, K-XFER-008, K-XFER-014, K-SEG-005 and K-CON-001 are rewritten for it, and its last step removed what only the staged model used (decision 13).
 
 ## Security & secrets
 
@@ -29,7 +28,7 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
 
 - **K-XFER-001** — A pre-authenticated rclone job whose token expires MUST be handled as
   child-failure → Aeronautes reauth → reconcile → **new** child, never by injecting the durable key. (§26.2, ADR 0009)
-- **K-XFER-002** — After a hard interruption, Aeronautes MUST NOT automatically delete destination staging or segment objects.
+- **K-XFER-002** — After a hard interruption, Aeronautes MUST NOT automatically delete destination segment objects.
   Recovery MUST retain the data and records and surface remote residue as unverified; a confirmed generated prefix does not authorise reclamation. (§26.4, ADR 0020)
 - **K-XFER-003** — Graceful cancellation MUST let rclone clean its own segments; Aeronautes MUST NOT set
   `--swift-leave-parts-on-error`. (§26.4)
@@ -40,7 +39,7 @@ gates can reference stable IDs instead of re-reading ~11k words of prose.
   cross-remote copy is client-side (hairpins through the workstation) and MUST be labelled as such. (§28.5, ADR 0008)
 - **K-XFER-006** — Aeronautes MUST NOT expose a free-form arbitrary-rclone-argument textbox in normal or
   expert UI. (§44, §44.1)
-- **K-XFER-007** — rclone-executed large-object uploads stage DLOs (`X-Object-Manifest`); a native
+- **K-XFER-007** — rclone-executed large-object uploads write DLOs (`X-Object-Manifest`); a native
   SLO composer is in scope only to publish a segmented upload as a static large object over the
   engine's own segments, and is the default, with a dynamic object chosen per bookmark or job.
   (§25, §62, ADR 0111)
