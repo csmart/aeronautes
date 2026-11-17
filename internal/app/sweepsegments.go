@@ -147,8 +147,8 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 
 // claimSegmentContainer claims, for the rest of the job, a container in which
 // this job sweeps dynamic large objects' namespaces, so that no transfer
-// stages there while it does and none is staging there now (ADR 0105 decision
-// 3). The claim is the whole container, taken once, and not one per
+// writes there while it does and none is writing there now (ADR 0105
+// decision 3). The claim is the whole container, taken once, and not one per
 // namespace: a job holds its claims until it ends, and a scope may hold any
 // number of dynamic large objects. It is called only on the goroutine that
 // reads the listing.
