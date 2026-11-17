@@ -35,6 +35,13 @@ function button(label: string, root: ParentNode = document): HTMLButtonElement {
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
+function arm(root: ParentNode, words = "delete empty-object") {
+  const input = root.querySelector<HTMLInputElement>(".confirm input");
+  if (!input) throw new Error("no confirmation field");
+  input.value = words;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
 const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["tx"], objectAfter: null, containerAfter: null, accountAfter: null };
 
 async function state(name = "empty-object") {
@@ -84,9 +91,14 @@ describe("the object delete dialog", () => {
     const f = await dialog();
     expect((f.root.textContent ?? "").replace(/\s+/g, " ")).toContain("if something else has written to it since you looked, that is what goes");
     f.fake.deleteObject = vi.fn(async () => applied);
-    click(button("Delete object", f.root));
+    const confirm = button("Delete object", f.root);
+    expect(confirm.disabled).toBe(true);
+    arm(f.root, "empty-object");
+    expect(confirm.disabled).toBe(true);
+    arm(f.root);
+    click(confirm);
     await settle();
-    expect(f.fake.deleteObject).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "empty-object");
+    expect(f.fake.deleteObject).toHaveBeenCalledExactlyOnceWith(f.detail.scope, "fixtures", "empty-object", "delete empty-object");
     expect(f.done).toHaveBeenCalledOnce();
   });
 
@@ -104,6 +116,7 @@ describe("the object delete dialog", () => {
     f.fake.deleteObject = vi.fn(async () => {
       throw new Error("object delete refused by the store with HTTP 403; nothing was deleted");
     });
+    arm(f.root);
     click(button("Delete object", f.root));
     await settle();
     expect(f.root.textContent).toContain("refused by the store with HTTP 403; nothing was deleted");
@@ -122,6 +135,7 @@ describe("the object delete dialog", () => {
     flushSync(); await settle();
     expect(f.root.textContent).toContain("Checking how this container keeps versions");
     const confirm = button("Delete object", f.root);
+    arm(f.root);
     expect(confirm.disabled).toBe(true);
     click(confirm);
     await settle();
@@ -206,6 +220,7 @@ describe("the Delete key", () => {
     const { realDeleteObject } = await screen(["Object deletion"]);
     api.deleteObject = vi.fn(realDeleteObject);
     const dialog = document.querySelector<HTMLElement>('[aria-label="Delete object"]')!;
+    arm(dialog);
     click(button("Delete object", dialog));
     await settle();
     expect(api.deleteObject).toHaveBeenCalledOnce();
@@ -218,6 +233,7 @@ describe("the operation's lifetime", () => {
   it("closes a refused operation when a background refresh clears its selection", async () => {
     const f = await dialog();
     f.fake.deleteObject = vi.fn(async () => { throw new Error("identity changed; delete refused"); });
+    arm(f.root);
     click(button("Delete object", f.root));
     await settle();
     expect(f.root.textContent).toContain("identity changed; delete refused");

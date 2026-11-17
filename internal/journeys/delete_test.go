@@ -49,7 +49,7 @@ func deleteJourney(w *world, a *account, round int) {
 	if _, err := w.inspector.Object(w.ctx, a.bookmarkID, c, "a.txt"); err != nil {
 		t.Fatalf("inspect: %s", failure(err))
 	}
-	result, err := w.mutate.DeleteObject(w.ctx, scope, c, "a.txt")
+	result, err := w.mutate.DeleteObject(w.ctx, scope, c, "a.txt", "delete a.txt")
 	if err != nil || result.Outcome != "applied" {
 		t.Fatalf("delete one object: %s outcome %v", failure(err), result.Outcome)
 	}
@@ -57,7 +57,7 @@ func deleteJourney(w *world, a *account, round int) {
 
 	// A selection of two, as the working list's Delete does.
 	rows := w.rows(a, c, "", "b.txt", "c.txt")
-	id, err := w.delete.StartSelectedDelete(w.ctx, app.SelectedDeleteRequestDTO{Scope: scope, Container: c, Members: rows, Confirm: strconv.Itoa(len(rows))})
+	id, err := w.delete.StartSelectedDelete(w.ctx, app.SelectedDeleteRequestDTO{Scope: scope, Container: c, Members: rows, Confirm: "delete " + strconv.Itoa(len(rows))})
 	if err != nil {
 		t.Fatalf("delete the selection: %s", failure(err))
 	}
@@ -65,7 +65,7 @@ func deleteJourney(w *world, a *account, round int) {
 	w.remaining(a, c, "keep.txt", "scope/x.txt", "scope/y.txt")
 
 	// A prefix.
-	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: c + "/scope/"})
+	id, err = w.delete.StartDelete(w.ctx, app.DeleteRequestDTO{BookmarkID: a.bookmarkID, Container: c, Prefix: "scope/", Mode: app.ModePrefix, Confirm: "delete " + c + "/scope/"})
 	if err != nil {
 		t.Fatalf("delete the prefix: %s", failure(err))
 	}

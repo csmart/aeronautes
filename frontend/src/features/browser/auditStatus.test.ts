@@ -482,7 +482,7 @@ const mutationCases = [
   {
     method: "deleteMarker", operation: "marker.delete", returnsResult: true,
     prefix: "", selected: "folder-marker/",
-    run: (browser: BrowserState) => browser.deleteMarker("folder-marker/"),
+    run: (browser: BrowserState) => browser.deleteMarker("folder-marker/", "delete folder-marker/"),
   },
   {
     method: "deleteManifest", operation: "manifest.delete", returnsResult: true,

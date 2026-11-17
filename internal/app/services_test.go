@@ -588,7 +588,7 @@ func TestMarkerServiceWithAudit(t *testing.T) {
 	if !created.MarkerBacked {
 		t.Errorf("created = %+v", created)
 	}
-	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "newdir/"); err != nil {
+	if _, err := h.mutate.DeleteMarker(ctx, h.portrait(), "fixtures", "newdir/", "delete newdir/"); err != nil {
 		t.Fatal(err)
 	}
 

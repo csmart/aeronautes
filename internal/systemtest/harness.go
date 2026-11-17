@@ -532,13 +532,13 @@ func (h *Harness) UpdateObjectMetadata(ctx context.Context, container, name, bas
 
 // DeleteObject deletes one object by its name (ADR 0122 decision 6).
 func (h *Harness) DeleteObject(ctx context.Context, container, name string) *Receipt {
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), container, name)
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), container, name, "delete "+name)
 	return &Receipt{h: h, action: "MutateService.DeleteObject", outcome: result.Outcome, err: err}
 }
 
 // DeleteMarker deletes one directory marker, the prefix's own object.
 func (h *Harness) DeleteMarker(ctx context.Context, container, prefix string) *Receipt {
-	result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), container, prefix)
+	result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), container, prefix, "delete "+prefix)
 	return &Receipt{h: h, action: "MutateService.DeleteMarker", outcome: result.Outcome, err: err}
 }
 

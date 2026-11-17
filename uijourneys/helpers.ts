@@ -160,6 +160,8 @@ export async function armDelete(page: Page, action: string, segments: "ticked" |
   } else {
     await expect(option).toHaveCount(0);
   }
+  // Every deletion is typed with its verb; emptying keeps its own.
+  await expect(confirm).toHaveAttribute("placeholder", action === "Empty container" ? /^empty / : /^delete /);
   await confirm.fill((await confirm.getAttribute("placeholder"))!);
   await dialog.getByRole("button", { name: action }).click();
 }

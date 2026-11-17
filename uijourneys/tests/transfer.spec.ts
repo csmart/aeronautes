@@ -171,7 +171,9 @@ test.describe.serial("transfer", () => {
     await openFolder(page, folder);
     await objectRow(page, "file00.bin").click();
     await inspector(page).getByRole("button", { name: "Delete object…" }).click();
-    await page.getByRole("alertdialog", { name: "Delete object" }).getByRole("button", { name: "Delete object" }).click();
+    const objectDialog = page.getByRole("alertdialog", { name: "Delete object" });
+    await objectDialog.getByLabel(/to confirm/).fill("delete file00.bin");
+    await objectDialog.getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
 
     // The folder still holds the segmented file. The option that deletes its

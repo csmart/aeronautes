@@ -46,11 +46,11 @@ func testObjectDeleteEmptyName(t *testing.T, h *Harness) {
 	}
 	// The three shown-object deletions share one service path, and each is
 	// refused the same way (ADR 0094 decision 1).
-	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "")
+	result, err := h.Mutate.DeleteObject(ctx, h.ActiveScope(ctx), c, "", "delete ")
 	if err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty object name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
-	if result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, ""); err == nil || result.Outcome == "applied" {
+	if result, err := h.Mutate.DeleteMarker(ctx, h.ActiveScope(ctx), c, "", "delete "); err == nil || result.Outcome == "applied" {
 		t.Fatalf("an empty marker name was not refused: outcome %q, err %v", result.Outcome, err)
 	}
 	if result, err := h.Mutate.DeleteManifest(ctx, h.ActiveScope(ctx), c, ""); err == nil || result.Outcome == "applied" {

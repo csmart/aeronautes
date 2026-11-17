@@ -376,7 +376,7 @@ describe("mutation follow-up ownership", () => {
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } })
-      : f.browser.deleteMarker("folder-marker/");
+      : f.browser.deleteMarker("folder-marker/", "delete folder-marker/");
     await changeView(f.browser, "selection");
     const selected = f.browser.detailIdentity;
     gate.resolve(); const result = await pending; await settle();
@@ -398,7 +398,7 @@ describe("mutation follow-up ownership", () => {
     const pending = kind === "create" ? f.browser.createContainer({ name: "created", policy: "", meta: {} }, f.browser.portrait)
       : kind === "manifest" ? f.browser.deleteManifest("fixtures", "external-dlo", f.browser.objectDetail!)
       : kind === "segments" ? f.browser.deleteManifestWithSegments({ bookmarkId: f.bookmark.id, container: "fixtures", name: "external-dlo", force: true, confirm: "external-dlo", reviewed: { class: "dlo", fingerprint: "dlo:0:etag", length: 0, etag: "" } })
-      : f.browser.deleteMarker("folder-marker/");
+      : f.browser.deleteMarker("folder-marker/", "delete folder-marker/");
     await settle(); expect(f.api.auditRecent).toHaveBeenCalledOnce();
     await changeView(f.browser, "bookmark return");
     gate.resolve([]); await pending; await settle();

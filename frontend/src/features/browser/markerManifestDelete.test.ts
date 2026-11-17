@@ -37,6 +37,13 @@ function button(label: string, root: ParentNode = document): HTMLButtonElement {
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
+function arm(root: ParentNode, words = "delete folder-marker/") {
+  const input = root.querySelector<HTMLInputElement>(".confirm input");
+  if (!input) throw new Error("no confirmation field");
+  input.value = words;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
 const applied: MutationResultDTO = { outcome: "applied", mismatch: "", limitation: "", transIds: ["tx", "tx2"], objectAfter: null, containerAfter: null, accountAfter: null };
 
 async function state(name: string) {
@@ -102,9 +109,12 @@ describe("the marker delete dialog", () => {
     // The request names the scope the prefix detail was read under and the
     // prefix; the view moves on after the success.
     const scope = f.browser.prefixDetail!.scope;
+    arm(f.root, "folder-marker/");
+    expect(button("Delete marker", f.root).disabled).toBe(true);
+    arm(f.root);
     click(button("Delete marker", f.root));
     await settle();
-    expect(f.fake.deleteMarker).toHaveBeenCalledExactlyOnceWith(scope, "fixtures", "folder-marker/");
+    expect(f.fake.deleteMarker).toHaveBeenCalledExactlyOnceWith(scope, "fixtures", "folder-marker/", "delete folder-marker/");
     expect(f.done).toHaveBeenCalledOnce();
   });
 
@@ -118,6 +128,7 @@ describe("the marker delete dialog", () => {
     mounted.add(component);
     flushSync(); await settle();
     const confirm = button("Delete marker", f.root);
+    arm(f.root);
     expect(confirm.disabled).toBe(true);
     click(confirm); await settle();
     expect(f.fake.deleteMarker).not.toHaveBeenCalled();
@@ -133,6 +144,7 @@ describe("the marker delete dialog", () => {
     f.fake.deleteMarker = vi.fn(async () => {
       throw new Error("marker delete refused by the store with HTTP 403; nothing was deleted");
     });
+    arm(f.root);
     click(button("Delete marker", f.root)); await settle();
     expect(f.root.textContent).toContain("refused by the store with HTTP 403; nothing was deleted");
     expect(f.done).not.toHaveBeenCalled();

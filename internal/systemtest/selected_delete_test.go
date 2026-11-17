@@ -44,7 +44,7 @@ func listedRows(t *testing.T, h *Harness, container string, names ...string) []a
 }
 
 func selectedRequest(h *Harness, container string, rows []app.ListingRowDTO) app.SelectedDeleteRequestDTO {
-	return app.SelectedDeleteRequestDTO{Scope: h.ActiveScope(context.Background()), Container: container, Members: rows, Confirm: strconv.Itoa(len(rows))}
+	return app.SelectedDeleteRequestDTO{Scope: h.ActiveScope(context.Background()), Container: container, Members: rows, Confirm: "delete " + strconv.Itoa(len(rows))}
 }
 
 // testSelectedDelete produces the selected-set deletion's happy and refusal
@@ -241,7 +241,7 @@ func testSelectedDeleteCancel(t *testing.T, h *Harness, c string, ready chan str
 	t.Helper()
 	ctx := context.Background()
 	rows := listedRows(t, h, c, "a.txt", "b.txt")
-	rec := h.StartSelectedDelete(ctx, app.SelectedDeleteRequestDTO{Scope: h.ActiveScope(ctx), Container: c, Members: rows, Confirm: "2"})
+	rec := h.StartSelectedDelete(ctx, app.SelectedDeleteRequestDTO{Scope: h.ActiveScope(ctx), Container: c, Members: rows, Confirm: "delete 2"})
 	if rec.Err() != nil {
 		t.Fatal(rec.Err())
 	}

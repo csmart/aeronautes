@@ -30,11 +30,15 @@ type shownDeletion struct {
 	operation string
 	noun      string
 	residue   error
+	// typed is whether the operator confirms this deletion by typing
+	// "delete " and the name (ADR 0093 decision 9). The manifest deletion
+	// is confirmed by its own force in Backstage instead.
+	typed bool
 }
 
 var (
-	objectDeletion   = shownDeletion{action: "MutateService.DeleteObject", operation: "object.delete", noun: "object", residue: errObjectDeleteResidue}
-	markerDeletion   = shownDeletion{action: "MutateService.DeleteMarker", operation: "marker.delete", noun: "marker", residue: errMarkerDeleteResidue}
+	objectDeletion   = shownDeletion{action: "MutateService.DeleteObject", operation: "object.delete", noun: "object", residue: errObjectDeleteResidue, typed: true}
+	markerDeletion   = shownDeletion{action: "MutateService.DeleteMarker", operation: "marker.delete", noun: "marker", residue: errMarkerDeleteResidue, typed: true}
 	manifestDeletion = shownDeletion{action: "MutateService.DeleteManifest", operation: "manifest.delete", noun: "manifest", residue: errManifestDeleteResidue}
 )
 
@@ -42,27 +46,32 @@ var (
 // the inspector's detail was read under (ADR 0079), records its intent
 // before the store is asked and its outcome with the audit event in one
 // transaction (ADR 0058), and reports the store's answer: nothing is read
-// before the DELETE or after it (ADR 0122 decision 6).
-func (s *MutateService) DeleteObject(ctx context.Context, scope ListingScopeDTO, container, name string) (MutationResultDTO, error) {
-	return s.deleteShown(ctx, objectDeletion, scope, container, name)
+// before the DELETE or after it (ADR 0122 decision 6). confirm is what the
+// operator typed, which must be "delete " and the name.
+func (s *MutateService) DeleteObject(ctx context.Context, scope ListingScopeDTO, container, name, confirm string) (MutationResultDTO, error) {
+	return s.deleteShown(ctx, objectDeletion, scope, container, name, confirm)
 }
 
 // DeleteMarker deletes ONE directory marker, the zero-byte object at a
 // prefix's own name. The objects under the prefix are never read or touched.
-func (s *MutateService) DeleteMarker(ctx context.Context, scope ListingScopeDTO, container, prefix string) (MutationResultDTO, error) {
-	return s.deleteShown(ctx, markerDeletion, scope, container, prefix)
+// confirm must be "delete " and the marker's name.
+func (s *MutateService) DeleteMarker(ctx context.Context, scope ListingScopeDTO, container, prefix, confirm string) (MutationResultDTO, error) {
+	return s.deleteShown(ctx, markerDeletion, scope, container, prefix, confirm)
 }
 
 // DeleteManifest deletes ONE dynamic or static large-object manifest,
 // manifest-only: the DELETE is the plain one, so every segment stays (§60
 // Phase 4).
 func (s *MutateService) DeleteManifest(ctx context.Context, scope ListingScopeDTO, container, name string) (MutationResultDTO, error) {
-	return s.deleteShown(ctx, manifestDeletion, scope, container, name)
+	return s.deleteShown(ctx, manifestDeletion, scope, container, name, "")
 }
 
-func (s *MutateService) deleteShown(ctx context.Context, what shownDeletion, scope ListingScopeDTO, container, name string) (MutationResultDTO, error) {
+func (s *MutateService) deleteShown(ctx context.Context, what shownDeletion, scope ListingScopeDTO, container, name, confirm string) (MutationResultDTO, error) {
 	if err := refuseIfDeferred(what.action); err != nil {
 		return MutationResultDTO{}, err
+	}
+	if want := "delete " + name; what.typed && confirm != want {
+		return MutationResultDTO{}, fmt.Errorf("confirmation %q does not match %q; type it exactly", confirm, want)
 	}
 	if container == "" || name == "" {
 		// Refused before the writer gate, the scope and any intent: an empty

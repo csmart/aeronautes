@@ -15,7 +15,7 @@ import (
 // SelectedDeleteRequestDTO starts the deletion of the selected objects as one
 // job (ADR 0093 decision 2): the scope the view was built under, the
 // container, the member rows as the working list carries them, and the
-// typed confirmation, which is the number of members.
+// typed confirmation, which is "delete " and the number of members.
 type SelectedDeleteRequestDTO struct {
 	Scope     ListingScopeDTO `json:"scope"`
 	Container string          `json:"container"`
@@ -80,8 +80,8 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 		}
 		seen[member.Name] = true
 	}
-	if req.Confirm != strconv.Itoa(len(req.Members)) {
-		return "", fmt.Errorf("confirmation %q does not match the number of members, %d; type it exactly", req.Confirm, len(req.Members))
+	if want := "delete " + strconv.Itoa(len(req.Members)); req.Confirm != want {
+		return "", fmt.Errorf("confirmation %q does not match %q, the word delete and the number of members; type it exactly", req.Confirm, want)
 	}
 	entry, bookmarkID, _, err := s.connections.boundSnapshot(ctx, req.Scope)
 	if err != nil {

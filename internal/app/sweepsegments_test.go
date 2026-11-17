@@ -147,8 +147,8 @@ func TestSweepWithSegmentsIsArmedByItsOwnWords(t *testing.T) {
 	ctx := context.Background()
 	putSLO(h, "media", "scope/big.slo", "media_segments", "scope/big.slo/0001=0123456789")
 	for name, req := range map[string]DeleteRequestDTO{
-		"the plain words with the option": {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Segments: true, Confirm: "media/scope/"},
-		"the option's words without it":   {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/ and segments"},
+		"the plain words with the option": {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Segments: true, Confirm: "delete media/scope/"},
+		"the option's words without it":   {BookmarkID: bookmark, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "delete media/scope/ and segments"},
 		"a container with the option":     {BookmarkID: bookmark, Container: "media", Mode: ModeDeleteContainer, Segments: true, Confirm: "delete media"},
 		// ADR 0121 decision 3 holds with the option too: the bare name starts
 		// neither container job, the words that empty a container never delete

@@ -63,7 +63,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 		service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
 		start = func() (string, error) {
 			return service.StartDelete(t.Context(), DeleteRequestDTO{
-				BookmarkID: source, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "media/scope/",
+				BookmarkID: source, Container: "media", Prefix: "scope/", Mode: ModePrefix, Confirm: "delete media/scope/",
 			})
 		}
 	case "benchmark":

@@ -2,7 +2,8 @@
   directory marker (ADR 0094 decision 5): it binds the exact name it opened
   for, and says what the delete does to the content at this name under the
   container's versioning mode. The store's answer to the DELETE is the result
-  (ADR 0122 decision 6). -->
+  (ADR 0122 decision 6). It is armed by typing "delete" and the name (ADR
+  0093 decision 9). -->
 <script lang="ts">
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount, untrack } from "svelte";
@@ -22,6 +23,8 @@
   // undefined while the container's facts are being read, null when they
   // cannot be read. Confirmation waits for either answer.
   let facts: ContainerSettingsDTO | null | undefined = $state(undefined);
+  let typed = $state("");
+  const words = `delete ${op.name}`;
 
   const pending = $derived(op.status === "pending");
   const current = $derived(browser.objectDeleteCurrent());
@@ -49,11 +52,11 @@
   // Confirmation waits for the versioning consequence to be known or
   // explicitly unknown, so the warning a versions location needs is on
   // screen before the request can leave.
-  const canConfirm = $derived(pending && facts !== undefined && current);
+  const canConfirm = $derived(pending && facts !== undefined && current && typed === words);
 
   async function confirm() {
     if (!canConfirm) return;
-    await browser.runObjectDelete();
+    await browser.runObjectDelete(typed);
     const settled = browser.objectDelete;
     if (settled === op && op.status === "done") onClose();
   }
@@ -85,6 +88,10 @@
         The name is deleted as it stands when the request arrives: if something else has written to it since
         you looked, that is what goes.
       </p>
+      <label class="confirm">
+        <span>Type <span class="type-mono">{words}</span> to confirm</span>
+        <input class="type-mono" bind:value={typed} placeholder={words} autocomplete="off" spellcheck="false" />
+      </label>
       {#if op.error}
         <p class="error callout danger" role="alert">{op.error}</p>
       {/if}
@@ -99,6 +106,21 @@
 </div>
 
 <style>
+  .confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+  }
+  .confirm input {
+    font: inherit;
+    font-size: var(--text-sm);
+    background: var(--color-bg-card);
+    color: var(--color-text);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-control);
+    padding: 2px var(--space-2);
+  }
   .scrim {
     position: fixed;
     inset: 0;

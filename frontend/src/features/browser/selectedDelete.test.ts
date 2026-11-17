@@ -11,7 +11,7 @@ import BrowserScreen from "./BrowserScreen.svelte";
 
 // ADR 0093 decisions 1 and 5: several loaded rows can be selected, the
 // inspector summarises them without a read, and the selected-set deletion is
-// one dialog around a snapshot, confirmed by the typed count, built from that
+// one dialog around a snapshot, confirmed by the word delete and the typed count, built from that
 // snapshot alone and ended without deleting when the view no longer matches.
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
@@ -290,17 +290,19 @@ describe("the selected-set dialog", () => {
     const start = vi.spyOn(f.fake, "startSelectedDelete");
     const confirm = button("Delete 2 objects", f.root);
     expect(confirm.disabled).toBe(true);
-    type(f.root, "3");
+    type(f.root, "delete 3");
+    expect(confirm.disabled).toBe(true);
+    type(f.root, "2");
     expect(confirm.disabled).toBe(true);
     click(confirm);
     await settle();
     expect(start).not.toHaveBeenCalled();
-    type(f.root, "2");
+    type(f.root, "delete 2");
     expect(confirm.disabled).toBe(false);
     click(confirm);
     await settle();
     expect(start).toHaveBeenCalledOnce();
-    expect(start.mock.calls[0][0]).toEqual({ scope: { bookmarkId: f.bookmark.id, generation: 1 }, container: "fixtures", members: f.snapshot, confirm: "2" });
+    expect(start.mock.calls[0][0]).toEqual({ scope: { bookmarkId: f.bookmark.id, generation: 1 }, container: "fixtures", members: f.snapshot, confirm: "delete 2" });
     expect(f.op.status).toBe("done");
     expect(f.op.jobId).toBe("job-1");
     expect(f.root.textContent).toContain("Deletion started");
@@ -354,7 +356,7 @@ describe("the selected-set dialog", () => {
     mounted.add(component);
     flushSync(); await settle();
     expect(f.root.textContent).toContain("Checking how this container keeps versions");
-    type(f.root, "2");
+    type(f.root, "delete 2");
     const confirm = button("Delete 2 objects", f.root);
     expect(confirm.disabled).toBe(true);
     click(confirm);
@@ -369,7 +371,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation without deleting when the view moves", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "2");
+    type(f.root, "delete 2");
     await f.browser.openContainer("slo-parts");
     await settle();
     expect(f.root.textContent).toContain("Nothing was deleted");
@@ -382,7 +384,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation when the selection changes to other names with the same count, for good", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "2");
+    type(f.root, "delete 2");
     f.browser.toggleRow(f.index("external-dlo"));
     f.browser.toggleRow(f.index("external-slo"));
     await settle();
@@ -401,7 +403,7 @@ describe("the selected-set dialog", () => {
   it("ends the confirmation when a refresh changes one member's listed entity tag with the same count", async () => {
     const f = await dialog(null);
     const start = vi.spyOn(f.fake, "startSelectedDelete");
-    type(f.root, "2");
+    type(f.root, "delete 2");
     const real = f.fake.objects;
     f.fake.objects = async (...args) => {
       const page = await real(...args);
@@ -418,7 +420,7 @@ describe("the selected-set dialog", () => {
   it("shows a refused start and stays open for another try", async () => {
     const f = await dialog(null);
     f.fake.startSelectedDelete = vi.fn(async () => { throw new Error("the members could not be recorded, so nothing was sent"); });
-    type(f.root, "2");
+    type(f.root, "delete 2");
     click(button("Delete 2 objects", f.root));
     await settle();
     expect(f.root.textContent).toContain("nothing was sent");

@@ -1561,7 +1561,7 @@ export interface SegmentsDeleteRequestDTO {
  * SelectedDeleteRequestDTO starts the deletion of the selected objects as one
  * job (ADR 0093 decision 2): the scope the view was built under, the
  * container, the member rows as the working list carries them, and the
- * typed confirmation, which is the number of members.
+ * typed confirmation, which is "delete " and the number of members.
  */
 export interface SelectedDeleteRequestDTO {
     "scope": ListingScopeDTO;
