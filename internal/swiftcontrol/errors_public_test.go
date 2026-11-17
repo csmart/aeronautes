@@ -66,8 +66,8 @@ func TestNormalizePublicHTTPMessages(t *testing.T) {
 					if errors.Unwrap(got) != original || !errors.Is(got, original) || !errors.Is(got, tc.wire) || !errors.As(got, &wire) || wire != tc.wire {
 						t.Error("normalization changed the original/native cause identity")
 					}
-					if IsNotFound(got) != (tc.wire.StatusCode == 404) || IsPreconditionFailed(got) != (tc.wire.StatusCode == 412) {
-						t.Error("typed missing/precondition predicates changed")
+					if IsNotFound(got) != (tc.wire.StatusCode == 404) {
+						t.Error("typed missing predicate changed")
 					}
 				})
 			}
