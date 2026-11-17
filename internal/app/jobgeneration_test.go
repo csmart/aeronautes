@@ -234,10 +234,6 @@ func (e *cancellationCleanupEngine) Copy(ctx context.Context, _, _ string, _ []s
 	return &rclone.Result{Cancelled: true}, nil
 }
 
-func (e *cancellationCleanupEngine) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	return e.Copy(ctx, src, dst, nil, onEvent)
-}
-
 func TestRunningJobKeepsGenerationsDuringCancellationCleanup(t *testing.T) {
 	h := newHarness(t)
 	h.connect(t)

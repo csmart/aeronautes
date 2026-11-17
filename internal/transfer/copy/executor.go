@@ -23,7 +23,6 @@ import (
 // "remote:container/prefix" specs; names are relative to the paths.
 type Engine interface {
 	Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error)
-	CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error)
 }
 
 // maxSinglePut is Swift's single-object limit: the application's own copy

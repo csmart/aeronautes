@@ -43,11 +43,10 @@ func TestCopyRepresentationFactoryPolicy(t *testing.T) {
 			want := rclone.Options{ChunkSize: "1Mi", Transfers: 7, Checkers: 9, TPSLimit: 11, BWLimit: "10M", BufferSize: DefaultBufferSize}
 			policy := want
 			if operation == "copy" {
-				// A copy's engine reads stored bytes as they are, writes each
-				// object at its name, keeps a replaced large object's old
-				// segments when it is told to, and leaves the size check off
-				// (ADR 0122 decision 4).
-				policy.NoGzipEncoding, policy.LiveDestination, policy.KeepReplacedSegments, policy.IgnoreSize = true, true, true, true
+				// A copy's engine reads stored bytes as they are, keeps a
+				// replaced large object's old segments when it is told to, and
+				// leaves the size check off (ADR 0122 decision 4).
+				policy.NoGzipEncoding, policy.KeepReplacedSegments, policy.IgnoreSize = true, true, true
 			}
 			if len(*seen) != 1 || (*seen)[0] != policy {
 				t.Errorf("engine policy = %+v; want %+v", *seen, policy)

@@ -9,7 +9,7 @@ import (
 )
 
 func TestCopyRepresentationOptionArgs(t *testing.T) {
-	for _, command := range []string{"copy", "copyto"} {
+	for _, command := range []string{"copy"} {
 		for _, enabled := range []bool{false, true} {
 			policy := "default"
 			if enabled {
@@ -33,15 +33,8 @@ done
 				if err != nil {
 					t.Fatal(err)
 				}
-				src, dst := "aeronautes_src:source", "aeronautes_dst:destination/.aeronautes/stage/job/batch"
-				var result *Result
-				if command == "copy" {
-					result, err = runner.Copy(t.Context(), remotes(), src, dst, []string{"a b", "photos/x.jpg"}, nil)
-				} else {
-					src += "/a b"
-					dst += "/renamed"
-					result, err = runner.CopyTo(t.Context(), remotes(), src, dst, nil)
-				}
+				src, dst := "aeronautes_src:source", "aeronautes_dst:destination/folder"
+				result, err := runner.Copy(t.Context(), remotes(), src, dst, []string{"a b", "photos/x.jpg"}, nil)
 				if err != nil || result == nil || result.ExitCode != 0 || result.Cancelled || result.LogStreamErr != "" {
 					t.Fatalf("child: result=%+v error=%v", result, err)
 				}
@@ -65,18 +58,9 @@ done
 						args[i+1] = "<private>"
 					}
 				}
-				want := []string{command}
-				if command == "copy" {
-					want = append(want, "--no-traverse")
-				}
-				want = append(want, "--ignore-times", "--use-json-log", "-vv", "--stats", "1s")
-				if command == "copy" {
-					want = append(want, "--files-from-raw", "<private>")
-					if got := read("list"); got != "a b\nphotos/x.jpg\n" {
-						t.Errorf("selected names = %q", got)
-					}
-				} else if _, err := os.Stat(filepath.Join(dumpDir(bin), "list")); !os.IsNotExist(err) {
-					t.Errorf("copyto gained a files list: %v", err)
+				want := []string{command, "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--files-from-raw", "<private>"}
+				if got := read("list"); got != "a b\nphotos/x.jpg\n" {
+					t.Errorf("selected names = %q", got)
 				}
 				want = append(want, "--config", "<private>", "--retries", "1", "--low-level-retries", "2",
 					"--swift-chunk-size", "1Mi", "--transfers", "7", "--checkers", "9", "--tpslimit", "11", "--bwlimit", "10M", "--buffer-size", "16Mi")

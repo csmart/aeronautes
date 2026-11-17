@@ -55,46 +55,17 @@ func checkPositionals(paths ...string) error {
 	return nil
 }
 
-// StageNamespace is the path every job stages under, beneath its destination
-// prefix: "<prefix>.aeronautes/stage/<job>/".
-const StageNamespace = ".aeronautes/stage/"
-
-// InStageNamespace reports whether an object name lies in a staging area: the
-// components ".aeronautes/stage/" at its start or after a "/". Such a name is,
-// or will be, some job's unpublished copy, so no transfer publishes there and
-// no deletion job sweeps an active one (ADR 0105 decision 3).
-func InStageNamespace(name string) bool {
-	return strings.HasPrefix(name, StageNamespace) || strings.Contains(name, "/"+StageNamespace)
-}
-
 // checkRemoteDest is the LAST boundary for a REMOTE destination (our fixed
-// remote names). A live destination is the names themselves: an upload and
-// a copy write each object at its name (ADR 0122 decisions 3 and 4). A
-// caller that does not say its destination is live must name one under an
-// .aeronautes staging namespace; no job does since the copy step, and the
-// rule goes with that record's removal step. Neither may hold a ".."
-// segment. A local filesystem destination (a download) is the held folder
-// the local route anchors the child to.
-func checkRemoteDest(dst string, live bool) error {
+// remote names): an upload and a copy write each object at its name (ADR
+// 0122 decisions 3 and 4), and no such name may hold a ".." segment. A local
+// filesystem destination (a download) is the held folder the local route
+// anchors the child to.
+func checkRemoteDest(dst string) error {
 	if !strings.HasPrefix(dst, "aeronautes_") {
 		return nil
 	}
 	_, path, _ := strings.Cut(dst, ":")
-	segments := strings.Split(path, "/")
-	// The staging marker must be a real path SEGMENT, not a substring of
-	// a live user name, and must not smuggle a "\.\." escape back out of
-	// the namespace (grok follow-up 3 P2).
-	staged := false
-	for i := 0; i+2 < len(segments); i++ {
-		if segments[i] == ".aeronautes" && segments[i+1] == "stage" && segments[i+2] != "" {
-			staged = true
-			break
-		}
-	}
-	if !live && !staged {
-		return fmt.Errorf("remote destination %q is a LIVE name: this rclone write goes through an .aeronautes/stage/<job>/ path segment and commits natively (§28.6, K-XFER-014)", dst)
-	}
-	for _, seg := range segments {
+	for _, seg := range strings.Split(path, "/") {
 		if seg == ".." {
 			return fmt.Errorf("remote destination %q contains a '..' segment; refused", dst)
 		}
@@ -147,11 +118,6 @@ type Options struct {
 	// NoGzipEncoding keeps stored representations opaque for Copy;
 	// other callers retain the child's default transport policy.
 	NoGzipEncoding bool
-	// LiveDestination says that Copy's remote destination is the names
-	// themselves, with no staging path: an upload and a copy write each
-	// object at its name (ADR 0122 decisions 3 and 4). It has no meaning
-	// for a local destination.
-	LiveDestination bool
 	// KeepReplacedSegments refuses every DELETE the child sends to its
 	// destination. The engine, writing over a large object, deletes that
 	// object's old segments, and it does so in a container with a versions
@@ -447,7 +413,7 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	if err := checkPositionals(src, dst); err != nil {
 		return nil, err
 	}
-	if err := checkRemoteDest(dst, r.opts.LiveDestination); err != nil {
+	if err := checkRemoteDest(dst); err != nil {
 		return nil, err
 	}
 	for _, name := range names {
@@ -463,7 +429,7 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	defer os.RemoveAll(workDir)
 
 	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst,
-		destinationRules{live: r.opts.LiveDestination, keepsObjects: r.opts.KeepReplacedSegments, setsTimes: r.opts.CompareExisting}, r.gatewayCapacity())
+		destinationRules{keepsObjects: r.opts.KeepReplacedSegments, setsTimes: r.opts.CompareExisting}, r.gatewayCapacity())
 	if err != nil {
 		return nil, err
 	}
@@ -508,47 +474,6 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 		inherited = []*os.File{anchor}
 	}
 	return r.run(ctx, args, env, onEvent, inherited)
-}
-
-// CopyTo runs `rclone copyto src dst` for ONE object under a different
-// destination name — the §28.6 staging write (the staged name is always
-// Aeronautes-generated and unique, so rclone's Update never runs against
-// a live name). Same hygiene surface as Copy.
-func (r *Runner) CopyTo(ctx context.Context, remotes []Remote, src, dst string, onEvent func(Event)) (*Result, error) {
-	if strings.ContainsAny(src+dst, "\n\r") {
-		return nil, fmt.Errorf("newline-bearing path cannot ride rclone argv; route it natively (§14.3)")
-	}
-	if err := checkPositionals(src, dst); err != nil {
-		return nil, err
-	}
-	if err := checkRemoteDest(dst, false); err != nil {
-		return nil, err
-	}
-	workDir, err := os.MkdirTemp("", "aeronautes-job-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(workDir)
-
-	localRemotes, closeGateways, err := startGateways(ctx, remotes, dst, destinationRules{exact: true}, r.gatewayCapacity())
-	if err != nil {
-		return nil, err
-	}
-	defer closeGateways()
-	configPath, env, err := buildEnvironment(workDir, localRemotes)
-	if err != nil {
-		return nil, err
-	}
-	args := []string{"copyto", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--config", configPath}
-	args = append(args, r.pacingArgs()...)
-	if r.opts.NoGzipEncoding {
-		args = append(args, "--no-gzip-encoding")
-	}
-	if r.opts.IgnoreSize {
-		args = append(args, "--ignore-size")
-	}
-	args = append(args, "--", src, dst)
-	return r.run(ctx, args, env, onEvent, nil)
 }
 
 func (r *Runner) gatewayCapacity() int {

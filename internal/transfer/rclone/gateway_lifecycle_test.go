@@ -38,7 +38,7 @@ func TestGatewaySetupFailureClosesEarlierListeners(t *testing.T) {
 			if failure == "mixed trust" {
 				pair[1].InsecureTLS = true
 			}
-			local, cleanup, err := startGatewaysWith(t.Context(), pair, "aeronautes_dst:owned/"+gatewayStage, destinationRules{}, 64, create)
+			local, cleanup, err := startGatewaysWith(t.Context(), pair, "aeronautes_dst:owned/"+gatewayFolder, destinationRules{}, 64, create)
 			if err == nil || local != nil || cleanup != nil || len(opened) == 0 {
 				t.Fatal("setup failure did not return an empty result")
 			}
@@ -67,7 +67,7 @@ func TestGatewayCancelDeadlineRevokesWithoutChildExit(t *testing.T) {
 	}))
 	defer upstream.Close()
 	remote := Remote{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}
-	local, closeAll, err := startGateways(ctx, []Remote{remote}, "/unused/download", destinationRules{exact: true}, 64)
+	local, closeAll, err := startGateways(ctx, []Remote{remote}, "/unused/download", destinationRules{}, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestGatewayCancelDeadlineRevokesWithoutChildExit(t *testing.T) {
 func TestRunnerAllowsCleanupDuringCancelGrace(t *testing.T) {
 	var deletes atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != "DELETE" || req.URL.Path != gatewayAccount+"/owned/"+gatewayStage+"/one" || req.Header.Get("X-Auth-Token") != "parent-token" {
+		if req.Method != "DELETE" || req.URL.Path != gatewayAccount+"/owned/"+gatewayFolder+"/one" || req.Header.Get("X-Auth-Token") != "parent-token" {
 			t.Error("unexpected cancellation cleanup request")
 			w.WriteHeader(403)
 			return
@@ -159,7 +159,7 @@ func TestRunnerAllowsCleanupDuringCancelGrace(t *testing.T) {
 	var result *Result
 	go func() {
 		defer close(done)
-		result, err = runner.CopyTo(ctx, []Remote{{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}}, "/unused/source", "aeronautes_dst:owned/"+gatewayStage+"/one", nil)
+		result, err = runner.Copy(ctx, []Remote{{Name: "aeronautes_dst", StorageURL: upstream.URL + gatewayAccount, Token: "parent-token"}}, "/unused/source", "aeronautes_dst:owned/"+gatewayFolder, []string{"one"}, nil)
 	}()
 	for {
 		if _, err := os.Stat(ready); err == nil {
@@ -194,7 +194,7 @@ func TestGatewayCleanupChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-interrupt
-	req, err := http.NewRequest("DELETE", endpoint+"/owned/"+gatewayStage+"/one", nil)
+	req, err := http.NewRequest("DELETE", endpoint+"/owned/"+gatewayFolder+"/one", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,19 +210,19 @@ func TestGatewayCleanupChild(t *testing.T) {
 }
 
 func TestRunnerClosesGatewaysAfterChildExit(t *testing.T) {
-	for _, method := range []string{"Copy", "CopyTo"} {
+	for _, direction := range []string{"to a store", "to a folder"} {
 		for _, exit := range []int{0, 7} {
-			t.Run(fmt.Sprintf("%s/exit%d", method, exit), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/exit%d", direction, exit), func(t *testing.T) {
 				bin := stub(t, PinnedVersion, fmt.Sprintf("exit %d", exit))
 				runner, err := NewRunner(Options{Binary: bin})
 				if err != nil {
 					t.Fatal(err)
 				}
 				var result *Result
-				if method == "Copy" {
-					result, err = runner.Copy(t.Context(), remotes(), "aeronautes_src:owned", "aeronautes_dst:owned/"+gatewayStage, []string{"one"}, nil)
+				if direction == "to a store" {
+					result, err = runner.Copy(t.Context(), remotes(), "aeronautes_src:owned", "aeronautes_dst:owned/"+gatewayFolder, []string{"one"}, nil)
 				} else {
-					result, err = runner.CopyTo(t.Context(), remotes(), "aeronautes_src:owned/one", filepath.Join(t.TempDir(), "download"), nil)
+					result, err = runner.Copy(t.Context(), remotes(), "aeronautes_src:owned", t.TempDir(), []string{"one"}, nil)
 				}
 				if err != nil || result == nil || result.ExitCode != exit {
 					t.Fatalf("child exit: result=%+v error=%v", result, err)

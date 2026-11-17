@@ -14,15 +14,13 @@ const (
 	maxGatewayBulkNames = 10000
 )
 
-// gatewayScope is where the child may write: one object when exact, or
-// everything under object in the container and in that container's segments
-// container. An empty object, which only a live destination may have, is the
-// whole container: an upload to a container's top writes each file at its
-// own name there (ADR 0122 decision 3).
+// gatewayScope is where the child may write: everything under object in the
+// container and in that container's segments container. An empty object is
+// the whole container: an upload to a container's top writes each file at
+// its own name there (ADR 0122 decision 3).
 type gatewayScope struct {
 	container string
 	object    string
-	exact     bool
 	// keepsObjects refuses every DELETE the child sends. The engine, writing
 	// over a large object, deletes that object's old segments; this is how
 	// they are kept where they still belong to something (destinationRules).
@@ -33,32 +31,26 @@ type gatewayScope struct {
 	setsTimes bool
 }
 
-// destinationRules say how a child may use its remote destination: one exact
-// object or everything under a path; a live destination, the names
-// themselves, or a staged one; whether it may delete there at all; and
-// whether it may set an object's time.
+// destinationRules say how a child may use its remote destination: whether
+// it may delete there at all, and whether it may set an object's time.
 type destinationRules struct {
-	exact, live, keepsObjects, setsTimes bool
+	keepsObjects, setsTimes bool
 }
 
 func destinationScope(remote, destination string, rules destinationRules) (*gatewayScope, error) {
-	exact, live := rules.exact, rules.live
 	path, matched := strings.CutPrefix(destination, remote+":")
 	if !matched {
 		return nil, nil
 	}
-	container, object, found := strings.Cut(path, "/")
-	if !exact {
-		object = strings.TrimSuffix(object, "/")
-	}
-	wholeContainer := live && !exact && object == ""
-	if !gatewayPathSafe(container) || (!wholeContainer && (!found || !gatewayPathSafe(object))) {
+	container, object, _ := strings.Cut(path, "/")
+	object = strings.TrimSuffix(object, "/")
+	if !gatewayPathSafe(container) || (object != "" && !gatewayPathSafe(object)) {
 		return nil, fmt.Errorf("gateway destination needs a safe container and object path")
 	}
-	if err := checkRemoteDest(destination, live); err != nil {
+	if err := checkRemoteDest(destination); err != nil {
 		return nil, err
 	}
-	return &gatewayScope{container: container, object: object, exact: exact, keepsObjects: rules.keepsObjects, setsTimes: rules.setsTimes}, nil
+	return &gatewayScope{container: container, object: object, keepsObjects: rules.keepsObjects, setsTimes: rules.setsTimes}, nil
 }
 
 // gatewayReadSafe is the rule for a path the child only reads. An empty
@@ -100,9 +92,6 @@ func (s *gatewayScope) allowsObject(container, object string) bool {
 		under = ""
 	}
 	if container == s.container {
-		if s.exact {
-			return object == s.object
-		}
 		return strings.HasPrefix(object, under)
 	}
 	return container == s.container+"_segments" && strings.HasPrefix(object, under)

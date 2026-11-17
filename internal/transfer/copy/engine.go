@@ -37,11 +37,3 @@ func (b boundRunner) Copy(ctx context.Context, src, dst string, names []string, 
 	}
 	return b.runner.Copy(ctx, remotes, src, dst, names, onEvent)
 }
-
-func (b boundRunner) CopyTo(ctx context.Context, src, dst string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	remotes, err := b.source(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return b.runner.CopyTo(ctx, remotes, src, dst, onEvent)
-}

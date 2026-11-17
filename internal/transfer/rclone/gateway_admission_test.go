@@ -21,10 +21,10 @@ func TestGatewayRefusesRevokedRequests(t *testing.T) {
 	for _, call := range []struct{ name, method, target, body string }{
 		{"get", "GET", gatewayAccount + "/owned/file", ""},
 		{"head", "HEAD", gatewayAccount + "/owned/file", ""},
-		{"put", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/file", "contents"},
+		{"put", "PUT", gatewayAccount + "/owned/" + gatewayFolder + "/file", "contents"},
 		{"sidecar", "PUT", gatewayAccount + "/owned_segments", ""},
 		{"info", "GET", "/info", ""},
-		{"bulk", "DELETE", gatewayAccount + "?bulk-delete=1", "/owned/" + gatewayStage + "/file\n"},
+		{"bulk", "DELETE", gatewayAccount + "?bulk-delete=1", "/owned/" + gatewayFolder + "/file\n"},
 	} {
 		t.Run(call.name, func(t *testing.T) {
 			var requests atomic.Int64
@@ -44,7 +44,7 @@ func TestGatewayRefusesRevokedRequests(t *testing.T) {
 					return nil
 				},
 			}
-			scope := &gatewayScope{container: "owned", object: gatewayStage}
+			scope := &gatewayScope{container: "owned", object: gatewayFolder}
 			revoked.Store(true)
 			if gateway, _, err := newStorageGateway(t.Context(), remote, scope, 64); gateway != nil || !errors.Is(err, refused) {
 				if gateway != nil {
@@ -101,7 +101,7 @@ func TestGatewayRechecksAdmissionAfterSidecarHead(t *testing.T) {
 			return nil
 		},
 	}
-	gateway, local, err := newStorageGateway(t.Context(), remote, &gatewayScope{container: "owned", object: gatewayStage}, 64)
+	gateway, local, err := newStorageGateway(t.Context(), remote, &gatewayScope{container: "owned", object: gatewayFolder}, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestGatewayRechecksAdmissionAfterBulkBody(t *testing.T) {
 			return nil
 		},
 	}
-	gateway, local, err := newStorageGateway(t.Context(), remote, &gatewayScope{container: "owned", object: gatewayStage}, 64)
+	gateway, local, err := newStorageGateway(t.Context(), remote, &gatewayScope{container: "owned", object: gatewayFolder}, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestGatewayRechecksAdmissionAfterBulkBody(t *testing.T) {
 	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	body := "/owned/" + gatewayStage + "/file\n"
+	body := "/owned/" + gatewayFolder + "/file\n"
 	_, err = fmt.Fprintf(conn, "DELETE %s?bulk-delete=1 HTTP/1.1\r\nHost: %s\r\nX-Auth-Token: %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nExpect: 100-continue\r\n\r\n", gatewayAccount, endpoint.Host, local.Token, len(body))
 	if err != nil {
 		t.Fatal(err)

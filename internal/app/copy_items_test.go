@@ -71,10 +71,6 @@ func (e copyDiagnosticEngine) Copy(context.Context, string, string, []string, fu
 	return e.result, e.err
 }
 
-func (e copyDiagnosticEngine) CopyTo(context.Context, string, string, func(rclone.Event)) (*rclone.Result, error) {
-	return nil, errors.New("unexpected CopyTo invocation")
-}
-
 func TestCopyItemDiagnosticsExcludeProviderText(t *testing.T) {
 	for _, mode := range []string{"engine_status", "engine_error", "typed_swift"} {
 		t.Run(mode, func(t *testing.T) {

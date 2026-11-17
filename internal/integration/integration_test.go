@@ -643,7 +643,7 @@ func TestRcloneRunnerRealSwift(t *testing.T) {
 
 	// A transfer's engine writes each object at its name (ADR 0122
 	// decisions 3 and 4).
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -812,7 +812,7 @@ func TestCopyPlannerRealSwift(t *testing.T) {
 // sets it up: each object is written at its name (ADR 0122 decision 4).
 func executorFixture(t *testing.T, h *Harness, srcContainer, dstContainer string) *transfercopy.Executor {
 	t.Helper()
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, IgnoreSize: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", IgnoreSize: true, Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -916,7 +916,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 
 	// The upload's engine writes each file at its name (ADR 0122 decision
 	// 3); the setting means nothing for the download's local destination.
-	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{ChunkSize: "1Mi", Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1277,7 +1277,7 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 	seed2("outside-kept-dlo.bin", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
 
 	// Copy half through the real engine, scoped to the prefixes.
-	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1506,7 +1506,7 @@ func TestTLSRealSwift(t *testing.T) {
 	if _, err := caSession.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: dst}); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1764,7 +1764,7 @@ func TestTokenRefreshAcrossSpawnsRealSwift(t *testing.T) {
 		}
 	}
 
-	runner, err := rclone.NewRunner(rclone.Options{LiveDestination: true, Retries: 1, LowLevelRetries: 2})
+	runner, err := rclone.NewRunner(rclone.Options{Retries: 1, LowLevelRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

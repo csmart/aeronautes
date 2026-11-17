@@ -65,10 +65,10 @@ func TestRunnerUsesGatewayTrustForDownloads(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			destination := filepath.Join(t.TempDir(), "download")
+			destination := t.TempDir()
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			result, err := runner.CopyTo(ctx, []Remote{remote}, "aeronautes_src:owned/object", destination, nil)
+			result, err := runner.Copy(ctx, []Remote{remote}, "aeronautes_src:owned", destination, []string{"object"}, nil)
 			if mode == "untrusted TLS" {
 				if err == nil && (result == nil || result.ExitCode == 0 || result.Cancelled) {
 					t.Fatal("untrusted upstream was not refused")
@@ -81,7 +81,7 @@ func TestRunnerUsesGatewayTrustForDownloads(t *testing.T) {
 			if err != nil || result.ExitCode != 0 || result.Cancelled {
 				t.Fatalf("trusted download failed: result=%+v err=%v", result, err)
 			}
-			copied, err := os.ReadFile(destination)
+			copied, err := os.ReadFile(filepath.Join(destination, "object"))
 			if err != nil || string(copied) != string(data) {
 				t.Fatalf("trusted download bytes changed: %v", err)
 			}
@@ -115,9 +115,9 @@ func TestRunnerCancellationStopsGatewayTraffic(t *testing.T) {
 		err    error
 	}
 	finished := make(chan outcome, 1)
-	destination := filepath.Join(t.TempDir(), "download")
+	destination := t.TempDir()
 	go func() {
-		result, err := runner.CopyTo(ctx, []Remote{{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "upstream-fixture"}}, "aeronautes_src:owned/object", destination, nil)
+		result, err := runner.Copy(ctx, []Remote{{Name: "aeronautes_src", StorageURL: upstream.URL + gatewayAccount, Token: "upstream-fixture"}}, "aeronautes_src:owned", destination, []string{"object"}, nil)
 		finished <- outcome{result, err}
 	}()
 	select {
@@ -139,7 +139,7 @@ func TestRunnerCancellationStopsGatewayTraffic(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("child cancellation left upstream traffic active")
 	}
-	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destination, "object")); !os.IsNotExist(err) {
 		t.Fatal("cancelled download published a final object")
 	}
 }
@@ -181,7 +181,7 @@ func TestRunnerRefusesStorageRedirects(t *testing.T) {
 							return
 						}
 						if operation == "write" && r.Method == http.MethodHead {
-							if strings.Contains(r.URL.Path, "/.aeronautes/") {
+							if r.URL.Path != "/v1/AUTH_test/owned" {
 								w.WriteHeader(http.StatusNotFound)
 							} else {
 								w.Header().Set("X-Container-Bytes-Used", "0")
@@ -207,18 +207,19 @@ func TestRunnerRefusesStorageRedirects(t *testing.T) {
 						location.Store(upstream.URL + "/redirected")
 					}
 					remote := Remote{Name: "aeronautes_src", StorageURL: upstream.URL + "/v1/AUTH_test", Token: token, InsecureTLS: targetKind == "HTTPS downgrade"}
-					local := filepath.Join(t.TempDir(), "object")
-					src, dst := "aeronautes_src:owned/object", local
+					dir := t.TempDir()
+					local := filepath.Join(dir, "object")
+					src, dst := "aeronautes_src:owned", dir
 					if operation == "write" {
 						if err := os.WriteFile(local, []byte("owned fixture"), 0o600); err != nil {
 							t.Fatal(err)
 						}
 						remote.Name = "aeronautes_dst"
-						src, dst = local, "aeronautes_dst:owned/.aeronautes/stage/redirect/object"
+						src, dst = dir, "aeronautes_dst:owned/redirect"
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
-					result, err := runner.CopyTo(ctx, []Remote{remote}, src, dst, nil)
+					result, err := runner.Copy(ctx, []Remote{remote}, src, dst, []string{"object"}, nil)
 					if redirects.Load() == 0 {
 						t.Errorf("test did not reach the upstream %s redirect: result=%+v err=%v", operation, result, err)
 					}

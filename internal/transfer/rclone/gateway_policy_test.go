@@ -10,7 +10,7 @@ import (
 )
 
 const gatewayAccount = "/v1/AUTH_fixture"
-const gatewayStage = ".aeronautes/stage/job/batch"
+const gatewayFolder = "upload/batch"
 
 type gatewayObservation struct {
 	method, uri, host, token, body string
@@ -78,8 +78,7 @@ func (f gatewayFixture) request(t *testing.T, method, target, token, body string
 }
 
 func TestGatewayRefusesUnscopedRequests(t *testing.T) {
-	batch := &gatewayScope{container: "owned", object: gatewayStage}
-	exact := &gatewayScope{container: "owned", object: gatewayStage + "/one", exact: true}
+	batch := &gatewayScope{container: "owned", object: gatewayFolder}
 	for _, test := range []struct {
 		name, method, target, token string
 		scope                       *gatewayScope
@@ -89,25 +88,22 @@ func TestGatewayRefusesUnscopedRequests(t *testing.T) {
 		{"other account", "GET", "/v1/AUTH_other/owned/one", "local", nil},
 		{"account sibling", "GET", gatewayAccount + "_other/owned/one", "local", nil},
 		{"dot segment", "GET", gatewayAccount + "/owned/%2e%2e/live", "local", nil},
-		{"empty segment in a write", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/a//b", "local", batch},
-		{"empty segment in a delete", "DELETE", gatewayAccount + "/owned_segments/" + gatewayStage + "/a//b", "local", batch},
-		{"source put", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", nil},
-		{"source delete", "DELETE", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", nil},
+		{"empty segment in a write", "PUT", gatewayAccount + "/owned/" + gatewayFolder + "/a//b", "local", batch},
+		{"empty segment in a delete", "DELETE", gatewayAccount + "/owned_segments/" + gatewayFolder + "/a//b", "local", batch},
+		{"source put", "PUT", gatewayAccount + "/owned/" + gatewayFolder + "/one", "local", nil},
+		{"source delete", "DELETE", gatewayAccount + "/owned/" + gatewayFolder + "/one", "local", nil},
 		{"live destination", "PUT", gatewayAccount + "/owned/live", "local", batch},
-		{"other stage", "PUT", gatewayAccount + "/owned/.aeronautes/stage/other/one", "local", batch},
-		{"stage sibling", "PUT", gatewayAccount + "/owned/" + gatewayStage + "-other/one", "local", batch},
-		{"other container", "PUT", gatewayAccount + "/other/" + gatewayStage + "/one", "local", batch},
-		{"other sidecar", "PUT", gatewayAccount + "/other_segments/" + gatewayStage + "/one/ts/0", "local", batch},
+		{"another folder", "PUT", gatewayAccount + "/owned/upload/other/one", "local", batch},
+		{"folder sibling", "PUT", gatewayAccount + "/owned/" + gatewayFolder + "-other/one", "local", batch},
+		{"other container", "PUT", gatewayAccount + "/other/" + gatewayFolder + "/one", "local", batch},
+		{"other sidecar", "PUT", gatewayAccount + "/other_segments/" + gatewayFolder + "/one/ts/0", "local", batch},
 		{"other segments", "DELETE", gatewayAccount + "/owned_segments/unrelated/0", "local", batch},
 		{"container delete", "DELETE", gatewayAccount + "/owned_segments", "local", batch},
 		{"main container create", "PUT", gatewayAccount + "/owned", "local", batch},
 		{"container post", "POST", gatewayAccount + "/owned", "local", batch},
-		{"copy verb", "COPY", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", batch},
-		{"object post", "POST", gatewayAccount + "/owned/" + gatewayStage + "/one", "local", batch},
-		{"write query", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/one?extract-archive=tar", "local", batch},
-		{"exact sibling", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/two", "local", exact},
-		{"exact descendant", "PUT", gatewayAccount + "/owned/" + gatewayStage + "/one/child", "local", exact},
-		{"exact segment sibling", "PUT", gatewayAccount + "/owned_segments/" + gatewayStage + "/one-other/ts/0", "local", exact},
+		{"copy verb", "COPY", gatewayAccount + "/owned/" + gatewayFolder + "/one", "local", batch},
+		{"object post", "POST", gatewayAccount + "/owned/" + gatewayFolder + "/one", "local", batch},
+		{"write query", "PUT", gatewayAccount + "/owned/" + gatewayFolder + "/one?extract-archive=tar", "local", batch},
 		{"anonymous other path", "GET", "/info/other", "", nil},
 		{"anonymous info query", "GET", "/info?other=1", "", nil},
 		{"info put", "PUT", "/info", "", nil},
@@ -186,7 +182,7 @@ func TestGatewayConfinesAnUploadToItsDestination(t *testing.T) {
 }
 
 func TestGatewayPreservesScopedPathsAndQueries(t *testing.T) {
-	scope := &gatewayScope{container: "owned", object: gatewayStage}
+	scope := &gatewayScope{container: "owned", object: gatewayFolder}
 	for _, test := range []struct{ method, path string }{
 		{"GET", gatewayAccount},
 		{"HEAD", gatewayAccount + "/owned"},
@@ -194,10 +190,10 @@ func TestGatewayPreservesScopedPathsAndQueries(t *testing.T) {
 		// A read may name an empty segment: the engine asks for one under a
 		// manifest prefix that ends in a slash.
 		{"HEAD", gatewayAccount + "/owned_segments/subject/run//0000000000000001"},
-		{"PUT", gatewayAccount + "/owned/" + gatewayStage + "/literal%252F%20%2b%25"},
+		{"PUT", gatewayAccount + "/owned/" + gatewayFolder + "/literal%252F%20%2b%25"},
 		{"PUT", gatewayAccount + "/owned_segments"},
-		{"PUT", gatewayAccount + "/owned_segments/" + gatewayStage + "/object/ts/00000000"},
-		{"DELETE", gatewayAccount + "/owned_segments/" + gatewayStage + "/object/ts/00000000"},
+		{"PUT", gatewayAccount + "/owned_segments/" + gatewayFolder + "/object/ts/00000000"},
+		{"DELETE", gatewayAccount + "/owned_segments/" + gatewayFolder + "/object/ts/00000000"},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			f := newGatewayFixture(t, scope)
@@ -227,7 +223,7 @@ func TestGatewayPreservesScopedPathsAndQueries(t *testing.T) {
 }
 
 func TestGatewayRefusesContainerPolicyAndDLOEscapes(t *testing.T) {
-	scope := &gatewayScope{container: "owned", object: gatewayStage}
+	scope := &gatewayScope{container: "owned", object: gatewayFolder}
 	for _, header := range []string{"X-Container-Read", "X-Container-Write", "X-Container-Meta-Test", "X-Versions-Location", "X-History-Location", "X-Remove-Container-Meta-Test"} {
 		t.Run(header, func(t *testing.T) {
 			f := newGatewayFixture(t, scope)
@@ -240,26 +236,26 @@ func TestGatewayRefusesContainerPolicyAndDLOEscapes(t *testing.T) {
 		})
 	}
 	for _, manifest := range []string{
-		"other/" + gatewayStage + "/one/ts", "owned_segments/live/ts",
-		"owned_segments/" + gatewayStage + "/other/ts", "owned_segments/" + gatewayStage + "/one/../live",
-		"owned_segments/" + gatewayStage + "/one/%2e%2e/live", "owned_segments/" + gatewayStage + "/one/%XX",
+		"other/" + gatewayFolder + "/one/ts", "owned_segments/live/ts",
+		"owned_segments/" + gatewayFolder + "/other/ts", "owned_segments/" + gatewayFolder + "/one/../live",
+		"owned_segments/" + gatewayFolder + "/one/%2e%2e/live", "owned_segments/" + gatewayFolder + "/one/%XX",
 	} {
 		f := newGatewayFixture(t, scope)
 		headers := http.Header{"X-Object-Manifest": []string{manifest}}
-		status, _ := f.request(t, "PUT", gatewayAccount+"/owned/"+gatewayStage+"/one", f.remote.Token, "", headers)
+		status, _ := f.request(t, "PUT", gatewayAccount+"/owned/"+gatewayFolder+"/one", f.remote.Token, "", headers)
 		if status != http.StatusForbidden || len(f.events) != 0 {
 			t.Fatalf("DLO scope escape accepted: %q", manifest)
 		}
 	}
 	f := newGatewayFixture(t, scope)
-	headers := http.Header{"X-Object-Manifest": []string{"owned_segments/" + gatewayStage + "/one/ts"}}
-	if status, _ := f.request(t, "PUT", gatewayAccount+"/owned/"+gatewayStage+"/one", f.remote.Token, "", headers); status != http.StatusOK {
+	headers := http.Header{"X-Object-Manifest": []string{"owned_segments/" + gatewayFolder + "/one/ts"}}
+	if status, _ := f.request(t, "PUT", gatewayAccount+"/owned/"+gatewayFolder+"/one", f.remote.Token, "", headers); status != http.StatusOK {
 		t.Fatal("scoped DLO manifest refused")
 	}
 }
 
 func TestGatewayRefusesConnectionHeaderSuppression(t *testing.T) {
-	scope := &gatewayScope{container: "owned", object: gatewayStage}
+	scope := &gatewayScope{container: "owned", object: gatewayFolder}
 	for _, header := range []string{"X-Storage-Policy", "X-Object-Manifest", "Content-Encoding"} {
 		t.Run(header, func(t *testing.T) {
 			f := newGatewayFixture(t, scope)
@@ -273,15 +269,15 @@ func TestGatewayRefusesConnectionHeaderSuppression(t *testing.T) {
 }
 
 func TestGatewayValidatesTheWholeBulkCleanup(t *testing.T) {
-	scope := &gatewayScope{container: "owned", object: gatewayStage}
-	valid := "/owned_segments/" + gatewayStage + "/one/ts/00000000\n"
+	scope := &gatewayScope{container: "owned", object: gatewayFolder}
+	valid := "/owned_segments/" + gatewayFolder + "/one/ts/00000000\n"
 	headers := http.Header{"Content-Type": []string{"text/plain"}}
 	for name, body := range map[string]string{
 		"mixed scope": valid + "/owned/live\n", "container only": "/owned_segments\n",
-		"other job": "/owned_segments/.aeronautes/stage/other/0\n", "bad escape": valid + "/owned/%XX\n",
+		"another folder": "/owned_segments/elsewhere/0\n", "bad escape": valid + "/owned/%XX\n",
 		"encoded escape": valid + "/owned%2Flive\n", "double encoded boundary": valid + "/owned%252Flive\n",
 		"blank line": valid + "\n", "empty": "", "name limit": strings.Repeat(valid, maxGatewayBulkNames+1),
-		"body limit": "/owned/" + gatewayStage + "/" + strings.Repeat("x", maxGatewayBulkBytes),
+		"body limit": "/owned/" + gatewayFolder + "/" + strings.Repeat("x", maxGatewayBulkBytes),
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newGatewayFixture(t, scope)
@@ -292,7 +288,7 @@ func TestGatewayValidatesTheWholeBulkCleanup(t *testing.T) {
 		})
 	}
 	f := newGatewayFixture(t, scope)
-	body := valid + "/owned/" + gatewayStage + "/literal%252F+%20%25\n"
+	body := valid + "/owned/" + gatewayFolder + "/literal%252F+%20%25\n"
 	status, response := f.request(t, "DELETE", gatewayAccount+"?bulk-delete=1", f.remote.Token, body, headers)
 	if status != http.StatusOK || len(f.events) != 1 {
 		t.Fatal("scoped bulk cleanup refused")

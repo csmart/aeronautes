@@ -163,10 +163,6 @@ func (f *lineEngine) Copy(ctx context.Context, src, dst string, names []string, 
 	return result, nil
 }
 
-func (f *lineEngine) CopyTo(context.Context, string, string, func(rclone.Event)) (*rclone.Result, error) {
-	return nil, errors.New("a copy does not use this")
-}
-
 // records collects what the executor recorded for each name.
 type records struct {
 	executed map[string]Observation

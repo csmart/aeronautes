@@ -549,10 +549,8 @@ func (s *TransferService) buildEngine(ctx context.Context, req CopyRequestDTO, s
 	// Source sizes and digests describe stored bytes, so Copy must not
 	// decode content as it passes through the child.
 	options.NoGzipEncoding = true
-	// The engine writes each object at its name (ADR 0122 decision 4), and
-	// removes a replaced large object's old segments only where
-	// keepsReplaced allowed it.
-	options.LiveDestination = true
+	// The engine removes a replaced large object's old segments only where
+	// keepsReplaced allowed it (ADR 0122 decision 4).
 	options.KeepReplacedSegments = keepsSegments
 	// The engine's one size check after it writes an object in segments
 	// reads the dynamic manifest's size through a listing that can lag the
