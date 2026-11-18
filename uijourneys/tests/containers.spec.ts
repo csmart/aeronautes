@@ -32,7 +32,8 @@ test("find a container named like a segment store behind its heading", async ({ 
   await row.click();
   await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: sidecar })).toBeVisible();
   const caution = "This container is named like a segment store. Objects here may be segments of larger objects, and deleting one can break the object it belongs to.";
-  await expect(page.getByText(caution)).toBeVisible();
+  // The caution is a mark on the path's row, its sentence on hover (ADR 0123).
+  await expect(page.getByRole("note", { name: caution })).toHaveText("Possible segment store");
 
   await row.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Empty container…" }).click();

@@ -84,13 +84,14 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Containers | read the list again with the column's refresh | refresh the container list after a change made elsewhere | a container made by the run's own session, outside the window, appears |
 | Containers | the list read again when the window is focused | not journeyed: a browser cannot show what the desktop window does; test plan step 19k | |
 | Containers | create a container | find a container named like a segment store behind its heading | its row is listed |
-| Containers | the closed "Possible backstage" group and the segment-store caution | find a container named like a segment store behind its heading | the row is absent until the group is opened; the caution is read above the listing and in the delete dialog |
+| Containers | the closed "Possible backstage" group and the segment-store caution | find a container named like a segment store behind its heading | the row is absent until the group is opened; the caution is read as a mark on the path's row and in the delete dialog |
 | Containers | the All view, and "Scan" over every loaded container | scan every container in the All view | the count the scan reaches is the number of rows, and no row is left marked "not read" |
 | Containers | the Backstage mode; load more containers; what each settings badge says; stopping a scan | not yet | |
 | Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
 | Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
 | Listing | selecting rows leaves the toolbar and the list where they were | a selection of a file and a folder is copied, downloaded and deleted with the folder's contents | the list and three of the toolbar's buttons are in the same place with nothing selected, with one object selected and read, and with two rows selected |
-| Listing | load more objects; the filter; "Find in container"; "Count objects"; marker folders; Escape clearing a selection | not yet | |
+| Listing | "Count objects" beside the refresh, for one selected folder | a selection of a file and a folder is copied, downloaded and deleted with the folder's contents | the answer on the path's row names the folder and its one object, and the list and the toolbar's buttons have not moved |
+| Listing | load more objects; the filter; "Find in container"; marker folders; Escape clearing a selection | not yet | |
 | Inspector | an object's large-object kind | upload a folder with a segmented file and browse it | it is the kind the job recorded |
 | Inspector | an object's user metadata; a container's public notice | edit an object's metadata; make the container public and private again | read after connecting again |
 | Inspector | the account card; segment tables; "Open segments backstage"; raw headers | not yet | |

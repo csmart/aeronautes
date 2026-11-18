@@ -18,3 +18,16 @@ export function segmentStoreCaution(containerClass: string): string {
       return "";
   }
 }
+
+/** The short mark for the same caution on the path's row (ADR 0123). */
+export function segmentStoreMark(containerClass: string): string {
+  switch (containerClass) {
+    case "suspected":
+      return "Possible segment store";
+    case "declared":
+    case "confirmed":
+      return "Segment store";
+    default:
+      return "";
+  }
+}

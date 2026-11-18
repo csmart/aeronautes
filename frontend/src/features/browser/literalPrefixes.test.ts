@@ -113,7 +113,8 @@ describe("literal browser prefixes", () => {
       const partial = prefix.slice(prefix.lastIndexOf("/") + 1);
       const filter = f.target.querySelector(".prefix-filter");
       expect(filter?.textContent).toBe(`Prefix: ${JSON.stringify(partial)}`);
-      expect(getComputedStyle(filter!).whiteSpace).toBe("pre-wrap");
+      // Spaces are kept as typed, on the path's one line (ADR 0123).
+      expect(getComputedStyle(filter!).whiteSpace).toBe("pre");
       expect(filter?.closest("button")).toBeNull();
       expect(f.target.querySelector(".breadcrumb img")).toBeNull();
       expect([...f.target.querySelectorAll(".breadcrumb button")].map((button) => button.textContent))

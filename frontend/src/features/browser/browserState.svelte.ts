@@ -5,7 +5,7 @@
 
 import { isLiteralPlainObject } from "../../lib/objectKind";
 import { messageOf } from "../../lib/messageOf";
-import { segmentStoreCaution } from "./segmentStoreCaution";
+import { segmentStoreCaution, segmentStoreMark } from "./segmentStoreCaution";
 import type {
   AccountDTO,
   AccountEditDTO,
@@ -103,6 +103,11 @@ interface WatchedChange {
   readonly container: string;
   readonly deletesContainer?: boolean;
 }
+
+/** A count asks about one folder, which may be a selected folder rather than
+ * the one being browsed; `at` is where the operator was, and the count is
+ * shown only while they stay there (ADR 0123 decision 3). */
+type CountRequest = FindRequest & { readonly at: string };
 
 interface FindRequest {
   readonly scope: number;
@@ -325,7 +330,7 @@ export class BrowserState {
   countRunning = $state(false);
   countedAt: string | null = $state(null);
   #countSeq = 0;
-  #countRequest: FindRequest | null = null;
+  #countRequest: CountRequest | null = null;
   findNotice: string | null = $state(null);
   /** What the last COMPLETED metadata save did not establish. It outlives
    * the editor, which closes itself on success, so the qualification does
@@ -1547,32 +1552,43 @@ export class BrowserState {
     await this.#cancelFindRequest(request);
   }
 
-  /** The count shown for the open prefix, or null when none was taken in
-   * this scope; a navigation leaves an old count behind rather than
-   * showing it against another prefix. */
+  /** The count shown where the operator is, or null when none was taken
+   * there; a navigation leaves an old count behind rather than showing it
+   * against another place. */
   get prefixCount(): FindStatusDTO | null {
     // Read the reactive status first: a getter that returns before touching
     // any state registers no dependency, and the view would never learn
     // that a count arrived.
     const status = this.countStatus;
     const request = this.#countRequest;
-    return status !== null && request !== null && this.#currentFindScope(request) ? status : null;
+    return status !== null && request !== null && this.#currentCountScope(request) ? status : null;
   }
 
-  /** Count the objects under the open prefix: a count-only scan that
+  /** The folder the shown count is for, "" for the container's top. */
+  get countedPrefix(): string {
+    return this.prefixCount === null ? "" : (this.#countRequest?.prefix ?? "");
+  }
+
+  /** What a count started now would count: the one folder selected, or else
+   * the folder being browsed (ADR 0123 decision 3). */
+  get countTarget(): string {
+    return this.selectedPrefix || this.prefix;
+  }
+
+  /** Count the objects under the count's target: a count-only scan that
    * streams the listing, keeps no name, and can be stopped (ADR 0072). */
   async startCount() {
     if (this.containerName === null || this.connecting || !this.connectedBookmarkId) return;
     await this.cancelCount();
-    const request: FindRequest = {
+    const request: CountRequest = {
       scope: this.#scopeRevision, seq: ++this.#countSeq, bookmark: this.connectedBookmarkId, portrait: this.#portrait(),
-      container: this.containerName, prefix: this.prefix, started: false, id: null,
+      container: this.containerName, prefix: this.countTarget, at: this.prefix, started: false, id: null,
     };
     this.#countRequest = request;
     this.countStatus = null;
     this.countedAt = null;
     this.countRunning = true;
-    const current = () => request === this.#countRequest && request.seq === this.#countSeq && this.#currentFindScope(request);
+    const current = () => request === this.#countRequest && request.seq === this.#countSeq && this.#currentCountScope(request);
     try {
       request.started = true;
       request.id = await this.#api.startFind(request.container, request.prefix, "", request.bookmark, true);
@@ -1612,6 +1628,10 @@ export class BrowserState {
   #currentFindScope(request: FindRequest): boolean {
     return !this.connecting && request.scope === this.#scopeRevision
       && request.bookmark === this.connectedBookmarkId && request.container === this.containerName && request.prefix === this.prefix;
+  }
+
+  #currentCountScope(request: CountRequest): boolean {
+    return this.#currentFindScope({ ...request, prefix: request.at });
   }
 
   #currentFind(request: FindRequest): boolean {
@@ -1920,6 +1940,10 @@ export class BrowserState {
    * reported once that is read, and its row's in the column until then. */
   get segmentStoreCaution(): string {
     return segmentStoreCaution(this.containerDetail?.class ?? this.container?.class ?? "normal");
+  }
+
+  get segmentStoreMark(): string {
+    return segmentStoreMark(this.containerDetail?.class ?? this.container?.class ?? "normal");
   }
 
   /** The open container's settings fact, only when it belongs to this
