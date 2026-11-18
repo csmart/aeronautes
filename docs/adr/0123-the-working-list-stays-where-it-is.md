@@ -35,9 +35,9 @@ The operator, clicking from one container to the next, found the rows moving bet
    Each mark's hover text and accessible name are the whole sentence its banner says today, so nothing it tells is lost.
    The desktop window's webview draws no tooltip for a title, so hover text is drawn by the application as a bubble beside the element, for the pointer and for keyboard focus, wherever the window names something by its hover text (amended 18 November 2026, when the operator found the "Public" mark showing nothing on hover).
    The container list's own marks are not changed.
-3. **Refresh and count are small buttons at the start of the path's row, beside the container's name.**
+3. **Refresh and count are small buttons pinned at the end of the path's row, as the Containers column has its own.**
    Each is named by its hover text, as the Containers column's tools are.
-   They come before the path, so nothing that appears on the row, a count's answer or a mark, moves them; after the path, they moved left whenever a count's answer took room from it (measured in the selection journey).
+   Nothing on the row comes after them, so nothing that appears there, a count's answer or a mark, moves them; placed straight after the path they moved left whenever a count's answer took room from it (measured in the selection journey), and the operator, shown them before the path on 18 November 2026, asked for them on the right.
    The count button counts the one folder selected, when exactly one folder is selected, and otherwise the folder being browsed or the container's top; its hover text names which, and while it counts it stops the count.
    The count's answer is a short text beside the button, "1,204 objects in logs/", with "so far" while it counts and the time it was counted in its hover text, and goes when the operator moves to another container or folder.
 4. **The deletions keep their own row, at the left.**
