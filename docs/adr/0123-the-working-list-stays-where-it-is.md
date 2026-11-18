@@ -33,6 +33,7 @@ The operator, clicking from one container to the next, found the rows moving bet
 2. **Notices are marks on the path's row.**
    "Public", "Settings not read", "Backstage" and "Possible segment store" are short marks after the path, each in its colour as today: red for public, amber for backstage and a possible segment store, quiet for unread settings.
    Each mark's hover text and accessible name are the whole sentence its banner says today, so nothing it tells is lost.
+   The desktop window's webview draws no tooltip for a title, so hover text is drawn by the application as a bubble beside the element, for the pointer and for keyboard focus, wherever the window names something by its hover text (amended 18 November 2026, when the operator found the "Public" mark showing nothing on hover).
    The container list's own marks are not changed.
 3. **Refresh and count are small buttons at the start of the path's row, beside the container's name.**
    Each is named by its hover text, as the Containers column's tools are.
