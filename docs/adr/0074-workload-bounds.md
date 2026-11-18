@@ -39,13 +39,16 @@ Testing the 0.5.0 candidate with the ceiling at 1,000, the operator found the ob
 1. **The notice offers the next page.** When the object list holds as many rows as the ceiling and the store has more, the notice keeps its words and gains a button, "Next N →", N the ceiling.
    Pressing it replaces the rows shown with the rows that follow the last one, read from the same marker "Load more" would use, and "Load more" then fills that page up to the ceiling as before.
    The rows held never exceed the ceiling, which is what decision 1 bounds.
+   "The store has more" means a row follows the page: a Swift listing does not say whether it is the last, so each page of objects or containers asks the store for one row more than it returns, and only that extra row's presence sets the page's next marker.
+   A listing that ends exactly at a page's end, such as 2,000 objects read 1,000 at a time, therefore offers neither "Next N →" nor "Load more" after its last row, as the operator found on 18 November: "if there are no more, it shouldn't give the next button".
 2. **Where you are.** Past the first page the footer counts the rows from the start of the listing ("rows 1,001 to 2,000 (more on server)"), and the notice and the footer both offer "← Back to the start", which reads the listing again from its first row, as moving into the folder does.
    There is no previous page: the store lists forward from a marker only, and going back one page would need every earlier marker kept, for a gain the start and Find already give.
 3. **A page change ends the selection.** Moving to the next page or back to the start clears the selection and the inspector, as moving to another folder does, so a deletion, copy or download never acts on rows that are no longer shown.
    Find, the count and a folder's or container's own actions are unchanged: they act on the whole scope, not on the rows shown.
 4. **What does not change.** The ceiling setting, its range and its default; the container column, which still stops at the ceiling with its notice; and the filter box, which filters the rows shown.
 
-**Required proof (tier 2).** Frontend, on the browser state with a fake bridge: at the ceiling with more on the server the next page replaces the rows with the following ones from the held marker, the footer's numbers count from the start, the selection is cleared, and back to the start lists from the first row; under the ceiling nothing changes. Journey, on the mock with the ceiling at 1,000 and a prefix of 2,000 objects: the next page shows the 1,001st name first and back to the start shows the first.
+**Required proof (tier 2).** Frontend, on the browser state with a fake bridge: at the ceiling with more on the server the next page replaces the rows with the following ones from the held marker, the footer's numbers count from the start, the selection is cleared, and back to the start lists from the first row; under the ceiling nothing changes. Journey, on the mock with the ceiling at 1,000 and a prefix of 2,000 objects: the next page shows the 1,001st name first and back to the start shows the first, and that second page, which ends the listing, offers no further page.
+Backend, on the mock store: an object page and a container page that end exactly at the listing's last row carry no next marker, and a page with a row after it does.
 
 ## What this does not establish
 
