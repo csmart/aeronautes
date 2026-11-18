@@ -8,7 +8,7 @@ import SettingsDialog from "./SettingsDialog.svelte";
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
+  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0, logLevel: "info", logToFile: false,
 };
 let dialog: ReturnType<typeof mount> | null = null;
 const releasePending: (() => void)[] = [];

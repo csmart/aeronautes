@@ -196,6 +196,25 @@ export interface AppSettingsDTO {
     "gpuAcceleration": boolean;
 
     /**
+     * LogLevel is the lowest level the log writes: debug, info, warn or
+     * error (ADR 0127 decision 2). A change applies at once.
+     */
+    "logLevel": string;
+
+    /**
+     * LogToFile keeps the log in a file in the state folder as well as on
+     * standard error, rotated at 10 MiB (ADR 0127 decision 3).
+     */
+    "logToFile": boolean;
+
+    /**
+     * Log is the log in force, which a launch switch can make differ from
+     * the two settings above (ADR 0127 decision 4). It is a report only:
+     * a save ignores it and it is never written to the file.
+     */
+    "log"?: LogStatusDTO | null;
+
+    /**
      * FileProblem says why the settings file could not be read, when it
      * could not; the defaults are then in force until the next save (ADR
      * 0109 decision 1). It is a report only: a save ignores it and it is
@@ -1223,6 +1242,18 @@ export interface ListingRowDTO {
 export interface ListingScopeDTO {
     "bookmarkId": string;
     "generation": number;
+}
+
+/**
+ * LogStatusDTO is the log in force: its level, the file Settings shows and
+ * whether it is being written, and which halves a launch switch set.
+ */
+export interface LogStatusDTO {
+    "level": string;
+    "filePath": string;
+    "fileOn": boolean;
+    "levelFromEnv": boolean;
+    "fileFromEnv": boolean;
 }
 
 /**

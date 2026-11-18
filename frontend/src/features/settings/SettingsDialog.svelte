@@ -6,6 +6,7 @@
   import { trapFocus } from "../../lib/trapFocus";
   import type { AppSettingsDTO } from "../../lib/api";
   import type { SettingsState } from "../browser/settingsState.svelte";
+  import CopyValue from "../inspector/CopyValue.svelte";
 
   let {
     settings,
@@ -158,6 +159,14 @@
   const showsNetwork = $derived(NETWORK_LIMITS.some((setting) => showsBound("Browsing and network", setting)));
   const showsRecords = $derived(RECORD_LIMITS.some((setting) => showsBound("Records", setting)));
 
+  // The log's level and file, applied at once (ADR 0127 decisions 2 to 4).
+  const LOG_LEVELS = ["debug", "info", "warn", "error"];
+  const LOG_LEVEL_NOTE = "The least important lines the log writes: debug adds detail for working out a problem, info is the usual, warn and error write less. It applies at once. The AERONAUTES_LOG_LEVEL switch, when set, wins at launch.";
+  const LOG_FILE_NOTE = "Writes the log to a file as well, for a support request; it starts again past 10 MiB, keeping the one before. Off stops writing and keeps the file. The AERONAUTES_LOG_FILE switch, when set, names the file and wins at launch.";
+  let logLevelError: string | null = $state(null);
+  let logFileError: string | null = $state(null);
+  const showsDiagnostics = $derived(shows("Diagnostics", "Log level", LOG_LEVEL_NOTE) || shows("Diagnostics", "Keep a log file", LOG_FILE_NOTE));
+
   // A reset asks first, in the window, and is then one save (ADR 0126
   // decision 4).
   let resetAsked = $state(false);
@@ -227,7 +236,7 @@
       {/if}
       {#if settings.document}
         {@const current = settings.document}
-        {#if query !== "" && !showsGeneral && !showsJobs && !showsNetwork && !showsRecords}
+        {#if query !== "" && !showsGeneral && !showsJobs && !showsNetwork && !showsRecords && !showsDiagnostics}
           <p class="note" role="status">No setting matches "{filter.trim()}".</p>
         {/if}
         {#if showsGeneral}
@@ -359,6 +368,65 @@
           {#each RECORD_LIMITS.filter((setting) => showsBound("Records", setting)) as setting (setting.field)}
             {@render bounded(setting, current[setting.field])}
           {/each}
+        </section>
+        {/if}
+
+        {#if showsDiagnostics}
+        {@const log = current.log}
+        <section aria-labelledby={`${id}-diagnostics`}>
+          <h3 id={`${id}-diagnostics`}>Diagnostics</h3>
+          {#if shows("Diagnostics", "Log level", LOG_LEVEL_NOTE)}
+          <div class="setting">
+            <label class="field">
+              <span>Log level</span>
+              <select
+                class="log-level"
+                value={current.logLevel || "info"}
+                disabled={!settings.canSave}
+                aria-describedby={`${id}-log-level-note ${id}-log-level-status`}
+                onchange={(e) => {
+                  const value = e.currentTarget.value;
+                  e.currentTarget.value = current.logLevel || "info";
+                  void saveBound({ logLevel: value }, (message) => (logLevelError = message));
+                }}
+              >
+                {#each LOG_LEVELS as level (level)}
+                  <option value={level}>{level}</option>
+                {/each}
+              </select>
+            </label>
+            <p class="note" id={`${id}-log-level-note`}>{LOG_LEVEL_NOTE}</p>
+            <p class="status" id={`${id}-log-level-status`} role="status">
+              {#if logLevelError}{logLevelError}{:else if log?.levelFromEnv}{log.level} in force, set by AERONAUTES_LOG_LEVEL at launch{:else}{log?.level ?? current.logLevel} in force{/if}
+            </p>
+          </div>
+          {/if}
+          {#if shows("Diagnostics", "Keep a log file", LOG_FILE_NOTE)}
+          <div class="setting">
+            <label class="field">
+              <span>Keep a log file</span>
+              <input
+                class="log-to-file"
+                type="checkbox"
+                checked={log?.fileOn ?? current.logToFile}
+                disabled={!settings.canSave}
+                aria-describedby={`${id}-log-file-note ${id}-log-file-status`}
+                onchange={(e) => {
+                  const value = e.currentTarget.checked;
+                  e.currentTarget.checked = log?.fileOn ?? current.logToFile;
+                  void saveBound({ logToFile: value }, (message) => (logFileError = message));
+                }}
+              />
+            </label>
+            <p class="note" id={`${id}-log-file-note`}>{LOG_FILE_NOTE}</p>
+            <p class="status" id={`${id}-log-file-status`} role="status">
+              {#if logFileError}{logFileError}{:else if log?.fileOn}being written{#if log.fileFromEnv}, named by AERONAUTES_LOG_FILE at launch{/if}{:else}off{/if}
+            </p>
+            {#if log?.filePath}
+              <p class="log-path"><span class="path">{log.filePath}</span><CopyValue label="the log file's path" value={log.filePath} copy={(text) => settings.copyText(text)} /></p>
+            {/if}
+          </div>
+          {/if}
         </section>
         {/if}
       {/if}
@@ -617,6 +685,21 @@
 
   .status {
     color: var(--color-text);
+  }
+
+  /* The whole path, wrapping where it must, with its copy button after it. */
+  .log-path {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+  }
+
+  .log-path .path {
+    font-family: var(--font-mono, monospace);
+    overflow-wrap: anywhere;
+    min-width: 0;
   }
 
   /* A status with nothing to say takes no room; it stays in the page so a

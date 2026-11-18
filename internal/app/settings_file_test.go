@@ -32,7 +32,8 @@ func TestSettingsLiveInTheirOwnFile(t *testing.T) {
 	if _, err := service.Set(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
-	if read, err := NewSettingsService(path, newJobRunner(nil, nil)).Get(ctx); err != nil || read != saved {
+	// The log in force is reported beside the settings, not read from them.
+	if read, err := NewSettingsService(path, newJobRunner(nil, nil)).Get(ctx); err != nil || read.Log == nil || withoutLog(read) != saved {
 		t.Fatalf("a fresh service read %+v (%v), want %+v", read, err, saved)
 	}
 	for name, want := range map[string]os.FileMode{path: 0o600, filepath.Dir(path): 0o700} {
@@ -92,7 +93,7 @@ func TestAnUnreadableSettingsFileIsKeptAndReported(t *testing.T) {
 			read, err := service.Get(ctx)
 			want := defaults()
 			want.FileProblem = read.FileProblem
-			if err != nil || read != want || !strings.Contains(read.FileProblem, tc.reason) || !strings.Contains(read.FileProblem, path) {
+			if err != nil || withoutLog(read) != want || !strings.Contains(read.FileProblem, tc.reason) || !strings.Contains(read.FileProblem, path) {
 				t.Fatalf("read %+v (%v); want the defaults and a report naming the file and %q", read, err, tc.reason)
 			}
 			if kept, _ := os.ReadFile(path); string(kept) != tc.body {
@@ -148,4 +149,10 @@ func TestAFailedSettingsSaveLeavesTheOldFile(t *testing.T) {
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Fatalf("a failed save left %d entries in the directory", len(entries))
 	}
+}
+
+// withoutLog drops the report of the log in force, which is not a setting.
+func withoutLog(settings AppSettingsDTO) AppSettingsDTO {
+	settings.Log = nil
+	return settings
 }

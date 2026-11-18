@@ -96,6 +96,11 @@ export class SettingsState {
     }
   }
 
+  /** Puts the log file's path on the clipboard (ADR 0127 decision 3). */
+  copyText(text: string): Promise<void> {
+    return this.#api.copyText(text);
+  }
+
   /** Every setting back to this version's default, as one save (ADR 0126
    * decision 4); the window has asked first. */
   async reset() {

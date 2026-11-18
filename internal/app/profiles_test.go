@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/db"
 	"github.com/csmart/aeronautes/internal/jobs"
@@ -351,10 +352,10 @@ func TestSettingsResetSavesTheDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	reset, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "custom", ResetToDefaults: true})
-	if err != nil || !reflect.DeepEqual(reset, defaults()) {
+	if err != nil || !reflect.DeepEqual(withoutLog(reset), defaults()) {
 		t.Fatalf("reset = %+v %v, want the defaults %+v", reset, err, defaults())
 	}
-	if read, err := service.Get(ctx); err != nil || !reflect.DeepEqual(read, defaults()) {
+	if read, err := service.Get(ctx); err != nil || !reflect.DeepEqual(withoutLog(read), defaults()) {
 		t.Fatalf("read after the reset = %+v %v", read, err)
 	}
 	runner.mu.Lock()
@@ -362,5 +363,37 @@ func TestSettingsResetSavesTheDefaults(t *testing.T) {
 	runner.mu.Unlock()
 	if capacity != defaultMaxActiveJobs || queue != defaultMaxQueuedJobs {
 		t.Fatalf("runner limits after the reset = %d and %d", capacity, queue)
+	}
+}
+
+// ADR 0127 decisions 2 and 4: a log change saved from Settings applies at
+// once, and saving another setting leaves the level a launch switch set.
+func TestSettingsApplyOnlyAChangedLog(t *testing.T) {
+	t.Setenv(applog.EnvLevel, "debug")
+	t.Setenv(applog.EnvFile, "")
+	if _, closeFn, err := applog.Configure(); err != nil {
+		t.Fatal(err)
+	} else {
+		t.Cleanup(func() { _ = closeFn() })
+	}
+	service := NewSettingsService(settingsFile(t), newJobRunner(nil, nil))
+	ctx := context.Background()
+	if applog.Current().Level != "debug" {
+		t.Fatalf("the launch switch did not win at start: %+v", applog.Current())
+	}
+	settings := defaults()
+	settings.MaxQueuedJobs = 3
+	saved, err := service.Set(ctx, settings)
+	if err != nil || saved.Log == nil || saved.Log.Level != "debug" || !saved.Log.LevelFromEnv {
+		t.Fatalf("saving another setting changed the log: %+v %v", saved.Log, err)
+	}
+	settings.LogLevel = "warn"
+	saved, err = service.Set(ctx, settings)
+	if err != nil || saved.LogLevel != "warn" || saved.Log == nil || saved.Log.Level != "warn" || saved.Log.LevelFromEnv {
+		t.Fatalf("a changed level was not applied: %+v %+v %v", saved, saved.Log, err)
+	}
+	settings.LogLevel = "loud"
+	if _, err := service.Set(ctx, settings); err == nil {
+		t.Fatal("an unknown level was saved")
 	}
 }
