@@ -584,6 +584,10 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		Bytes int64  `json:"bytes"`
 	}
 	rows := make([]row, 0, len(s.containers))
+	// Swift reports what the account holds under each storage policy its
+	// containers use, which the account inspector's policies card reads.
+	type tally struct{ containers, objects, bytes int64 }
+	policies := map[string]*tally{}
 	for name, c := range s.containers {
 		names = append(names, name)
 		var cb int64
@@ -592,6 +596,13 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		objects += int64(len(c.objects))
 		bytes += cb
+		if c.Policy != "" {
+			if policies[c.Policy] == nil {
+				policies[c.Policy] = &tally{}
+			}
+			t := policies[c.Policy]
+			t.containers, t.objects, t.bytes = t.containers+1, t.objects+int64(len(c.objects)), t.bytes+cb
+		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
@@ -620,6 +631,11 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Account-Container-Count", strconv.Itoa(containerCount))
 	h.Set("X-Account-Object-Count", strconv.FormatInt(objects, 10))
 	h.Set("X-Account-Bytes-Used", strconv.FormatInt(bytes, 10))
+	for policy, t := range policies {
+		h.Set("X-Account-Storage-Policy-"+policy+"-Container-Count", strconv.FormatInt(t.containers, 10))
+		h.Set("X-Account-Storage-Policy-"+policy+"-Object-Count", strconv.FormatInt(t.objects, 10))
+		h.Set("X-Account-Storage-Policy-"+policy+"-Bytes-Used", strconv.FormatInt(t.bytes, 10))
+	}
 	h.Set("X-Trans-Id", "txswifttest-account")
 	for k, v := range metaCopy {
 		h.Set("X-Account-Meta-"+k, v)
