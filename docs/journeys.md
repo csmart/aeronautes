@@ -109,7 +109,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Upload | chosen files instead of a folder | not yet | |
 | Download | a whole container into a local folder | download it back | each file's SHA-256 is that of the file uploaded |
 | Download | replace existing files, with the native confirmation answered by the run, over files that are already the same | download it again over the same files and confirm the replacement | the job says every file is already the same, and each file's SHA-256 is unchanged |
-| Download | one folder, into a folder of its name inside the chosen directory | download the folder into a folder of its name | each file's SHA-256 under the folder's name is that of the file uploaded |
+| Download | one folder, into a folder of its name inside the chosen directory | download the folder into a folder of its name | each file's SHA-256 under the folder's name is that of the file uploaded, and the job names the folder picked |
 | Download | one object | not yet; layer 1 journey 3 | |
 | Copy | open the copy dialog from a container's menu | open a copy from a container's context menu | the dialog opens for that container; nothing is sent |
 | Copy | a folder's copy starts under the folder's own name | upload a folder with a segmented file and browse it | for the store's own folder row, the copy dialog's destination path starts as the folder's name; nothing is sent |
@@ -132,6 +132,6 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Menus | a container row's menu | open a copy from a container's context menu; find a container named like a segment store behind its heading | the chosen entry opens its dialog |
 | Menus | an object's and a folder's menu; "Copy name" | not yet | |
 | Settings | open Settings and import from it | import bookmarks from an rclone config (mock only) | as for the import above |
-| Settings | filter the settings; change and save a setting, with the jobs-at-once line adding the limits; reset to the defaults after asking | filter the settings and reset them to the defaults (mock only) | the filter leaves only the matching setting, the line names the saved queue depth, and after the reset the queue depth reads its default |
+| Settings | filter the settings; change and save a setting, with the jobs-at-once line adding the limits; keep a log file; reset to the defaults after asking | filter the settings and reset them to the defaults (mock only) | the filter leaves only the matching setting, the line names the saved queue depth, the log file is being written with its path shown, and after the reset the queue depth reads its default and the log file is off |
 | Settings | back up and restore the configuration | not yet; layer 1 journey 7 | |
 | Window | the About and welcome dialogs; credential status; use by keyboard alone | not yet | |
