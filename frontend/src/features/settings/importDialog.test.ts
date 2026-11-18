@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { ImportPreview, ImportResult } from "../../lib/api";
+import type { BookmarkDTO, ImportPreview, ImportResult } from "../../lib/api";
 import { newFakeApi } from "../browser/fakeApi";
 import { ImportState } from "../browser/importState.svelte";
 import ImportBookmarksDialog from "./ImportBookmarksDialog.svelte";
@@ -56,6 +56,12 @@ async function settle() {
 }
 
 // ADR 0114: importable rows start ticked and the others do not, a skipped
+// A bookmark as the rail holds it after the import saved it.
+function saved(id: string, displayName: string, extra: Partial<BookmarkDTO> = {}): BookmarkDTO {
+  return { id, displayName, authUrl: "https://example.test/auth", username: "u", storageUrlOverride: "", authVersion: 1,
+    userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: true, ...extra };
+}
+
 // row cannot be ticked, the save sends the choice with verification on by
 // default, and a row that did not verify offers its editor.
 describe("import bookmarks dialog", () => {
@@ -72,7 +78,7 @@ describe("import bookmarks dialog", () => {
     const imports = new ImportState(api, changed);
     expect(await imports.pick()).toBe("picked");
     const edit = vi.fn();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: edit } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [saved("bm-9", "Prod AU", { verifyFailure: "the identity service refused these credentials" })], onClose: vi.fn(), onEditBookmark: edit } }));
     flushSync();
 
     expect(checkbox("fresh").checked).toBe(true);
@@ -142,12 +148,28 @@ describe("import bookmarks dialog", () => {
     const imports = new ImportState(api, vi.fn());
     await imports.pick();
     const edit = vi.fn();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: edit } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [saved("bm-3", "bare", { hasCredential: false })], onClose: vi.fn(), onEditBookmark: edit } }));
     flushSync();
 
     button("Import 1 bookmark").click();
     await settle();
     document.querySelector<HTMLButtonElement>('button[aria-label="Enter key for bare"]')!.click();
     expect(edit).toHaveBeenCalledWith("bm-3");
+  });
+
+  // Back from an editor where the bookmark was deleted: the row still says
+  // what the import did, and offers no editor for a bookmark that is gone.
+  it("offers no editor for a row whose bookmark has been deleted", async () => {
+    const api = newFakeApi();
+    api.previewImport = async () => preview;
+    api.saveImport = async (token) => ({ token, done: true, outcomes: [{ index: 0, name: "fresh", bookmarkId: "bm-9", verify: "failed", reason: "the identity service refused these credentials" }] });
+    const imports = new ImportState(api, vi.fn());
+    await imports.pick();
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: vi.fn() } }));
+    flushSync();
+    button("Import 1 bookmark").click();
+    await settle();
+    expect(document.body.textContent).toContain("Imported, but did not verify");
+    expect(document.querySelector('button[aria-label="Edit fresh"]')).toBeNull();
   });
 });
