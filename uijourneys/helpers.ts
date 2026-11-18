@@ -17,6 +17,13 @@ export async function account(target: string): Promise<string> {
   return bookmarks.get(target)!;
 }
 
+// forgetAccounts drops what the runner knows of the accounts it opened, for
+// after the application was quit and started again: that start has no
+// record of them, so the next container opens its account afresh.
+export function forgetAccounts(): void {
+  bookmarks.clear();
+}
+
 // ownContainer creates a container the run owns on the target.
 export async function ownContainer(target: string, name: string, segmented = false): Promise<string> {
   await account(target);
