@@ -108,7 +108,7 @@ func TestQueuedCancelWake(t *testing.T) {
 				owner.launch(job.ID, bookmark, func(ctx context.Context) {
 					bodyRan = true
 					h.transfer.runLocal(ctx, job.ID, bookmark, 1, job.Counters,
-						func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+						func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 							return &local.Report{}, nil
 						})
 				}, func(ctx context.Context) {

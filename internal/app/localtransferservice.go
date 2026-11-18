@@ -1086,7 +1086,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			recorder := s.uploadItemRecorder(background, job.ID, req)
 			recorder.StaticManifests = func(returned bool) error {
@@ -1231,7 +1231,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}
 
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
 			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, preflight,
 				onProgress, s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
 		})
@@ -1359,7 +1359,7 @@ func onlyCancellations(failures []local.Failure) bool {
 // so the lifecycle is Planning → Running → Verifying → terminal with
 // verification counted from the per-object checks.
 func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, version int, base jobs.Counters,
-	run func(ctx context.Context, onProgress func(done, total, bytes int64)) (*local.Report, error)) {
+	run func(ctx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error)) {
 
 	background := context.WithoutCancel(ctx)
 	counters := base
@@ -1386,11 +1386,14 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 	}
 
 	var err error
-	report, err = run(ctx, func(done, total, bytes int64) {
+	report, err = run(ctx, func(done, same, total, bytes int64) {
 		// Progress flushes are best-effort; the terminal flush is exact.
 		// Bytes stream live so the drawer's rate and ETA work for local
 		// transfers too (§65.8 item 5).
 		counters.ObjectsCopied = done
+		// A file left as the same shows as soon as the engine says so
+		// (ADR 0122 decision 14), not only when the run returns.
+		counters.ObjectsSame = same
 		counters.BytesCopied = bytes
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
 	})

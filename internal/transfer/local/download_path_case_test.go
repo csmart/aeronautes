@@ -137,7 +137,7 @@ func TestDownloadPathCaseDirect(t *testing.T) {
 							}}
 						}
 						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
-							func(int64, int64, int64) { progressCalls++ }, recorders...)
+							func(int64, int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if fixture.conflict != "" {
 							if err == nil || report != nil || engine.calls != 0 || mock.Requests() != requests || len(admissions)+len(executed)+len(verified)+progressCalls != 0 {

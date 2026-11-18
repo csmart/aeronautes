@@ -32,7 +32,7 @@ const downloadEngineUncontainedRefusal = "engine downloads are refused on this p
 // and runs DownloadInto. Direct callers keep their unrecorded mode; the
 // service passes the handle it captured at the pick instead.
 func Download(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix, destDir string,
-	preflight *DownloadPreflight, onProgress func(done, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
+	preflight *DownloadPreflight, onProgress func(done, same, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
 	destination, err := OpenDestinationRoot(destDir)
 	if err != nil {
 		if !validDownloadRoot(destDir) {
@@ -109,7 +109,7 @@ func checkDownloadRequest(prefix string, destination *DestinationRoot, preflight
 // outcome. Every local effect goes through the held destination, never its
 // pathname. Omitted recording preserves direct callers' unrecorded mode.
 func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine, srcSpec, container, prefix string, destination *DestinationRoot,
-	preflight *DownloadPreflight, onProgress func(done, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
+	preflight *DownloadPreflight, onProgress func(done, same, total, bytes int64), recorders ...*DownloadRecorder) (report *Report, runErr error) {
 	if destination == nil {
 		return nil, errors.New("download needs the held destination directory")
 	}
@@ -125,7 +125,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 	total := int64(len(preflight.Items))
 	progress := func() {
 		if onProgress != nil {
-			onProgress(report.Done, total, report.Bytes)
+			onProgress(report.Done, report.Same, total, report.Bytes)
 		}
 	}
 	d.noteDisplacement(destination, "before the first effect")
@@ -229,7 +229,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 			return report, err
 		}
 		pending += len(batch)
-		if err := d.engineBatch(ctx, src, engine, source, destination, batch, engineItems); err != nil {
+		if err := d.engineBatch(ctx, src, engine, source, destination, batch, engineItems, progress); err != nil {
 			return report, err
 		}
 		progress()
@@ -249,7 +249,9 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 // downloaded. Its line that the destination exists means the file was left
 // alone, which is a conflict. Its error line means failed with that error.
 // A file it said nothing about is unknown when the engine itself failed, and
-// was not downloaded when it ended cleanly.
+// was not downloaded when it ended cleanly. A file written or left as the same
+// is recorded and its progress reported when its line arrives; the rest wait
+// for the end of the run.
 //
 // The application makes the folders, one component at a time through the
 // held folder, so that a link or a mount point on the way is refused and the
@@ -262,7 +264,7 @@ func DownloadInto(ctx context.Context, src *swiftcontrol.Session, engine Engine,
 // operator's decision a download works as rclone does there, and nothing is
 // checked after the engine has written (ADR 0122 decision 5).
 func (d *downloadRun) engineBatch(ctx context.Context, src *swiftcontrol.Session, engine Engine, source string,
-	destination *DestinationRoot, batch []string, items map[string]DownloadItem) error {
+	destination *DestinationRoot, batch []string, items map[string]DownloadItem, progress func()) error {
 	created := map[string][]string{}
 	var names []string
 	for _, rel := range batch {
@@ -286,12 +288,36 @@ func (d *downloadRun) engineBatch(ctx context.Context, src *swiftcontrol.Session
 		return nil
 	}
 	answers := rclone.NewAnswers()
+	given := make(map[string]bool, len(names))
+	for _, rel := range names {
+		given[rel] = true
+	}
+	recorded := map[string]bool{}
+	heard := func(event rclone.Event) {
+		answers.Hear(event)
+		// A written or unchanged file is final when its line arrives (ADR
+		// 0122 decision 14), so the job shows it during the run.
+		rel, final := rclone.WrittenOrSame(event)
+		if !final || !given[rel] || recorded[rel] || d.stopped != nil {
+			return
+		}
+		item := items[rel]
+		recorded[rel] = true
+		outcome := engineDownloadOutcome(answers, rel, item, nil, nil)
+		outcome.created = created[rel]
+		if d.observe(item, outcome) == nil {
+			progress()
+		}
+	}
 	result, err := d.copy(ctx, src, func(copyCtx context.Context) (*rclone.Result, error) {
-		return copyIntoFolder(copyCtx, engine, source, destination, names, answers.Hear)
+		return copyIntoFolder(copyCtx, engine, source, destination, names, heard)
 	})
 	if result == nil && err != nil {
-		// No child ran, so nothing was written for any of them.
+		// The last child did not start, so nothing more was written.
 		for _, rel := range names {
+			if recorded[rel] {
+				continue
+			}
 			outcome := downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageEngine, transfercopy.CodeIncomplete, "engine", err)
 			outcome.created = created[rel]
 			if observeErr := d.observe(items[rel], outcome); observeErr != nil {
@@ -299,6 +325,11 @@ func (d *downloadRun) engineBatch(ctx context.Context, src *swiftcontrol.Session
 			}
 		}
 		return ctx.Err()
+	}
+	if d.stopped != nil {
+		// A record that could not be kept while the engine ran ends the
+		// recording here, as one kept after the run would.
+		return d.stopped
 	}
 	var cancelled error
 	if err == nil && downloadEngineCancelled(ctx, result) {
@@ -316,6 +347,9 @@ func (d *downloadRun) engineBatch(ctx context.Context, src *swiftcontrol.Session
 	// outcome, also when the run was stopped while the engine ran. Only an
 	// item record that cannot itself be kept ends the recording.
 	for _, rel := range names {
+		if recorded[rel] {
+			continue
+		}
 		item := items[rel]
 		outcome := engineDownloadOutcome(answers, rel, item, err, cancelled)
 		outcome.created = created[rel]

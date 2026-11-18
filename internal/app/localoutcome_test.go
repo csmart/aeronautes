@@ -27,7 +27,7 @@ func TestLocalMissingOutcomeRefusesCompletion(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
-			h.transfer.runLocal(ctx, job.ID, "", test.version, job.Counters, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, "", test.version, job.Counters, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 				return nil, nil
 			})
 			got, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
@@ -83,8 +83,8 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
-			h.transfer.runLocal(ctx, job.ID, bookmark, job.ItemRecordsVersion, base, func(_ context.Context, progress func(int64, int64, int64)) (*local.Report, error) {
-				progress(2, 2, 20)
+			h.transfer.runLocal(ctx, job.ID, bookmark, job.ItemRecordsVersion, base, func(_ context.Context, progress func(int64, int64, int64, int64)) (*local.Report, error) {
+				progress(2, 0, 2, 20)
 				report := &local.Report{Done: test.done, Verified: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
 				if test.issues > 0 {
 					report.PostCommitIssueSamples = []local.Failure{{Name: "live/first", Stage: "commit-record", Err: "record refused"}}
@@ -154,7 +154,7 @@ func TestLocalOutcomeSurvivesADirectoryNamedForACredential(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			h.transfer.runLocal(t.Context(), job.ID, bookmark, 1, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(t.Context(), job.ID, bookmark, 1, base, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 				return &local.Report{
 					Failures:           []local.Failure{{Name: dir + "/vault.kdbx", Err: "placement refused"}},
 					CreatedDirectories: 1, CreatedDirectorySamples: []string{dir},

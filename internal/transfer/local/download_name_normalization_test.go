@@ -250,7 +250,7 @@ func TestDownloadNameFormDirect(t *testing.T) {
 							}}
 						}
 						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root,
-							plan, func(int64, int64, int64) { progressCalls++ }, recorders...)
+							plan, func(int64, int64, int64, int64) { progressCalls++ }, recorders...)
 						after := downloadDestinationSnapshot(t, owned)
 						if !fixture.refused() {
 							// An accepted control must prove the download
