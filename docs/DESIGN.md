@@ -645,6 +645,8 @@ Examples:
 - gate SLO-native operations;
 - expose capability status in Diagnostics.
 
+A control whose effect needs a feature that the store's `/info` was read without, TempURL keys, the static website preset and container quotas, is shown greyed with the reason; an unread `/info` greys nothing ([ADR 0124](adr/0124-what-the-store-does-not-offer-is-greyed.md)).
+
 **When `/info` is unavailable.** `GET /info` is served at the cluster root, not under `/v1/AUTH_account`, and **may be disabled, filtered, unavailable, or unreachable through provider-specific endpoint layouts**; a bookmark may only have a storage URL + token and no authorised path to `/info`. Aeronautes derives the info endpoint from the storage URL (strip the account path) as a best effort, and when it cannot read `/info` it enters an **Unknown-capabilities** mode: features are not hard-disabled purely because `/info` is missing, but are offered with a clearly labelled "capability unknown" state and validated by attempting the operation and handling the result, rather than pretending the feature is absent. The degraded experience with no `/info` must remain usable for the core browse/inspect/mutate flows; do not gate so much on `/info` that a tenant without it cannot operate.
 
 Model capability provenance explicitly rather than a bare Advertised/Unknown split:
