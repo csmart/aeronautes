@@ -226,6 +226,22 @@ func TestNamesListsOnlyTheRunsOwnContainers(t *testing.T) {
 	if len(mock.RequestLog()) != sent {
 		t.Fatal("the refusal still sent a request")
 	}
+	// A write behind the application's back goes only into the run's own
+	// container; a claimed sidecar is read, never written.
+	for _, container := range []string{"unrelated", mine + "_segments"} {
+		if err := owned.Put(ctx, container, "x", []byte("x")); !errors.Is(err, ErrNotOwned) {
+			t.Fatalf("writing into %s = %v, want it refused", container, err)
+		}
+	}
+	if len(mock.RequestLog()) != sent {
+		t.Fatal("a refused write still sent a request")
+	}
+	if err := owned.Put(ctx, mine, "dir/late", []byte("late")); err != nil {
+		t.Fatal(err)
+	}
+	if names, err := owned.Names(ctx, mine); err != nil || len(names) != 2 || names[1] != "dir/late" {
+		t.Fatalf("names after the run's own write = %v, %v", names, err)
+	}
 }
 
 // A real store archives each object deleted from a container that keeps
