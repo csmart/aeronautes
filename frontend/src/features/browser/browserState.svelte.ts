@@ -6,6 +6,7 @@
 import { isLiteralPlainObject } from "../../lib/objectKind";
 import { messageOf } from "../../lib/messageOf";
 import { segmentStoreCaution, segmentStoreMark } from "./segmentStoreCaution";
+import { keySuggestions, type KeySuggestion, type MetadataKind } from "../../lib/metadataKeys";
 import type {
   AccountDTO,
   AccountEditDTO,
@@ -925,6 +926,22 @@ export class BrowserState {
   }
 
   /** The §52 modes over the service's §24 classification. */
+  // Metadata keys this session has read, by kind of item, offered back in
+  // the metadata editor (ADR 0125 decision 3). Nothing is read for them.
+  #seenKeys: Record<MetadataKind, string[]> = $state({ object: [], container: [], account: [] });
+
+  /** Note the keys of an item the inspector has shown. */
+  rememberKeys(kind: MetadataKind, meta: { [key: string]: string | undefined } | null | undefined) {
+    const known = new Set(this.#seenKeys[kind].map((key) => key.toLowerCase()));
+    const fresh = Object.keys(meta ?? {}).filter((key) => !known.has(key.toLowerCase()));
+    if (fresh.length > 0) this.#seenKeys[kind] = [...this.#seenKeys[kind], ...fresh];
+  }
+
+  /** The keys to offer in an editor of this kind of item. */
+  keySuggestions(kind: MetadataKind): KeySuggestion[] {
+    return keySuggestions(kind, this.#seenKeys[kind]);
+  }
+
   get containerGroups(): ContainerGroups {
     if (this.mode === "logical") {
       return {

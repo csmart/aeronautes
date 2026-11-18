@@ -79,7 +79,7 @@
   <h3 class="card-title">Edit metadata</h3>
 
   <fieldset class="fields" aria-label="Object metadata" disabled={saving || !currentBaseline}>
-    <MetadataEditor base={target.detail.meta ?? {}} bind:rows />
+    <MetadataEditor suggestions={browser.keySuggestions("object")} base={target.detail.meta ?? {}} bind:rows />
 
     <label class="field">
       <span>Content type</span>

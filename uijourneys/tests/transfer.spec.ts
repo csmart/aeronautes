@@ -143,6 +143,13 @@ test.describe.serial("transfer", () => {
     await expect(metadata).toContainText("Journey");
     await expect(metadata).toContainText("round-2");
     await expect(metadata).toContainText("Mtime");
+    // The view's actions sit above its first card (ADR 0125 decision 1), and
+    // a value can be copied from its row (decision 4).
+    const editButton = inspector(page).getByRole("button", { name: "Edit metadata" });
+    const firstCard = inspector(page).locator(".card").first();
+    expect((await editButton.boundingBox())!.y).toBeLessThan((await firstCard.boundingBox())!.y);
+    await inspector(page).getByRole("button", { name: "Copy ETag" }).click();
+    await expect(inspector(page).getByRole("status").filter({ hasText: /^Copied$/ })).toBeVisible();
   });
 
   test("make the container public and private again", async ({ page }, info) => {
@@ -158,12 +165,19 @@ test.describe.serial("transfer", () => {
       await expect(page.getByRole("spinbutton", { name: "Quota bytes (0 = none)" })).toBeDisabled();
     }
     await page.getByLabel("Anyone can read objects").check();
+    // A key is found by any part of it (ADR 0125 decision 2).
+    await page.getByRole("button", { name: "+ add key" }).click();
+    await page.getByLabel("metadata key").last().fill("label");
+    await page.getByRole("option", { name: /^Web-Listings-Label/ }).click();
+    await expect(page.getByLabel("metadata key").last()).toHaveValue("Web-Listings-Label");
+    await page.getByLabel("metadata value").last().fill("journey");
     await page.getByLabel(`I understand this makes ${container} publicly readable.`).check();
     await control.answer("public", true);
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("button", { name: "Configure container" })).toBeVisible();
     await openContainer(page, info.project.name, container);
     await expect(inspector(page).getByText(everyone)).toBeVisible();
+    await expect(inspector(page).locator("section", { has: page.getByRole("heading", { name: "User metadata" }) })).toContainText("Web-Listings-Label");
     // The public notice is a mark on the path's row (ADR 0123).
     const mark = page.getByRole("note", { name: /^Public: anyone with the URL can read objects in / });
     await expect(mark).toHaveText("Public");
