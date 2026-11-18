@@ -22,7 +22,11 @@ mkdir -p "$state/home" "$state/config" "$state/data" "$state/state" "$state/cach
 
 pids=()
 cleanup() {
+	# The application's restart loop stops at this mark, and then the
+	# application it last started is stopped with the rest.
+	touch "$private/stopping"
 	for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+	if [ -f "$private/app.pid" ]; then kill "$(cat "$private/app.pid")" 2>/dev/null || true; fi
 	wait 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -51,11 +55,26 @@ pids+=($!)
 
 # The application's output is its own log, which can name hosts, so it goes
 # to the private directory; its first line is the one the runner reads.
-env -u WAILS_SERVER_HOST -u WAILS_SERVER_PORT \
-	HOME="$state/home" XDG_CONFIG_HOME="$state/config" XDG_DATA_HOME="$state/data" \
-	XDG_STATE_HOME="$state/state" XDG_CACHE_HOME="$state/cache" \
-	ORACLE_CLOUDS="${CLOUDS:-}" \
-	"$private/aeronautes-uijourney" >"$private/app.log" 2>&1 &
+# A journey can quit the application as closing its window does (test plan
+# step 9), and marks that it did; only then is it started again over the
+# same state, on the addresses and token of its first start. An exit nobody
+# asked for is not restarted, so a crash still fails the journeys after it.
+start_app() {
+	env -u WAILS_SERVER_HOST -u WAILS_SERVER_PORT \
+		HOME="$state/home" XDG_CONFIG_HOME="$state/config" XDG_DATA_HOME="$state/data" \
+		XDG_STATE_HOME="$state/state" XDG_CACHE_HOME="$state/cache" \
+		ORACLE_CLOUDS="${CLOUDS:-}" AERONAUTES_UIJOURNEY_LISTEN="$1" \
+		"$private/aeronautes-uijourney" >>"$private/app.log" 2>&1 &
+	echo $! >"$private/app.pid"
+	wait "$!" || true
+}
+(
+	start_app ""
+	while [ -f "$private/restart" ] && [ ! -f "$private/stopping" ]; do
+		rm -f "$private/restart"
+		start_app "$(grep -m1 '^uijourney ' "$private/app.log")"
+	done
+) &
 pids+=($!)
 for _ in $(seq 100); do
 	grep -q '^uijourney ' "$private/app.log" 2>/dev/null && break

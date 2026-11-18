@@ -31,7 +31,7 @@ import (
 // token-guarded control listener on 127.0.0.1, credentials never leave Go,
 // and the secret store lives for the process.
 
-var control = &journeyControl{answers: map[string][]bool{}, accounts: map[string]openAccount{}}
+var control = &journeyControl{answers: map[string][]bool{}, accounts: map[string]openAccount{}, started: time.Now().UTC().Format(time.RFC3339Nano)}
 
 func nativePicker() app.FilePicker { return scriptedPicker{} }
 
@@ -57,23 +57,53 @@ func serveOptions(services journeyServices) (application.ServerOptions, error) {
 	if os.Getenv("WAILS_SERVER_PORT") != "" {
 		return application.ServerOptions{}, errors.New("the UI journey build chooses its own port; unset WAILS_SERVER_PORT")
 	}
-	uiPort, err := freeLoopbackPort()
+	// A restart the runner makes after a journey quits the application
+	// comes back on the ports and token of the first start, so the journey
+	// carries on against the same addresses (test plan step 9).
+	uiPort, controlAddr, token, err := listenAgain(os.Getenv("AERONAUTES_UIJOURNEY_LISTEN"))
 	if err != nil {
 		return application.ServerOptions{}, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if uiPort == 0 {
+		if uiPort, err = freeLoopbackPort(); err != nil {
+			return application.ServerOptions{}, err
+		}
+		controlAddr = "127.0.0.1:0"
+		random := make([]byte, 16)
+		if _, err := rand.Read(random); err != nil {
+			return application.ServerOptions{}, err
+		}
+		token = hex.EncodeToString(random)
+	}
+	listener, err := net.Listen("tcp", controlAddr)
 	if err != nil {
 		return application.ServerOptions{}, err
 	}
-	token := make([]byte, 16)
-	if _, err := rand.Read(token); err != nil {
-		return application.ServerOptions{}, err
-	}
-	control.token = hex.EncodeToString(token)
+	control.token = token
 	control.bookmarks = services.bookmarks
 	go http.Serve(listener, control)
 	fmt.Fprintf(os.Stdout, "uijourney ui=127.0.0.1:%d control=%s token=%s\n", uiPort, listener.Addr(), control.token)
 	return application.ServerOptions{Host: "127.0.0.1", Port: uiPort}, nil
+}
+
+// listenAgain reads the startup line's ui, control and token from an earlier
+// start, as the runner passes them back; empty means a first start.
+func listenAgain(line string) (uiPort int, controlAddr, token string, err error) {
+	if line == "" {
+		return 0, "", "", nil
+	}
+	var ui string
+	if _, err := fmt.Sscanf(line, "uijourney ui=%s control=%s token=%s", &ui, &controlAddr, &token); err != nil {
+		return 0, "", "", fmt.Errorf("the earlier start line cannot be read: %w", err)
+	}
+	host, port, err := net.SplitHostPort(ui)
+	if err != nil || host != "127.0.0.1" || !strings.HasPrefix(controlAddr, "127.0.0.1:") {
+		return 0, "", "", errors.New("the earlier start was not on 127.0.0.1")
+	}
+	if _, err := fmt.Sscanf(port, "%d", &uiPort); err != nil {
+		return 0, "", "", err
+	}
+	return uiPort, controlAddr, token, nil
 }
 
 func freeLoopbackPort() (int, error) {
@@ -100,6 +130,10 @@ type journeyControl struct {
 	// asked is what each native surface was asked since the runner last
 	// read it, so a journey checks the words a person would read there.
 	asked []asked
+	// started tells one start of the application from the next, so a
+	// journey that quit it waits for the new start, not the old one's last
+	// moments, before it loads the page again.
+	started string
 }
 
 // asked is one native surface's words: a picker's title, or a question's
@@ -205,6 +239,7 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Name      string `json:"name"`
 		Segmented bool   `json:"segmented"`
 		Container string `json:"container"`
+		Body      string `json:"body"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -229,6 +264,27 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply, err = c.container(ctx, request.Label, request.Name, request.Segmented)
 	case "/names":
 		reply, err = c.names(ctx, request.Label, request.Container)
+	case "/put":
+		reply, err = c.put(ctx, request.Label, request.Container, request.Name, request.Body)
+	case "/quit":
+		// The same way out as closing the window: the shutdown that runs
+		// then is what the next start's disclosure reports on. The reply
+		// goes first, so the runner is not left waiting on a closed socket.
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			application.Get().Quit()
+		}()
+		reply = map[string]bool{"quitting": true}
+	case "/started":
+		reply = map[string]string{"started": c.started}
+	case "/crash":
+		// A stop with no shutdown at all, as a crash or a power cut ends a
+		// run: what the next start finds unfinished is what it discloses.
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			os.Exit(3)
+		}()
+		reply = map[string]bool{"crashing": true}
 	case "/asked":
 		c.mu.Lock()
 		reply, c.asked = append([]asked{}, c.asked...), nil
@@ -355,6 +411,18 @@ func (c *journeyControl) names(ctx context.Context, label, container string) (an
 		return nil, err
 	}
 	return map[string][]string{"names": names}, nil
+}
+
+// put writes an object into one of the run's own containers from the run's
+// own session, behind the application's back.
+func (c *journeyControl) put(ctx context.Context, label, container, name, body string) (any, error) {
+	c.mu.Lock()
+	owned := c.accounts[label].owned
+	c.mu.Unlock()
+	if owned == nil {
+		return nil, fmt.Errorf("no account %q is open", label)
+	}
+	return map[string]bool{"written": true}, owned.Put(ctx, container, name, []byte(body))
 }
 
 // teardown removes what the run created on every account it opened and
