@@ -373,7 +373,7 @@
       </div>
     {/if}
 
-    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} chunk={mode === "upload"} largeObjects={mode === "upload"} onchange={invalidate} />
+    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} chunk={mode === "upload"} largeObjects={mode === "upload"} transfer={mode} onchange={invalidate} />
 
     <footer>
       {#if startedJobId}
