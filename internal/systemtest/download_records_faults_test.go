@@ -88,7 +88,11 @@ func downloadRecordFault(t *testing.T, h *Harness, mode string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := h.Transfer.StartDownload(t.Context(), app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix, DestDirToken: picked.Token})
+	// One file at a time: a file is recorded as soon as the engine reports
+	// it (ADR 0122 decision 14), so the first one recorded is the first in
+	// plan order only when the engine writes them in that order.
+	id, err := h.Transfer.StartDownload(t.Context(), app.DownloadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: source, Prefix: prefix,
+		DestDirToken: picked.Token, Settings: app.TransferSettingsDTO{Transfers: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}

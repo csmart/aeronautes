@@ -232,7 +232,7 @@ func TestDownloadRootAuthority(t *testing.T) {
 				engine.after = act
 			}
 			replaced := false
-			progress := func(done, total, bytes int64) {
+			progress := func(done, same, total, bytes int64) {
 				if c.seam == "progress" && done == 1 && !replaced {
 					replaced = true
 					act()

@@ -122,7 +122,7 @@ func TestDownloadDestinationEntry(t *testing.T) {
 						}}
 					}
 					report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
-						func(int64, int64, int64) { callbacks++ }, recorders...)
+						func(int64, int64, int64, int64) { callbacks++ }, recorders...)
 					after := downloadDestinationSnapshot(t, owned)
 					if fault == "missing_root" || fault == "root_file" {
 						// A chosen folder that is gone refuses the whole run before

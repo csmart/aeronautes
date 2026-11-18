@@ -19,7 +19,7 @@ func TestNativeDownloadCleanupKeepsCopiedOutcome(t *testing.T) {
 	}
 	report := &local.Report{Done: 1, Verified: 1, Bytes: 21, NativeRouted: 1, PostCommitIssues: 1,
 		PostCommitIssueSamples: []local.Failure{{Name: "selected", Stage: "temporary-cleanup", Err: "remove refused"}}}
-	h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64)) (*local.Report, error) {
+	h.transfer.runLocal(t.Context(), job.ID, "", 0, base, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 		return report, nil
 	})
 	visible, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)

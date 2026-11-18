@@ -159,6 +159,59 @@ func TestUploadTakesTheEnginesWordForEachFile(t *testing.T) {
 	}
 }
 
+// ADR 0122 decision 14 (finding F78): a file the engine reports written or
+// the same is recorded and shown in the progress while the engine is still
+// running, and a file with an error line or none is recorded after the run.
+// A file the engine reports again, in the run repeated for an expired
+// sign-in, is recorded once.
+func TestUploadRecordsEachFileWhenTheEngineReportsIt(t *testing.T) {
+	s, _ := session(t)
+	dir := t.TempDir()
+	paths := []string{writeFile(t, dir, "written", "alpha"), writeFile(t, dir, "same", "bravo"),
+		writeFile(t, dir, "refused", "gamma"), writeFile(t, dir, "silent", "delta")}
+	preflight, err := PreflightUpload(t.Context(), s, "media", "", paths)
+	if err != nil || preflight.Rejected() {
+		t.Fatalf("preflight: %+v %v", preflight, err)
+	}
+	executed := map[string]int{}
+	var shownDone, shownSame int64
+	recorder := &UploadRecorder{
+		Admit:   func(UploadAdmission) error { return nil },
+		Execute: func(item UploadItem, _ transfercopy.Observation) error { executed[item.Name]++; return nil },
+		Verify:  func(UploadItem, transfercopy.Observation) error { return nil },
+	}
+	recordedNow := func(t *testing.T, want map[string]int) {
+		t.Helper()
+		if !reflect.DeepEqual(executed, want) {
+			t.Fatalf("recorded while the engine runs = %v, want %v", executed, want)
+		}
+	}
+	runs := 0
+	engine := &scriptedEngine{run: func(_ context.Context, _, _ string, _ []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+		runs++
+		onEvent(rclone.Event{Level: "info", Object: "written", Msg: "Copied (new)"})
+		if runs == 1 {
+			recordedNow(t, map[string]int{"written": 1})
+			return &rclone.Result{ExitCode: 1, Errors: []string{"401 Unauthorized"}}, nil
+		}
+		onEvent(rclone.Event{Level: "debug", Object: "same", Msg: "Unchanged skipping"})
+		onEvent(rclone.Event{Level: "error", Object: "refused", Msg: "Failed to copy: the store said no"})
+		recordedNow(t, map[string]int{"written": 1, "same": 1})
+		if shownDone != 1 || shownSame != 1 {
+			t.Fatalf("progress while the engine runs = %d written and %d the same, want 1 and 1", shownDone, shownSame)
+		}
+		return &rclone.Result{}, nil
+	}}
+	report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight,
+		func(done, same, _, _ int64) { shownDone, shownSame = done, same }, nil, recorder)
+	if err != nil || runs != 2 || report.Done != 1 || report.Same != 1 || len(report.Failures) != 2 {
+		t.Fatalf("runs = %d, report = %+v, %v", runs, report, err)
+	}
+	if want := map[string]int{"written": 1, "same": 1, "refused": 1, "silent": 1}; !reflect.DeepEqual(executed, want) {
+		t.Fatalf("records = %v, want one for each file", executed)
+	}
+}
+
 // headerWatch serves mock and keeps each request's method, path and two
 // headers, for a test that asks what a write carried.
 func headerWatch(t *testing.T, mock *swifttest.Server, alter func(*http.Request)) (*swiftcontrol.Session, *[]string) {
@@ -418,7 +471,9 @@ func TestTheApplicationsUploadWritesRecordTheFilesModificationTime(t *testing.T)
 // The store checks a static manifest against the segments it names. A
 // segment that does not hold the file's bytes makes it refuse the manifest:
 // the file is reported failed, and the object stays the dynamic one the
-// engine wrote.
+// engine wrote. The engine's copied line for such a file is not its outcome,
+// so nothing is recorded for it until the manifest's answer (ADR 0122
+// decision 14), and then only the failure.
 func TestUploadFailsAFileWhoseStaticManifestTheStoreRefuses(t *testing.T) {
 	mock := segmentMock()
 	s := servedSession(t, mock)
@@ -426,16 +481,28 @@ func TestUploadFailsAFileWhoseStaticManifestTheStoreRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	preflight := staticPlan(t, s, true, writeFile(t, t.TempDir(), "big", "0123456789abcdefghijKLMNO"))
+	var records []transfercopy.Result
+	recorder := &UploadRecorder{
+		Admit:   func(UploadAdmission) error { return nil },
+		Execute: func(_ UploadItem, o transfercopy.Observation) error { records = append(records, o.Result); return nil },
+		Verify:  func(UploadItem, transfercopy.Observation) error { return nil },
+	}
 	inner := &segmentingEngine{session: s, chunk: 10}
 	engine := &scriptedEngine{run: func(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
 		result, err := inner.Copy(ctx, src, dst, names, onEvent)
+		if len(records) != 0 {
+			t.Errorf("recorded %v at the engine's copied line, before the static manifest was answered", records)
+		}
 		// A segment whose bytes are not the file's, of the same length.
 		seed(mock, "media_segments", "up/big/2026-11-12-000000-run/00000001", "ABCDEFGHIJ")
 		return result, err
 	}}
-	report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight, nil, nil)
+	report, err := Upload(t.Context(), s, engine, "aeronautes_dst:media", "media", preflight, nil, nil, recorder)
 	if err != nil || report.Done != 0 || len(report.Failures) != 1 || !strings.Contains(report.Failures[0].Err, "dynamic one the engine wrote") {
 		t.Fatalf("report = %+v, %v; want the file failed and said to be dynamic", report, err)
+	}
+	if !reflect.DeepEqual(records, []transfercopy.Result{transfercopy.ResultFailed}) {
+		t.Fatalf("records = %v, want the one failure", records)
 	}
 	if got := classOf(t, s, "up/big"); got != swiftcontrol.ClassDLO {
 		t.Fatalf("the object is %s, want the dynamic one the engine wrote", got)

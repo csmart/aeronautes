@@ -24,7 +24,7 @@ import (
 // engine or the store answered for a file is that file's outcome.
 // An omitted recorder preserves direct callers' unrecorded execution mode.
 func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSpec, container string,
-	preflight *UploadPreflight, onProgress func(done, total, bytes int64),
+	preflight *UploadPreflight, onProgress func(done, same, total, bytes int64),
 	onRecovery func(kind, container, prefix, object string) error, recorders ...*UploadRecorder) (report *Report, runErr error) {
 	recorder, err := uploadRecorder(recorders)
 	if err != nil {
@@ -54,7 +54,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 	total := int64(len(preflight.Items))
 	progress := func() {
 		if onProgress != nil {
-			onProgress(report.Done+u.failed, total, report.Bytes)
+			onProgress(report.Done+u.failed, report.Same, total, report.Bytes)
 		}
 	}
 	// Engine-route items go to the engine a source directory at a time, each
@@ -141,6 +141,14 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			names = append(names, filepath.Base(item.Path))
 		}
 		delete(groups, key)
+		byName := make(map[string]UploadItem, len(items))
+		for _, item := range items {
+			byName[filepath.Base(item.Path)] = item
+		}
+		recorded := map[string]bool{}
+		// A record that could not be kept ends the recording; a run
+		// stopped for another reason still records every file.
+		recordLost := false
 		answers := rclone.NewAnswers()
 		segments := map[string]rclone.SegmentPrefix{}
 		heard := func(event rclone.Event) {
@@ -159,6 +167,25 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 				}
 			}
 			answers.Hear(event)
+			// A written or unchanged file is final when its line arrives
+			// (ADR 0122 decision 14), so the job shows it during the run.
+			// A large file still to be published static waits for the run's
+			// end, which is when its segments are all known.
+			name, final := rclone.WrittenOrSame(event)
+			item, planned := byName[name]
+			if !final || !planned || recorded[name] || recordLost {
+				return
+			}
+			outcome := engineOutcome(answers, item, nil)
+			if class == swiftcontrol.ClassSLO && outcome.Result == transfercopy.ResultCopied && item.Size > preflight.ChunkBytes {
+				return
+			}
+			recorded[name] = true
+			if u.observe(item, outcome) != nil {
+				recordLost = true
+				return
+			}
+			progress()
 		}
 		result, engineErr := u.copy(ctx, dst, engine, group.dir, strings.TrimSuffix(dstSpec+"/"+group.into, "/"), names, heard)
 		if engineErr == nil {
@@ -171,6 +198,12 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 		// the dynamic object it is. Only an item record that cannot itself
 		// be kept ends the recording, because the rest have nowhere to go.
 		for _, item := range items {
+			if recordLost {
+				break
+			}
+			if recorded[filepath.Base(item.Path)] {
+				continue
+			}
 			outcome := engineOutcome(answers, item, engineErr)
 			// The engine uploads a file larger than the chunk size in
 			// segments, behind a dynamic manifest at the file's name.

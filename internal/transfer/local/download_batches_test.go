@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -243,4 +244,51 @@ func TestDownloadAsksToPauseAtBatchHeadsOnly(t *testing.T) {
 	}
 	f.expectExecute(t, 0, n, transfercopy.EffectReportedApplied, "", true)
 	f.expectExecute(t, n, n+1, transfercopy.EffectNotAttempted, transfercopy.StageEngine, false)
+}
+
+// ADR 0122 decision 14 (finding F78): a file the engine reports written or
+// the same is recorded and shown in the progress while the engine is still
+// running, and a file with an error line or none is recorded after the run.
+// A file the engine reports again, in the run repeated for an expired
+// sign-in, is recorded once.
+func TestDownloadRecordsEachFileWhenTheEngineReportsIt(t *testing.T) {
+	f, source := newBatchFixture(t, 4)
+	records := map[string]int{}
+	execute := f.recorder.Execute
+	f.recorder.Execute = func(item DownloadItem, o transfercopy.Observation) error {
+		records[item.Name]++
+		return execute(item, o)
+	}
+	var shownDone, shownSame int64
+	recordedNow := func(t *testing.T, want map[string]int) {
+		t.Helper()
+		if !reflect.DeepEqual(records, want) {
+			t.Fatalf("recorded while the engine runs = %v, want %v", records, want)
+		}
+	}
+	runs := 0
+	engine := &scriptedEngine{run: func(_ context.Context, _, _ string, _ []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
+		runs++
+		onEvent(rclone.Event{Level: "info", Object: "o-0000", Msg: "Copied (new)"})
+		if runs == 1 {
+			recordedNow(t, map[string]int{"scope/o-0000": 1})
+			return &rclone.Result{ExitCode: 1, Errors: []string{"401 Unauthorized"}}, nil
+		}
+		onEvent(rclone.Event{Level: "debug", Object: "o-0001", Msg: "Unchanged skipping"})
+		onEvent(rclone.Event{Level: "error", Object: "o-0002", Msg: "Failed to copy: the store said no"})
+		recordedNow(t, map[string]int{"scope/o-0000": 1, "scope/o-0001": 1})
+		if shownDone != 1 || shownSame != 1 {
+			t.Fatalf("progress while the engine runs = %d written and %d the same, want 1 and 1", shownDone, shownSame)
+		}
+		return &rclone.Result{}, nil
+	}}
+	report, err := Download(t.Context(), source, engine, "remote:media", "media", "scope/", f.root, f.plan,
+		func(done, same, _, _ int64) { shownDone, shownSame = done, same }, f.recorder)
+	if err != nil || runs != 2 || report.Done != 1 || report.Same != 1 || len(report.Failures) != 2 {
+		t.Fatalf("runs = %d, report = %+v, %v", runs, report, err)
+	}
+	want := map[string]int{"scope/o-0000": 1, "scope/o-0001": 1, "scope/o-0002": 1, "scope/o-0003": 1}
+	if !reflect.DeepEqual(records, want) {
+		t.Fatalf("records = %v, want one for each file", records)
+	}
 }

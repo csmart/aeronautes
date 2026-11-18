@@ -76,7 +76,11 @@ func uploadRecordFault(t *testing.T, h *Harness, mode string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: prefix, SelectionToken: picked.Token})
+	// One file at a time: a file is recorded as soon as the engine reports
+	// it (ADR 0122 decision 14), so with the first file's response held no
+	// other file may have been written or recorded yet.
+	id, err := h.Transfer.StartUpload(t.Context(), app.UploadRequestDTO{BookmarkID: h.Primary.BookmarkID, Container: dst, Prefix: prefix,
+		SelectionToken: picked.Token, Settings: app.TransferSettingsDTO{Transfers: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,10 +269,9 @@ func assertUploadFaultEffects(t *testing.T, h *Harness, mode, dst, prefix string
 		if mode == "engine_admission" {
 			break
 		}
-		// The engine has the whole folder before any outcome is recorded,
-		// so all three names are written by the time a record is refused.
-		// The application sends a native name itself and stops after the
-		// first.
+		// The engine has the whole folder and writes all three names even
+		// after a record is refused, which ends only the recording. The
+		// application sends a native name itself and stops after the first.
 		if control || !native || i == 0 {
 			live := prefix + filepath.Base(path)
 			writes["PUT "+storage.Path+"/"+dst+"/"+live] = 1

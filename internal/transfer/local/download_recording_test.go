@@ -280,7 +280,7 @@ func TestDownloadProgressCountsPlacedFiles(t *testing.T) {
 				Verify:  func(DownloadItem, transfercopy.Observation) error { return nil },
 			}
 			updates := 0
-			progress := func(done, total, bytes int64) {
+			progress := func(done, same, total, bytes int64) {
 				updates++
 				var placed, size int64
 				for _, name := range []string{"a", "b"} {

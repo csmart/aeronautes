@@ -345,6 +345,19 @@ func (a Answers) Hear(event Event) {
 	}
 }
 
+// WrittenOrSame names the object of a line that says the child wrote it or
+// left it because it was the same; nothing later in a run changes either
+// (ADR 0122 decision 14).
+func WrittenOrSame(event Event) (string, bool) {
+	if name, ok := CopiedObject(event); ok {
+		return name, true
+	}
+	if event.Level == "debug" && event.Object != "" && event.Msg == leftUnchanged {
+		return event.Object, true
+	}
+	return "", false
+}
+
 // Stats is the latest progress snapshot from the child.
 type Stats struct {
 	Bytes          int64
