@@ -165,7 +165,11 @@ test.describe.serial("transfer", () => {
     await openContainer(page, info.project.name, container);
     await expect(inspector(page).getByText(everyone)).toBeVisible();
     // The public notice is a mark on the path's row (ADR 0123).
-    await expect(page.getByRole("note", { name: /^Public: anyone with the URL can read objects in / })).toHaveText("Public");
+    const mark = page.getByRole("note", { name: /^Public: anyone with the URL can read objects in / });
+    await expect(mark).toHaveText("Public");
+    // The window draws no tooltip for a title, so its sentence is a bubble.
+    await mark.hover();
+    await expect(page.getByRole("tooltip")).toContainText(`anyone with the URL can read objects in ${container}`);
 
     await page.getByRole("button", { name: "Configure container" }).click();
     await page.getByLabel("Anyone can read objects").uncheck();
