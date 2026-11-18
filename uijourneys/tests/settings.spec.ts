@@ -24,7 +24,7 @@ test("filter the settings and reset them to the defaults", async ({ page }, info
 
   // ADR 0127 decision 3: the log file is kept from Settings, and its path
   // is shown so it can be found.
-  await dialog.getByLabel("Keep a log file").check();
+  await dialog.getByLabel("Keep a log file").click();
   await expect(dialog.getByText("being written")).toBeVisible();
   await expect(dialog.locator(".log-path .path")).toHaveText(/aeronautes\.log$/);
 
