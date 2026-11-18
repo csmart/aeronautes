@@ -149,8 +149,9 @@ it.each(["download", "upload"] as const)("sends the chosen objects and folders o
   }
 });
 
-// One folder row selected downloads that folder as its own scope.
-it("downloads a selected folder as its own scope", async () => {
+// One folder row selected is downloaded as its parent's one folder member,
+// so it keeps its name (ADR 0108 decision 8).
+it("downloads one selected folder under its own name", async () => {
   const { api, browser } = browserAt("files/");
   browser.select(0);
   browser.localTransfer = "download";
@@ -163,8 +164,8 @@ it("downloads a selected folder as its own scope", async () => {
   root.querySelector<HTMLButtonElement>("footer button")!.click();
   for (let i = 0; i < 8; i++) { await Promise.resolve(); flushSync(); }
   const request = vi.mocked(api.preflightDownload).mock.calls[0][0];
-  expect(request.prefix).toBe("files/sub/");
-  expect(request.members).toBeUndefined();
+  expect(request.prefix).toBe("files/");
+  expect(request.members).toEqual(["files/sub/"]);
 });
 
 // Several folder rows alone are a selection like any other: both dialogs

@@ -101,6 +101,24 @@ test.describe.serial("transfer", () => {
     }
   });
 
+  // ADR 0108 decision 8: a folder downloaded alone keeps its name, as a
+  // copied, uploaded or selected folder does.
+  test("download the folder into a folder of its name", async ({ page }, info) => {
+    const elsewhere = localFolder();
+    await openContainer(page, info.project.name, container);
+    await page.getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) }).click();
+    await page.getByRole("button", { name: "Download folder…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Download" });
+    await expect(dialog.getByText(`the folder is written inside it as ${basename(folder)}/`)).toBeVisible();
+    await control.pickFolder(elsewhere);
+    await dialog.getByRole("button", { name: "Choose directory…" }).click();
+    await dialog.getByRole("button", { name: "Start download" }).click();
+    await finish(page, dialog);
+    for (const [name, digest] of digests) {
+      expect(digestOf(join(elsewhere, basename(folder), name)), name).toBe(digest);
+    }
+  });
+
   // ADR 0122 decision 12: a download into the same folder is refused until
   // replacing is confirmed, and then the engine compares each file as rclone
   // copy does. Every file is what the last download wrote, size and time, so
