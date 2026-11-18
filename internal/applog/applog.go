@@ -2,8 +2,9 @@
 //
 // A desktop launch has no console, so an operator diagnosing a problem needs
 // to raise verbosity and capture the output. This package provides that
-// through two environment switches read once at startup, replacing the
-// standard library's level-less log.Print across main and internal/app.
+// through two environment switches read at startup (ADR 0099), and through
+// Settings, which can change the level and keep a log file while the
+// application runs (ADR 0127).
 //
 // It is auth-free by construction: no credential is ever passed to it. The
 // authentication path does not log, and the transfer engine is handed only a
@@ -19,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -34,17 +36,95 @@ const (
 	EnvFile = "AERONAUTES_LOG_FILE"
 )
 
+// rotateBytes is the size past which a log file kept from Settings is
+// renamed to its ".1" name and started again, so a debug level left on cannot
+// fill the disk (ADR 0127 decision 3).
+const rotateBytes = 10 << 20
+
 // logger holds the active *slog.Logger. It is swapped atomically so the
 // one-time startup Configure cannot race a concurrent log call from a job
 // goroutine under the race detector.
 var logger atomic.Pointer[slog.Logger]
 
+// current is what Settings can change while the application runs: the level
+// every line is judged by and the log file written beside standard error.
+// The installed logger reads both through it, so a change applies to the
+// next line without building a new logger.
+var current struct {
+	mu    sync.Mutex
+	level slog.LevelVar
+	file  io.WriteCloser
+	// path is the file in use, or the one Settings would open.
+	path string
+	// location is where Settings keeps a log file; main sets it once the
+	// state folder is known.
+	location string
+	// levelFromEnv and fileFromEnv say a launch switch set that half.
+	levelFromEnv, fileFromEnv bool
+}
+
 func init() {
 	logger.Store(slog.New(newHandler(os.Stderr, slog.LevelInfo)))
 }
 
-func newHandler(w io.Writer, level slog.Level) slog.Handler {
+func newHandler(w io.Writer, level slog.Leveler) slog.Handler {
 	return slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})
+}
+
+// switchable writes each record to the log file in force, if any, and then
+// to standard error, in that order for the reason bothWriter gives.
+type switchable struct{}
+
+func (switchable) Write(p []byte) (int, error) {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	if current.file == nil {
+		return os.Stderr.Write(p)
+	}
+	return bothWriter{sinks: []io.Writer{current.file, os.Stderr}}.Write(p)
+}
+
+// rotating is a log file that starts again under the same name once it
+// passes its limit, keeping the previous one as name.1.
+type rotating struct {
+	path string
+	f    *os.File
+	size int64
+}
+
+func openRotating(path string) (*rotating, error) {
+	f, err := openAppend(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return &rotating{path: path, f: f, size: info.Size()}, nil
+}
+
+func (r *rotating) Write(p []byte) (int, error) {
+	if r.size > 0 && r.size+int64(len(p)) > rotateBytes {
+		// A failed rotation keeps writing to the file it has, since losing
+		// lines is worse than a file over its size.
+		if err := os.Rename(r.path, r.path+".1"); err == nil {
+			if f, err := openAppend(r.path); err == nil {
+				_ = r.f.Close()
+				r.f, r.size = f, 0
+			}
+		}
+	}
+	n, err := r.f.Write(p)
+	r.size += int64(n)
+	return n, err
+}
+
+func (r *rotating) Close() error { return r.f.Close() }
+
+func openAppend(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
 // bothWriter writes each record to every sink independently, unlike
@@ -93,21 +173,129 @@ func (b bothWriter) Write(p []byte) (int, error) {
 // work logs. slog writes each record with a single unbuffered Write, so a
 // missed close on an abrupt exit loses nothing already written.
 func Configure() (path string, closeFn func() error, err error) {
-	level := parseLevel(os.Getenv(EnvLevel))
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	levelName := os.Getenv(EnvLevel)
+	current.level.Set(parseLevel(levelName))
+	current.levelFromEnv = levelName != ""
+	if current.file != nil {
+		_ = current.file.Close()
+		current.file = nil
+	}
+	current.fileFromEnv = false
+	logger.Store(slog.New(newHandler(switchable{}, &current.level)))
 	closeFn = func() error { return nil }
 	if path = os.Getenv(EnvFile); path != "" {
-		f, openErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		f, openErr := openAppend(path)
 		if openErr != nil {
-			// Fall back to standard error at the requested level, so the level
-			// still takes effect, and report the failure; the app runs on.
-			logger.Store(slog.New(newHandler(os.Stderr, level)))
+			// Standard error at the requested level, so the level still
+			// takes effect, and report the failure; the app runs on.
 			return "", closeFn, fmt.Errorf("open log file %s: %w", path, openErr)
 		}
-		logger.Store(slog.New(newHandler(bothWriter{sinks: []io.Writer{f, os.Stderr}}, level)))
-		return path, f.Close, nil
+		current.file, current.path, current.fileFromEnv = f, path, true
+		return path, closeFile(f), nil
 	}
-	logger.Store(slog.New(newHandler(os.Stderr, level)))
+	current.path = current.location
 	return path, closeFn, nil
+}
+
+// closeFile closes f and, while it is still the file in force, stops
+// writing to it.
+func closeFile(f io.WriteCloser) func() error {
+	return func() error {
+		current.mu.Lock()
+		defer current.mu.Unlock()
+		if current.file == f {
+			current.file = nil
+		}
+		return f.Close()
+	}
+}
+
+// SetFileLocation names the log file Settings keeps, in the state folder
+// (ADR 0127 decision 3). A file named by the launch switch stays in use.
+func SetFileLocation(path string) {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	current.location = path
+	if !current.fileFromEnv {
+		current.path = path
+	}
+}
+
+// Status is the log in force, as Settings reports it.
+type Status struct {
+	Level        string
+	FilePath     string
+	FileOn       bool
+	LevelFromEnv bool
+	FileFromEnv  bool
+}
+
+// Current reports the log in force.
+func Current() Status {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	return Status{
+		Level: levelName(current.level.Level()), FilePath: current.path, FileOn: current.file != nil,
+		LevelFromEnv: current.levelFromEnv, FileFromEnv: current.fileFromEnv,
+	}
+}
+
+// Start applies the saved settings at launch, except a half a launch switch
+// already set, which wins at start (ADR 0127 decision 4).
+func Start(level string, keepFile bool) error {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	if !current.levelFromEnv {
+		current.level.Set(parseLevel(level))
+	}
+	if current.fileFromEnv {
+		return nil
+	}
+	return keepFileLocked(keepFile)
+}
+
+// SetLevel puts a level chosen in Settings in force at once, over a launch
+// switch too, since it is the operator's latest word (ADR 0127 decision 4).
+func SetLevel(level string) {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	current.level.Set(parseLevel(level))
+	current.levelFromEnv = false
+}
+
+// KeepFile starts or stops writing the log file at once, as Settings asks.
+func KeepFile(keep bool) error {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	return keepFileLocked(keep)
+}
+
+func keepFileLocked(keep bool) error {
+	switch {
+	case keep && current.file == nil:
+		if current.path == "" {
+			return fmt.Errorf("no folder is known for the log file")
+		}
+		var f io.WriteCloser
+		var err error
+		if current.fileFromEnv {
+			// The operator chose that path, so it is not rotated.
+			f, err = openAppend(current.path)
+		} else {
+			f, err = openRotating(current.path)
+		}
+		if err != nil {
+			return fmt.Errorf("open log file %s: %w", current.path, err)
+		}
+		current.file = f
+	case !keep && current.file != nil:
+		err := current.file.Close()
+		current.file = nil
+		return err
+	}
+	return nil
 }
 
 // Redirect sends the log to w alone, at the level the environment names, and
@@ -119,6 +307,20 @@ func Redirect(w io.Writer) (restore func()) {
 	previous := logger.Load()
 	logger.Store(slog.New(newHandler(w, parseLevel(os.Getenv(EnvLevel)))))
 	return func() { logger.Store(previous) }
+}
+
+// levelName is the name parseLevel reads for level.
+func levelName(level slog.Level) string {
+	switch {
+	case level <= slog.LevelDebug:
+		return "debug"
+	case level <= slog.LevelInfo:
+		return "info"
+	case level <= slog.LevelWarn:
+		return "warn"
+	default:
+		return "error"
+	}
 }
 
 // parseLevel maps a level name to its slog level, defaulting to info.

@@ -12,7 +12,7 @@ vi.mock("../../lib/api", () => ({ liveApi: live }));
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
+  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0, logLevel: "info", logToFile: false,
 };
 let mounted: ReturnType<typeof mount> | null = null;
 
@@ -187,4 +187,32 @@ it("counts one connection in the singular", async () => {
   await show();
   change(control<HTMLInputElement>("Connection cap", "input"), "1"); await settle();
   expect(statusOf(control<HTMLInputElement>("Connection cap", "input"))).toBe("1 connection per host on the next connect");
+});
+
+// ADR 0127 decisions 2 to 4: the level and the file are saved from Settings,
+// the file's path is shown, and a launch switch is named beside the level.
+it("shows the log in force and saves its level and file", async () => {
+  const api = newFakeApi();
+  const log = { level: "debug", filePath: "/state/aeronautes/aeronautes.log", fileOn: false, levelFromEnv: true, fileFromEnv: false };
+  api.appSettings = vi.fn(async () => ({ ...original, log }));
+  api.saveAppSettings = vi.fn(async (settings) => ({ ...settings, log: { ...log, level: settings.logLevel, levelFromEnv: false, fileOn: settings.logToFile } }));
+  const browser = new BrowserState(api);
+  mounted = mount(SettingsDialog, { target: document.body, props: { settings: browser.settings, onClose: () => {} } });
+  await settle();
+
+  const level = control<HTMLSelectElement>("Log level", "select");
+  expect(statusOf(level)).toBe("debug in force, set by AERONAUTES_LOG_LEVEL at launch");
+  expect(document.querySelector(".log-path .path")?.textContent).toBe("/state/aeronautes/aeronautes.log");
+
+  change(level, "warn");
+  await settle();
+  expect(api.saveAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ logLevel: "warn" }));
+  expect(statusOf(level)).toBe("warn in force");
+
+  const file = control<HTMLInputElement>("Keep a log file", "input");
+  file.checked = true;
+  file.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(api.saveAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ logToFile: true, logLevel: "warn" }));
+  expect(statusOf(file)).toBe("being written");
 });

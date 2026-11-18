@@ -276,3 +276,77 @@ func TestRedirectWritesOnlyToTheWriterUntilRestored(t *testing.T) {
 		t.Errorf("previous logger = %q", before.String())
 	}
 }
+
+// ADR 0127 decision 2: a level set from Settings applies to the next line,
+// with no restart.
+func TestApplyChangesTheLevelAtOnce(t *testing.T) {
+	path := configureToTemp(t, "info")
+	Debugf("hidden-before")
+	SetLevel("debug")
+	Debugf("shown-after")
+	got := readFile(t, path)
+	if strings.Contains(got, "hidden-before") || !strings.Contains(got, "shown-after") || Current().Level != "debug" {
+		t.Errorf("level change: %q, now %+v", got, Current())
+	}
+}
+
+// ADR 0127 decisions 3 and 4: Settings keeps a file in the state folder and
+// turns it off again, keeping it; a launch switch wins at start, and a later
+// change from Settings still applies.
+func TestSettingsKeepAFileAndLaunchSwitchesWinAtStart(t *testing.T) {
+	t.Setenv(EnvLevel, "debug")
+	t.Setenv(EnvFile, "")
+	if _, closeFn, err := Configure(); err != nil {
+		t.Fatal(err)
+	} else {
+		t.Cleanup(func() { _ = closeFn() })
+	}
+	location := filepath.Join(t.TempDir(), "aeronautes.log")
+	SetFileLocation(location)
+	if err := Start("error", true); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	now := Current()
+	if now.Level != "debug" || !now.LevelFromEnv || !now.FileOn || now.FilePath != location || now.FileFromEnv {
+		t.Fatalf("at start: %+v", now)
+	}
+	Infof("kept-line")
+	if err := KeepFile(false); err != nil {
+		t.Fatalf("KeepFile: %v", err)
+	}
+	if Current().Level != "debug" {
+		t.Fatalf("turning the file off changed the level: %+v", Current())
+	}
+	Infof("after-off")
+	got := readFile(t, location)
+	if !strings.Contains(got, "kept-line") || strings.Contains(got, "after-off") || Current().FileOn {
+		t.Errorf("file on then off: %q, now %+v", got, Current())
+	}
+}
+
+// ADR 0127 decision 3: a kept file starts again once it passes its size,
+// keeping the one before as name.1.
+func TestKeptFileRotatesAtItsSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aeronautes.log")
+	file, err := openRotating(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	chunk := bytes.Repeat([]byte("x"), rotateBytes/2+1)
+	for range 2 {
+		if _, err := file.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := file.Write([]byte("newest\n")); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.Stat(path + ".1")
+	if err != nil || old.Size() != int64(len(chunk)) {
+		t.Fatalf("rotated file: %v %v", old, err)
+	}
+	if got := readFile(t, path); got != string(chunk)+"newest\n" {
+		t.Errorf("current file holds %d bytes, want the second chunk and the newest line", len(got))
+	}
+}

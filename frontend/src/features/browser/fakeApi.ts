@@ -106,6 +106,8 @@ function fakeDefaultSettings(): AppSettingsDTO {
     maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
     browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
     reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
+    logLevel: "info", logToFile: false,
+    log: { level: "info", filePath: "/home/you/.local/state/aeronautes/aeronautes.log", fileOn: false, levelFromEnv: false, fileFromEnv: false },
   };
 }
 
@@ -1123,7 +1125,9 @@ export function newFakeApi(): Api {
       if (settings.maxActiveJobs < 1 || settings.maxActiveJobs > 4) {
         throw settingsRefusal(`max active jobs ${settings.maxActiveJobs} is out of range: choose 1 to 4`);
       }
-      return settings;
+      // The log in force follows a save, as the service applies it.
+      const log = fakeDefaultSettings().log!;
+      return { ...settings, log: { ...log, level: settings.logLevel, fileOn: settings.logToFile } };
     },
     startFind: async (container, prefix, query, bookmarkId, countOnly = false) => {
       readScope(bookmarkId);

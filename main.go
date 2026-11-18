@@ -103,6 +103,19 @@ func storePaths() (settings, database string, err error) {
 	return filepath.Join(xdg.ConfigHome, "aeronautes", "settings.json"), database, nil
 }
 
+// logFilePath is where Settings keeps a log file: the state folder, which
+// the XDG specification gives for logs (ADR 0109, ADR 0127 decision 3).
+func logFilePath() (string, error) {
+	if dev := os.Getenv("AERONAUTES_STATE_DIR"); dev != "" {
+		return filepath.Join(dev, "aeronautes.log"), nil
+	}
+	path, err := xdg.StateFile("aeronautes/aeronautes.log")
+	if err != nil {
+		return "", fmt.Errorf("resolve state directory: %w", err)
+	}
+	return path, nil
+}
+
 func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	launch func(application.Options) error, openSecrets func() (secrets.SecretStore, secrets.Backend)) (runErr error) {
 
@@ -162,6 +175,11 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 	app.WireAuditFilePicker(auditService, nativePicker())
 	app.WireConfirmer(mutateService, nativePublicConfirmer())
 	app.WireOverwriteConfirmer(transferService, nativeOverwriteConfirmer())
+	if logPath, err := logFilePath(); err != nil {
+		applog.Warnf("no log file can be kept from Settings: %v", err)
+	} else {
+		applog.SetFileLocation(logPath)
+	}
 	settingsService := app.NewSettingsService(settingsPath, jobRunner)
 	app.WireSettings(transferService, settingsService)
 	deleteService := app.NewDeleteService(connections, jobStore, jobRunner, evidenceStore)

@@ -89,6 +89,7 @@ export type {
     LicenseEntry,
     ListingRowDTO,
     ListingScopeDTO,
+    LogStatusDTO,
     MirrorRequestDTO,
     MutationResultDTO,
     ObjectDetailDTO,

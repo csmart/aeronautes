@@ -44,6 +44,9 @@ func NewSettingsService(path string, runner *jobRunner) *SettingsService {
 	}
 	runner.setMaxActiveJobs(settings.MaxActiveJobs)
 	runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
+	if err := applog.Start(settings.LogLevel, settings.LogToFile); err != nil {
+		applog.Warnf("the log file could not be kept: %v", err)
+	}
 	return s
 }
 
@@ -127,6 +130,16 @@ type AppSettingsDTO struct {
 	// driver makes the window slow or blank. The webview is made once, at
 	// start, so a change applies when the application next starts.
 	GPUAcceleration bool `json:"gpuAcceleration"`
+	// LogLevel is the lowest level the log writes: debug, info, warn or
+	// error (ADR 0127 decision 2). A change applies at once.
+	LogLevel string `json:"logLevel"`
+	// LogToFile keeps the log in a file in the state folder as well as on
+	// standard error, rotated at 10 MiB (ADR 0127 decision 3).
+	LogToFile bool `json:"logToFile"`
+	// Log is the log in force, which a launch switch can make differ from
+	// the two settings above (ADR 0127 decision 4). It is a report only:
+	// a save ignores it and it is never written to the file.
+	Log *LogStatusDTO `json:"log,omitempty"`
 	// FileProblem says why the settings file could not be read, when it
 	// could not; the defaults are then in force until the next save (ADR
 	// 0109 decision 1). It is a report only: a save ignores it and it is
@@ -137,6 +150,21 @@ type AppSettingsDTO struct {
 	// existing save so a reset is that one action, and it is never written
 	// to the file.
 	ResetToDefaults bool `json:"resetToDefaults,omitempty"`
+}
+
+// LogStatusDTO is the log in force: its level, the file Settings shows and
+// whether it is being written, and which halves a launch switch set.
+type LogStatusDTO struct {
+	Level        string `json:"level"`
+	FilePath     string `json:"filePath"`
+	FileOn       bool   `json:"fileOn"`
+	LevelFromEnv bool   `json:"levelFromEnv"`
+	FileFromEnv  bool   `json:"fileFromEnv"`
+}
+
+func logStatus() *LogStatusDTO {
+	now := applog.Current()
+	return &LogStatusDTO{Level: now.Level, FilePath: now.FilePath, FileOn: now.FileOn, LevelFromEnv: now.LevelFromEnv, FileFromEnv: now.FileFromEnv}
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -200,6 +228,7 @@ func defaults() AppSettingsDTO {
 		// than the zero value.
 		ReclaimReplacedFragments: true,
 		GPUAcceleration:          true,
+		LogLevel:                 "info",
 	}
 }
 
@@ -211,6 +240,7 @@ func (s *SettingsService) Get(context.Context) (AppSettingsDTO, error) {
 	if problem != nil {
 		settings.FileProblem = problem.Error()
 	}
+	settings.Log = logStatus()
 	return settings, nil
 }
 
@@ -294,13 +324,27 @@ func (s *SettingsService) Set(_ context.Context, settings AppSettingsDTO) (AppSe
 		return AppSettingsDTO{}, err
 	}
 	settings.FileProblem = ""
+	settings.Log = nil
 	s.saving.Lock()
 	defer s.saving.Unlock()
+	// Only what changed is applied, so saving another setting leaves what
+	// a launch switch set in force (ADR 0127 decision 4). A file that cannot
+	// be opened refuses the save.
+	saved, _ := s.read()
+	if saved.LogToFile != settings.LogToFile {
+		if err := applog.KeepFile(settings.LogToFile); err != nil {
+			return AppSettingsDTO{}, refuseSettings("%v", err)
+		}
+	}
+	if saved.LogLevel != settings.LogLevel {
+		applog.SetLevel(settings.LogLevel)
+	}
 	if err := s.write(settings); err != nil {
 		return AppSettingsDTO{}, err
 	}
 	s.runner.setMaxActiveJobs(settings.MaxActiveJobs)
 	s.runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
+	settings.Log = logStatus()
 	return settings, nil
 }
 
@@ -345,6 +389,13 @@ func checkSettings(settings AppSettingsDTO) (AppSettingsDTO, error) {
 	}
 	if settings.MaxConnsPerHost < minMaxConnsPerHost || settings.MaxConnsPerHost > maxMaxConnsPerHost {
 		return AppSettingsDTO{}, refuseSettings("max connections per host %d out of range %d..%d", settings.MaxConnsPerHost, minMaxConnsPerHost, maxMaxConnsPerHost)
+	}
+	switch settings.LogLevel {
+	case "":
+		settings.LogLevel = "info"
+	case "debug", "info", "warn", "error":
+	default:
+		return AppSettingsDTO{}, refuseSettings("log level %q is not one of debug, info, warn or error", settings.LogLevel)
 	}
 	if settings.RailWidthPx != 0 && (settings.RailWidthPx < minRailWidthPx || settings.RailWidthPx > maxRailWidthPx) {
 		return AppSettingsDTO{}, refuseSettings("rail width %d px out of range %d..%d (0 for the default)", settings.RailWidthPx, minRailWidthPx, maxRailWidthPx)
