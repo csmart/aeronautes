@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -422,18 +423,37 @@ func TestSettingsApplyALogChangeAgainstTheLogInForce(t *testing.T) {
 }
 
 // ADR 0127 decision 5: a reset puts the level back to info and the file off
-// for this session, even where the stored settings already hold them.
-func TestSettingsResetEndsTheLaunchLog(t *testing.T) {
-	t.Setenv(applog.EnvLevel, "debug")
-	t.Setenv(applog.EnvFile, filepath.Join(t.TempDir(), "launch.log"))
+// for this session and stores both, whether or not a launch switch already
+// holds that value: here the level switch is set to the default while the
+// stored level is not, and the stored file switch is on while no file is
+// being written (no folder for one is known here).
+func TestSettingsResetStoresTheDefaultsOverTheLaunchLog(t *testing.T) {
+	t.Setenv(applog.EnvLevel, "info")
+	t.Setenv(applog.EnvFile, "")
 	if _, closeFn, err := applog.Configure(); err != nil {
 		t.Fatal(err)
 	} else {
 		t.Cleanup(func() { _ = closeFn() })
 	}
-	service := NewSettingsService(settingsFile(t), newJobRunner(nil, nil))
+	path := settingsFile(t)
+	stored := defaults()
+	stored.LogLevel, stored.LogToFile = "warn", true
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewSettingsService(path, newJobRunner(nil, nil))
 	reset, err := service.Set(context.Background(), AppSettingsDTO{ResetToDefaults: true})
 	if err != nil || reset.LogLevel != "info" || reset.LogToFile || applog.Current().Level != "info" || applog.Current().FileOn {
 		t.Fatalf("the reset left the launch log in force: %+v %v, now %+v", reset, err, applog.Current())
+	}
+	if read, err := service.read(); err != nil || read.LogLevel != "info" || read.LogToFile {
+		t.Fatalf("the reset stored %+v (%v), want the defaults", read, err)
 	}
 }
