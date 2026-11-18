@@ -72,7 +72,7 @@ describe("import bookmarks dialog", () => {
     const imports = new ImportState(api, changed);
     expect(await imports.pick()).toBe("picked");
     const edit = vi.fn();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: edit } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: edit } }));
     flushSync();
 
     expect(checkbox("fresh").checked).toBe(true);
@@ -103,7 +103,7 @@ describe("import bookmarks dialog", () => {
     api.saveImport = save;
     const imports = new ImportState(api, vi.fn());
     await imports.pick();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: vi.fn() } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: vi.fn() } }));
     flushSync();
 
     checkbox("again").click();
@@ -122,7 +122,7 @@ describe("import bookmarks dialog", () => {
     api.saveImport = save;
     const imports = new ImportState(api, vi.fn());
     await imports.pick();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: vi.fn() } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: vi.fn() } }));
     flushSync();
 
     rename("fresh", " ");
@@ -142,7 +142,7 @@ describe("import bookmarks dialog", () => {
     const imports = new ImportState(api, vi.fn());
     await imports.pick();
     const edit = vi.fn();
-    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, onClose: vi.fn(), onEditBookmark: edit } }));
+    mounted.add(mount(ImportBookmarksDialog, { target: document.body, props: { imports, bookmarks: [], onClose: vi.fn(), onEditBookmark: edit } }));
     flushSync();
 
     button("Import 1 bookmark").click();
