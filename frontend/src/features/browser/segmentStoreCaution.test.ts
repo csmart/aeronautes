@@ -71,7 +71,7 @@ describe("the listing's caution", () => {
     await settle();
     show(WorkingList, f.root, { browser: f.browser });
     await settle();
-    return [...f.root.querySelectorAll(".backstage-banner")].map((b) => (b.textContent ?? "").replace(/\s+/g, " ").trim());
+    return [...f.root.querySelectorAll(".mark.warning")].map((b) => (b.getAttribute("aria-label") ?? "").replace(/\s+/g, " ").trim());
   }
 
   it("names a container that is only named like a segment store", async () => {

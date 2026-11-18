@@ -1,6 +1,6 @@
 import { test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import { digestOf, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
 
@@ -37,11 +37,19 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   const steady = [
     page.getByRole("listbox", { name: "Objects" }),
     actions.getByRole("button", { name: "Upload…" }),
-    actions.getByRole("button", { name: "Count objects" }),
+    page.getByRole("button", { name: "Count objects" }),
     actions.getByRole("button", { name: "Delete prefix…" }),
   ];
   const places = () => Promise.all(steady.map((part) => part.boundingBox()));
   const before = await places();
+  // The count beside the refresh counts the one folder selected, and its
+  // answer sits on the path's row, so it moves nothing either (ADR 0123).
+  await inner.click();
+  const count = page.getByRole("button", { name: "Count objects" });
+  await expect(count).toHaveAttribute("title", new RegExp(`^Count the objects in ${basename(folder)}/inner/:`));
+  await count.click();
+  await expect(page.getByRole("status").filter({ hasText: /^\d[\d,]* objects? in / })).toHaveText(`1 object in ${basename(folder)}/inner/`);
+  expect(await places(), "with a count shown").toEqual(before);
   await objectRow(page, "file00.bin").click();
   await expect(actions.getByRole("button", { name: "Copy object…" })).toBeVisible();
   await expect(actions.getByRole("button", { name: "Delete object…" })).toBeVisible();

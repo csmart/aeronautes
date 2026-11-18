@@ -4,10 +4,12 @@ import type { Api } from "../../lib/api";
 import { newFakeApi } from "./fakeApi";
 import BrowserScreen from "./BrowserScreen.svelte";
 
-// ADR 0072: counting the objects under the open prefix is an explicit,
-// stoppable, count-only scan whose result belongs to the prefix it was
-// taken for; the download dialog states the selection ceiling before
-// Start; the Settings dialog carries the ceiling as a setting.
+// ADR 0072: counting objects is an explicit, stoppable, count-only scan
+// whose result belongs to the place it was taken in; ADR 0123: it counts
+// the one selected folder or else the folder being browsed, and its answer
+// sits on the path's row, adding no line above the list; the download
+// dialog states the selection ceiling before Start, and a count only for
+// exactly what it downloads; the Settings dialog carries the ceiling.
 
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
@@ -35,6 +37,10 @@ function get<T extends HTMLElement = HTMLElement>(selector: string, root: Parent
   return found;
 }
 function click(element: HTMLElement) { element.click(); flushSync(); }
+// The list selects a row as the pointer goes down on it.
+function press(element: HTMLElement) {
+  element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })); flushSync();
+}
 // The transfer buttons name what they act on (ADR 0108: "Download folder…",
 // "Copy selected…"); these tests are about which controls exist and what they
 // open, so they know them as "Download…" and "Copy to…". The wording itself
@@ -44,7 +50,8 @@ function transferLabel(text: string): string {
 }
 
 function button(label: string): HTMLButtonElement {
-  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => transferLabel(b.textContent?.trim() ?? "") === label);
+  const found = [...document.querySelectorAll<HTMLButtonElement>("button")]
+    .find((b) => transferLabel(b.textContent?.trim() ?? "") === label || b.getAttribute("aria-label") === label);
   if (!found) throw new Error(`Missing button ${label}`);
   return found;
 }
@@ -71,12 +78,35 @@ describe("prefix count", () => {
     const expected = (await api.objects("bm-1", "fixtures", "", "", 5000)).rows.filter((r) => r.kind === "object").length;
     const all = await api.startFind("fixtures", "", "", "bm-1", true);
     const total = (await api.findStatus(all, "bm-1")).scanned;
+    const head = () => [...get('nav[aria-label="Path"]').closest(".pane-head")!.children].map((child) => child.className);
+    const before = head();
     click(button("Count objects")); await settle();
     const status = get(".count-status");
-    expect(status.textContent).toContain(`${total} objects under`);
-    expect(status.textContent).toContain("counted 20");
+    expect(status.textContent?.replace(/\s+/g, " ")).toContain(`${total} objects in fixtures`);
+    expect(status.title).toContain("counted 20");
+    expect(status.closest(".path-row")).not.toBeNull();
+    expect(head()).toEqual(before);
     expect(total).toBeGreaterThanOrEqual(expected);
     expect(button("Count objects")).toBeTruthy();
+  }, 20_000);
+
+  it("counts the one selected folder, and otherwise the folder being browsed", async () => {
+    await openFixtures();
+    const startFind = vi.spyOn(api, "startFind");
+    const folder = [...document.querySelectorAll<HTMLElement>(".entry")].find((e) => e.querySelector(".icon.folder"));
+    if (!folder) throw new Error("no folder row");
+    press(folder); await settle();
+    const name = folder.querySelector(".name")!.textContent!.trim();
+    expect(button("Count objects").title).toContain(`Count the objects in ${name}`);
+    click(button("Count objects")); await settle();
+    expect(startFind).toHaveBeenLastCalledWith("fixtures", name, "", "bm-1", true);
+    expect(get(".count-status").textContent?.replace(/\s+/g, " ")).toMatch(new RegExp(`objects? in ${name}`));
+    // With a file selected instead, the container's top is counted.
+    const file = [...document.querySelectorAll<HTMLElement>(".entry")].find((e) => !e.querySelector(".icon.folder"));
+    if (!file) throw new Error("no file row");
+    press(file); await settle();
+    click(button("Count objects")); await settle();
+    expect(startFind).toHaveBeenLastCalledWith("fixtures", "", "", "bm-1", true);
   }, 20_000);
 
   it("keeps a count with the prefix it was taken for", async () => {
@@ -91,6 +121,24 @@ describe("prefix count", () => {
     const input = get<HTMLInputElement>('input[placeholder="folder path, e.g. logs/2026/"]');
     input.value = "photos/"; input.dispatchEvent(new Event("change", { bubbles: true })); flushSync(); await settle();
     expect(document.querySelector(".count-status")).toBeNull();
+  }, 20_000);
+
+  it("offers a count to a download only when it was taken of what the download takes", async () => {
+    await openFixtures();
+    const ceiling = () => get(".hint.ceiling").textContent?.replace(/\s+/g, " ") ?? "";
+    click(button("Count objects")); await settle();
+    click(button("Download…")); await settle();
+    expect(ceiling()).toMatch(/\d+ objects were counted in fixtures\/\./);
+    click(get('[aria-label="Close"]')); await settle();
+    // A selected folder's count, with a file selected afterwards: the
+    // download takes the file, so the folder's number is not offered.
+    const folder = [...document.querySelectorAll<HTMLElement>(".entry")].find((e) => e.querySelector(".icon.folder"))!;
+    press(folder); await settle();
+    click(button("Count objects")); await settle();
+    press([...document.querySelectorAll<HTMLElement>(".entry")].find((e) => !e.querySelector(".icon.folder"))!); await settle();
+    click(button("Download…")); await settle();
+    expect(ceiling()).toContain("objects are refused");
+    expect(ceiling()).not.toContain("counted");
   }, 20_000);
 
   it("states the download ceiling before Start", async () => {

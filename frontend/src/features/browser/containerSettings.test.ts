@@ -71,16 +71,22 @@ describe("container settings badges", () => {
   it("shows nothing for a row that has not been read and the facts once the container is selected", async () => {
     await connectFixture();
     expect(badges("fixtures")).toEqual([]);
-    expect(document.querySelector(".public-banner")).toBeNull();
+    expect(document.querySelector(".mark.danger")).toBeNull();
     click(row("fixtures")); await settle();
     expect(badges("fixtures")).toEqual(["public + listing"]);
-    const banner = get(".public-banner");
-    expect(banner.textContent).toContain("anyone with the URL can read objects in");
-    expect(banner.textContent).toContain("and can list its object names");
+    const mark = get(".mark.danger");
+    expect(mark.textContent).toBe("Public");
+    expect(mark.getAttribute("aria-label")).toContain("anyone with the URL can read objects in");
+    expect(mark.getAttribute("aria-label")).toContain("and can list its object names");
     expect(get(".setting-badge.danger", row("fixtures")).title).toContain("read ACL .r:*,.rlistings");
-    // A private container selected afterwards shows no banner and no badge.
+    // A private container selected afterwards shows no mark and no badge.
+    // The list head has the same parts for a public container as for a
+    // private one: the mark is on the path's row, not a line of its own.
+    const head = () => [...get('nav[aria-label="Path"]').closest(".pane-head")!.children].map((child) => child.className);
+    const publicHead = head();
     click(row(".file-segments")); await settle();
-    expect(document.querySelector(".public-banner")).toBeNull();
+    expect(document.querySelector(".mark.danger")).toBeNull();
+    expect(head()).toEqual(publicHead);
     expect(badges(".file-segments")).toEqual([]);
     // The earlier fact stays on its row: it was observed, not listed.
     expect(badges("fixtures")).toEqual(["public + listing"]);
@@ -124,8 +130,8 @@ describe("container settings badges", () => {
     await connectFixture();
     fakeContainerDetailFailures.add("fixtures");
     click(row("fixtures")); await settle();
-    expect(document.querySelector(".public-banner")).toBeNull();
-    expect(get(".settings-notice").textContent).toContain("could not be read: HEAD of fixtures refused by the fixture");
+    expect(document.querySelector(".mark.danger")).toBeNull();
+    expect(get(".mark.quiet").getAttribute("aria-label")).toContain("could not be read: HEAD of fixtures refused by the fixture");
     expect(badges("fixtures")).toEqual([]);
   }, 20_000);
 
@@ -140,9 +146,9 @@ describe("container settings badges", () => {
     };
     click(row("fixtures")); await settle();
     expect(badges("fixtures")).toEqual([]);
-    expect(document.querySelector(".public-banner")).toBeNull();
+    expect(document.querySelector(".mark.danger")).toBeNull();
     // ADR 0075: the detail body is refused with the fact, not shown beside it.
-    expect(get(".settings-notice").textContent).toContain("does not match this connection");
+    expect(get(".mark.quiet").getAttribute("aria-label")).toContain("does not match this connection");
     click(get('[aria-label="Scan containers"]'));
     await settle();
     // The only mark is the muted "not read" with the reason; no fact badge.
@@ -159,6 +165,6 @@ describe("container settings badges", () => {
     await api.saveBookmark({ ...saved }, "rotated");
     click(get(`[aria-label="${fixtureBookmark.displayName}"]`)); await settle();
     expect(badges("fixtures")).toEqual([]);
-    expect(document.querySelector(".public-banner")).toBeNull();
+    expect(document.querySelector(".mark.danger")).toBeNull();
   }, 20_000);
 });

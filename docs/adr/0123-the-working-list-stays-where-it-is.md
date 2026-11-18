@@ -28,13 +28,15 @@ The operator, clicking from one container to the next, found the rows moving bet
 
 1. **Nothing that the application shows by itself moves the list.**
    Between two listings, the head of the list keeps its height whatever the container's settings, the listing's kind or a count say.
-   Only the operator's own actions change it: going deeper, so the path wraps; opening Find; or a narrower window, so the action rows wrap.
+   The path's row is one line: a long container name or a deep folder ends in an ellipsis, its whole path in its hover text, and gives way before the marks do.
+   Only the operator's own actions change the head's height: opening Find, or a narrower window, so the action rows wrap.
 2. **Notices are marks on the path's row.**
    "Public", "Settings not read", "Backstage" and "Possible segment store" are short marks after the path, each in its colour as today: red for public, amber for backstage and a possible segment store, quiet for unread settings.
    Each mark's hover text and accessible name are the whole sentence its banner says today, so nothing it tells is lost.
    The container list's own marks are not changed.
-3. **Refresh and count are small buttons right after the container's name and path.**
+3. **Refresh and count are small buttons at the start of the path's row, beside the container's name.**
    Each is named by its hover text, as the Containers column's tools are.
+   They come before the path, so nothing that appears on the row, a count's answer or a mark, moves them; after the path, they moved left whenever a count's answer took room from it (measured in the selection journey).
    The count button counts the one folder selected, when exactly one folder is selected, and otherwise the folder being browsed or the container's top; its hover text names which, and while it counts it stops the count.
    The count's answer is a short text beside the button, "1,204 objects in logs/", with "so far" while it counts and the time it was counted in its hover text, and goes when the operator moves to another container or folder.
 4. **The deletions keep their own row, at the left.**
@@ -58,10 +60,9 @@ Tier 3.
 
 - Frontend, component: for a public container, a container whose settings were not read, a backstage listing and a possible segment store, the list's head is the same height as for an ordinary container, and the mark's accessible name is the sentence; a count leaves the head's height unchanged, and names the folder it counted.
 - Frontend, component: with one folder selected the count asks for that folder; with nothing, a file or several rows selected it asks for the folder being browsed.
-- Browser journey: the count is started from the button beside the refresh and its answer read beside it; the existing journeys that read a banner read the mark instead.
+- Browser journey: the count is started from the button beside the refresh for a selected folder and its answer read on the path's row, with the list and the toolbar's buttons where they were; the existing journeys that read a banner read the mark instead.
 - The rendered list head looked at for each notice, and for the deletions' row, before review.
 
 ## What this does not do
 
 It does not change the Containers column, the inspector or any dialog.
-A path deep enough to wrap still makes the head taller, because that follows the operator's own navigation.

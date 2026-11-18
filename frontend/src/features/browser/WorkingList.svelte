@@ -76,6 +76,41 @@
     browser.goTo(value);
   }
 
+  function objectCount(n: number): string {
+    return `${formatCount(n)} ${n === 1 ? "object" : "objects"}`;
+  }
+
+  // A folder by its path, the container's top by the container's name.
+  function placeName(prefix: string): string {
+    return prefix === "" ? (browser.containerName ?? "") : prefix;
+  }
+
+  // What the application has to say about this place, as short marks whose
+  // hover text is the whole sentence (ADR 0123 decision 2).
+  type Mark = { label: string; tone: "danger" | "warning" | "quiet"; sentence: string };
+  const marks: Mark[] = $derived.by(() => {
+    const found: Mark[] = [];
+    const settings = browser.openContainerSettings;
+    const name = browser.containerName;
+    if (settings?.publicRead) {
+      const listing = settings.publicListing ? ", and can list its object names" : "";
+      found.push({ label: "Public", tone: "danger",
+        sentence: `Public: anyone with the URL can read objects in ${name} (read ACL ${settings.readAcl})${listing}.` });
+    } else if (name && browser.containerDetailError) {
+      found.push({ label: "Settings not read", tone: "quiet",
+        sentence: `Settings of ${name} could not be read: ${browser.containerDetailError}` });
+    }
+    if (browser.backstageFrom) {
+      found.push({ label: "Backstage", tone: "warning",
+        sentence: `Backstage: segments of ${browser.backstageFrom} — objects here may be segments of larger logical objects; classification never authorizes deleting them.` });
+    } else if (browser.segmentStoreCaution) {
+      // However the container was reached (ADR 0117 decision 2); the
+      // jump's mark above says more, so it stands alone.
+      found.push({ label: browser.segmentStoreMark, tone: "warning", sentence: browser.segmentStoreCaution });
+    }
+    return found;
+  });
+
   function timestamp(iso: string): string {
     return iso === "" ? "—" : iso.replace("T", " ").replace(/(:\d\d)?Z$/, "");
   }
@@ -83,46 +118,11 @@
 
 <section class="pane">
   <header class="pane-head">
-    {#if browser.openContainerSettings?.publicRead}
-      <div class="public-banner" role="alert">
-        <strong>Public:</strong> anyone with the URL can read objects in
-        <span class="type-mono">{browser.containerName}</span>
-        (read ACL <span class="type-mono">{browser.openContainerSettings.readAcl}</span>){browser.openContainerSettings.publicListing ? ", and can list its object names" : ""}.
-      </div>
-    {:else if browser.containerName && browser.containerDetailError}
-      <div class="settings-notice" role="status">
-        Settings of <span class="type-mono">{browser.containerName}</span> could not be read: {browser.containerDetailError}
-      </div>
-    {/if}
-    {#if browser.backstageFrom}
-      <div class="backstage-banner">
-        <strong>Backstage:</strong> segments of
-        <span class="type-mono">{browser.backstageFrom}</span> — objects here may be segments of
-        larger logical objects; classification never authorizes deleting them.
-      </div>
-    {:else if browser.segmentStoreCaution}
-      <!-- However the container was reached (ADR 0117 decision 2); the
-        jump's notice above says more, so it stands alone. -->
-      <div class="backstage-banner">{browser.segmentStoreCaution}</div>
-    {/if}
-    <!-- The path and, at its end, the listing's refresh as a small button
-      named by its hover text, as the Containers column has it. -->
+    <!-- The two tools, the path, and the marks for what the application
+      has to say about this place. Nothing here adds a line, so the list
+      below never moves under the pointer, and the tools come first so a
+      count's answer or a mark arriving never moves them (ADR 0123). -->
     <div class="path-row">
-    <nav class="breadcrumb num" aria-label="Path">
-      <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>
-      <button class="crumb root" onclick={() => browser.goTo("")}>
-        {browser.containerName ?? "—"}
-      </button>
-      {#each crumbs as crumb (crumb.prefix)}
-        <span class="crumb-sep">/</span>
-        <button class="crumb" onclick={() => browser.goTo(crumb.prefix)}>
-          {crumb.label === "" ? "␣" : crumb.label}
-        </button>
-      {/each}
-      {#if partialPrefix !== ""}
-        <span class="prefix-filter">Prefix: {JSON.stringify(partialPrefix)}</span>
-      {/if}
-    </nav>
       <button
         class="tool"
         title="Refresh: re-read this listing from the server"
@@ -135,6 +135,57 @@
           <path d="M13.25 8A5.25 5.25 0 1 1 11.71 4.29M11.71 1.79V4.29H9.21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
+      <button
+        class="tool"
+        title={browser.countRunning
+          ? "Stop counting"
+          : `Count the objects in ${placeName(browser.countTarget)}: streams the listing page by page and keeps no names`}
+        aria-label={browser.countRunning ? "Stop counting" : "Count objects"}
+        disabled={browser.containerName === null}
+        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
+      >
+        {#if browser.countRunning}
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" /></svg>
+        {:else}
+          <span class="tool-glyph" aria-hidden="true">#</span>
+        {/if}
+      </button>
+      <nav class="breadcrumb num" aria-label="Path">
+        <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>
+        <button class="crumb root" title={browser.containerName ?? undefined} onclick={() => browser.goTo("")}>
+          {browser.containerName ?? "—"}
+        </button>
+        {#each crumbs as crumb (crumb.prefix)}
+          <span class="crumb-sep">/</span>
+          <button class="crumb" title={crumb.prefix} onclick={() => browser.goTo(crumb.prefix)}>
+            {crumb.label === "" ? "␣" : crumb.label}
+          </button>
+        {/each}
+        {#if partialPrefix !== ""}
+          <span class="prefix-filter">Prefix: {JSON.stringify(partialPrefix)}</span>
+        {/if}
+      </nav>
+      {#if browser.prefixCount}
+        {@const count = browser.prefixCount}
+        <span
+          class="count-status num"
+          role="status"
+          title={`${objectCount(count.scanned)} in ${placeName(browser.countedPrefix)}` +
+            (browser.countedAt ? ` · counted ${browser.countedAt.replace("T", " ").replace(/\.\d+Z$/, "Z")}` : "")}
+        >
+          {objectCount(count.scanned)} in <span class="type-mono">{placeName(browser.countedPrefix)}</span>
+          {#if count.error}
+            · count failed: {count.error}
+          {:else if !count.done}
+            so far…
+          {/if}
+        </span>
+      {/if}
+      <span class="marks">
+        {#each marks as mark (mark.label)}
+          <span class="mark {mark.tone}" title={mark.sentence} aria-label={mark.sentence} role="note">{mark.label}</span>
+        {/each}
+      </span>
     </div>
 
     <div class="fields">
@@ -162,9 +213,9 @@
       </button>
     </div>
 
-    <!-- Two rows by weight: the transfers with the quieter listing tool,
-      and the deletions on a row of their own so they are never next to a
-      transfer the operator meant to press. A button whose label follows the
+    <!-- Two rows by weight: the transfers, and the deletions on a row of
+      their own so they are never next to a transfer the operator meant to
+      press. A button whose label follows the
       selection sits in a slot as wide as its widest label, and a button
       that comes and goes has a slot kept for it, so selecting a row moves
       neither the buttons nor the list below them. -->
@@ -205,36 +256,7 @@
           </button>
         </span>
       {/if}
-      <span class="gap"></span>
-      <button
-        class="find quiet"
-        title="Count the objects under this prefix: streams the listing page by page and keeps no names"
-        disabled={browser.containerName === null}
-        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
-      >
-        {browser.countRunning ? "Stop counting" : "Count objects"}
-      </button>
       <span class="deletions">
-      <!-- The selection's own deletion: one row's, known once the row has
-        been read, or the selected set's. Never both, so they share a slot. -->
-      <span class="steady">
-        <span class="sizer" aria-hidden="true">Delete manifest…</span>
-        {#if rowDelete}
-          <!-- One selected row's own deletion, as the Delete key and the
-            inspector open it, so a single file is deleted from here too. -->
-          <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
-            {rowDelete.label}
-          </button>
-        {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
-          <button
-            class="find danger"
-            title="Delete the selected objects, and each selected folder with everything in it, as one job"
-            onclick={() => browser.openSelectedDelete()}
-          >
-            Delete selected…
-          </button>
-        {/if}
-      </span>
       {#if v1Offers.bulkDelete}
         <!-- Each deletion is its own action (ADR 0121). Inside a folder only
           the folder's is offered, so a container's deletion is never one
@@ -279,22 +301,29 @@
           </span>
         </span>
       {/if}
+      <!-- The selection's own deletion: one row's, known once the row has
+        been read, or the selected set's. Never both, so they share a slot. -->
+      <span class="steady">
+        <span class="sizer" aria-hidden="true">Delete manifest…</span>
+        {#if rowDelete}
+          <!-- One selected row's own deletion, as the Delete key and the
+            inspector open it, so a single file is deleted from here too. -->
+          <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
+            {rowDelete.label}
+          </button>
+        {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
+          <button
+            class="find danger"
+            title="Delete the selected objects, and each selected folder with everything in it, as one job"
+            onclick={() => browser.openSelectedDelete()}
+          >
+            Delete selected…
+          </button>
+        {/if}
+      </span>
       </span>
     </div>
 
-    {#if browser.prefixCount}
-      {@const count = browser.prefixCount}
-      <p class="count-status num" role="status">
-        {formatCount(count.scanned)} objects under <span class="type-mono">{browser.containerName}/{browser.prefix}</span>
-        {#if count.error}
-          · count failed: {count.error}
-        {:else if !count.done}
-          so far · {formatCount(Math.round(count.objectsPerSecond))}/s…
-        {:else if browser.countedAt}
-          · counted {browser.countedAt.replace("T", " ").replace(/\.\d+Z$/, "Z")}
-        {/if}
-      </p>
-    {/if}
     {#if browser.findOpen}
       <FindPanel {browser} onClose={() => (browser.findOpen = false)} />
     {/if}
@@ -449,19 +478,15 @@
   }
 
   .count-status {
-    margin: 0 0 var(--space-2);
+    /* Gives way long before the path does, but keeps its number in sight;
+      the whole sentence is its hover text. */
+    flex: 0 1000 auto;
+    min-width: 4.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: var(--text-xs);
     color: var(--color-text-faint);
-  }
-
-  .public-banner {
-    margin: 0 0 var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--color-danger);
-    background: var(--color-danger-soft);
-    border: 1px solid var(--color-danger);
-    border-radius: var(--radius-control);
+    white-space: nowrap;
   }
 
   .retention-notice {
@@ -471,40 +496,67 @@
     border-radius: var(--radius-control);
   }
 
-  .settings-notice {
-    margin: 0 0 var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--color-text-faint);
-    border: 1px dashed var(--color-border-strong);
-    border-radius: var(--radius-control);
+  /* The marks sit at the row's end and are never cut: "Public" must be
+    read whatever the width. */
+  .marks {
+    display: flex;
+    flex: none;
+    gap: var(--space-1);
+    margin-left: auto;
   }
 
-  .backstage-banner {
-    margin-bottom: var(--space-2);
-    padding: var(--space-1) var(--space-2);
+  .mark {
+    flex: none;
+    padding: 0 var(--space-1);
     font-size: var(--text-xs);
+    line-height: 1.4rem;
+    white-space: nowrap;
+    border: 1px solid;
+    border-radius: var(--radius-control);
+    cursor: help;
+  }
+
+  .mark.danger {
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+    border-color: var(--color-danger);
+  }
+
+  .mark.warning {
     color: var(--color-warning);
     background: var(--color-warning-soft);
-    border: 1px solid var(--color-warning);
-    border-radius: var(--radius-control);
-    overflow-wrap: anywhere;
+    border-color: var(--color-warning);
+  }
+
+  .mark.quiet {
+    color: var(--color-text-faint);
+    border-style: dashed;
+    border-color: var(--color-border-strong);
   }
 
   .path-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--space-2);
   }
 
+  /* One line whatever the path, so a long name or a deep folder never
+    makes the head taller: the path gives way first, each name ending in an
+    ellipsis, then the count's text; the marks never do. */
   .breadcrumb {
     display: flex;
     align-items: center;
     gap: var(--space-1);
     min-height: 1.8rem;
-    flex-wrap: wrap;
-    flex: 1;
-    min-width: 0;
+    flex: 0 1 auto;
+    min-width: 3rem;
+    overflow: hidden;
+  }
+
+  .tool-glyph {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    line-height: 1;
   }
 
   /* The Containers column's small tool button. */
@@ -528,6 +580,10 @@
   }
 
   .crumb {
+    flex: 0 1 auto;
+    min-width: 1.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
     padding: 0.1rem var(--space-1);
     font: inherit;
     font-size: var(--text-sm);
@@ -554,10 +610,13 @@
   }
 
   .prefix-filter {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: var(--text-sm);
     color: var(--color-text-secondary);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    white-space: pre;
   }
 
   .fields {
@@ -576,17 +635,12 @@
     margin: 0 0 var(--space-3);
   }
 
-  .actions .gap {
-    width: var(--space-2);
-  }
-
-  /* A row of its own, at the right. Where the pane is too narrow for one
-    line, the slot kept for the selection's deletion goes under the
-    container's or the folder's, not above them as an empty line. */
+  /* A row of its own, at the left like the rows above it (ADR 0123
+    decision 4). The container's or the folder's deletion comes first, so
+    the slot kept for the selection's deletion, often empty, trails it. */
   .actions .deletions {
     display: flex;
-    flex-wrap: wrap-reverse;
-    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: var(--space-2);
     flex-basis: 100%;
   }
@@ -606,7 +660,7 @@
     border-color: transparent;
   }
 
-  /* Two labels wide, with the buttons at its right. */
+  /* Two labels wide, with the buttons at its left. */
   .steady.bulk {
     grid-template-columns: auto auto;
     column-gap: var(--space-2);
@@ -619,13 +673,7 @@
   .steady.bulk > .bulk-buttons {
     grid-area: 1 / 1 / 2 / 3;
     display: flex;
-    justify-content: flex-end;
     gap: var(--space-2);
-  }
-
-  .actions .quiet {
-    color: var(--color-text-secondary);
-    border-color: var(--color-border);
   }
 
   .field input {

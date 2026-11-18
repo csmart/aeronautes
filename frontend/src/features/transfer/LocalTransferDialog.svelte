@@ -72,6 +72,13 @@
   // selection disarms a preflight.
   const source = $derived(browser.transferSource);
   const downloadSource = $derived(mode === "download" ? source : null);
+  // A count is offered as this download's size only when it was taken of
+  // exactly what the download takes: a count of a selected folder must not
+  // stand for a download of the container or of a file (ADR 0123 decision 3).
+  const countedHere = $derived(
+    downloadSource !== null && downloadSource.members.length === 0 && browser.prefixCount?.done === true
+      && !browser.prefixCount.error && downloadSource.prefix === browser.countedPrefix,
+  );
 
   const canChoose = $derived(!closed && !checking && !starting && !browser.connecting
     && !!browser.connectedBookmarkId && !!browser.containerName);
@@ -285,8 +292,8 @@
       {#if mode === "download" && browser.settings.document}
         <p class="hint ceiling">
           Selections above {browser.settings.document.downloadObjectCeiling.toLocaleString("en-US")} objects are refused rather than cut short; the ceiling is set in Settings.
-          {#if browser.prefixCount?.done && !browser.prefixCount.error}
-            This prefix counted {formatCount(browser.prefixCount.scanned)} objects.
+          {#if countedHere}
+            {formatCount(browser.prefixCount!.scanned)} objects were counted in {browser.containerName}/{browser.countedPrefix}.
           {/if}
         </p>
       {/if}
