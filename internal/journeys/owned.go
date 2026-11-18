@@ -5,6 +5,7 @@
 package journeys
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -140,6 +141,18 @@ func (o *Owned) Names(ctx context.Context, container string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// Put writes an object into a container this run created, from the run's
+// own session and not through the application: another program changing a
+// name between a preview and its start, as a test-plan step asks for. Any
+// other container is refused, as for Names.
+func (o *Owned) Put(ctx context.Context, container, name string, body []byte) error {
+	if !o.created(container) {
+		return fmt.Errorf("container %q: %w", container, ErrNotOwned)
+	}
+	_, err := o.session.PutObject(ctx, container, name, bytes.NewReader(body), "application/octet-stream", nil)
+	return err
 }
 
 // Teardown removes what this run created and nothing else: the objects in
