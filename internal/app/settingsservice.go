@@ -329,6 +329,10 @@ func (s *SettingsService) restore(settings AppSettingsDTO) (AppSettingsDTO, erro
 }
 
 func (s *SettingsService) save(settings AppSettingsDTO, restoring bool) (AppSettingsDTO, error) {
+	// A restore and a reset each store the whole document they bring, the
+	// backup's or this version's defaults, even where a value matches what
+	// a launch switch put in force (ADR 0127 decisions 4 and 5).
+	storeWhole := restoring || settings.ResetToDefaults
 	if settings.ResetToDefaults {
 		// Only the settings file changes: bookmarks, saved keys, jobs and
 		// history are kept elsewhere and are not touched.
@@ -354,12 +358,12 @@ func (s *SettingsService) save(settings AppSettingsDTO, restoring bool) (AppSett
 		if err := applog.KeepFile(settings.LogToFile); err != nil {
 			return AppSettingsDTO{}, refuseSettings("%v", err)
 		}
-	} else if !restoring {
+	} else if !storeWhole {
 		settings.LogToFile = saved.LogToFile
 	}
 	if settings.LogLevel != now.Level {
 		applog.SetLevel(settings.LogLevel)
-	} else if !restoring {
+	} else if !storeWhole {
 		settings.LogLevel = saved.LogLevel
 	}
 	if err := s.write(settings); err != nil {

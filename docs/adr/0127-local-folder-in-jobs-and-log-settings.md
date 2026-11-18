@@ -35,7 +35,7 @@ Testing candidate 9b5d7127 on 18 November 2026, the operator asked for two thing
    When `AERONAUTES_LOG_LEVEL` or `AERONAUTES_LOG_FILE` is set, it is in force from launch over the saved setting, and Settings says so beside that setting ("set by AERONAUTES_LOG_LEVEL at launch").
    A change made in Settings during that session still applies at once, because it is the operator's latest word, and it is saved; the switch wins again at the next launch.
    Settings shows the log in force, so a save judges each of the two log settings against what is in force, not against the stored file: one that differs is the operator's change and applies, even when the stored file already holds that value, as when the launch file is turned off or a reset returns the defaults; one that matches is left alone and keeps its stored value, so saving any other setting neither undoes a launch switch nor stores its value as the operator's.
-   A restore from a backup stores the backup's two values as they are.
+   A restore from a backup stores the backup's two values as they are, and a reset stores the defaults, each even where a value matches what a launch switch put in force.
    A file named by `AERONAUTES_LOG_FILE` is the one Settings shows and turns on or off, and it is not rotated, since the operator chose that path.
 5. **Nothing secret is added to the log.**
    The level only lets through lines the code already writes at debug; ADR 0099's rule that no credential reaches a log call is unchanged.
