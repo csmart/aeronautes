@@ -45,7 +45,7 @@ Tier 3.
 
 - Go, service: the capabilities the window reads carry `tempurl`, `staticweb` and `container_quotas` as supported when `/info` names them, unsupported when `/info` was read without them, and unknown when `/info` was not read.
 - Frontend, component: each of the three is greyed with its reason when unsupported, and offered when supported or unknown.
-- Browser journey on the mock: a store whose `/info` lacks `tempurl` shows the keys greyed with the reason.
+- Browser journey on the mock, whose `/info` names neither `staticweb` nor `container_quotas`: the static website preset and the quota fields are greyed, with the reason.
 
 ## What this does not do
 

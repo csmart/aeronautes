@@ -346,6 +346,12 @@ export interface CapabilitiesDTO {
      */
     "versioningFlags": string[] | null;
     "sloSupported": boolean;
+
+    /**
+     * Features says, for each editor the window greys when the store does
+     * not offer it, whether /info names the feature (ADR 0124).
+     */
+    "features": FeatureStatesDTO;
 }
 
 /**
@@ -822,6 +828,16 @@ export interface ExportResultDTO {
     "count": number;
     "directory": string;
     "fileName": string;
+}
+
+/**
+ * FeatureStatesDTO holds "supported", "unsupported" or "unknown" for each
+ * feature: unsupported only when /info was read without it.
+ */
+export interface FeatureStatesDTO {
+    "tempurl": string;
+    "staticweb": string;
+    "containerQuotas": string;
 }
 
 /**

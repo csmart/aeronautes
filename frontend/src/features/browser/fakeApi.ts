@@ -48,6 +48,7 @@ const capabilities: Omit<CapabilitiesDTO, "scope"> = {
   ],
   versioningFlags: ["x-versions-location", "x-history-location"],
   sloSupported: true,
+  features: { tempurl: "supported", staticweb: "supported", containerQuotas: "supported" },
 };
 
 function cleanMap(

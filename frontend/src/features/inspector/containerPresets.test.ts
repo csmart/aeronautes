@@ -3,6 +3,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import ContainerEditPanel from "./ContainerEditPanel.svelte";
+import type { FeatureStatesDTO } from "../../lib/api";
 
 const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
@@ -30,7 +31,7 @@ function edit(input: HTMLInputElement, value: string) {
   flushSync();
 }
 
-async function show(readAcl = "", meta: Record<string, string> = { Keep: "untouched" }) {
+async function show(readAcl = "", meta: Record<string, string> = { Keep: "untouched" }, features?: FeatureStatesDTO) {
   const api = newFakeApi();
   const browser = new BrowserState(api);
   browser.connectedBookmarkId = "source";
@@ -39,6 +40,10 @@ async function show(readAcl = "", meta: Record<string, string> = { Keep: "untouc
   await browser.loadContainers();
   await browser.openContainer("fixtures");
   browser.containerDetail = { ...browser.containerDetail!, meta, readAcl };
+  if (features) {
+    browser.capabilities = { scope: { bookmarkId: "source", generation: 1 }, source: "advertised", maxFileSize: 0, storagePolicies: [],
+      versioningFlags: ["x-versions-location", "x-history-location"], sloSupported: true, features };
+  }
   const save = vi.spyOn(api, "updateContainer").mockRejectedValue(new Error("not written in this test"));
   const root = document.createElement("div");
   document.body.append(root);
@@ -229,5 +234,31 @@ describe("container presets", () => {
     expect(listing.disabled).toBe(false);
     expect(web.checked).toBe(true);
     expect(f.root.textContent).not.toContain('needs "Anyone can read objects"');
+  });
+});
+
+// ADR 0124: an editor whose feature the store's /info was read without is
+// greyed with the reason; supported, or /info unread, greys nothing.
+describe("what the store does not offer", () => {
+  const all = (state: string): FeatureStatesDTO => ({ tempurl: state, staticweb: state, containerQuotas: state });
+
+  it("greys the static website preset and the quotas, each with its reason", async () => {
+    const f = await show("", { Keep: "untouched" }, all("unsupported"));
+    const website = f.ticks()[2];
+    expect(website.disabled).toBe(true);
+    const quotas = [...f.root.querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    expect(quotas.map((q) => q.disabled)).toEqual([true, true]);
+    const reasons = [...f.root.querySelectorAll(".not-offered")].map((p) => p.textContent);
+    expect(reasons).toEqual([
+      "This store's /info does not list staticweb: it would keep this setting and serve no website.",
+      "This store's /info does not list container_quotas: it would keep these quotas and not enforce them.",
+    ]);
+  });
+
+  it.each(["supported", "unknown"])("offers both when the feature is %s", async (state) => {
+    const f = await show("", { Keep: "untouched" }, all(state));
+    expect(f.ticks()[2].disabled).toBe(false);
+    expect([...f.root.querySelectorAll<HTMLInputElement>('input[type="number"]')].map((q) => q.disabled)).toEqual([false, false]);
+    expect(f.root.querySelector(".not-offered")).toBeNull();
   });
 });

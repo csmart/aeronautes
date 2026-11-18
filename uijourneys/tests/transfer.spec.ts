@@ -149,6 +149,14 @@ test.describe.serial("transfer", () => {
     const everyone = "Anyone with the URL can read objects in this container";
     await openContainer(page, info.project.name, container);
     await page.getByRole("button", { name: "Configure container" }).click();
+    // The mock store's /info names neither staticweb nor container_quotas, so
+    // their editors are greyed with the reason (ADR 0124); what a real cloud
+    // names is its own.
+    if (info.project.name === "mock") {
+      await expect(page.getByRole("checkbox", { name: /^Serve as a static website/ })).toBeDisabled();
+      await expect(page.getByText("This store's /info does not list staticweb: it would keep this setting and serve no website.")).toBeVisible();
+      await expect(page.getByRole("spinbutton", { name: "Quota bytes (0 = none)" })).toBeDisabled();
+    }
     await page.getByLabel("Anyone can read objects").check();
     await page.getByLabel(`I understand this makes ${container} publicly readable.`).check();
     await control.answer("public", true);
@@ -156,6 +164,8 @@ test.describe.serial("transfer", () => {
     await expect(page.getByRole("button", { name: "Configure container" })).toBeVisible();
     await openContainer(page, info.project.name, container);
     await expect(inspector(page).getByText(everyone)).toBeVisible();
+    // The public notice is a mark on the path's row (ADR 0123).
+    await expect(page.getByRole("note", { name: /^Public: anyone with the URL can read objects in / })).toHaveText("Public");
 
     await page.getByRole("button", { name: "Configure container" }).click();
     await page.getByLabel("Anyone can read objects").uncheck();

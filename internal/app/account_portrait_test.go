@@ -300,6 +300,25 @@ func TestAccountCapabilitiesUnknownRemainsScoped(t *testing.T) {
 			if err != nil || caps.Source != "unknown" || caps.Scope != (ListingScopeDTO{BookmarkID: id, Generation: 1}) || caps.MaxFileSize != 0 || len(caps.StoragePolicies) != 0 {
 				t.Fatalf("unknown capability snapshot = %+v, %v", caps, err)
 			}
+			// An unread /info greys nothing (ADR 0124 decision 3).
+			if want := (FeatureStatesDTO{TempURL: "unknown", StaticWeb: "unknown", ContainerQuotas: "unknown"}); caps.Features != want {
+				t.Fatalf("features with /info unread = %+v, want %+v", caps.Features, want)
+			}
 		})
+	}
+}
+
+// Each editor's feature is unsupported only when /info was read without it
+// (ADR 0124 decision 1).
+func TestAccountCapabilitiesNameWhatInfoOffers(t *testing.T) {
+	h := newHarnessWithInfo(t, `{"swift": {"version": "2.35.0"}, "tempurl": {"methods": ["GET"]}}`)
+	h.connect(t)
+	caps, err := h.browse.Capabilities(t.Context(), h.bookmarkID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := FeatureStatesDTO{TempURL: "supported", StaticWeb: "unsupported", ContainerQuotas: "unsupported"}
+	if caps.Source != "advertised" || caps.Features != want {
+		t.Fatalf("capabilities = source %q features %+v, want advertised %+v", caps.Source, caps.Features, want)
 	}
 }

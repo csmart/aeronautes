@@ -93,8 +93,10 @@ func (s *BrowseService) Capabilities(ctx context.Context, bookmarkID string) (Ca
 	if err != nil {
 		return CapabilitiesDTO{}, err
 	}
+	unknown := string(swiftcontrol.CapabilityUnknown)
 	if caps == nil {
-		return CapabilitiesDTO{Source: "unknown", Scope: scope}, nil
+		return CapabilitiesDTO{Source: "unknown", Scope: scope,
+			Features: FeatureStatesDTO{TempURL: unknown, StaticWeb: unknown, ContainerQuotas: unknown}}, nil
 	}
 	dto := CapabilitiesDTO{
 		Scope:           scope,
@@ -102,6 +104,11 @@ func (s *BrowseService) Capabilities(ctx context.Context, bookmarkID string) (Ca
 		MaxFileSize:     caps.MaxFileSize(),
 		VersioningFlags: caps.VersioningAllowedFlags(),
 		SLOSupported:    caps.State("slo") == swiftcontrol.CapabilitySupported,
+		Features: FeatureStatesDTO{
+			TempURL:         string(caps.State("tempurl")),
+			StaticWeb:       string(caps.State("staticweb")),
+			ContainerQuotas: string(caps.State("container_quotas")),
+		},
 	}
 	for _, policy := range caps.StoragePolicies() {
 		dto.StoragePolicies = append(dto.StoragePolicies, StoragePolicyDTO{

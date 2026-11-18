@@ -67,6 +67,7 @@ export type {
     DismissInterruptedDTO,
     DownloadRequestDTO,
     ExportResultDTO,
+    FeatureStatesDTO,
     FindMatchDTO,
     FindStatusDTO,
     ImportChoiceDTO,

@@ -10,6 +10,7 @@
   let { browser, container = "", slots }: { browser: BrowserState; container?: string; slots: string[] } = $props();
 
   const slotNames = ["Temp-URL-Key", "Temp-URL-Key-2"] as const;
+  const notOffered = $derived(browser.notOffered("tempurl"));
   function isSet(slot: string): boolean {
     return slots.some((shown) => shown.toLowerCase() === slot.toLowerCase());
   }
@@ -100,6 +101,9 @@
 <section class="card" aria-label="TempURL keys">
   <h3 class="card-title">TempURL keys</h3>
   <p class="teach">Either key signs temporary URLs. Values are never shown.</p>
+  {#if notOffered}
+    <p class="teach not-offered">{notOffered}</p>
+  {/if}
   <details class="how">
     <summary>How to rotate a key</summary>
     <p class="teach">
@@ -112,9 +116,9 @@
       <span class="state">{isSet(slot) ? "set" : "not set"}</span>
       {#if setting !== slot && clearing !== slot}
         <!-- Both slots show the same words, so each button's name carries its slot. -->
-        <button class="inline" aria-label={`${isSet(slot) ? "Replace" : "Set"} ${slot}…`} onclick={() => open(slot, false)} disabled={busy}>{isSet(slot) ? "Replace…" : "Set…"}</button>
+        <button class="inline" aria-label={`${isSet(slot) ? "Replace" : "Set"} ${slot}…`} title={notOffered ?? undefined} onclick={() => open(slot, false)} disabled={busy || notOffered !== null}>{isSet(slot) ? "Replace…" : "Set…"}</button>
         {#if isSet(slot)}
-          <button class="inline danger" aria-label={`Clear ${slot}…`} onclick={() => open(slot, true)} disabled={busy}>Clear…</button>
+          <button class="inline danger" aria-label={`Clear ${slot}…`} title={notOffered ?? undefined} onclick={() => open(slot, true)} disabled={busy || notOffered !== null}>Clear…</button>
         {/if}
       {/if}
     </div>

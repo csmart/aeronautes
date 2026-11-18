@@ -31,6 +31,7 @@ import type {
   CredentialStatusDTO,
   VerifyResultDTO,
   CapabilitiesDTO,
+  FeatureStatesDTO,
   ContainerCreateDTO,
   ContainerDetailDTO,
   ContainerSettingsDTO,
@@ -108,6 +109,12 @@ interface WatchedChange {
  * the one being browsed; `at` is where the operator was, and the count is
  * shown only while they stay there (ADR 0123 decision 3). */
 type CountRequest = FindRequest & { readonly at: string };
+
+const notOfferedReasons: Record<keyof FeatureStatesDTO, string> = {
+  tempurl: "This store's /info does not list tempurl: it would keep these keys and never sign a URL with them.",
+  staticweb: "This store's /info does not list staticweb: it would keep this setting and serve no website.",
+  containerQuotas: "This store's /info does not list container_quotas: it would keep these quotas and not enforce them.",
+};
 
 interface FindRequest {
   readonly scope: number;
@@ -275,6 +282,14 @@ export class BrowserState {
   accountError: string | null = $state(null);
   /** Connect-time §10 capability snapshot; null until connected. */
   capabilities: CapabilitiesDTO | null = $state(null);
+
+  /** Why an editor is greyed: the store's /info was read and does not name
+   * the feature. Null when /info names it or was not read, which greys
+   * nothing (ADR 0124). */
+  notOffered(feature: keyof FeatureStatesDTO): string | null {
+    if (this.capabilities?.features?.[feature] !== "unsupported") return null;
+    return notOfferedReasons[feature];
+  }
   /** The §50 audit trail as the drawer shows it: search, export, recent slice. */
   readonly audit: AuditState;
   /** The settings document (§38/§40), the rail width it persists, and its backup and restore (ADR 0098). */

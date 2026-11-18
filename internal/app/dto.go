@@ -257,6 +257,17 @@ type CapabilitiesDTO struct {
 	// VersioningFlags is versioned_writes.allowed_flags (§21).
 	VersioningFlags []string `json:"versioningFlags"`
 	SLOSupported    bool     `json:"sloSupported"`
+	// Features says, for each editor the window greys when the store does
+	// not offer it, whether /info names the feature (ADR 0124).
+	Features FeatureStatesDTO `json:"features"`
+}
+
+// FeatureStatesDTO holds "supported", "unsupported" or "unknown" for each
+// feature: unsupported only when /info was read without it.
+type FeatureStatesDTO struct {
+	TempURL         string `json:"tempurl"`
+	StaticWeb       string `json:"staticweb"`
+	ContainerQuotas string `json:"containerQuotas"`
 }
 
 // ObjectMetadataEditDTO states the COMPLETE intended editable outcome
