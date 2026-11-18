@@ -28,7 +28,7 @@ func TestSettingsLiveInTheirOwnFile(t *testing.T) {
 		t.Fatalf("a service with no save made a settings file: %v", err)
 	}
 	saved := defaults()
-	saved.MaxActiveJobs, saved.RailWidthPx = 3, 200
+	saved.MaxActiveJobs, saved.RailWidthPx, saved.GPUAcceleration = 3, 200, false
 	if _, err := service.Set(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestSettingsLiveInTheirOwnFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	read, err := service.Get(ctx)
-	if err != nil || read.FileProblem != "" || read.MaxActiveJobs != 4 || !read.ReclaimReplacedFragments || read.DefaultProfile != "auto" {
+	if err != nil || read.FileProblem != "" || read.MaxActiveJobs != 4 || !read.ReclaimReplacedFragments || !read.GPUAcceleration || read.DefaultProfile != "auto" {
 		t.Fatalf("a file with keys left out read as %+v (%v); want them at their defaults", read, err)
 	}
 	if _, err := service.Set(ctx, read); err != nil {

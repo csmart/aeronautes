@@ -12,7 +12,7 @@ vi.mock("../../lib/api", () => ({ liveApi: live }));
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-  reclaimReplacedFragments: true, railWidthPx: 0,
+  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
 };
 let mounted: ReturnType<typeof mount> | null = null;
 
@@ -127,4 +127,17 @@ it("opens from the rail's settings button and closes on Escape", async () => {
   (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await settle();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+// The graphics card setting is saved at once and says it applies at the
+// next start, since the webview takes its drawing policy when it is made.
+it("saves turning the graphics card off and says when it applies", async () => {
+  const api = await show();
+  const gpu = control<HTMLInputElement>("Use the graphics card", "input");
+  expect(gpu.checked).toBe(true);
+  gpu.checked = false;
+  gpu.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(api.saveAppSettings).toHaveBeenCalledWith(expect.objectContaining({ gpuAcceleration: false }));
+  expect(statusOf(gpu)).toBe("off: the window draws in software from the next start");
 });

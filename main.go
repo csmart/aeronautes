@@ -213,10 +213,27 @@ func runDesktop(identity app.BuildIdentity, shutdown *shellShutdown,
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	}
+	// Read before the window exists: the webview takes its drawing policy
+	// only when it is made.
+	if settings, err := settingsService.Get(context.Background()); err == nil {
+		webviewGPU = webviewGPUPolicy(settings)
+	}
 	if err := launch(options); err != nil {
 		return fmt.Errorf("run desktop: %w", err)
 	}
 	return nil
+}
+
+// webviewGPU is how the window's webview draws, from the settings read at
+// start; the window is made in launchDesktop, which takes no settings.
+var webviewGPU = application.WebviewGpuPolicyAlways
+
+// webviewGPUPolicy is the operator's GPU setting as the webview's policy.
+func webviewGPUPolicy(settings app.AppSettingsDTO) application.WebviewGpuPolicy {
+	if settings.GPUAcceleration {
+		return application.WebviewGpuPolicyAlways
+	}
+	return application.WebviewGpuPolicyNever
 }
 
 func launchDesktop(options application.Options) error {
@@ -237,6 +254,7 @@ func launchDesktop(options application.Options) error {
 		DefaultContextMenuDisabled: true,
 		BackgroundColour:           application.NewRGB(32, 27, 23),
 		URL:                        "/",
+		Linux:                      application.LinuxWindow{WebviewGpuPolicy: webviewGPU},
 	})
 
 	return a.Run()

@@ -135,6 +135,10 @@
   // accept it.
   const reclaimChecked = $derived(settings.document?.reclaimReplacedFragments ?? true);
   let reclaimError: string | null = $state(null);
+  // On unless the operator turned it off; a file from before the setting
+  // existed reads as on.
+  const gpuChecked = $derived(settings.document?.gpuAcceleration ?? true);
+  let gpuError: string | null = $state(null);
 </script>
 
 {#snippet bounded(setting: BoundedSetting, observed: number)}
@@ -212,6 +216,30 @@
               per-job settings.
             </p>
             <p class="status" id={`${id}-profile-status`} role="status">{#if profileError}{profileError}{/if}</p>
+          </div>
+          <div class="setting">
+            <label class="field">
+              <span>Use the graphics card</span>
+              <input
+                class="gpu-acceleration"
+                type="checkbox"
+                checked={gpuChecked}
+                disabled={!settings.canSave}
+                aria-describedby={`${id}-gpu-note ${id}-gpu-status`}
+                onchange={(e) => {
+                  const value = e.currentTarget.checked;
+                  e.currentTarget.checked = gpuChecked;
+                  void saveBound({ gpuAcceleration: value }, (message) => (gpuError = message));
+                }}
+              />
+            </label>
+            <p class="note" id={`${id}-gpu-note`}>
+              The window draws with the graphics card by default; off draws in software, for a system whose graphics
+              driver makes the window slow or blank. It takes effect when Aeronautes next starts.
+            </p>
+            <p class="status" id={`${id}-gpu-status`} role="status">
+              {#if gpuError}{gpuError}{:else}{current.gpuAcceleration ? "on" : "off: the window draws in software from the next start"}{/if}
+            </p>
           </div>
         </section>
 

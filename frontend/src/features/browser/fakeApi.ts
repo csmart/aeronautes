@@ -1109,7 +1109,7 @@ export function newFakeApi(): Api {
     appSettings: async () => ({
       maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
       browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-      reclaimReplacedFragments: true, railWidthPx: 0,
+      reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
     }),
     // The service's own range (ADR 0105), so no journey saves a budget the
     // product would refuse.

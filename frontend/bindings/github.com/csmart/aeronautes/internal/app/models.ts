@@ -188,6 +188,14 @@ export interface AppSettingsDTO {
     "railWidthPx": number;
 
     /**
+     * GPUAcceleration lets the window's webview draw with the graphics
+     * card, as it does by default. Off draws in software, for a host whose
+     * driver makes the window slow or blank. The webview is made once, at
+     * start, so a change applies when the application next starts.
+     */
+    "gpuAcceleration": boolean;
+
+    /**
      * FileProblem says why the settings file could not be read, when it
      * could not; the defaults are then in force until the next save (ADR
      * 0109 decision 1). It is a report only: a save ignores it and it is

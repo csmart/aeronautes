@@ -6,7 +6,7 @@ import { newFakeApi, settingsRefusal } from "./fakeApi";
 const original: AppSettingsDTO = {
   maxActiveJobs: 2, defaultProfile: "balanced", auditRetentionDays: 17, jobRetentionDays: 11, downloadObjectCeiling: 250_000,
   browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-  reclaimReplacedFragments: true, railWidthPx: 0,
+  reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
 };
 const releasePending: (() => void)[] = [];
 
