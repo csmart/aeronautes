@@ -38,7 +38,8 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
     page.getByRole("listbox", { name: "Objects" }),
     actions.getByRole("button", { name: "Upload…" }),
     page.getByRole("button", { name: "Count objects" }),
-    actions.getByRole("button", { name: "Delete prefix…" }),
+    // The deletions' slot: what is in it follows the selection, its place does not.
+    page.locator(".deletions .steady.bulk"),
   ];
   const places = () => Promise.all(steady.map((part) => part.boundingBox()));
   const before = await places();
@@ -53,6 +54,8 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await objectRow(page, "file00.bin").click();
   await expect(actions.getByRole("button", { name: "Copy object…" })).toBeVisible();
   await expect(actions.getByRole("button", { name: "Delete object…" })).toBeVisible();
+  // With a row selected only its own deletion is offered (ADR 0125 decision 7).
+  await expect(actions.getByRole("button", { name: "Delete prefix…" })).toHaveCount(0);
   expect(await places(), "with one object selected and read").toEqual(before);
   await inner.click({ modifiers: ["ControlOrMeta"] });
   await expect(actions.getByRole("button", { name: "Delete selected…" })).toBeVisible();

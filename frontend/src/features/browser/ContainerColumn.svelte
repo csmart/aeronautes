@@ -254,6 +254,14 @@
         </button>
       {/each}
     </div>
+    <input
+      class="container-filter"
+      type="search"
+      bind:value={browser.containerFilter}
+      placeholder="filter containers…"
+      aria-label="Filter containers"
+      disabled={!browser.account}
+    />
   </header>
 
   <div class="rows" role="tabpanel" id={panelId} aria-labelledby={tabId(browser.mode)}>
@@ -273,6 +281,16 @@
       {#each browser.containerGroups.main as container (container.name)}
         {@render containerRow(container, false)}
       {/each}
+      {#if browser.containerFilter.trim() !== "" && browser.containerGroups.main.length === 0 && browser.containerGroups.suspected.length === 0}
+        <p class="disconnected" role="status">
+          {#if browser.containerGroups.hiddenBackstage > 0}
+            <!-- Segment containers are loaded but this view hides them. -->
+            Only segment containers hidden in this view hold "{browser.containerFilter.trim()}"; the All and Backstage views show them.
+          {:else}
+            No loaded container's name holds "{browser.containerFilter.trim()}"{browser.containersMarker !== "" ? "; more containers can be loaded below" : ""}.
+          {/if}
+        </p>
+      {/if}
 
       {#if browser.containerGroups.suspected.length > 0}
         <h3 class="group-label">
@@ -338,6 +356,18 @@
 {/if}
 
 <style>
+  .container-filter {
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: 2px var(--space-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+
   .pane {
     display: flex;
     flex-direction: column;

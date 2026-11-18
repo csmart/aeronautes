@@ -1,5 +1,5 @@
 import { test, type Locator, type Page } from "@playwright/test";
-import { connect, expect, ownContainer } from "../helpers.ts";
+import { connect, expect, openContainer, ownContainer } from "../helpers.ts";
 
 // ADR 0117 through the window, on every target: a container named like a
 // segment store sits behind the "Possible backstage" heading, and its
@@ -79,3 +79,25 @@ async function refreshUntilListed(page: Page, listed: Locator) {
     await expect(listed).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 60_000 });
 }
+
+// ADR 0125 decisions 5 and 6 through the window, on every target: a folder
+// is created by name in the run's own container and listed, and the
+// Containers column finds the run's container by part of its name.
+test("create a folder by name and filter the containers", async ({ page }, info) => {
+  const container = await ownContainer(info.project.name, "ui-folder");
+  await openContainer(page, info.project.name, container);
+  await page.getByRole("button", { name: "New folder…" }).click();
+  const dialog = page.getByRole("dialog", { name: "New folder" });
+  await dialog.getByLabel("Name").fill("journey-folder");
+  await expect(dialog).toContainText(`${container}/journey-folder/`);
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: /^journey-folder\/ / })).toBeVisible();
+
+  const filter = page.getByLabel("Filter containers");
+  await filter.fill(container.slice(-10).toUpperCase());
+  await expect(page.getByRole("button", { name: new RegExp(`^${container} `) })).toBeVisible();
+  await filter.fill("no-such-container-anywhere");
+  await expect(page.getByText(`No loaded container's name holds "no-such-container-anywhere"`)).toBeVisible();
+  await filter.fill("");
+});

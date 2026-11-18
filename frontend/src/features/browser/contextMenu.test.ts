@@ -130,8 +130,8 @@ describe("row context menu", () => {
 
 // ADR 0121 decision 2: each bulk deletion is its own action. The toolbar
 // offers the prefix's inside a folder or for the one folder selected alone,
-// and the container's two wherever there is no single prefix to name, so a
-// prefix deletion is never one click from a container's.
+// and the container's two only where nothing is selected, so a prefix
+// deletion is never one click from a container's (ADR 0121, ADR 0125).
 describe("where the bulk deletions are offered", () => {
   const offered = () => [...document.querySelectorAll<HTMLButtonElement>(".deletions button")]
     .map((b) => b.textContent?.trim() ?? "").filter((label) => /prefix|container/.test(label));
@@ -141,16 +141,21 @@ describe("where the bulk deletions are offered", () => {
   };
   const container = ["Empty container…", "Delete container…"];
 
-  it("offers the container's two at its top unless exactly one folder is selected", async () => {
+  // ADR 0125 decision 7: with rows selected only their own deletion is
+  // offered; the container's two, or the folder's, only with none.
+  it("offers the container's two at its top only while nothing is selected", async () => {
     const { browser, objects } = await list();
     const folder = browser.visibleEntries.findIndex((row) => row.kind === "prefix");
+    const all = () => [...document.querySelectorAll<HTMLButtonElement>(".deletions button")].map((b) => b.textContent?.trim());
     expect(offered()).toEqual(container);
     browser.select(folder); flushSync();
     expect(offered()).toEqual(["Delete prefix…"]);
     browser.toggleRow(objects[0].i); flushSync();
     expect(browser.chosenRows.length).toBe(2);
-    expect(offered()).toEqual(container);
+    expect(all()).toEqual(["Delete selected…"]);
     browser.select(objects[0].i); flushSync();
+    expect(offered()).toEqual([]);
+    browser.clearSelection(); flushSync();
     expect(offered()).toEqual(container);
   });
 
