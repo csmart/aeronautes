@@ -359,9 +359,8 @@ type journeyServices struct {
 type wailsConfirmer struct{}
 
 func (wailsConfirmer) ConfirmPublicRead(ctx context.Context, container, account string) (bool, error) {
-	return askNative(ctx, "Make this container public?",
-		fmt.Sprintf("Anyone on the internet will be able to read every object in %s (%s).\nThis question comes from the application, not from the page.", container, account),
-		"Keep it private", "Make it public")
+	title, message := app.PublicReadQuestion(container, account)
+	return askNative(ctx, title, message, "Keep it private", "Make it public")
 }
 
 // wailsOverwriteConfirmer implements app.OverwriteConfirmer over the same
