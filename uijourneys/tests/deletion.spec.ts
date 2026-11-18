@@ -229,3 +229,37 @@ async function expectRefused(page: Page, action: string, wrong: string[]): Promi
   }
   return dialog;
 }
+
+// Test plan step 8e, and ADR 0122: a deletion deletes whatever a name holds
+// when its request arrives. An object written over by another program
+// between the preview and the start is deleted with the rest, and the dialog
+// says beforehand that this is what happens.
+test("delete a prefix whose object changed after the preview", async ({ page }, info) => {
+  const container = await ownContainer(info.project.name, "ui-changed");
+  const folder = localFolder();
+  const names = [...writeFiles(folder, [16, 32, 64], 1).keys()];
+  await openContainer(page, info.project.name, container);
+  await page.getByRole("button", { name: "Upload…" }).click();
+  const upload = page.getByRole("dialog", { name: "Upload" });
+  await control.pickFolder(folder);
+  await upload.getByRole("button", { name: "Choose folder…" }).click();
+  await upload.getByRole("button", { name: "Start upload" }).click();
+  await finish(page, upload);
+
+  await page.getByRole("button", { name: "Refresh listing" }).click();
+  await openFolder(page, folder);
+  await page.getByRole("button", { name: "Delete prefix…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete" });
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog).toContainText("if something else has written to a name since this preview, that is what goes");
+  const confirm = dialog.getByLabel(/to arm/);
+  await expect(confirm).toBeVisible();
+
+  // Another program writes over one object after the preview.
+  const changed = `${basename(folder)}/${names[1]}`;
+  await control.put(info.project.name, container, changed, "written by another program");
+  await confirm.fill((await confirm.getAttribute("placeholder"))!);
+  await dialog.getByRole("button", { name: "Delete prefix" }).click();
+  await finish(page, dialog);
+  await expect.poll(() => control.names(info.project.name, container), lag).toEqual([]);
+});
