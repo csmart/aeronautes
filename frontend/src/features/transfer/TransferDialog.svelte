@@ -363,7 +363,7 @@
       </div>
     </div>
 
-    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} onchange={invalidate} />
+    <JobSettingsFields bind:settings={jobSettings} defaultProfile={browser.settings.document?.defaultProfile} transfer="copy" onchange={invalidate} />
 
     {#if error}
       <p class="error callout danger" role="alert">{error}</p>

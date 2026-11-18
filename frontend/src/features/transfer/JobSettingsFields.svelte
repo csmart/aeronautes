@@ -11,14 +11,34 @@
     defaultProfile,
     chunk = true,
     largeObjects = false,
+    transfer,
     onchange,
   }: {
     settings: JobSettingsInput;
     defaultProfile: string | undefined;
     chunk?: boolean;
     largeObjects?: boolean;
+    transfer: "upload" | "download" | "copy";
     onchange: () => void;
   } = $props();
+
+  // How a confirmed transfer decides what to replace. Nothing sets it yet;
+  // it is written here, beside the settings, so the rule can be known
+  // (operator, 18 November 2026; ADR 0122 decisions 4 and 12).
+  const replacing: Record<typeof transfer, string> = {
+    upload:
+      "Once you confirm replacing, a name that exists is replaced when its size or modification time differs from the file's, as rclone copy decides; " +
+      "one whose time alone differs keeps its bytes if its MD5 matches. " +
+      "If any file in the upload is large enough to go in segments, sizes are ignored for the whole upload: " +
+      "a file whose time matches is left even when its size differs, one whose time differs is still kept if its MD5 matches, " +
+      "and a large object, which has no MD5, is replaced whenever its time differs.",
+    download:
+      "Once you confirm replacing, a file that exists is replaced when its size or modification time differs from the object's, as rclone copy decides; " +
+      "one whose time alone differs keeps its bytes if its MD5 matches. A large object has no MD5, so its file is replaced whenever the time differs.",
+    copy:
+      "Once you confirm replacing, an object that exists is replaced unless both listings show the same size and ETag. " +
+      "A large or empty object is read once on each side and left alone only when the store reports the same size and ETag for both.",
+  };
 
   // A dialog can open before the application settings have been read, so
   // the saved default may arrive after the profile was seeded with Auto.
@@ -80,6 +100,7 @@
       <span>Buffer size</span>
       <input class="type-mono" placeholder="16Mi (default)" bind:value={settings.bufferSize} oninput={onchange} />
     </label>
+    <p class="replacing"><span class="replacing-title">Replacing</span> {replacing[transfer]}</p>
   </div>
 </details>
 
@@ -97,6 +118,18 @@
     flex-wrap: wrap;
     gap: var(--space-3);
     padding-top: var(--space-2);
+  }
+
+  .replacing {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .replacing-title {
+    color: var(--color-text-secondary);
+    font-weight: var(--weight-semibold);
   }
 
   .advanced-fields label {
