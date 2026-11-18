@@ -94,9 +94,11 @@
               <span class="what">{outcomeText(outcome)}</span>
               {#if fixed}
                 <!-- Nothing left to do for this row. -->
-              {:else if outcome.verify === "failed" && outcome.bookmarkId}
+              {:else if !current(outcome)}
+                <!-- Its bookmark was deleted since, so there is nothing to edit. -->
+              {:else if outcome.verify === "failed"}
                 <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Edit {outcome.name}">Edit</button>
-              {:else if outcome.bookmarkId && !hadSecret(outcome.index)}
+              {:else if !hadSecret(outcome.index)}
                 <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Enter key for {outcome.name}">Enter key</button>
               {/if}
             </li>
