@@ -36,6 +36,9 @@ type BuildIdentity struct {
 	Version        string `json:"version"`
 	SourceRevision string `json:"sourceRevision"`
 	SourceDirty    string `json:"sourceDirty"`
+	// DevelopedFrom is the release a development build follows, "" for a
+	// release or when no release tag was behind it.
+	DevelopedFrom string `json:"developedFrom,omitempty"`
 }
 
 // AppService is the first bound service: shell identity and environment.

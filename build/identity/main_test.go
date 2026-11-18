@@ -75,7 +75,7 @@ func TestReleaseVersion(t *testing.T) {
 func TestSourceIdentity(t *testing.T) {
 	root := fixture(t)
 	i, err := resolve(root, "v1.2.3", "linux", "arm64")
-	if err != nil || i.SourceRevision != gitOK(t, root, "rev-parse", "HEAD") || i.SourceDirty != "clean" || i.Version != "1.2.3" {
+	if err != nil || i.SourceRevision != gitOK(t, root, "rev-parse", "HEAD") || i.SourceDirty != "clean" || i.Version != "1.2.3" || i.DevelopedFrom != "" {
 		t.Fatalf("release identity: %+v %v", i, err)
 	}
 	put(t, root, "untracked", "local change")
@@ -85,6 +85,10 @@ func TestSourceIdentity(t *testing.T) {
 	i, err = resolve(root, "", "linux", "amd64")
 	if err != nil || i.Version != "dev" || i.SourceDirty != "dirty" || !strings.Contains(i.ArtifactName, i.SourceRevision[:12]+".dirty") {
 		t.Fatalf("development identity: %+v %v", i, err)
+	}
+	// A development build names the release it follows; a release names none.
+	if i.DevelopedFrom != "1.2.3" {
+		t.Fatalf("development build developed from %q, want 1.2.3", i.DevelopedFrom)
 	}
 	gitOK(t, root, "add", "untracked")
 	gitOK(t, root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "changed source")
@@ -96,6 +100,16 @@ func TestSourceIdentity(t *testing.T) {
 	}
 	if _, err := resolve(root, "", "plan9", "amd64"); err == nil {
 		t.Fatal("accepted unsupported platform")
+	}
+}
+
+func TestDevelopmentBuildWithNoReleaseBehind(t *testing.T) {
+	root := fixture(t)
+	gitOK(t, root, "tag", "-d", "v1.2.3")
+	gitOK(t, root, "tag", "not-a-release")
+	i, err := resolve(root, "", "linux", "amd64")
+	if err != nil || i.Version != "dev" || i.DevelopedFrom != "" {
+		t.Fatalf("identity with no release tag: %+v %v", i, err)
 	}
 }
 
