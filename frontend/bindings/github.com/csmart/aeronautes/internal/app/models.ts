@@ -208,9 +208,10 @@ export interface AppSettingsDTO {
     "logToFile": boolean;
 
     /**
-     * Log is the log in force, which a launch switch can make differ from
-     * the two settings above (ADR 0127 decision 4). It is a report only:
-     * a save ignores it and it is never written to the file.
+     * Log reports the file's path and which launch switches are in force
+     * beside the two settings above, which a read reports as in force
+     * (ADR 0127 decision 4). It is a report only: a save ignores it and it
+     * is never written to the file.
      */
     "log"?: LogStatusDTO | null;
 

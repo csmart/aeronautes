@@ -92,7 +92,7 @@ type RestoreResultDTO struct {
 // testable without the whole settings service.
 type settingsPort interface {
 	readAfter(snapshot func() error) (AppSettingsDTO, error)
-	Set(ctx context.Context, settings AppSettingsDTO) (AppSettingsDTO, error)
+	restore(settings AppSettingsDTO) (AppSettingsDTO, error)
 }
 
 // BackupService exports the operator's configuration to a file they choose
@@ -314,7 +314,7 @@ func (s *BackupService) ImportSettings(ctx context.Context) (*RestoreResultDTO, 
 	}
 
 	result := &RestoreResultDTO{BookmarksTotal: len(marks)}
-	if _, err := s.settings.Set(ctx, doc.AppSettings); err != nil {
+	if _, err := s.settings.restore(doc.AppSettings); err != nil {
 		// Set can fail at its commit boundary after the new settings were
 		// applied, so this is an uncertain outcome, not a proved refusal.
 		// Report it and stop before touching bookmarks; the shell reloads the

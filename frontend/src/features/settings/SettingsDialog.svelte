@@ -397,7 +397,7 @@
             </label>
             <p class="note" id={`${id}-log-level-note`}>{LOG_LEVEL_NOTE}</p>
             <p class="status" id={`${id}-log-level-status`} role="status">
-              {#if logLevelError}{logLevelError}{:else if log?.levelFromEnv}{log.level} in force, set by AERONAUTES_LOG_LEVEL at launch{:else}{log?.level ?? current.logLevel} in force{/if}
+              {#if logLevelError}{logLevelError}{:else if log?.levelFromEnv}{current.logLevel} in force, set by AERONAUTES_LOG_LEVEL at launch{:else}{current.logLevel} in force{/if}
             </p>
           </div>
           {/if}
@@ -408,19 +408,19 @@
               <input
                 class="log-to-file"
                 type="checkbox"
-                checked={log?.fileOn ?? current.logToFile}
+                checked={current.logToFile}
                 disabled={!settings.canSave}
                 aria-describedby={`${id}-log-file-note ${id}-log-file-status`}
                 onchange={(e) => {
                   const value = e.currentTarget.checked;
-                  e.currentTarget.checked = log?.fileOn ?? current.logToFile;
+                  e.currentTarget.checked = current.logToFile;
                   void saveBound({ logToFile: value }, (message) => (logFileError = message));
                 }}
               />
             </label>
             <p class="note" id={`${id}-log-file-note`}>{LOG_FILE_NOTE}</p>
             <p class="status" id={`${id}-log-file-status`} role="status">
-              {#if logFileError}{logFileError}{:else if log?.fileOn}being written{#if log.fileFromEnv}, named by AERONAUTES_LOG_FILE at launch{/if}{:else}off{/if}
+              {#if logFileError}{logFileError}{:else if current.logToFile}being written{#if log?.fileFromEnv}, named by AERONAUTES_LOG_FILE at launch{/if}{:else}off{/if}
             </p>
             {#if log?.filePath}
               <p class="log-path"><span class="path">{log.filePath}</span><CopyValue label="the log file's path" value={log.filePath} copy={(text) => settings.copyText(text)} /></p>
