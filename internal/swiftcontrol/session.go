@@ -7,6 +7,7 @@ package swiftcontrol
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/ncw/swift/v2"
+
+	"github.com/csmart/aeronautes/internal/applog"
 )
 
 // Config carries one bookmark's connection parameters. The API key comes
@@ -217,11 +220,54 @@ func closeIdleConnections(rt http.RoundTripper) {
 func (s *Session) Authenticate(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
-	if err := s.conn.Authenticate(ctx); err != nil {
-		return Normalize(err)
+	if err := s.signIn(ctx); err != nil {
+		return err
 	}
 	s.authedAt = time.Now()
 	return nil
+}
+
+// signIn asks the identity service again, up to signInRetries more times
+// a short pause apart, while a sign-in gets no answer at all, such as a
+// connection reset or a TLS alert in place of a reply. One store has now
+// and then answered a sign-in with a TLS alert and accepted the same
+// sign-in a moment later (finding F75). A refusal the store did answer, a
+// wrong password among them, is never repeated, and a timeout is not
+// either, so a slow store does not keep the operator waiting four times.
+func (s *Session) signIn(ctx context.Context) error {
+	err := Normalize(s.conn.Authenticate(ctx))
+	for retry := 1; retry <= signInRetries && unanswered(err); retry++ {
+		applog.Warnf("sign-in got no answer (%s), trying again in %s, %d of %d", signInCause(err), signInRetryPause, retry, signInRetries)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(signInRetryPause):
+		}
+		err = Normalize(s.conn.Authenticate(ctx))
+	}
+	return err
+}
+
+// The operator's choice of 18 November 2026: three more tries, a few
+// seconds apart, before the failure is shown. A variable so tests need not
+// wait.
+const signInRetries = 3
+
+var signInRetryPause = 2 * time.Second
+
+func unanswered(err error) bool {
+	var se *SwiftError
+	return errors.As(err, &se) && se.Kind == KindNetwork
+}
+
+// signInCause names a failed sign-in's cause without the error's own text,
+// which carries the identity URL.
+func signInCause(err error) string {
+	var alert tls.AlertError
+	if errors.As(err, &alert) {
+		return alert.Error()
+	}
+	return "connection failed"
 }
 
 // refreshIfStale re-authenticates, under refreshMu, when the token is
@@ -243,8 +289,8 @@ func (s *Session) refreshIfStale(ctx context.Context, margin time.Duration) erro
 	if !stale {
 		return nil
 	}
-	if err := s.conn.Authenticate(ctx); err != nil {
-		return Normalize(err)
+	if err := s.signIn(ctx); err != nil {
+		return err
 	}
 	s.authedAt = time.Now()
 	return nil
