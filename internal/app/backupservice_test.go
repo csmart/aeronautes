@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -34,7 +33,7 @@ func (f fixedSettings) readAfter(snapshot func() error) (AppSettingsDTO, error) 
 	return f.dto, nil
 }
 
-func (f fixedSettings) Set(_ context.Context, s AppSettingsDTO) (AppSettingsDTO, error) {
+func (f fixedSettings) restore(s AppSettingsDTO) (AppSettingsDTO, error) {
 	return s, nil
 }
 
@@ -59,8 +58,8 @@ func (s interleavingSettings) readAfter(snapshot func() error) (AppSettingsDTO, 
 	})
 }
 
-func (s interleavingSettings) Set(ctx context.Context, dto AppSettingsDTO) (AppSettingsDTO, error) {
-	return s.real.Set(ctx, dto)
+func (s interleavingSettings) restore(dto AppSettingsDTO) (AppSettingsDTO, error) {
+	return s.real.restore(dto)
 }
 
 // selfSigned builds a self-signed certificate and returns its DER and the DER
@@ -606,7 +605,7 @@ func (failingSettings) readAfter(snapshot func() error) (AppSettingsDTO, error) 
 	return defaults(), snapshot()
 }
 
-func (failingSettings) Set(context.Context, AppSettingsDTO) (AppSettingsDTO, error) {
+func (failingSettings) restore(AppSettingsDTO) (AppSettingsDTO, error) {
 	return AppSettingsDTO{}, errors.New("injected lost settings commit reply")
 }
 

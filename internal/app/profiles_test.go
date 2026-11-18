@@ -366,34 +366,74 @@ func TestSettingsResetSavesTheDefaults(t *testing.T) {
 	}
 }
 
-// ADR 0127 decisions 2 and 4: a log change saved from Settings applies at
-// once, and saving another setting leaves the level a launch switch set.
-func TestSettingsApplyOnlyAChangedLog(t *testing.T) {
+// ADR 0127 decisions 2 to 5: the page is shown the log in force; saving
+// another setting leaves both launch switches in force and stores neither as
+// the operator's; turning the launch file off, choosing a level and a reset
+// each apply at once although the stored settings already hold that value.
+func TestSettingsApplyALogChangeAgainstTheLogInForce(t *testing.T) {
+	launchFile := filepath.Join(t.TempDir(), "launch.log")
 	t.Setenv(applog.EnvLevel, "debug")
-	t.Setenv(applog.EnvFile, "")
+	t.Setenv(applog.EnvFile, launchFile)
+	if _, closeFn, err := applog.Configure(); err != nil {
+		t.Fatal(err)
+	} else {
+		t.Cleanup(func() { _ = closeFn() })
+	}
+	path := settingsFile(t)
+	service := NewSettingsService(path, newJobRunner(nil, nil))
+	ctx := context.Background()
+	stored := func() AppSettingsDTO {
+		t.Helper()
+		settings, err := service.read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return settings
+	}
+
+	shown, err := service.Get(ctx)
+	if err != nil || shown.LogLevel != "debug" || !shown.LogToFile || !shown.Log.LevelFromEnv || !shown.Log.FileFromEnv || shown.Log.FilePath != launchFile {
+		t.Fatalf("the page was not shown the launch switches: %+v %+v %v", shown, shown.Log, err)
+	}
+	// The page saves the whole document it was shown.
+	shown.MaxQueuedJobs = 3
+	saved, err := service.Set(ctx, shown)
+	if err != nil || saved.LogLevel != "debug" || !saved.LogToFile || stored().LogLevel != "info" || stored().LogToFile {
+		t.Fatalf("saving another setting changed or stored the launch log: %+v %v, stored %+v", saved, err, stored())
+	}
+
+	saved.LogToFile = false
+	if saved, err = service.Set(ctx, saved); err != nil || saved.LogToFile || applog.Current().FileOn {
+		t.Fatalf("the launch file was not turned off: %+v %v", saved, err)
+	}
+	applog.Infof("after-off")
+	if written, _ := os.ReadFile(launchFile); strings.Contains(string(written), "after-off") {
+		t.Fatal("the launch file was still written after it was turned off")
+	}
+
+	saved.LogLevel = "warn"
+	if saved, err = service.Set(ctx, saved); err != nil || saved.LogLevel != "warn" || saved.Log.LevelFromEnv || stored().LogLevel != "warn" {
+		t.Fatalf("a chosen level was not applied and stored: %+v %v", saved, err)
+	}
+	saved.LogLevel = "loud"
+	if _, err := service.Set(ctx, saved); err == nil {
+		t.Fatal("an unknown level was saved")
+	}
+}
+
+// ADR 0127 decision 5: a reset puts the level back to info and the file off
+// for this session, even where the stored settings already hold them.
+func TestSettingsResetEndsTheLaunchLog(t *testing.T) {
+	t.Setenv(applog.EnvLevel, "debug")
+	t.Setenv(applog.EnvFile, filepath.Join(t.TempDir(), "launch.log"))
 	if _, closeFn, err := applog.Configure(); err != nil {
 		t.Fatal(err)
 	} else {
 		t.Cleanup(func() { _ = closeFn() })
 	}
 	service := NewSettingsService(settingsFile(t), newJobRunner(nil, nil))
-	ctx := context.Background()
-	if applog.Current().Level != "debug" {
-		t.Fatalf("the launch switch did not win at start: %+v", applog.Current())
-	}
-	settings := defaults()
-	settings.MaxQueuedJobs = 3
-	saved, err := service.Set(ctx, settings)
-	if err != nil || saved.Log == nil || saved.Log.Level != "debug" || !saved.Log.LevelFromEnv {
-		t.Fatalf("saving another setting changed the log: %+v %v", saved.Log, err)
-	}
-	settings.LogLevel = "warn"
-	saved, err = service.Set(ctx, settings)
-	if err != nil || saved.LogLevel != "warn" || saved.Log == nil || saved.Log.Level != "warn" || saved.Log.LevelFromEnv {
-		t.Fatalf("a changed level was not applied: %+v %+v %v", saved, saved.Log, err)
-	}
-	settings.LogLevel = "loud"
-	if _, err := service.Set(ctx, settings); err == nil {
-		t.Fatal("an unknown level was saved")
+	reset, err := service.Set(context.Background(), AppSettingsDTO{ResetToDefaults: true})
+	if err != nil || reset.LogLevel != "info" || reset.LogToFile || applog.Current().Level != "info" || applog.Current().FileOn {
+		t.Fatalf("the reset left the launch log in force: %+v %v, now %+v", reset, err, applog.Current())
 	}
 }

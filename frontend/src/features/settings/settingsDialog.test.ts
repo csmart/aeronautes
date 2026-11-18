@@ -194,7 +194,7 @@ it("counts one connection in the singular", async () => {
 it("shows the log in force and saves its level and file", async () => {
   const api = newFakeApi();
   const log = { level: "debug", filePath: "/state/aeronautes/aeronautes.log", fileOn: false, levelFromEnv: true, fileFromEnv: false };
-  api.appSettings = vi.fn(async () => ({ ...original, log }));
+  api.appSettings = vi.fn(async () => ({ ...original, logLevel: "debug", log }));
   api.saveAppSettings = vi.fn(async (settings) => ({ ...settings, log: { ...log, level: settings.logLevel, levelFromEnv: false, fileOn: settings.logToFile } }));
   const browser = new BrowserState(api);
   mounted = mount(SettingsDialog, { target: document.body, props: { settings: browser.settings, onClose: () => {} } });

@@ -136,9 +136,10 @@ type AppSettingsDTO struct {
 	// LogToFile keeps the log in a file in the state folder as well as on
 	// standard error, rotated at 10 MiB (ADR 0127 decision 3).
 	LogToFile bool `json:"logToFile"`
-	// Log is the log in force, which a launch switch can make differ from
-	// the two settings above (ADR 0127 decision 4). It is a report only:
-	// a save ignores it and it is never written to the file.
+	// Log reports the file's path and which launch switches are in force
+	// beside the two settings above, which a read reports as in force
+	// (ADR 0127 decision 4). It is a report only: a save ignores it and it
+	// is never written to the file.
 	Log *LogStatusDTO `json:"log,omitempty"`
 	// FileProblem says why the settings file could not be read, when it
 	// could not; the defaults are then in force until the next save (ADR
@@ -162,9 +163,14 @@ type LogStatusDTO struct {
 	FileFromEnv  bool   `json:"fileFromEnv"`
 }
 
-func logStatus() *LogStatusDTO {
+// inForce reports the log as it is in force in the document's two log
+// settings, which a launch switch can make differ from the stored ones, with
+// the file's path and the switches beside them (ADR 0127 decision 4).
+func inForce(settings AppSettingsDTO) AppSettingsDTO {
 	now := applog.Current()
-	return &LogStatusDTO{Level: now.Level, FilePath: now.FilePath, FileOn: now.FileOn, LevelFromEnv: now.LevelFromEnv, FileFromEnv: now.FileFromEnv}
+	settings.LogLevel, settings.LogToFile = now.Level, now.FileOn
+	settings.Log = &LogStatusDTO{Level: now.Level, FilePath: now.FilePath, FileOn: now.FileOn, LevelFromEnv: now.LevelFromEnv, FileFromEnv: now.FileFromEnv}
+	return settings
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -240,8 +246,7 @@ func (s *SettingsService) Get(context.Context) (AppSettingsDTO, error) {
 	if problem != nil {
 		settings.FileProblem = problem.Error()
 	}
-	settings.Log = logStatus()
-	return settings, nil
+	return inForce(settings), nil
 }
 
 // read returns the settings in force: the keys the file holds over the
@@ -314,6 +319,16 @@ func refuseSettings(format string, args ...any) error {
 
 // Set validates, persists, and applies the settings.
 func (s *SettingsService) Set(_ context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
+	return s.save(settings, false)
+}
+
+// restore saves a backup's settings whole: each log setting is stored as the
+// backup holds it, even where it matches what a launch switch put in force.
+func (s *SettingsService) restore(settings AppSettingsDTO) (AppSettingsDTO, error) {
+	return s.save(settings, true)
+}
+
+func (s *SettingsService) save(settings AppSettingsDTO, restoring bool) (AppSettingsDTO, error) {
 	if settings.ResetToDefaults {
 		// Only the settings file changes: bookmarks, saved keys, jobs and
 		// history are kept elsewhere and are not touched.
@@ -327,25 +342,32 @@ func (s *SettingsService) Set(_ context.Context, settings AppSettingsDTO) (AppSe
 	settings.Log = nil
 	s.saving.Lock()
 	defer s.saving.Unlock()
-	// Only what changed is applied, so saving another setting leaves what
-	// a launch switch set in force (ADR 0127 decision 4). A file that cannot
-	// be opened refuses the save.
+	// The page shows the log in force, so a log setting that differs from
+	// it is the operator's change and applies at once, over a launch switch
+	// too; one that matches it is left alone and keeps its stored value, so
+	// saving another setting neither undoes a launch switch nor saves its
+	// value as the operator's (ADR 0127 decision 4). A file that cannot be
+	// opened refuses the save.
 	saved, _ := s.read()
-	if saved.LogToFile != settings.LogToFile {
+	now := applog.Current()
+	if settings.LogToFile != now.FileOn {
 		if err := applog.KeepFile(settings.LogToFile); err != nil {
 			return AppSettingsDTO{}, refuseSettings("%v", err)
 		}
+	} else if !restoring {
+		settings.LogToFile = saved.LogToFile
 	}
-	if saved.LogLevel != settings.LogLevel {
+	if settings.LogLevel != now.Level {
 		applog.SetLevel(settings.LogLevel)
+	} else if !restoring {
+		settings.LogLevel = saved.LogLevel
 	}
 	if err := s.write(settings); err != nil {
 		return AppSettingsDTO{}, err
 	}
 	s.runner.setMaxActiveJobs(settings.MaxActiveJobs)
 	s.runner.setMaxQueuedJobs(settings.MaxQueuedJobs)
-	settings.Log = logStatus()
-	return settings, nil
+	return inForce(settings), nil
 }
 
 // checkSettings refuses a value no setting accepts and fills the default for a
