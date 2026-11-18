@@ -93,7 +93,10 @@ func literalBrowse(t *testing.T, h *Harness) {
 					}
 				}
 				if pageNumber == 0 {
-					wantRequests := 2
+					// The two rows, and one request more for the row after
+					// them, which says whether a next page exists (ADR 0074
+					// decision 6).
+					wantRequests := 3
 					if tc.self != "" {
 						wantRequests++
 					}
@@ -119,8 +122,15 @@ func literalBrowse(t *testing.T, h *Harness) {
 			if tc.self != "" {
 				wantMarkers = append(wantMarkers, tc.self)
 			}
-			for _, row := range tc.want {
-				wantMarkers = append(wantMarkers, row.name)
+			for start := 0; start < len(tc.want); start += 2 {
+				// A page's last request reads past its second row; the next
+				// page starts again from that row's name.
+				if start > 0 {
+					wantMarkers = append(wantMarkers, tc.want[start-1].name)
+				}
+				for _, row := range tc.want[start:min(start+2, len(tc.want))] {
+					wantMarkers = append(wantMarkers, row.name)
+				}
 			}
 			trace.assertMarkers(t, tc.prefix, "/", wantMarkers...)
 			// At the top, the first page holds no "/" folder, so ADR 0116 asks
@@ -132,7 +142,7 @@ func literalBrowse(t *testing.T, h *Harness) {
 					probes++
 					continue
 				}
-				if request.prefix != tc.prefix || request.delimiter != "/" || request.limit != "2" {
+				if request.prefix != tc.prefix || request.delimiter != "/" || request.limit != "3" {
 					t.Fatalf("bound request altered the literal filter or page limit: %+v", request)
 				}
 			}

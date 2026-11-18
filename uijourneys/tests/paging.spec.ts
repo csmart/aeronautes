@@ -3,16 +3,17 @@ import { control } from "../control.ts";
 import { expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
 
 // ADR 0074 decision 6: with the retention ceiling at its least, 1,000, a
-// folder of 1,001 objects shows its first 1,000, then the next page shows
-// the one after them in place of the rest, and back to the start shows the
-// first again (found by the operator: the list stopped at the ceiling with
-// nothing to press).
+// folder of 2,000 objects shows its first 1,000, then the next page shows
+// the rest in their place and, ending the listing exactly, offers no further
+// page, and back to the start shows the first again (found by the operator:
+// first the list stopped at the ceiling with nothing to press, then a second
+// page that ended the listing still offered an empty third).
 test("page a folder past the retention ceiling and back", async ({ page }, info) => {
   test.skip(info.project.name !== "mock", "a thousand uploads are driven against the mock only");
   test.setTimeout(300_000);
   const container = await ownContainer(info.project.name, "ui-paging");
   const folder = localFolder();
-  const names = [...writeFiles(folder, Array(1001).fill(1), 1).keys()];
+  const names = [...writeFiles(folder, Array(2000).fill(1), 1).keys()];
   // The store lists names in byte order.
   names.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 
@@ -41,8 +42,11 @@ test("page a folder past the retention ceiling and back", async ({ page }, info)
     await objectRow(page, names[0]).click();
 
     await foot.getByRole("button", { name: "Next 1,000 →" }).click();
-    await expect(foot.getByText("rows 1,001 to 1,001")).toBeVisible();
+    await expect(foot.getByText("rows 1,001 to 2,000")).toBeVisible();
     await expect(objectRow(page, names[1000])).toBeVisible();
+    await expect(foot.getByRole("button", { name: "Next 1,000 →" })).toHaveCount(0);
+    await expect(foot.getByRole("button", { name: "Load more" })).toHaveCount(0);
+    await expect(foot.getByText(/more on server/)).toHaveCount(0);
     await expect(objectRow(page, names[0])).toHaveCount(0);
     await expect(foot.getByText("none selected")).toBeVisible();
 

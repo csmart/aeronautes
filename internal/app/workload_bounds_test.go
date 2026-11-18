@@ -245,3 +245,40 @@ func TestPageReplyCarriesTheEffectiveLimit(t *testing.T) {
 		}
 	}
 }
+
+// ADR 0074 decision 6: a page has a next marker only when a row follows it,
+// so a listing that ends exactly at a page's end offers no empty next page
+// (found by the operator paging 2,000 objects 1,000 at a time).
+func TestPageEndingTheListingHasNoNextMarker(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.connect(t)
+	h.mock.AddContainer("exact", "standard")
+	for i := range 4 {
+		seedObject(h.mock, "exact", fmt.Sprintf("o-%d.bin", i), "x", nil)
+	}
+	bookmark := h.transfer.connections.ActiveBookmarkID()
+
+	first, err := h.browse.Objects(ctx, bookmark, "exact", "", "", 2)
+	if err != nil || len(first.Rows) != 2 || first.NextMarker != "o-1.bin" {
+		t.Fatalf("first object page: %d rows, marker %q, %v; want 2 rows and o-1.bin", len(first.Rows), first.NextMarker, err)
+	}
+	last, err := h.browse.Objects(ctx, bookmark, "exact", "", first.NextMarker, 2)
+	if err != nil || len(last.Rows) != 2 || last.NextMarker != "" {
+		t.Fatalf("last object page: %d rows, marker %q, %v; want 2 rows and none", len(last.Rows), last.NextMarker, err)
+	}
+
+	all, err := h.browse.Containers(ctx, bookmark, "", maxPageRows)
+	if err != nil || all.NextMarker != "" {
+		t.Fatalf("whole container listing: marker %q, %v", all.NextMarker, err)
+	}
+	total := len(all.Rows)
+	exact, err := h.browse.Containers(ctx, bookmark, "", total)
+	if err != nil || len(exact.Rows) != total || exact.NextMarker != "" {
+		t.Fatalf("container page of exactly %d: %d rows, marker %q, %v", total, len(exact.Rows), exact.NextMarker, err)
+	}
+	short, err := h.browse.Containers(ctx, bookmark, "", total-1)
+	if err != nil || len(short.Rows) != total-1 || short.NextMarker != short.Rows[total-2].Name {
+		t.Fatalf("container page one short: %d rows, marker %q, %v", len(short.Rows), short.NextMarker, err)
+	}
+}
