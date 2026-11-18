@@ -20,6 +20,7 @@ Testing candidate 9b5d7127 on 18 November 2026, the operator asked for two thing
    A download records its destination as "local directory" followed by the path of the directory picked, as the held destination captured it.
    An upload records its source as the count of files followed by "from" and the deepest folder that holds them all, which is the folder picked for a folder upload with files at its top and the files' own folder for a pick of files.
    The drawer, Copy details and the history show what the job recorded, so each names the folder; nothing else changes, and the job still writes through the held directory, never by that path.
+   The drawer's row cuts a long route short, so a job's expanded details show the whole route on a line of its own, wrapping where it must.
    Jobs recorded before this keep their old words.
 2. **Settings has a Diagnostics section with the log level.**
    "Log level" offers debug, info, warn and error, and the default is info, as ADR 0099 set.

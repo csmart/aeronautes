@@ -759,6 +759,9 @@
                       {recoveryRecordsLabel(job.recoveryRecords)} kept; what they track on the store is unchecked.
                     </p>
                   {/if}
+                  <!-- The whole route, which the row cuts short, so a local
+                    folder's full path can be read (ADR 0127 decision 1). -->
+                  <p class="route-full type-mono">{job.source}{selectedNote(job)} → {job.destination}</p>
                   <div class="config num">
                     <span class="config-row"><span class="k">engine</span><span class="type-mono">{job.engine}</span></span>
                     {#if !job.counters.deletionAccountingIncomplete}
@@ -1177,6 +1180,14 @@
     background: none;
     color: var(--color-text-faint);
     cursor: pointer;
+  }
+
+  .route-full {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 2px var(--space-2) 0;
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
   }
 
   .config {
