@@ -451,26 +451,49 @@
   <footer class="pane-foot num">
     {#if browser.containerName && !browser.entriesLoading}
       <span>
-        {browser.visibleEntries.length} rows{browser.entriesMarker !== "" ? " (more on server)" : ""}
+        {browser.entriesSkipped > 0
+          ? `rows ${(browser.entriesSkipped + 1).toLocaleString("en-US")} to ${(browser.entriesSkipped + browser.entries.length).toLocaleString("en-US")}`
+          : `${browser.visibleEntries.length} rows`}{browser.entriesMarker !== "" ? " (more on server)" : ""}
         · {browser.selectionCount === 0 ? "none selected" : `${browser.selectionCount} selected`}
       </span>
       {#if browser.entriesAtCeiling}
-        <span class="retention-notice" role="status">
-          {browser.entries.length.toLocaleString("en-US")} rows loaded, the retention ceiling; narrow the prefix, use Find, or count the prefix. The ceiling is set in Settings.
-        </span>
-      {:else if browser.entriesMarker !== ""}
         <div class="paging">
+          <span class="retention-notice" role="status">
+            {browser.entries.length.toLocaleString("en-US")} rows loaded, the retention ceiling; narrow the prefix, use Find, or count the prefix. The ceiling is set in Settings.
+          </span>
           {#if browser.entriesMoreError}
-            <span class="page-error" role="alert">Could not load more objects: {browser.entriesMoreError}</span>
+            <span class="page-error" role="alert">Could not load the next page: {browser.entriesMoreError}</span>
+          {/if}
+          {#if browser.entriesSkipped > 0}
+            <button class="more to-start" onclick={() => browser.entriesBackToStart()}>← Back to the start</button>
           {/if}
           <button
-            class="more"
-            disabled={browser.entriesMoreLoading || browser.entriesError !== null}
+            class="more next-page"
+            disabled={browser.entriesMoreLoading}
             aria-busy={browser.entriesMoreLoading}
-            onclick={() => browser.loadMoreEntries().catch(() => {})}
+            onclick={() => browser.nextEntriesPage().catch(() => {})}
           >
-            {browser.entriesMoreLoading ? "Loading…" : browser.entriesMoreError ? "Retry load more" : "Load more"}
+            {browser.entriesMoreLoading ? "Loading…" : `Next ${browser.retentionCeiling.toLocaleString("en-US")} →`}
           </button>
+        </div>
+      {:else if browser.entriesMarker !== "" || browser.entriesSkipped > 0}
+        <div class="paging">
+          {#if browser.entriesSkipped > 0}
+            <button class="more to-start" onclick={() => browser.entriesBackToStart()}>← Back to the start</button>
+          {/if}
+          {#if browser.entriesMarker !== ""}
+            {#if browser.entriesMoreError}
+              <span class="page-error" role="alert">Could not load more objects: {browser.entriesMoreError}</span>
+            {/if}
+            <button
+              class="more load-more"
+              disabled={browser.entriesMoreLoading || browser.entriesError !== null}
+              aria-busy={browser.entriesMoreLoading}
+              onclick={() => browser.loadMoreEntries().catch(() => {})}
+            >
+              {browser.entriesMoreLoading ? "Loading…" : browser.entriesMoreError ? "Retry load more" : "Load more"}
+            </button>
+          {/if}
         </div>
       {/if}
     {:else}

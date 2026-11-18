@@ -207,7 +207,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s pagination ownership', (k
       ? mount(ContainerColumn, { target: root, props: { browser: f.state, onCreate: vi.fn() } })
       : mount(WorkingList, { target: root, props: { browser: f.state } }));
     flushSync();
-    const selector = kind === 'containers' ? '.load-more' : '.more';
+    const selector = '.load-more';
     const button = () => root.querySelector<HTMLButtonElement>(selector)!;
     const click = () => { button().dispatchEvent(new MouseEvent('click', { bubbles: true })); flushSync(); };
     click(); click();
@@ -272,7 +272,7 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
       ? mount(ContainerColumn, { target: root, props: { browser: f.state, onCreate: vi.fn() } })
       : mount(WorkingList, { target: root, props: { browser: f.state } }));
     flushSync();
-    const selector = kind === 'containers' ? '.load-more' : '.more';
+    const selector = '.load-more';
     const noun = kind === 'containers' ? 'containers' : 'rows';
     expect(root.querySelector('.retention-notice')?.textContent).toContain(`${names.length} ${noun} loaded, the retention ceiling`);
     expect(root.querySelector(selector)).toBeNull();
@@ -307,4 +307,42 @@ describe.each(['containers', 'objects'] as Kind[])('%s retention ceiling', (kind
     await f.more();
     expect(f.call()).toHaveBeenCalledOnce(); expect(f.count()).toBe(100_000);
   }, fullColumnTimeout);
+});
+
+// ADR 0074 decision 6: at the ceiling the object list pages on, replacing
+// the rows shown, and goes back to the first row; a page change ends the
+// selection, so no action takes a row that is no longer shown.
+describe('objects paging past the ceiling', () => {
+  it('replaces the rows with the next page, counts from the start, and goes back', async () => {
+    const f = await fixture('objects');
+    const settings = await f.api.appSettings(); const first = f.names();
+    f.state.settings.document = { ...settings, browserRetentionCeiling: first.length }; f.state.settings.status = 'current';
+    const firstPage = vi.mocked(f.api.objects);
+    f.api.objects = vi.fn(async (bookmarkId, container, prefix, marker, limit) => marker === 'page2'
+      ? { rows: [f.object], nextMarker: '', effectiveLimit: 1000, scope: f.scope }
+      : firstPage(bookmarkId, container, prefix, marker, limit));
+    f.state.select(0);
+    expect(f.state.selectedEntry).not.toBeNull();
+    const root = document.createElement('div'); document.body.append(root);
+    mounted.add(mount(WorkingList, { target: root, props: { browser: f.state } }));
+    flushSync();
+    expect(root.querySelector('.to-start')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.next-page')!.click(); await settle();
+    expect(f.api.objects).toHaveBeenCalledExactlyOnceWith(f.bookmark.id, 'fixtures', '', 'page2', 1000);
+    expect(f.names()).toEqual(['z-next']); expect(f.state.entriesSkipped).toBe(first.length);
+    expect(f.state.selectedEntry).toBeNull(); expect(f.state.selectionCount).toBe(0);
+    expect(root.querySelector('.pane-foot')?.textContent).toContain(`rows ${first.length + 1} to ${first.length + 1}`);
+    expect(root.querySelector('.next-page')).toBeNull(); expect(root.querySelector('.load-more')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.to-start')!.click(); await settle();
+    expect(vi.mocked(f.api.objects).mock.calls.at(-1)?.[3]).toBe('');
+    expect(f.names()).toEqual(first); expect(f.state.entriesSkipped).toBe(0);
+    expect(root.querySelector('.to-start')).toBeNull();
+  });
+
+  it('does not page below the ceiling', async () => {
+    const f = await fixture('objects');
+    f.api.objects = vi.fn();
+    await f.state.nextEntriesPage();
+    expect(f.api.objects).not.toHaveBeenCalled(); expect(f.state.entriesSkipped).toBe(0);
+  });
 });
