@@ -14,17 +14,15 @@ afterEach(async () => {
 });
 
 it.each([
-  ["1.2.3", "a".repeat(40), "clean"],
-  ["2.3.4", "b".repeat(40), "clean"],
-  ["dev", "c".repeat(40), "dirty"],
-  ["dev", "unknown", "unknown"],
-])("shows the backend identity %s / %s / %s", async (version, sourceRevision, sourceDirty) => {
-  about.mockResolvedValue({ ...await newFakeApi().about(), version, sourceRevision, sourceDirty });
+  ["1.2.3", "", "a".repeat(40), "clean", "Version 1.2.3 (aaaaaaaaaaaa)"],
+  ["dev", "1.2.3", "b".repeat(40), "clean", "Version 1.2.3 (dev bbbbbbbbbbbb)"],
+  ["dev", "", "c".repeat(40), "dirty", "Version dev (cccccccccccc, modified)"],
+  ["dev", "", "d".repeat(40), "unknown", "Version dev (dddddddddddd, may be modified)"],
+  ["dev", "", "unknown", "unknown", "Version dev (source unknown)"],
+])("shows the version %s, developed from %s, with its source %s / %s", async (version, developedFrom, sourceRevision, sourceDirty, shown) => {
+  about.mockResolvedValue({ ...await newFakeApi().about(), version, developedFrom, sourceRevision, sourceDirty });
   dialog = mount(AboutDialog, { target: document.body, props: { onClose: () => {} } });
   flushSync();
-  await vi.waitFor(() => expect(document.body.textContent).toContain(sourceRevision));
-  const lines = [...document.querySelectorAll(".line")].map((line) => line.textContent);
-  expect(lines[0]).toContain(`Version ${version}`);
-  expect(lines[1]).toContain(`Source ${sourceRevision}`);
-  expect(lines[1]).toContain(sourceDirty);
+  await vi.waitFor(() => expect(document.querySelector(".version")).not.toBeNull());
+  expect(document.querySelector(".version")!.textContent!.replace(/\s+/g, " ").trim()).toBe(shown);
 });

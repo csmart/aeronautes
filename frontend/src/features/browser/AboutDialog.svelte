@@ -16,6 +16,20 @@
       error = e instanceof Error ? e.message : String(e);
     }
   });
+
+  // A release reads "0.5.0 (1564fc6e4ac9)"; a development build reads the
+  // release it follows, "0.5.0 (dev 1564fc6e4ac9)", or "dev (…)" before the
+  // first release. A build from changed files says so in the brackets.
+  function versionShown(identity: About): string {
+    const release = identity.version !== "dev";
+    const base = release ? identity.version : (identity.developedFrom || "dev");
+    let source = identity.sourceRevision === "unknown" ? "source unknown" : identity.sourceRevision.slice(0, 12);
+    if (!release && identity.developedFrom) source = `dev ${source}`;
+    if (identity.sourceRevision !== "unknown" && identity.sourceDirty !== "clean") {
+      source += identity.sourceDirty === "dirty" ? ", modified" : ", may be modified";
+    }
+    return `${base} (${source})`;
+  }
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
@@ -27,13 +41,12 @@
     {#if error}
       <p class="error callout danger">{error}</p>
     {:else if about}
-      <p class="line num">
-        Version <span class="type-mono">{about.version}</span> · Wails
-        <span class="type-mono">{about.wails}</span> · pinned rclone
-        <span class="type-mono">{about.rclonePin}</span> · secrets: {about.secretBackend}
+      <p class="line num version">
+        Version <span class="type-mono" title={about.sourceRevision}>{versionShown(about)}</span>
       </p>
       <p class="line num">
-        Source <span class="type-mono">{about.sourceRevision}</span> · {about.sourceDirty}
+        Wails <span class="type-mono">{about.wails}</span> · pinned rclone
+        <span class="type-mono">{about.rclonePin}</span> · secrets: {about.secretBackend}
       </p>
       <p class="line">{about.license}</p>
       <h3>Dependency licences</h3>

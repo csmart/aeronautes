@@ -18,6 +18,12 @@ export interface About {
     "version": string;
     "sourceRevision": string;
     "sourceDirty": string;
+
+    /**
+     * DevelopedFrom is the release a development build follows, "" for a
+     * release or when no release tag was behind it.
+     */
+    "developedFrom"?: string;
     "name": string;
     "wails": string;
 
@@ -925,6 +931,12 @@ export interface Info {
     "version": string;
     "sourceRevision": string;
     "sourceDirty": string;
+
+    /**
+     * DevelopedFrom is the release a development build follows, "" for a
+     * release or when no release tag was behind it.
+     */
+    "developedFrom"?: string;
     "name": string;
     "wails": string;
 

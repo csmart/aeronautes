@@ -12,10 +12,11 @@ var (
 	version        = "dev"
 	sourceRevision = "unknown"
 	sourceDirty    = "unknown"
+	developedFrom  = ""
 )
 
 func buildIdentity() app.BuildIdentity {
-	i := app.BuildIdentity{Version: version, SourceRevision: sourceRevision, SourceDirty: sourceDirty}
+	i := app.BuildIdentity{Version: version, SourceRevision: sourceRevision, SourceDirty: sourceDirty, DevelopedFrom: developedFrom}
 	if i.SourceRevision != "unknown" {
 		return i
 	}

@@ -27,6 +27,10 @@ type identity struct {
 	Version        string `json:"version"`
 	SourceRevision string `json:"sourceRevision"`
 	SourceDirty    string `json:"sourceDirty"`
+	// DevelopedFrom is, for a development build, the release its commit
+	// follows: the nearest vMAJOR.MINOR.PATCH tag behind it, as git describe
+	// finds it, without the "v"; empty for a release or with no tag behind.
+	DevelopedFrom  string `json:"developedFrom,omitempty"`
 	NativeVersion  string `json:"nativeVersion"`
 	PackageVersion string `json:"packageVersion"`
 	GOOS           string `json:"goos"`
@@ -50,6 +54,20 @@ func releaseVersion(tag string) (string, error) {
 		}
 	}
 	return strings.TrimPrefix(tag, "v"), nil
+}
+
+// nearestRelease is the version of the nearest release tag behind HEAD, or
+// "" when there is none, or none the checkout fetched.
+func nearestRelease(root string) string {
+	tag, err := git(root, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*")
+	if err != nil {
+		return ""
+	}
+	version, err := releaseVersion(tag)
+	if err != nil {
+		return ""
+	}
+	return version
 }
 
 func git(root string, args ...string) (string, error) {
@@ -97,6 +115,7 @@ func resolve(root, tag, goos, arch string) (identity, error) {
 			return i, errors.New("release builds require a clean source tree, including untracked files")
 		}
 	} else {
+		i.DevelopedFrom = nearestRelease(root)
 		i.PackageVersion = "0.0.0-dev." + i.SourceRevision[:12]
 		if i.SourceDirty == "dirty" {
 			i.PackageVersion += ".dirty"
@@ -139,7 +158,7 @@ func generate(root string, i identity) error {
 }
 
 func buildArgs(i identity, output string, dev bool) []string {
-	link := "-X main.version=" + i.Version + " -X main.sourceRevision=" + i.SourceRevision + " -X main.sourceDirty=" + i.SourceDirty
+	link := "-X main.version=" + i.Version + " -X main.sourceRevision=" + i.SourceRevision + " -X main.sourceDirty=" + i.SourceDirty + " -X main.developedFrom=" + i.DevelopedFrom
 	args := []string{"build", "-buildvcs=false"}
 	if dev {
 		args = append(args, "-gcflags=all=-l")
