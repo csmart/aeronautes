@@ -97,7 +97,7 @@
     {
       // ADR 0074 decision 1.
       field: "browserRetentionCeiling", slug: "retention", label: "Browser retention",
-      note: "The most rows a browser column keeps loaded; at the ceiling the column keeps what it shows and loads no further page (1,000 to 5,000,000).",
+      note: "The most rows a browser column keeps loaded; at the ceiling the object list offers the next page in place of the rows shown, and the container column loads no further (1,000 to 5,000,000).",
       min: 1000, max: 5_000_000, step: 1000,
       says: (value) => `keeps ${value} rows`,
     },

@@ -491,6 +491,9 @@ export class BrowserState {
   }
   entries: ListingRowDTO[] = $state([]);
   entriesMarker = $state("");
+  /** Rows of the listing before the page shown, once the list has paged
+   * past the retention ceiling (ADR 0074 decision 6); 0 on the first page. */
+  entriesSkipped = $state(0);
   /** The scope the loaded rows were read under, for a request that names
    * the portrait its view was built under (ADR 0079). */
   #entriesScope: ListingScope | null = null;
@@ -864,7 +867,8 @@ export class BrowserState {
 
   /** The retention ceiling in force (ADR 0074 decision 1): the operator's
    * setting once read, otherwise its default. A column at the ceiling
-   * keeps every row it holds and loads no further page. */
+   * loads no further page into what it holds; the object list can replace
+   * its rows with the next page instead (ADR 0074 decision 6). */
   /** The most members one selected-set deletion admits: the download
    * object ceiling setting, which ADR 0093 decision 2 reuses. */
   get selectionCeiling(): number {
@@ -1096,6 +1100,7 @@ export class BrowserState {
     this.#entriesPage = null;
     this.#entriesPageError = null;
     this.entriesMarker = "";
+    this.entriesSkipped = 0;
     this.prefix = prefix;
     this.filter = "";
     this.select(-1);
@@ -1162,6 +1167,7 @@ export class BrowserState {
       const selected = this.selectedEntry;
       this.entries = page.rows;
       this.entriesMarker = page.nextMarker;
+      this.entriesSkipped = 0;
       this.entriesError = null;
       this.#followSelection(selected);
     } catch (err) {
@@ -1220,6 +1226,45 @@ export class BrowserState {
     } finally {
       if (this.#entriesPage === request) this.#entriesPage = null;
     }
+  }
+
+  /** Past the retention ceiling, the rows that follow the last one shown
+   * replace the rows shown, so the column never holds more than the ceiling
+   * (ADR 0074 decision 6). The selection ends first, as a navigation's does,
+   * so no action takes a row that is no longer shown. */
+  async nextEntriesPage() {
+    if (!this.entriesAtCeiling || !this.containerName || this.connecting || !this.connectedBookmarkId
+      || this.entriesLoading || this.entriesError || this.entriesMoreLoading) {
+      return;
+    }
+    const bookmarkId = this.connectedBookmarkId;
+    const portrait = this.account ? { ...this.account.scope } : null;
+    const request = { scope: this.#scopeRevision, seq: this.#listSeq, marker: this.entriesMarker };
+    this.#entriesPage = request;
+    this.#entriesPageError = null;
+    try {
+      const page = await this.#api.objects(bookmarkId, this.containerName, this.prefix, request.marker, pageLimit);
+      if (!this.#currentEntriesPage(request)) return;
+      this.#requireListingScope(page.scope, bookmarkId, portrait);
+      this.#entriesScope = page.scope;
+      requireAdvancingMarker(request.marker, page.nextMarker);
+      this.select(-1);
+      this.entriesSkipped += this.entries.length;
+      this.entries = page.rows;
+      this.entriesMarker = page.nextMarker;
+    } catch (err) {
+      if (!this.#currentEntriesPage(request)) return;
+      this.#entriesPageError = { ...request, message: messageOf(err) };
+      throw err;
+    } finally {
+      if (this.#entriesPage === request) this.#entriesPage = null;
+    }
+  }
+
+  /** Back to the first row of the listing after paging past the ceiling: a
+   * fresh read of the folder, as moving into it is. */
+  async entriesBackToStart() {
+    await this.#loadEntries(this.prefix);
   }
 
   /** A plain selection: one row, which triggers its authoritative HEAD
