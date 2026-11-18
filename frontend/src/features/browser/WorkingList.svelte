@@ -118,38 +118,12 @@
 
 <section class="pane">
   <header class="pane-head">
-    <!-- The two tools, the path, and the marks for what the application
-      has to say about this place. Nothing here adds a line, so the list
-      below never moves under the pointer, and the tools come first so a
-      count's answer or a mark arriving never moves them (ADR 0123). -->
+    <!-- The path, the marks for what the application has to say about
+      this place, and the two tools pinned at the row's end, as the
+      Containers column has its own. Nothing here adds a line, so the list
+      below never moves under the pointer, and nothing after the tools can
+      move them (ADR 0123). -->
     <div class="path-row">
-      <button
-        class="tool"
-        title="Refresh: re-read this listing from the server"
-        aria-label="Refresh listing"
-        aria-busy={browser.entriesRefreshing}
-        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
-        onclick={() => browser.refreshView()}
-      >
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <path d="M13.25 8A5.25 5.25 0 1 1 11.71 4.29M11.71 1.79V4.29H9.21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <button
-        class="tool"
-        title={browser.countRunning
-          ? "Stop counting"
-          : `Count the objects in ${placeName(browser.countTarget)}: streams the listing page by page and keeps no names`}
-        aria-label={browser.countRunning ? "Stop counting" : "Count objects"}
-        disabled={browser.containerName === null}
-        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
-      >
-        {#if browser.countRunning}
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" /></svg>
-        {:else}
-          <span class="tool-glyph" aria-hidden="true">#</span>
-        {/if}
-      </button>
       <nav class="breadcrumb num" aria-label="Path">
         <button class="crumb" onclick={() => browser.up()} title="Up" aria-label="Up one level">↑</button>
         <button class="crumb root" title={browser.containerName ?? undefined} onclick={() => browser.goTo("")}>
@@ -186,6 +160,33 @@
           <span class="mark {mark.tone}" title={mark.sentence} aria-label={mark.sentence} role="note">{mark.label}</span>
         {/each}
       </span>
+      <button
+        class="tool"
+        title="Refresh: re-read this listing from the server"
+        aria-label="Refresh listing"
+        aria-busy={browser.entriesRefreshing}
+        disabled={browser.containerName === null || browser.entriesLoading || browser.entriesRefreshing}
+        onclick={() => browser.refreshView()}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M13.25 8A5.25 5.25 0 1 1 11.71 4.29M11.71 1.79V4.29H9.21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button
+        class="tool"
+        title={browser.countRunning
+          ? "Stop counting"
+          : `Count the objects in ${placeName(browser.countTarget)}: streams the listing page by page and keeps no names`}
+        aria-label={browser.countRunning ? "Stop counting" : "Count objects"}
+        disabled={browser.containerName === null}
+        onclick={() => (browser.countRunning ? void browser.cancelCount() : void browser.startCount())}
+      >
+        {#if browser.countRunning}
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" /></svg>
+        {:else}
+          <span class="tool-glyph" aria-hidden="true">#</span>
+        {/if}
+      </button>
     </div>
 
     <div class="fields">
