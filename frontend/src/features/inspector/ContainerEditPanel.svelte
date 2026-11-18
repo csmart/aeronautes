@@ -66,6 +66,9 @@
   let mismatch: string | null = $state(null);
 
   const caps = $derived(browser.capabilities);
+  // ADR 0124: greyed, with the reason, only when /info was read without it.
+  const staticWebNotOffered = $derived(browser.notOffered("staticweb"));
+  const quotasNotOffered = $derived(browser.notOffered("containerQuotas"));
   const capsKnown = $derived(caps?.source === "advertised");
 
   function modeAllowed(flag: string): boolean {
@@ -189,9 +192,17 @@
         <span>Anyone can list object names <span class="hint type-mono">.rlistings</span></span>
       </label>
       <label class="preset">
-        <input type="checkbox" checked={staticWeb} onchange={(e) => (rows = withStaticWeb(rows, e.currentTarget.checked))} />
-        <span>Serve as a static website <span class="hint type-mono">Web-Index, Web-Listings metadata</span></span>
+        <input
+          type="checkbox"
+          checked={staticWeb}
+          disabled={staticWebNotOffered !== null}
+          onchange={(e) => (rows = withStaticWeb(rows, e.currentTarget.checked))}
+        />
+        <span title={staticWebNotOffered ?? undefined}>Serve as a static website <span class="hint type-mono">Web-Index, Web-Listings metadata</span></span>
       </label>
+      {#if staticWebNotOffered}
+        <p class="note not-offered">{staticWebNotOffered}</p>
+      {/if}
       {#if staticWeb && !grantsPublic}
         <p class="note">Browsers reach a website anonymously: it needs "Anyone can read objects" too.</p>
       {/if}
@@ -257,14 +268,17 @@
           <input class="type-mono" bind:value={versioningArchive} placeholder="container name" />
         </label>
       {/if}
-      <label class="field">
+      <label class="field" title={quotasNotOffered ?? undefined}>
         <span>Quota bytes (0 = none)</span>
-        <input type="number" min="0" bind:value={quotaBytes} />
+        <input type="number" min="0" bind:value={quotaBytes} disabled={quotasNotOffered !== null} />
       </label>
-      <label class="field">
+      <label class="field" title={quotasNotOffered ?? undefined}>
         <span>Quota objects (0 = none)</span>
-        <input type="number" min="0" bind:value={quotaCount} />
+        <input type="number" min="0" bind:value={quotaCount} disabled={quotasNotOffered !== null} />
       </label>
+      {#if quotasNotOffered}
+        <p class="note not-offered">{quotasNotOffered}</p>
+      {/if}
     </div>
   </fieldset>
   {#if !capsKnown}
@@ -412,6 +426,14 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-control);
     min-width: 0;
+  }
+
+  /* A field the store does not act on reads as unavailable (ADR 0124). */
+  .field input:disabled {
+    color: var(--color-text-faint);
+    background: transparent;
+    border-style: dashed;
+    cursor: not-allowed;
   }
 
   .note {

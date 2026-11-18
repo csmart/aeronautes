@@ -35,12 +35,13 @@ function bookmark(): BookmarkDTO {
 
 // Connect and show the inspector on the account, or on an open container
 // with nothing selected (§53); the TempURL card sits in both views.
-async function show(container?: string) {
+async function show(container?: string, tempurl = "supported") {
   const api = newFakeApi();
   const browser = new BrowserState(api);
   const saved = await browser.saveBookmark(bookmark(), "testing");
   await browser.connect(saved.id);
   if (container) await browser.openContainer(container);
+  browser.capabilities = { ...browser.capabilities!, features: { ...browser.capabilities!.features, tempurl } };
   await settle();
   const root = document.createElement("div");
   document.body.append(root);
@@ -215,5 +216,24 @@ describe("TempURL key slots (ADR 0101)", () => {
     expect(call.mock.calls[0][1]).toMatchObject({ container: "fixtures", slot: "Temp-URL-Key", baseSlots: [], clear: false });
     expect(f.browser.containerDetail?.tempUrlKeySlots).toEqual(["Temp-Url-Key"]);
     expect(f.slotRows()[0]).toBe("Temp-URL-Key set Replace… Clear…");
+  });
+});
+
+// ADR 0124: a store whose /info was read without tempurl keeps the keys and
+// never signs with them, so the slots are shown but cannot be changed.
+describe("TempURL keys on a store without tempurl", () => {
+  it.each([undefined, "fixtures"])("greys every slot's actions with the reason (container %s)", async (container) => {
+    const f = await show(container, "unsupported");
+    const reason = "This store's /info does not list tempurl: it would keep these keys and never sign a URL with them.";
+    expect(f.card().querySelector(".not-offered")?.textContent).toBe(reason);
+    const actions = [...f.card().querySelectorAll<HTMLButtonElement>(".slot button")];
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every((b) => b.disabled && b.title === reason)).toBe(true);
+  });
+
+  it("offers them when /info was not read", async () => {
+    const f = await show(undefined, "unknown");
+    expect(f.card().querySelector(".not-offered")).toBeNull();
+    expect([...f.card().querySelectorAll<HTMLButtonElement>(".slot button")].some((b) => b.disabled)).toBe(false);
   });
 });

@@ -98,6 +98,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Edit | add a key to an object's metadata | edit an object's metadata | read back after connecting again |
 | Edit | make a container public, with the native confirmation answered by the run, and private again | make the container public and private again | the inspector's sentence after connecting again |
 | Edit | give a container a history location and its archive | a history location keeps what is deleted, and every segment (Swift cloud only) | the delete dialogs that follow name the archive, and what is deleted arrives there |
+| Edit | the static website preset and the quota fields greyed, with the reason, where the store's `/info` does not list them | make the container public and private again (mock only) | each control is disabled and the sentence naming `staticweb` is shown |
 | Edit | container metadata, quotas, a versions location, CORS and TempURL keys; account metadata; a large object's metadata; an edit that conflicts | not yet; layer 1 journey 4 edits object, container and account metadata | |
 | Upload | a folder holding a file that uploads in segments, with a per-job chunk size | upload a folder with a segmented file and browse it | the job completes, the uploaded names are listed, and the inspector shows the large-object kind the job recorded |
 | Upload | replace existing objects that differ, with the native confirmation answered by the run | upload it again and confirm the overwrite | the download that follows returns the second upload's bytes |
