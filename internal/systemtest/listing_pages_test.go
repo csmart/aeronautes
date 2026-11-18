@@ -190,8 +190,11 @@ func shortListingReads(t *testing.T, h *Harness) {
 	h.Seed(h.Secondary, secondary, names[0], []byte("secondary"), nil)
 	beforeA, beforeB := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	containerTrace := limitListingPages(t, h, h.Primary, "", "short", h.ns)
+	// The page asks past the third for a row that follows, and offers a
+	// next page only when one does (ADR 0074 decision 6); on a shared
+	// account other containers can sort after these three.
 	page, containerRead := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, h.ns, 3)
-	if containerRead.Err() != nil || len(page.Rows) != 3 || page.NextMarker != containers[2] {
+	if containerRead.Err() != nil || len(page.Rows) != 3 || (page.NextMarker != "" && page.NextMarker != containers[2]) {
 		t.Fatalf("short container pages hid a tail: %+v, error=%v", page, containerRead.Err())
 	}
 	for index, name := range containers {
@@ -199,11 +202,15 @@ func shortListingReads(t *testing.T, h *Harness) {
 			t.Fatalf("container %d = %q, want %q", index, page.Rows[index].Name, name)
 		}
 	}
-	containerTrace.assertMarkers(t, "", "", h.ns, containers[0], containers[1])
+	containerTrace.assertMarkers(t, "", "", h.ns, containers[0], containers[1], containers[2])
+	after, afterRead := h.BrowseContainers(t.Context(), h.Primary.BookmarkID, containers[2], 1)
+	if afterRead.Err() != nil || (page.NextMarker == "") != (len(after.Rows) == 0) {
+		t.Fatalf("next marker %q, but %d containers follow the page: %v", page.NextMarker, len(after.Rows), afterRead.Err())
+	}
 
 	objectTrace := limitListingPages(t, h, h.Primary, primary, "short", "")
 	objects, objectRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "scope/", "", 3)
-	if objectRead.Err() != nil || len(objects.Rows) != 3 || objects.NextMarker != "scope/nested/" {
+	if objectRead.Err() != nil || len(objects.Rows) != 3 || objects.NextMarker != "" {
 		t.Fatalf("short delimiter pages hid a tail: %+v, error=%v", objects, objectRead.Err())
 	}
 	for index, name := range []string{names[0], names[1], "scope/nested/"} {
@@ -214,10 +221,6 @@ func shortListingReads(t *testing.T, h *Harness) {
 		if objects.Rows[index].Name != name || objects.Rows[index].Kind != wantKind {
 			t.Fatalf("delimiter row %d = %+v", index, objects.Rows[index])
 		}
-	}
-	empty, endRead := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, primary, "scope/", objects.NextMarker, 3)
-	if endRead.Err() != nil || len(empty.Rows) != 0 || empty.NextMarker != "" {
-		t.Fatalf("terminal listing = %+v, error=%v", empty, endRead.Err())
 	}
 	objectTrace.assertMarkers(t, "scope/", "/", "", names[0], names[1], "scope/nested/")
 

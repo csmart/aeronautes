@@ -92,9 +92,10 @@ func TestTopListingAddsNoSlashFolderWhereNoneBelongs(t *testing.T) {
 	if n := slashProbes(h) - before; n != 0 {
 		t.Fatalf("a page past the slash folder probed %d times, want none", n)
 	}
-	// "-" sorts before "/", so a full first page of "-" names ends before the
-	// folder's place, and the next page is the one that covers it.
-	slashFixture(h, "early", "-a.txt", "-b.txt", "/x.txt")
+	// "-" sorts before "/", so a full first page of "-" names, with a name
+	// after it, ends before the folder's place, and the next page is the one
+	// that covers it.
+	slashFixture(h, "early", "-a.txt", "-b.txt", "/x.txt", "a.txt")
 	before = slashProbes(h)
 	page, err = h.browse.Objects(ctx, h.connected, "early", "", "", 2)
 	if err != nil {

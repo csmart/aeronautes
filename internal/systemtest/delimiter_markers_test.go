@@ -107,14 +107,11 @@ func ownMarkerBrowse(t *testing.T, h *Harness) {
 				t.Fatal(receipt.Err())
 			}
 			if len(page.Rows) != 2 || page.Rows[0].Kind != "prefix" || page.Rows[0].Name != prefix+"a/" ||
-				page.Rows[1].Kind != "object" || page.Rows[1].Name != prefix+"z" || page.Rows[1].Bytes != 4 || page.NextMarker != prefix+"z" {
+				page.Rows[1].Kind != "object" || page.Rows[1].Name != prefix+"z" || page.Rows[1].Bytes != 4 || page.NextMarker != "" {
 				t.Fatalf("own marker hid or changed its children: %+v", page)
 			}
-			trace.assertMarkers(t, prefix, "/", "", prefix, prefix+"a/")
-			empty, end := h.BrowseObjects(t.Context(), h.Primary.BookmarkID, container, prefix, page.NextMarker, 2)
-			if end.Err() != nil || len(empty.Rows) != 0 || empty.NextMarker != "" {
-				t.Fatalf("listing did not terminate: %+v error=%v", empty, end.Err())
-			}
+			// The page asks past its last row for one that follows, finds
+			// none and so ends the listing (ADR 0074 decision 6).
 			trace.assertMarkers(t, prefix, "/", "", prefix, prefix+"a/", prefix+"z")
 			if firstRead == nil {
 				firstRead = receipt

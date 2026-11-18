@@ -179,15 +179,19 @@ func (s *BrowseService) Containers(ctx context.Context, bookmarkID, marker strin
 	limit = clampLimit(limit)
 
 	page := ContainerPageDTO{Rows: []ContainerRowDTO{}, Scope: scope, EffectiveLimit: limit}
-	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{Marker: marker, PageSize: limit}) {
+	// A listing does not say whether it is the last page, so one row more
+	// than the page is asked for: only a row that follows the page earns a
+	// next marker, and a listing ending exactly at the page's end offers no
+	// empty next page (ADR 0074 decision 6).
+	for entry, err := range session.Containers(ctx, swiftcontrol.ListOptions{Marker: marker, PageSize: limit + 1}) {
 		if err != nil {
 			return ContainerPageDTO{}, err
 		}
-		page.Rows = append(page.Rows, ContainerRowDTO{Name: entry.Name, Count: entry.Count, Bytes: entry.Bytes})
 		if len(page.Rows) == limit {
-			page.NextMarker = entry.Name
+			page.NextMarker = page.Rows[limit-1].Name
 			break
 		}
+		page.Rows = append(page.Rows, ContainerRowDTO{Name: entry.Name, Count: entry.Count, Bytes: entry.Bytes})
 	}
 
 	// Fold in the §24 classification so the §52 modes are one page fetch.
@@ -222,7 +226,8 @@ func (s *BrowseService) Objects(ctx context.Context, bookmarkID, container, pref
 	limit = clampLimit(limit)
 
 	page := ObjectPageDTO{Rows: []ListingRowDTO{}, Scope: scope, EffectiveLimit: limit}
-	opts := swiftcontrol.ObjectListOptions{Prefix: prefix, Marker: marker, PageSize: limit}
+	// One row more than the page, as for containers above.
+	opts := swiftcontrol.ObjectListOptions{Prefix: prefix, Marker: marker, PageSize: limit + 1}
 	for entry, err := range session.Objects(ctx, container, opts) {
 		if err != nil {
 			return ObjectPageDTO{}, err
@@ -244,11 +249,11 @@ func (s *BrowseService) Objects(ctx context.Context, bookmarkID, container, pref
 		default:
 			continue
 		}
-		page.Rows = append(page.Rows, row)
 		if len(page.Rows) == limit {
-			page.NextMarker = row.Name
+			page.NextMarker = page.Rows[limit-1].Name
 			break
 		}
+		page.Rows = append(page.Rows, row)
 	}
 	if prefix == "" && coversSlashFolder(marker, page) && !slices.ContainsFunc(page.Rows, isSlashFolder) {
 		found, err := slashFolderExists(ctx, session, container)
