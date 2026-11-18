@@ -7,6 +7,7 @@ Slice 3 delivered decisions 4 and 5. `maxConnsPerHost` (default 16, range 1 to 2
 Slice 2 delivered decision 3. The download route gives its engine-routed names to the child in batches of 500 names or 64 GiB of planned bytes, the copy executor's values shared as `DefaultBatchNames` and `DefaultBatchBytes`, in plan order; the stage directory is one per job as before, admission of every item still precedes the first child, and each batch is copied, checked for a displaced stage and placed before the next child starts. A child that fails or a stage that was displaced ends the run with that batch recorded as before and every later batch's items recorded as not attempted; a cancel between batches records the current batch's unplaced items as a cancel inside placement does and the later batches as not attempted. The batch bounds are constants rather than settings: they follow the copy route, and the ADR 0072 ceiling already bounds a selection. `--buffer-size` is emitted for every job, 16Mi unless the job's settings override it within 1Mi to 1Gi, on every profile and on the local routes, and the recorded effective settings carry it. The tests are the batch cases in `internal/transfer/local/download_batches_test.go` (three children for 1,001 names, a failed second child, a cancel between batches, a displaced stage, the byte bound), the argv case in `internal/transfer/rclone`, the buffer size cases in `internal/app`, and the real-child boundary case in `internal/systemtest`.
 **Scope:** The areas finish-line item L10 still names for the capabilities v1 keeps: browse, inspect, download, metadata editing and creation. The download inventory ceiling is delivered under [ADR 0072](0072-large-namespace-handling.md) and is not changed here.
 Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 5: a download's batch whose child fails no longer ends the run; each file of it has its outcome and the next batch goes to a child, as a copy's always have.
+Amended on 18 November 2026 by decision 6 below, on the operator's request of that day: the object list pages past the retention ceiling instead of stopping there.
 
 ## What exists, at master `df96e1ad`
 
@@ -30,6 +31,21 @@ Decision 7 of 23 September made the download ceiling a setting; the retention ce
 
 Items 1, 2, 4 and 5 are tier 2 under DESIGN §65.12; item 3 is tier 1, because staged effects and their records now span batches.
 Three delivery slices would follow acceptance: retention and queue depth (browser and runner, with their tests), download batching (executor and recorder, proved on the mock and the owned Swift), and the client cap with the responsiveness test.
+
+## Decision 6: the object list pages past the ceiling (18 November 2026)
+
+Testing the 0.5.0 candidate with the ceiling at 1,000, the operator found the object list stops at the ceiling with nothing to press, and asked: "why don't we actually tell it to load more? that seems reasonable.. it's like paginated".
+
+1. **The notice offers the next page.** When the object list holds as many rows as the ceiling and the store has more, the notice keeps its words and gains a button, "Next N →", N the ceiling.
+   Pressing it replaces the rows shown with the rows that follow the last one, read from the same marker "Load more" would use, and "Load more" then fills that page up to the ceiling as before.
+   The rows held never exceed the ceiling, which is what decision 1 bounds.
+2. **Where you are.** Past the first page the footer counts the rows from the start of the listing ("rows 1,001 to 2,000 (more on server)"), and the notice and the footer both offer "← Back to the start", which reads the listing again from its first row, as moving into the folder does.
+   There is no previous page: the store lists forward from a marker only, and going back one page would need every earlier marker kept, for a gain the start and Find already give.
+3. **A page change ends the selection.** Moving to the next page or back to the start clears the selection and the inspector, as moving to another folder does, so a deletion, copy or download never acts on rows that are no longer shown.
+   Find, the count and a folder's or container's own actions are unchanged: they act on the whole scope, not on the rows shown.
+4. **What does not change.** The ceiling setting, its range and its default; the container column, which still stops at the ceiling with its notice; and the filter box, which filters the rows shown.
+
+**Required proof (tier 2).** Frontend, on the browser state with a fake bridge: at the ceiling with more on the server the next page replaces the rows with the following ones from the held marker, the footer's numbers count from the start, the selection is cleared, and back to the start lists from the first row; under the ceiling nothing changes. Journey, on the mock with the ceiling at 1,000 and a prefix of 2,000 objects: the next page shows the 1,001st name first and back to the start shows the first.
 
 ## What this does not establish
 
