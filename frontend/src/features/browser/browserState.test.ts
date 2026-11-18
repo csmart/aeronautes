@@ -563,6 +563,37 @@ describe("refreshing the open listing", () => {
     }
   });
 
+  // The store updates a container's counts in the background after a job,
+  // so they are read twice more while the operator stays in the container.
+  it("reads the container's counts again after a deletion ends, while it is open", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = newFakeApi();
+      const s = await connected(api);
+      await s.openContainer("fixtures");
+      const detail = vi.spyOn(api, "containerDetail");
+      await s.startDelete({ bookmarkId: s.connectedBookmarkId!, container: "fixtures", prefix: "", mode: "empty" as DeleteRequestDTO["mode"], confirm: "fixtures", segments: false });
+      const read = api.job.bind(api);
+      vi.spyOn(api, "job").mockImplementation(async (id, bookmark) => {
+        const job = await read(id, bookmark);
+        return job && { ...job, state: "complete" };
+      });
+      await vi.advanceTimersByTimeAsync(1500);
+      const atEnd = detail.mock.calls.length;
+      expect(atEnd).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(detail.mock.calls.length).toBe(atEnd + 1);
+      await s.openContainer("slo-parts");
+      const elsewhere = detail.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+      // The operator moved on: the half-minute read is not made for them.
+      expect(detail.mock.calls.filter((call) => call[0] === "fixtures").length).toBe(atEnd + 1);
+      expect(detail.mock.calls.length).toBe(elsewhere);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("gives up on a job it can no longer read and leaves the view alone", async () => {
     vi.useFakeTimers();
     try {
