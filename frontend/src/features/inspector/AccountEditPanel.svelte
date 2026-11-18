@@ -76,7 +76,7 @@
 
   <fieldset class="fields" aria-label="Account metadata" disabled={saving || !currentBaseline}>
     <h4 class="sub">User metadata</h4>
-    <MetadataEditor base={target.account.meta ?? {}} bind:rows />
+    <MetadataEditor suggestions={browser.keySuggestions("account")} base={target.account.meta ?? {}} bind:rows />
 
     <label class="field">
       <span>Quota bytes (0 = none)</span>

@@ -237,7 +237,7 @@
     <hr class="rule" />
 
     <h4 class="sub">User metadata</h4>
-    <MetadataEditor base={target.detail.meta ?? {}} bind:rows onRawEdit={rawEdit} />
+    <MetadataEditor suggestions={browser.keySuggestions("container")} base={target.detail.meta ?? {}} bind:rows onRawEdit={rawEdit} />
 
     <hr class="rule" />
     <h4 class="sub">Access lists</h4>

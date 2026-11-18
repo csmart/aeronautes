@@ -10,12 +10,20 @@ import { isLink } from "../browser/browserState.svelte";
   import ContainerEditPanel from "./ContainerEditPanel.svelte";
   import AccountEditPanel from "./AccountEditPanel.svelte";
   import TempUrlKeys from "./TempUrlKeys.svelte";
+  import CopyValue from "./CopyValue.svelte";
 
   let { browser }: { browser: BrowserState } = $props();
 
   // The inspector follows selection (§53): object/prefix row if selected,
   // else the open container, else the account.
   const entry = $derived(browser.selectedEntry);
+
+  // What the inspector shows is what the metadata editor offers back.
+  $effect(() => {
+    browser.rememberKeys("object", browser.objectDetail?.meta);
+    browser.rememberKeys("container", browser.containerDetail?.meta);
+    browser.rememberKeys("account", browser.account?.meta);
+  });
   const detail = $derived(browser.objectDetail);
 
   let editingObject = $state(false);
@@ -95,6 +103,12 @@ import { isLink } from "../browser/browserState.svelte";
   <div class="kv">
     <span class="kv-label">{label}</span>
     <span class="kv-value {mono ? 'type-mono' : ''} num">{value}</span>
+    {#if value !== "" && value !== "—"}
+      <CopyValue {label} {value} copy={(text) => browser.copyText(text)} />
+    {:else}
+      <!-- Keeps the values in one column with the rows that have a button. -->
+      <span class="no-copy" aria-hidden="true"></span>
+    {/if}
   </div>
 {/snippet}
 
@@ -145,6 +159,19 @@ import { isLink } from "../browser/browserState.svelte";
         {:else}Object{/if}
       </p>
     </header>
+    <!-- The view's actions, under its name, in the same place whatever the
+      cards below hold; an editor opens here (ADR 0125 decision 1). -->
+    {#if detail}
+      <div class="actions-row">
+        <button class="edit-btn" disabled={editingObject} onclick={() => (editingObject = true)}>Edit metadata</button>
+        {#if v1Offers.objectDelete && isLiteralPlainObject(detail)}
+          <button class="edit-btn danger" onclick={() => browser.openObjectDelete()}>Delete object…</button>
+        {/if}
+      </div>
+      {#if editingObject}
+        <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
+      {/if}
+    {/if}
 
     <section class="card">
       {#if detail && detail.class !== "plain"}
@@ -174,14 +201,6 @@ import { isLink } from "../browser/browserState.svelte";
       <p class="mutation-notice" role="status">{browser.mutationNotice}</p>
     {/if}
 
-    {#if detail && !editingObject}
-      <button class="edit-btn" onclick={() => (editingObject = true)}>Edit metadata</button>
-      {#if v1Offers.objectDelete && isLiteralPlainObject(detail)}
-        <button class="edit-btn danger" onclick={() => browser.openObjectDelete()}>Delete object…</button>
-      {/if}
-    {:else if detail && editingObject}
-      <ObjectEditPanel {browser} {detail} onDone={() => (editingObject = false)} />
-    {/if}
 
 
     {#if detail && detail.class === "dlo"}
@@ -385,6 +404,14 @@ import { isLink } from "../browser/browserState.svelte";
         Container{cd?.storagePolicy ? ` · policy ${cd.storagePolicy}` : ""}
       </p>
     </header>
+    {#if cd}
+      <div class="actions-row">
+        <button class="edit-btn" disabled={editingContainer} onclick={() => (editingContainer = true)}>Configure container</button>
+      </div>
+      {#if editingContainer}
+        <ContainerEditPanel {browser} detail={cd} onDone={() => (editingContainer = false)} />
+      {/if}
+    {/if}
     <section class="card">
       {@render kv("Objects", formatCount(cd?.objectCount ?? browser.container.count))}
       {@render kv("Bytes", formatBytes(cd?.bytesUsed ?? browser.container.bytes))}
@@ -450,11 +477,6 @@ import { isLink } from "../browser/browserState.svelte";
         {/each}
       </section>
     {/if}
-    {#if cd && !editingContainer}
-      <button class="edit-btn" onclick={() => (editingContainer = true)}>Configure container</button>
-    {:else if cd && editingContainer}
-      <ContainerEditPanel {browser} detail={cd} onDone={() => (editingContainer = false)} />
-    {/if}
     {#if cd}
       {@render rawHeaders(cd.rawHeaders)}
     {/if}
@@ -463,6 +485,12 @@ import { isLink } from "../browser/browserState.svelte";
       <h2 class="title type-display">{browser.account.name}</h2>
       <p class="subtitle">Account</p>
     </header>
+    <div class="actions-row">
+      <button class="edit-btn" disabled={editingAccount} onclick={() => (editingAccount = true)}>Edit metadata</button>
+    </div>
+    {#if editingAccount}
+      <AccountEditPanel {browser} account={browser.account} onDone={() => (editingAccount = false)} />
+    {/if}
     <section class="card">
       {@render kv("Containers", formatCount(browser.account.containers))}
       {@render kv("Objects", formatCount(browser.account.objects))}
@@ -480,18 +508,13 @@ import { isLink } from "../browser/browserState.svelte";
       </section>
     {/if}
     <TempUrlKeys {browser} slots={browser.account.tempUrlKeySlots ?? []} />
-    {#if editingAccount}
-      <AccountEditPanel {browser} account={browser.account} onDone={() => (editingAccount = false)} />
-    {:else}
-      {#if sortedEntries(browser.account.meta).length > 0}
-        <section class="card">
-          <h3 class="card-title">Account metadata</h3>
-          {#each sortedEntries(browser.account.meta) as [key, value] (key)}
-            {@render kv(key, value)}
-          {/each}
-        </section>
-      {/if}
-      <button class="edit-btn" onclick={() => (editingAccount = true)}>Edit metadata</button>
+    {#if !editingAccount && sortedEntries(browser.account.meta).length > 0}
+      <section class="card">
+        <h3 class="card-title">Account metadata</h3>
+        {#each sortedEntries(browser.account.meta) as [key, value] (key)}
+          {@render kv(key, value)}
+        {/each}
+      </section>
     {/if}
     {@render rawHeaders(browser.account.rawHeaders)}
   {:else}
@@ -573,10 +596,25 @@ import { isLink } from "../browser/browserState.svelte";
     color: var(--color-text-secondary);
   }
 
+  .actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .actions-row .edit-btn {
+    margin: 0;
+  }
+
+  .no-copy {
+    flex: none;
+    width: 1.2rem;
+  }
+
   .kv {
     display: flex;
-    justify-content: space-between;
-    gap: var(--space-3);
+    align-items: center;
+    gap: var(--space-2);
     padding: var(--space-1) 0;
     font-size: var(--text-sm);
   }
@@ -587,6 +625,7 @@ import { isLink } from "../browser/browserState.svelte";
   }
 
   .kv-value {
+    margin-left: auto;
     text-align: right;
     overflow-wrap: anywhere;
   }
