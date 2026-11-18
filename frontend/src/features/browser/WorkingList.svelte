@@ -7,11 +7,13 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import type { BrowserState } from "./browserState.svelte";
   import FindPanel from "./FindPanel.svelte";
+  import NewFolderDialog from "./NewFolderDialog.svelte";
   import { openSelectionDelete, singleRowDelete } from "./selectionDelete";
 
   let { browser }: { browser: BrowserState } = $props();
 
   let prefixInput: HTMLInputElement | undefined = $state();
+  let newFolderOpen = $state(false);
   let virtualList: { focus: () => void } | undefined = $state();
 
   // focusList moves keyboard focus into the object list (screen-level
@@ -32,6 +34,10 @@
   const partialPrefix = $derived(browser.prefix.slice(directoryLength));
 
   const rowDelete = $derived(singleRowDelete(browser));
+  const noContainer = $derived(browser.containerName === null || browser.backstageFrom !== null);
+  // Rows are selected, other than one folder alone, whose own deletion is
+  // the prefix deletion.
+  const rowsSelected = $derived(browser.chosenRows.length > 1 || (browser.selectedEntry !== null && browser.selectedPrefix === ""));
   // Copy and Download act on what is selected and say so (ADR 0108): the
   // selected objects and folders, the selected object or folder, or else the
   // folder or container being browsed.
@@ -231,6 +237,16 @@
           Upload…
         </button>
       {/if}
+      {#if v1Offers.markerCreate}
+        <button
+          class="find"
+          title="Create a folder here: an empty marker object that keeps it listed"
+          disabled={browser.containerName === null || browser.backstageFrom !== null}
+          onclick={() => (newFolderOpen = true)}
+        >
+          New folder…
+        </button>
+      {/if}
       {#if v1Offers.download}
         <span class="steady">
           <span class="sizer" aria-hidden="true">Download container…</span>
@@ -258,69 +274,66 @@
         </span>
       {/if}
       <span class="deletions">
-      {#if v1Offers.bulkDelete}
-        <!-- Each deletion is its own action (ADR 0121). Inside a folder only
-          the folder's is offered, so a container's deletion is never one
-          click from a prefix's; the container's two are at its top and in
-          its menu. -->
-        {@const noContainer = browser.containerName === null || browser.backstageFrom !== null}
-        <span class="steady bulk">
-          {#if browser.prefix === ""}
-            <!-- At a container's top one selected folder swaps the two
-              container actions for its own; the slot stays two wide. -->
-            <span class="sizer" aria-hidden="true">Empty container…</span>
-            <span class="sizer second" aria-hidden="true">Delete container…</span>
-          {/if}
-          <span class="bulk-buttons">
-          {#if browser.prefix === "" && browser.selectedPrefix === ""}
-            <button
-              class="find danger"
-              title="Delete everything in this container; the container and its settings stay"
-              disabled={noContainer}
-              onclick={() => (browser.deleteOpen = "empty")}
-            >
-              Empty container…
+      <!-- One slot for the deletion that fits what is selected (ADR 0125
+        decision 7): with rows selected only theirs, so the place being
+        browsed is never one click from a deletion of the selection; with
+        nothing selected the folder's, or at a container's top the
+        container's two (ADR 0121). The slot is as wide as its widest
+        content, so a selection moves nothing. -->
+      <span class="steady bulk">
+        {#if browser.prefix === ""}
+          <span class="sizer" aria-hidden="true">Empty container…</span>
+          <span class="sizer second" aria-hidden="true">Delete container…</span>
+        {:else}
+          <span class="sizer" aria-hidden="true">Delete selected…</span>
+        {/if}
+        <span class="bulk-buttons">
+        {#if rowsSelected}
+          {#if rowDelete}
+            <!-- One selected row's own deletion, as the Delete key and the
+              inspector open it, so a single file is deleted from here too. -->
+            <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
+              {rowDelete.label}
             </button>
+          {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
             <button
               class="find danger"
-              title="Delete everything in this container, then the container itself with its settings"
-              disabled={noContainer}
-              onclick={() => (browser.deleteOpen = "delete_container")}
+              title="Delete the selected objects, and each selected folder with everything in it, as one job"
+              onclick={() => browser.openSelectedDelete()}
             >
-              Delete container…
-            </button>
-          {:else}
-            <button
-              class="find danger"
-              title="Delete everything under this prefix; not only the selected objects"
-              disabled={noContainer}
-              onclick={() => (browser.deleteOpen = "prefix")}
-            >
-              Delete prefix…
+              Delete selected…
             </button>
           {/if}
-          </span>
-        </span>
-      {/if}
-      <!-- The selection's own deletion: one row's, known once the row has
-        been read, or the selected set's. Never both, so they share a slot. -->
-      <span class="steady">
-        <span class="sizer" aria-hidden="true">Delete manifest…</span>
-        {#if rowDelete}
-          <!-- One selected row's own deletion, as the Delete key and the
-            inspector open it, so a single file is deleted from here too. -->
-          <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
-            {rowDelete.label}
-          </button>
-        {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
+        {:else if v1Offers.bulkDelete && browser.prefix === "" && browser.selectedPrefix === ""}
           <button
             class="find danger"
-            title="Delete the selected objects, and each selected folder with everything in it, as one job"
-            onclick={() => browser.openSelectedDelete()}
+            title="Delete everything in this container; the container and its settings stay"
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "empty")}
           >
-            Delete selected…
+            Empty container…
+          </button>
+          <button
+            class="find danger"
+            title="Delete everything in this container, then the container itself with its settings"
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "delete_container")}
+          >
+            Delete container…
+          </button>
+        {:else if v1Offers.bulkDelete}
+          <button
+            class="find danger"
+            title={browser.selectedPrefix
+              ? "Delete the selected folder with everything in it"
+              : "Delete everything in the folder being browsed"}
+            disabled={noContainer}
+            onclick={() => (browser.deleteOpen = "prefix")}
+          >
+            Delete prefix…
           </button>
         {/if}
+        </span>
       </span>
       </span>
     </div>
@@ -388,6 +401,7 @@
         onSelect={(i, mode) => (mode === "toggle" ? browser.toggleRow(i) : mode === "range" ? browser.extendTo(i) : browser.select(i))}
         onActivate={(entry) => browser.activate(entry)}
         onContextMenu={(entry, _index, x, y) => (menu = { x, y, entry })}
+        onEmptyPress={() => browser.clearSelection()}
       >
         {#snippet row(entry: ListingRowDTO, _index: number, isSelected: boolean)}
           <div class="entry" class:selected={isSelected}>
@@ -464,6 +478,10 @@
     {/if}
   </footer>
 </section>
+
+{#if newFolderOpen}
+  <NewFolderDialog {browser} onClose={() => (newFolderOpen = false)} />
+{/if}
 
 <style>
   .pane {

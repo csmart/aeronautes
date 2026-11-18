@@ -259,7 +259,9 @@ shot 01-connected
 say "open smoke-src"
 opened=""
 for attempt in 1 2 3; do
-  X mousemove 160 160 click 1           # second container row (smoke-out sorts first)
+  # The second container row (smoke-out sorts first), below the column's
+  # filter field.
+  X mousemove 160 195 click 1
   if wire_saw "GET /v1/AUTH_test/smoke-src" 8; then opened=yes; break; fi
   say "container open attempt $attempt saw no listing; retrying"
 done

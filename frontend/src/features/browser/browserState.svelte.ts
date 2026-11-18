@@ -942,17 +942,23 @@ export class BrowserState {
     return keySuggestions(kind, this.#seenKeys[kind]);
   }
 
+  /** Typed in the Containers column: only loaded containers whose name
+   * holds it, anywhere and ignoring case, are listed (ADR 0125 decision 6). */
+  containerFilter = $state("");
+
   get containerGroups(): ContainerGroups {
+    const wanted = this.containerFilter.trim().toLowerCase();
+    const containers = wanted === "" ? this.containers : this.containers.filter((c) => c.name.toLowerCase().includes(wanted));
     if (this.mode === "logical") {
       return {
-        main: this.containers.filter((c) => c.class === "normal"),
-        suspected: this.containers.filter((c) => c.class === "suspected"),
-        hiddenBackstage: this.containers.filter(
+        main: containers.filter((c) => c.class === "normal"),
+        suspected: containers.filter((c) => c.class === "suspected"),
+        hiddenBackstage: containers.filter(
           (c) => c.class === "confirmed" || c.class === "declared",
         ).length,
       };
     }
-    return { main: this.containers, suspected: [], hiddenBackstage: 0 };
+    return { main: containers, suspected: [], hiddenBackstage: 0 };
   }
 
   get container(): ContainerRowDTO | null {
@@ -2169,6 +2175,22 @@ export class BrowserState {
     await this.loadContainers();
     if (!ownsView() || !this.#currentView(scope, selection)) return;
     await this.openContainer(create.name);
+  }
+
+  /** The folder the operator is in: the browsed prefix up to its last "/",
+   * since a prefix typed part-way names a filter, not a folder. */
+  get folderBeingBrowsed(): string {
+    return this.prefix.slice(0, this.prefix.lastIndexOf("/") + 1);
+  }
+
+  /** Create a folder by name, as its marker object, then list it (ADR 0125
+   * decision 5). The portrait is the one captured when the dialog opened. */
+  async createFolder(container: string, prefix: string, portrait: ListingScope | null, ownsView = () => true) {
+    if (!portrait) throw new Error("The connection changed since the dialog opened. Reconnect and try again.");
+    await this.#api.createMarker(portrait, container, prefix);
+    await this.audit.loadRecent();
+    if (!ownsView() || this.containerName !== container) return;
+    await this.refreshView();
   }
 
   /** Create the explicit marker for the selected implied prefix. */

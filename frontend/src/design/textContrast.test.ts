@@ -124,6 +124,7 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["BrowserScreen.svelte", ".unproven-banner"],
   ["ContainerColumn.svelte", ".class-chip"],
   ["CreateContainerDialog.svelte", ".error"],
+  ["NewFolderDialog.svelte", ".error"],
   ["CopyValue.svelte", ".copy:hover, .copy:focus-visible", ".copy"],
   ["MetadataEditor.svelte", ".suggestions li.marked, .suggestions li:hover", ".suggestions .note"],
   ["MetadataEditor.svelte", ".suggestions mark"],

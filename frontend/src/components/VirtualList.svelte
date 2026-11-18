@@ -32,6 +32,8 @@
     /** A row's context menu was asked for, by a right-click or by the
      * ContextMenu key or Shift+F10 on the focused row, to open at (x, y). */
     onContextMenu?: (item: T, index: number, x: number, y: number) => void;
+    /** A press in the list's empty space, below its rows. */
+    onEmptyPress?: () => void;
   }
 
   let {
@@ -46,6 +48,7 @@
     onSelect,
     onActivate,
     onContextMenu,
+    onEmptyPress,
   }: Props = $props();
 
   // A caller that owns membership says which rows are selected; the focused
@@ -172,6 +175,10 @@
   bind:this={el}
   onscroll={handleScroll}
   onkeydown={handleKeydown}
+  onpointerdown={(event) => {
+    // Rows take their own presses; this is only the space around them.
+    if (event.button === 0 && !(event.target instanceof Element && event.target.closest(".vrow"))) onEmptyPress?.();
+  }}
   tabindex="0"
   role="listbox"
   aria-label={ariaLabel}
