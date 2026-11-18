@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,23 @@ type journeyControl struct {
 	picks    []pick
 	answers  map[string][]bool
 	accounts map[string]openAccount
+	// asked is what each native surface was asked since the runner last
+	// read it, so a journey checks the words a person would read there.
+	asked []asked
+}
+
+// asked is one native surface's words: a picker's title, or a question's
+// title and message.
+type asked struct {
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+
+func (c *journeyControl) record(kind, title, text string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.asked = append(c.asked, asked{Kind: kind, Title: title, Text: text})
 }
 
 // openAccount is an account the run opened: its ownership record and the
@@ -115,7 +133,8 @@ type pick struct {
 
 type scriptedPicker struct{}
 
-func (scriptedPicker) PickFiles(string) ([]string, error) {
+func (scriptedPicker) PickFiles(title string) ([]string, error) {
+	control.record("pick files", title, "")
 	next, err := control.nextPick()
 	if err != nil || next.Files == nil {
 		return nil, errors.Join(err, errors.New("the UI journey scripted no file pick"))
@@ -123,7 +142,8 @@ func (scriptedPicker) PickFiles(string) ([]string, error) {
 	return next.Files, nil
 }
 
-func (scriptedPicker) PickDirectory(string) (string, error) {
+func (scriptedPicker) PickDirectory(title string) (string, error) {
+	control.record("pick folder", title, "")
 	next, err := control.nextPick()
 	if err != nil || next.Dir == "" {
 		return "", errors.Join(err, errors.New("the UI journey scripted no folder pick"))
@@ -144,11 +164,15 @@ func (c *journeyControl) nextPick() (pick, error) {
 
 type scriptedConfirmer struct{}
 
-func (scriptedConfirmer) ConfirmPublicRead(context.Context, string, string) (bool, error) {
+func (scriptedConfirmer) ConfirmPublicRead(_ context.Context, container, account string) (bool, error) {
+	title, message := app.PublicReadQuestion(container, account)
+	control.record("public", title, message)
 	return control.nextAnswer("public")
 }
 
-func (scriptedConfirmer) ConfirmOverwrite(context.Context, app.OverwriteConfirmation) (bool, error) {
+func (scriptedConfirmer) ConfirmOverwrite(_ context.Context, about app.OverwriteConfirmation) (bool, error) {
+	title, lines := app.OverwriteQuestion(about)
+	control.record("overwrite", title, strings.Join(lines, "\n"))
 	return control.nextAnswer("overwrite")
 }
 
@@ -205,6 +229,10 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply, err = c.container(ctx, request.Label, request.Name, request.Segmented)
 	case "/names":
 		reply, err = c.names(ctx, request.Label, request.Container)
+	case "/asked":
+		c.mu.Lock()
+		reply, c.asked = append([]asked{}, c.asked...), nil
+		c.mu.Unlock()
 	case "/teardown":
 		reply = c.teardown(ctx)
 	default:

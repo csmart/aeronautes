@@ -23,5 +23,8 @@ export const control = {
   // What one of the run's own containers holds, as the run's own session
   // lists it: the read a deletion is checked against.
   names: async (label: string, container: string): Promise<string[]> => (await call("/names", { label, container })).names,
+  // What each native surface was asked since the last read: a picker's
+  // title, or a question's title and message, as a person would read them.
+  asked: (): Promise<{ kind: string; title: string; text: string }[]> => call("/asked", {}),
   teardown: (): Promise<{ failures: number }> => call("/teardown", {}),
 };

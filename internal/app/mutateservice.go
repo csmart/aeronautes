@@ -39,6 +39,14 @@ type PublicACLConfirmer interface {
 	ConfirmPublicRead(ctx context.Context, container, account string) (bool, error)
 }
 
+// PublicReadQuestion is the native question's title and message, kept here
+// beside the seam so the desktop dialog and the journeys' stand-in read the
+// same words.
+func PublicReadQuestion(container, account string) (title, message string) {
+	return "Make this container public?",
+		fmt.Sprintf("Anyone on the internet will be able to read every object in %s (%s).\nThis question comes from the application, not from the page.", container, account)
+}
+
 // setConfirmer wires the shell's native confirmation.
 func (s *MutateService) setConfirmer(confirmer PublicACLConfirmer) {
 	s.confirmer = confirmer
