@@ -5,6 +5,7 @@ Amended on 15 November 2026, during the 0.5.0 test run: the operator selected a 
 **Scope:** `TransferService.PlanCopy`, `StartCopy`, the copy job's planning passes, its verification and `RerunJob`; `LocalTransferService.PreflightDownload` and `StartDownload`; the working list's Copy and Download buttons and the two dialogs.
 **Amends:** DESIGN §65.9 item 9 (as amended by its 11 November paragraph) for a copy of named objects.
 Amended on 16 November 2026 by [ADR 0122](0122-the-stores-answer-is-the-result.md) decision 4: a name under `.aeronautes/stage/` is an ordinary name, so it may be a member, and the refusal of a source that holds the copy's working area is gone with the stage.
+Amended on 18 November 2026 by decision 8: "Download folder…" keeps the folder's name, as a selected folder does.
 Amended on 17 November 2026 by decision 7, on the operator's decision of that day that a transfer follows rclone's semantics ("if I tell rclone to copy one container to another, it will copy everything from it to another, whether files or virtual folders or what") and their choice that in 0.5.0 a selected folder is copied or downloaded with everything in it: folder rows in a selection are members, and the warning of 15 November is withdrawn.
 
 ## Context
@@ -76,6 +77,17 @@ A copy also verifies by a fresh join of the whole source and destination scopes,
    A destination inside the source folder stays allowed wherever none of these holds.
    **Re-run** records and plans folder members by the same names, trailing slash included, under the current state.
    **Delete** was not changed by this decision; on the operator's further decision of 17 November a deletion's selection takes a selected folder whole as well ([ADR 0093](0093-selected-set-deletion.md) decision 8).
+8. **"Download folder…" keeps the folder's name** (18 November 2026).
+   Testing the 0.5.0 candidate, the operator pressed "Download folder…" and found the folder's contents written straight into the directory they chose, where "Copy folder…", an uploaded folder and a selected folder all keep the folder's name: "it kinda seems opposite of copy and upload folder".
+   Decision 7's last sentence said a folder downloaded alone keeps its name; the window did not, because it sent the folder as the request's prefix with no members.
+   **The request.** A download of one folder, the folder browsed with nothing selected or one folder row selected alone, is sent as the folder's parent prefix with the folder as its one folder member, so it is planned, checked and written exactly as a selected folder is, under `<chosen directory>/<folder name>/`.
+   No backend rule changes.
+   **What comes with the selected-folder plan.** The rules of decision 7 now apply to a folder downloaded alone, and three of them differ from the prefix request it replaces:
+   - The parent prefix is listed in full to find the folder's objects, so a folder inside a large parent takes as long to plan as the parent does, and a listing of the parent that fails refuses the download; a selection already pays this.
+   - A folder with nothing under it is refused as no longer at the source, where the prefix request completed with nothing written.
+   - The job records the parent as its source with one selected member, so the jobs drawer names the parent and "1 selected"; a download is not re-run (Re-run replays only a copy), so nothing reads the member later.
+   **What does not change.** "Download container…" still writes the container's contents into the chosen directory, as "Copy container…" writes into its destination; a selection is unchanged; a count of the folder is still offered as the download's size, because it counts the same objects.
+   **Required proof (tier 2).** Frontend: the download dialog for a browsed folder and for one selected folder sends the parent prefix and the folder as its one member, and for the container sends no members. Journey, on the mock and both clouds: "Download folder…" writes the files under a directory of the folder's name in the chosen directory, compared by digest.
 
 ## Consequences
 
