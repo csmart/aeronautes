@@ -871,10 +871,9 @@ func (s *TransferService) downloadPreflight(ctx context.Context, req DownloadReq
 	if err == nil && report != nil {
 		// A directory another active download is using is refused before
 		// any effect, naming that job (ADR 0078).
-		if id, dir, ok := s.destinations.overlap(destination, destination.Path()); ok {
+		if reason, ok := s.destinations.overlap(destination, destination.Path()); ok {
 			report.Problems = append(report.Problems, local.Problem{
-				Name: destination.Path(), Kind: destinationOverlapKind, Reject: true,
-				Detail: fmt.Sprintf("download job %s is using %s; cancel it or pick another directory", id, dir),
+				Name: destination.Path(), Kind: destinationOverlapKind, Reject: true, Detail: reason,
 			})
 		}
 	}
@@ -1176,7 +1175,7 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	// nothing behind (ADR 0078). The reservation moves to the job id
 	// once the row exists and leaves with the pins.
 	reservation := req.DestDirToken
-	if err := s.destinations.reserve(reservation, destination, destination.Path()); err != nil {
+	if err := s.destinations.reserve(reservation, destination, destination.Path(), req.Container+"/"+req.Prefix); err != nil {
 		_ = destination.Close()
 		return "", err
 	}

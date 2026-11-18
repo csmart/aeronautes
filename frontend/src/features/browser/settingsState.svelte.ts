@@ -96,6 +96,25 @@ export class SettingsState {
     }
   }
 
+  /** Every setting back to this version's default, as one save (ADR 0126
+   * decision 4); the window has asked first. */
+  async reset() {
+    if (!this.canSave) {
+      throw new Error("Refresh settings before making another change.");
+    }
+    this.operation = "set";
+    this.attempt = null;
+    try {
+      this.document = await this.#api.resetAppSettings(this.document!);
+      this.status = "current";
+    } catch (error) {
+      if (!isRefusal(error)) this.status = "unconfirmed";
+      throw error;
+    } finally {
+      this.#endOperation();
+    }
+  }
+
   /** The latest rail width asked for while a settings read or write was in
    * flight; written against the document that operation leaves behind. */
   #pendingRailWidth: number | null = null;

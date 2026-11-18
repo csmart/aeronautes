@@ -309,6 +309,9 @@ export interface Api {
   latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
   saveAppSettings(settings: AppSettingsDTO): Promise<AppSettingsDTO>;
+  /** Saves this version's default settings in place of the document the
+   * window holds (ADR 0126 decision 4). */
+  resetAppSettings(current: AppSettingsDTO): Promise<AppSettingsDTO>;
   /** countOnly lists the scope and counts it without keeping matches (ADR 0072). */
   startFind(container: string, prefix: string, query: string, bookmarkId: string, countOnly?: boolean): Promise<string>;
   findStatus(id: string, bookmarkId: string): Promise<FindStatusDTO>;
@@ -437,6 +440,13 @@ export const liveApi: Api = {
   },
   saveAppSettings: async (settings) => {
     const saved = await SettingsService.Set(settings);
+    if (!saved) throw new Error("empty settings");
+    return saved;
+  },
+  resetAppSettings: async (current) => {
+    // A reset is the settings save with its flag set; the service stores
+    // this version's defaults in place of the document (ADR 0126).
+    const saved = await SettingsService.Set({ ...current, resetToDefaults: true });
     if (!saved) throw new Error("empty settings");
     return saved;
   },

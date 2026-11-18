@@ -751,10 +751,10 @@ describe("folder upload", () => {
     await settle();
     const rows = [...f.root.querySelectorAll(".warn-row")].map((row) => row.textContent!.replace(/\s+/g, " ").trim());
     expect(rows).toEqual([
-      `skipped photos/x ${skipped}`,
-      `skipped photos/sub/y ${skipped}`,
-      "skipped photos 3 entries were skipped in all; the first 2 are named above",
-      "empty-directories photos 1 empty directory produces no object: the store has no directories",
+      `Skipped photos/x ${skipped}`,
+      `Skipped photos/sub/y ${skipped}`,
+      "Skipped photos 3 entries were skipped in all; the first 2 are named above",
+      "Empty folders photos 1 empty directory produces no object: the store has no directories",
     ]);
     expect(f.root.textContent).not.toContain("Rejected");
     expect(f.startButton()?.disabled).toBe(false);
@@ -776,4 +776,20 @@ describe("folder upload", () => {
     const f = show("download");
     expect(f.folderButton()).toBeUndefined();
   });
+});
+
+// ADR 0126 decision 1: a refusal names its kind in words and shows the
+// whole reason, wrapped, never cut short.
+it("shows a refusal's kind in words and its whole reason", async () => {
+  const f = show("download");
+  await f.reach("preflight");
+  const reason = "the running download job 08a5ab1c7fac3943, of media/selected/, is writing into /tmp, which holds or is inside this folder; wait for it to finish, cancel it, or choose a folder outside it";
+  const name = "/home/someone/Downloads/a/folder/whose/path/is/much/longer/than/the/dialog/is/wide/fds";
+  f.downloads[0].resolve({ itemSamples: [], problemSamples: [{ name, kind: "destination-overlap", detail: reason, reject: true }],
+    totalBytes: 0, objects: 0, problemCount: 1, rejected: true, replaceable: 0, replacing: 0 });
+  await settle();
+  const row = f.root.querySelector(".problem")!;
+  expect(row.querySelector(".kind")?.textContent).toBe("Overlaps a running download");
+  expect(row.querySelector(".detail")?.textContent).toBe(reason);
+  expect(row.querySelector(".pname")?.textContent).toBe(name);
 });

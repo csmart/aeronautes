@@ -151,15 +151,14 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 	// Once as many jobs wait for a slot as the queue depth allows, a new
 	// start is refused rather than queued without bound (ADR 0074
 	// decision 2).
+	// The refusal names the running jobs too: the queue depth counts only
+	// the waiting ones, so "1 waiting" alone did not say why a third start
+	// was taken and a fourth refused (ADR 0126 decision 2).
 	if held := r.queued + r.paused; held >= r.queueCapacity {
-		noun := "jobs are"
-		if held == 1 {
-			noun = "job is"
-		}
 		if r.paused > 0 {
-			return nil, nil, fmt.Errorf("%w: %d %s waiting or paused; wait for one to finish, resume one or cancel one", errJobQueueFull, held, noun)
+			return nil, nil, fmt.Errorf("%w: %d running and %d waiting or paused; wait for one to finish, resume one or cancel one", errJobQueueFull, r.active, held)
 		}
-		return nil, nil, fmt.Errorf("%w: %d %s waiting; wait for one to finish or cancel one", errJobQueueFull, held, noun)
+		return nil, nil, fmt.Errorf("%w: %d running and %d waiting; wait for one to finish or cancel one", errJobQueueFull, r.active, held)
 	}
 	startCtx, cancelStart := context.WithCancel(ctx)
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))

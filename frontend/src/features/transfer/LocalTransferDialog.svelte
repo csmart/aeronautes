@@ -14,6 +14,7 @@
   import { newJobSettings, requestSettings } from "./jobSettings";
   import { countOfSelected } from "./selectionSummary";
   import { parentPrefix } from "../../lib/listing";
+  import { problemKindWords } from "./problemKinds";
 
   let {
     browser,
@@ -311,7 +312,7 @@
           <div class="problems">
             {#each rejections as p (p.kind + p.name)}
               <div class="problem">
-                <span class="kind">{p.kind}</span>
+                <span class="kind" title={p.kind}>{problemKindWords(p.kind)}</span>
                 <span class="pname type-mono">{p.name}</span>
                 <span class="detail">{p.detail}</span>
               </div>
@@ -370,7 +371,7 @@
           <div class="problems">
             {#each warnings as p (p.kind + p.name)}
               <div class="problem warn-row">
-                <span class="kind warn-kind">{p.kind}</span>
+                <span class="kind warn-kind" title={p.kind}>{problemKindWords(p.kind)}</span>
                 <span class="pname type-mono">{p.name}</span>
                 <span class="detail">{p.detail}</span>
               </div>
@@ -498,11 +499,17 @@
     font-size: var(--text-xs);
   }
 
+  /* The kind and the name share a line and the whole reason wraps under
+     them: a refusal is read in full, never cut short (ADR 0126 decision 1). */
   .problem {
     display: grid;
-    grid-template-columns: 8rem minmax(8rem, 1fr) minmax(10rem, 1.6fr);
-    gap: var(--space-2);
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 var(--space-2);
     align-items: baseline;
+  }
+
+  .problem + .problem {
+    margin-top: var(--space-1);
   }
 
   .kind {
@@ -514,15 +521,14 @@
     color: var(--color-warning);
   }
 
-  .pname,
-  .detail {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .pname {
+    overflow-wrap: anywhere;
   }
 
   .detail {
-    color: var(--color-text-faint);
+    grid-column: 1 / -1;
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
   }
 
   footer {

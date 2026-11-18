@@ -21,8 +21,9 @@ const destinationOverlapKind = "destination-overlap"
 // activeDestination is one download's held destination while the job is
 // active: the root for identity and the cleaned path for ancestry.
 type activeDestination struct {
-	root *local.DestinationRoot
-	path string
+	root   *local.DestinationRoot
+	path   string
+	source string
 }
 
 // destinationRegistry holds the destinations of every active download,
@@ -42,23 +43,24 @@ func cleanDestinationPath(path string) string {
 	return filepath.Clean(path)
 }
 
-// overlapsLocked reports the active job whose destination is the same
-// directory as, an ancestor of, or a descendant of the candidate.
-func (r *destinationRegistry) overlapsLocked(root *local.DestinationRoot, path string) (string, string, bool) {
+// overlapsLocked reports, in the operator's words, the active download
+// whose destination is the same directory as, an ancestor of, or a
+// descendant of the candidate.
+func (r *destinationRegistry) overlapsLocked(root *local.DestinationRoot, path string) (string, bool) {
 	sep := string(filepath.Separator)
 	for id, held := range r.active {
 		if held.root.SameDirectory(root) ||
 			strings.HasPrefix(path+sep, held.path+sep) ||
 			strings.HasPrefix(held.path+sep, path+sep) {
-			return id, held.path, true
+			return overlapReason(id, held), true
 		}
 	}
-	return "", "", false
+	return "", false
 }
 
 // overlap reports the active download, if any, that the candidate would
 // overlap; preflight names it as a rejecting problem.
-func (r *destinationRegistry) overlap(root *local.DestinationRoot, path string) (string, string, bool) {
+func (r *destinationRegistry) overlap(root *local.DestinationRoot, path string) (string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.overlapsLocked(root, cleanDestinationPath(path))
@@ -66,17 +68,17 @@ func (r *destinationRegistry) overlap(root *local.DestinationRoot, path string) 
 
 // reserve refuses the candidate when it overlaps an active download and
 // otherwise records it under key, in one critical section.
-func (r *destinationRegistry) reserve(key string, root *local.DestinationRoot, path string) error {
+func (r *destinationRegistry) reserve(key string, root *local.DestinationRoot, path, source string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	path = cleanDestinationPath(path)
-	if id, dir, ok := r.overlapsLocked(root, path); ok {
-		return fmt.Errorf("%w: download job %s is using %s; cancel it or pick another directory", errDestinationOverlap, id, dir)
+	if reason, ok := r.overlapsLocked(root, path); ok {
+		return fmt.Errorf("%w: %s", errDestinationOverlap, reason)
 	}
 	if r.active == nil {
 		r.active = map[string]activeDestination{}
 	}
-	r.active[key] = activeDestination{root: root, path: path}
+	r.active[key] = activeDestination{root: root, path: path, source: source}
 	return nil
 }
 
@@ -102,4 +104,11 @@ func (r *destinationRegistry) activeCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.active)
+}
+
+// overlapReason says which running download holds the folder and what the
+// operator can do, so the refusal is not read as another one (ADR 0126
+// decision 1).
+func overlapReason(id string, held activeDestination) string {
+	return fmt.Sprintf("the running download job %s, of %s, is writing into %s, which holds or is inside this folder; wait for it to finish, cancel it, or choose a folder outside it", id, held.source, held.path)
 }

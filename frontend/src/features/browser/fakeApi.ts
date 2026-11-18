@@ -6,6 +6,7 @@
 
 import type {
   Api,
+  AppSettingsDTO,
   AuditEventDTO,
   BookmarkDTO,
   CapabilitiesDTO,
@@ -98,6 +99,14 @@ export function settingsRefusal(message: string): Error {
   const error = new Error(message, { cause: { refused: true, reason: message } });
   error.name = "RuntimeError";
   return error;
+}
+
+function fakeDefaultSettings(): AppSettingsDTO {
+  return {
+    maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
+    browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
+    reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
+  };
 }
 
 export function newFakeApi(): Api {
@@ -1106,11 +1115,8 @@ export function newFakeApi(): Api {
       license: "Apache-2.0 (this application)",
       licenses: [{ name: "example", license: "MIT", url: "https://example.com" }],
     }),
-    appSettings: async () => ({
-      maxActiveJobs: 2, defaultProfile: "auto", auditRetentionDays: 90, jobRetentionDays: 30, downloadObjectCeiling: 250_000,
-      browserRetentionCeiling: 100_000, maxQueuedJobs: 16, maxConnsPerHost: 16,
-      reclaimReplacedFragments: true, gpuAcceleration: true, railWidthPx: 0,
-    }),
+    appSettings: async () => fakeDefaultSettings(),
+    resetAppSettings: async () => fakeDefaultSettings(),
     // The service's own range (ADR 0105), so no journey saves a budget the
     // product would refuse.
     saveAppSettings: async (settings) => {
