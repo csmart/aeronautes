@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -337,5 +338,29 @@ func TestRetentionPrunesExactly(t *testing.T) {
 	service.runRetention(ctx, jobStore, auditStore)
 	if _, err := jobStore.Get(ctx, freshDone); err != nil {
 		t.Fatal("an unreadable settings file let the prune run on the defaults")
+	}
+}
+
+// ADR 0126 decision 4: a reset saves this version's defaults, the runner
+// takes them as from any save, and a fresh read finds them.
+func TestSettingsResetSavesTheDefaults(t *testing.T) {
+	runner := newJobRunner(nil, nil)
+	service := NewSettingsService(settingsFile(t), runner)
+	ctx := context.Background()
+	if _, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "auto", MaxQueuedJobs: 3, GPUAcceleration: false}); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := service.Set(ctx, AppSettingsDTO{MaxActiveJobs: 1, DefaultProfile: "custom", ResetToDefaults: true})
+	if err != nil || !reflect.DeepEqual(reset, defaults()) {
+		t.Fatalf("reset = %+v %v, want the defaults %+v", reset, err, defaults())
+	}
+	if read, err := service.Get(ctx); err != nil || !reflect.DeepEqual(read, defaults()) {
+		t.Fatalf("read after the reset = %+v %v", read, err)
+	}
+	runner.mu.Lock()
+	capacity, queue := runner.capacity, runner.queueCapacity
+	runner.mu.Unlock()
+	if capacity != defaultMaxActiveJobs || queue != defaultMaxQueuedJobs {
+		t.Fatalf("runner limits after the reset = %d and %d", capacity, queue)
 	}
 }

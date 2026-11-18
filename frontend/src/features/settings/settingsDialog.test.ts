@@ -141,3 +141,50 @@ it("saves turning the graphics card off and says when it applies", async () => {
   expect(api.saveAppSettings).toHaveBeenCalledWith(expect.objectContaining({ gpuAcceleration: false }));
   expect(statusOf(gpu)).toBe("off: the window draws in software from the next start");
 });
+
+// ADR 0126 decision 2: the two job limits read as one line.
+it("adds the running and waiting limits up in one line", async () => {
+  await show();
+  expect(document.querySelector(".jobs-at-once")?.textContent?.replace(/\s+/g, " ").trim())
+    .toBe("Jobs at once: up to 2 running and 16 waiting, 18 at most; a further start is refused.");
+});
+
+// ADR 0126 decision 3: the filter keeps a matching setting, hides a section
+// with none, and says when nothing matches.
+it("filters the settings by label, note or section", async () => {
+  await show();
+  const filter = document.querySelector<HTMLInputElement>(".settings-filter")!;
+  const headings = () => [...document.querySelectorAll("h3")].map((h) => h.textContent);
+  filter.value = "connection"; filter.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  expect(headings()).toEqual(["Browsing and network", "Backup and restore"]);
+  expect(document.body.textContent).toContain("Connection cap");
+  expect(document.body.textContent).not.toContain("Browser retention");
+  filter.value = "RECORDS"; filter.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  expect(headings()).toEqual(["Records", "Backup and restore"]);
+  filter.value = "nothing like this"; filter.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  expect(document.body.textContent).toContain('No setting matches "nothing like this".');
+});
+
+// ADR 0126 decision 4: a reset asks first; declined it saves nothing, and
+// confirmed it is one reset of the service, whose answer is then shown.
+it("resets to the defaults only after asking", async () => {
+  const api = await show();
+  api.resetAppSettings = vi.fn(async () => ({ ...original, defaultProfile: "auto", auditRetentionDays: 90 }));
+  const press = (name: string) => [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === name)!.click();
+  press("Reset to defaults…"); flushSync();
+  press("Keep my settings"); await settle();
+  expect(api.resetAppSettings).not.toHaveBeenCalled();
+  press("Reset to defaults…"); flushSync();
+  expect(document.body.textContent).toContain("Bookmarks, saved keys, jobs and history are not touched");
+  press("Reset every setting"); await settle();
+  expect(api.resetAppSettings).toHaveBeenCalledOnce(); expect(api.saveAppSettings).not.toHaveBeenCalled();
+  expect(control<HTMLSelectElement>("Default performance profile", "select").value).toBe("auto");
+  expect(document.body.textContent).toContain("Settings reset to this version's defaults.");
+});
+
+// ADR 0126 decision 6.
+it("counts one connection in the singular", async () => {
+  await show();
+  change(control<HTMLInputElement>("Connection cap", "input"), "1"); await settle();
+  expect(statusOf(control<HTMLInputElement>("Connection cap", "input"))).toBe("1 connection per host on the next connect");
+});

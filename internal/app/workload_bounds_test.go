@@ -153,7 +153,7 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	if !errors.Is(err, errJobQueueFull) {
 		t.Fatalf("a start over the queue depth was not refused: %v", err)
 	}
-	if want := "the job queue is full: 1 job is waiting; wait for one to finish or cancel one"; err.Error() != want {
+	if want := "the job queue is full: 1 running and 1 waiting; wait for one to finish or cancel one"; err.Error() != want {
 		t.Fatalf("refusal = %q, want %q", err.Error(), want)
 	}
 	if n := rows(); n != 2 {

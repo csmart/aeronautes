@@ -338,10 +338,13 @@
     white-space: nowrap;
   }
 
+  /* The two buttons stay side by side at the start, however wide the rail
+     is dragged (ADR 0126 decision 5). */
   .rail-foot {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--space-2);
     padding-top: var(--space-2);
   }

@@ -77,14 +77,14 @@
     says: (value: string) => string;
   };
   const days = (value: string) => `${value} ${value === "1" ? "day" : "days"}`;
+  // ADR 0074 decision 2.
+  const QUEUE_DEPTH: BoundedSetting = {
+    field: "maxQueuedJobs", slug: "queue-depth", label: "Queue depth",
+    note: "The most jobs that may wait behind the running ones; a further start is refused with both counts named (1 to 1,000).",
+    min: 1, max: 1000, step: 1,
+    says: (value) => `${value} waiting at most`,
+  };
   const JOB_LIMITS: BoundedSetting[] = [
-    {
-      // ADR 0074 decision 2.
-      field: "maxQueuedJobs", slug: "queue-depth", label: "Queue depth",
-      note: "The most jobs that may wait behind the active slots; a further start is refused with the count named (1 to 1,000).",
-      min: 1, max: 1000, step: 1,
-      says: (value) => `${value} waiting at most`,
-    },
     {
       // ADR 0072.
       field: "downloadObjectCeiling", slug: "ceiling", label: "Download ceiling",
@@ -107,7 +107,7 @@
       field: "maxConnsPerHost", slug: "connection-cap", label: "Connection cap",
       note: "The most connections one session opens to a host; a burst of reads waits for a connection rather than opening one without bound. It applies to sessions opened after the save (1 to 256).",
       min: 1, max: 256, step: 1,
-      says: (value) => `${value} connections per host on the next connect`,
+      says: (value) => `${value} ${value === "1" ? "connection" : "connections"} per host on the next connect`,
     },
   ];
   // §51: the prune runs once, at startup, so a change takes effect on the
@@ -139,6 +139,41 @@
   // existed reads as on.
   const gpuChecked = $derived(settings.document?.gpuAcceleration ?? true);
   let gpuError: string | null = $state(null);
+
+  // The filter keeps the settings whose label, note or section heading holds
+  // the typed text, ignoring case (ADR 0126 decision 3).
+  let filter = $state("");
+  const query = $derived(filter.trim().toLowerCase());
+  function shows(section: string, ...texts: string[]): boolean {
+    return query === "" || [section, ...texts].some((text) => text.toLowerCase().includes(query));
+  }
+  const PROFILE_NOTE = "Copy, upload and download dialogs start from this profile; each job can still choose another in its per-job settings.";
+  const GPU_NOTE = "The window draws with the graphics card by default; off draws in software, for a system whose graphics driver makes the window slow or blank. It takes effect when Aeronautes next starts.";
+  const BUDGET_NOTE = "How many jobs run at once (1 to 4); each job brings its own engine settings, so a profile's transfers and limits apply per job, not in total.";
+  const RECLAIM_NOTE = "When an upload replaces a large object, the transfer engine removes the old object's segments from the destination's segments container as it writes the new one; off keeps them, and a container that keeps versions keeps them either way.";
+  const showsBound = (section: string, setting: BoundedSetting) => shows(section, setting.label, setting.note);
+  const showsGeneral = $derived(shows("General", "Default performance profile", PROFILE_NOTE) || shows("General", "Use the graphics card", GPU_NOTE));
+  const showsJobs = $derived(shows("Jobs", "Active-job budget", BUDGET_NOTE) || showsBound("Jobs", QUEUE_DEPTH)
+    || JOB_LIMITS.some((setting) => showsBound("Jobs", setting)) || shows("Jobs", "Reclaim replaced segments", RECLAIM_NOTE));
+  const showsNetwork = $derived(NETWORK_LIMITS.some((setting) => showsBound("Browsing and network", setting)));
+  const showsRecords = $derived(RECORD_LIMITS.some((setting) => showsBound("Records", setting)));
+
+  // A reset asks first, in the window, and is then one save (ADR 0126
+  // decision 4).
+  let resetAsked = $state(false);
+  let resetError: string | null = $state(null);
+  let resetDone = $state(false);
+  async function reset() {
+    resetError = null;
+    try {
+      await settings.reset();
+      resetDone = true;
+    } catch (err) {
+      resetError = err instanceof Error ? err.message : String(err);
+    } finally {
+      resetAsked = false;
+    }
+  }
 </script>
 
 {#snippet bounded(setting: BoundedSetting, observed: number)}
@@ -185,14 +220,20 @@
     </header>
 
     <div class="body">
+      <input class="settings-filter" type="search" placeholder="filter settings…" aria-label="Filter settings" bind:value={filter} />
       {#if settings.document?.fileProblem}
         <!-- The defaults are in force until a save, which keeps the bad file aside (ADR 0109). -->
         <p class="note error" role="alert">{settings.document.fileProblem}</p>
       {/if}
       {#if settings.document}
         {@const current = settings.document}
+        {#if query !== "" && !showsGeneral && !showsJobs && !showsNetwork && !showsRecords}
+          <p class="note" role="status">No setting matches "{filter.trim()}".</p>
+        {/if}
+        {#if showsGeneral}
         <section aria-labelledby={`${id}-general`}>
           <h3 id={`${id}-general`}>General</h3>
+          {#if shows("General", "Default performance profile", PROFILE_NOTE)}
           <div class="setting">
             <label class="field">
               <span>Default performance profile</span>
@@ -211,12 +252,11 @@
                 {/each}
               </select>
             </label>
-            <p class="note" id={`${id}-profile-note`}>
-              Copy, upload and download dialogs start from this profile; each job can still choose another in its
-              per-job settings.
-            </p>
+            <p class="note" id={`${id}-profile-note`}>{PROFILE_NOTE}</p>
             <p class="status" id={`${id}-profile-status`} role="status">{#if profileError}{profileError}{/if}</p>
           </div>
+          {/if}
+          {#if shows("General", "Use the graphics card", GPU_NOTE)}
           <div class="setting">
             <label class="field">
               <span>Use the graphics card</span>
@@ -233,18 +273,19 @@
                 }}
               />
             </label>
-            <p class="note" id={`${id}-gpu-note`}>
-              The window draws with the graphics card by default; off draws in software, for a system whose graphics
-              driver makes the window slow or blank. It takes effect when Aeronautes next starts.
-            </p>
+            <p class="note" id={`${id}-gpu-note`}>{GPU_NOTE}</p>
             <p class="status" id={`${id}-gpu-status`} role="status">
               {#if gpuError}{gpuError}{:else}{current.gpuAcceleration ? "on" : "off: the window draws in software from the next start"}{/if}
             </p>
           </div>
+          {/if}
         </section>
+        {/if}
 
+        {#if showsJobs}
         <section aria-labelledby={`${id}-jobs`}>
           <h3 id={`${id}-jobs`}>Jobs</h3>
+          {#if shows("Jobs", "Active-job budget", BUDGET_NOTE) || showsBound("Jobs", QUEUE_DEPTH)}
           <div class="setting">
             <label class="field">
               <span>Active-job budget</span>
@@ -266,14 +307,18 @@
                 {/each}
               </select>
             </label>
-            <p class="note" id={`${id}-budget-note`}>
-              How many jobs run at once (1 to 4); a further start waits in the queue,
-              and each job brings its own engine settings, so a profile's transfers and limits apply per job, not in total.
-            </p>
+            <p class="note" id={`${id}-budget-note`}>{BUDGET_NOTE}</p>
           </div>
-          {#each JOB_LIMITS as setting (setting.field)}
+          {@render bounded(QUEUE_DEPTH, current.maxQueuedJobs)}
+          <p class="jobs-at-once" role="status">
+            Jobs at once: up to {current.maxActiveJobs} running and {current.maxQueuedJobs} waiting,
+            {current.maxActiveJobs + current.maxQueuedJobs} at most; a further start is refused.
+          </p>
+          {/if}
+          {#each JOB_LIMITS.filter((setting) => showsBound("Jobs", setting)) as setting (setting.field)}
             {@render bounded(setting, current[setting.field])}
           {/each}
+          {#if shows("Jobs", "Reclaim replaced segments", RECLAIM_NOTE)}
           <div class="setting">
             <label class="field">
               <span>Reclaim replaced segments</span>
@@ -290,30 +335,32 @@
                 }}
               />
             </label>
-            <p class="note" id={`${id}-reclaim-note`}>
-              When an upload replaces a large object, the transfer engine removes the old object's segments from the
-              destination's segments container as it writes the new one; off keeps them, and a container that keeps
-              versions keeps them either way.
-            </p>
+            <p class="note" id={`${id}-reclaim-note`}>{RECLAIM_NOTE}</p>
             <p class="status" id={`${id}-reclaim-status`} role="status">
               {#if reclaimError}{reclaimError}{:else}{current.reclaimReplacedFragments ? "a replaced large object's old segments are removed as the new object is written" : "a replaced large object's old segments are kept"}{/if}
             </p>
           </div>
+          {/if}
         </section>
+        {/if}
 
+        {#if showsNetwork}
         <section aria-labelledby={`${id}-network`}>
           <h3 id={`${id}-network`}>Browsing and network</h3>
-          {#each NETWORK_LIMITS as setting (setting.field)}
+          {#each NETWORK_LIMITS.filter((setting) => showsBound("Browsing and network", setting)) as setting (setting.field)}
             {@render bounded(setting, current[setting.field])}
           {/each}
         </section>
+        {/if}
 
+        {#if showsRecords}
         <section aria-labelledby={`${id}-records`}>
           <h3 id={`${id}-records`}>Records</h3>
-          {#each RECORD_LIMITS as setting (setting.field)}
+          {#each RECORD_LIMITS.filter((setting) => showsBound("Records", setting)) as setting (setting.field)}
             {@render bounded(setting, current[setting.field])}
           {/each}
         </section>
+        {/if}
       {/if}
 
       <section aria-labelledby={`${id}-backup`}>
@@ -339,7 +386,26 @@
           >
             Import bookmarks…
           </button>
+          <button class="reset" onclick={() => { resetAsked = true; resetDone = false; }} disabled={!settings.canSave || resetAsked}>
+            Reset to defaults…
+          </button>
         </div>
+        {#if resetAsked}
+          <div class="reset-question" role="group" aria-label="Reset settings">
+            <p class="note">
+              Every setting returns to this version's default. Bookmarks, saved keys, jobs and history are not touched;
+              a restore of an earlier backup can undo it.
+            </p>
+            <button class="reset-confirm" onclick={reset}>Reset every setting</button>
+            <button onclick={() => (resetAsked = false)}>Keep my settings</button>
+          </div>
+        {/if}
+        {#if resetDone}
+          <p class="note" role="status">Settings reset to this version's defaults.</p>
+        {/if}
+        {#if resetError}
+          <p class="note error" role="alert">Settings were not reset: {resetError}</p>
+        {/if}
         {#if settings.backupMessage}
           <p class="note" role="status">{settings.backupMessage}</p>
         {/if}
@@ -443,6 +509,54 @@
 
   section {
     padding-top: var(--space-4);
+  }
+
+  .settings-filter {
+    display: block;
+    width: 100%;
+    margin-top: var(--space-3);
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+
+  /* The two job limits read as one sentence under them (ADR 0126). */
+  .jobs-at-once {
+    margin: var(--space-2) 0 var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+  }
+
+  .reset-question {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  .reset-question .note {
+    flex-basis: 100%;
+  }
+
+  .reset-question button {
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  .reset-question .reset-confirm {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
   }
 
   section + section {

@@ -132,5 +132,6 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Menus | a container row's menu | open a copy from a container's context menu; find a container named like a segment store behind its heading | the chosen entry opens its dialog |
 | Menus | an object's and a folder's menu; "Copy name" | not yet | |
 | Settings | open Settings and import from it | import bookmarks from an rclone config (mock only) | as for the import above |
-| Settings | change and save a setting; back up and restore the configuration | not yet; layer 1 journey 7 | |
+| Settings | filter the settings; change and save a setting, with the jobs-at-once line adding the limits; reset to the defaults after asking | filter the settings and reset them to the defaults (mock only) | the filter leaves only the matching setting, the line names the saved queue depth, and after the reset the queue depth reads its default |
+| Settings | back up and restore the configuration | not yet; layer 1 journey 7 | |
 | Window | the About and welcome dialogs; credential status; use by keyboard alone | not yet | |

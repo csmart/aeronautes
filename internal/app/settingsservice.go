@@ -132,6 +132,11 @@ type AppSettingsDTO struct {
 	// 0109 decision 1). It is a report only: a save ignores it and it is
 	// never written to the file.
 	FileProblem string `json:"fileProblem,omitempty"`
+	// ResetToDefaults asks a save to store this version's defaults in place
+	// of the document's other values (ADR 0126 decision 4). It rides on the
+	// existing save so a reset is that one action, and it is never written
+	// to the file.
+	ResetToDefaults bool `json:"resetToDefaults,omitempty"`
 }
 
 // defaultDownloadObjectCeiling is 250,000 objects: about 352 MiB of peak
@@ -279,6 +284,11 @@ func refuseSettings(format string, args ...any) error {
 
 // Set validates, persists, and applies the settings.
 func (s *SettingsService) Set(_ context.Context, settings AppSettingsDTO) (AppSettingsDTO, error) {
+	if settings.ResetToDefaults {
+		// Only the settings file changes: bookmarks, saved keys, jobs and
+		// history are kept elsewhere and are not touched.
+		settings = defaults()
+	}
 	settings, err := checkSettings(settings)
 	if err != nil {
 		return AppSettingsDTO{}, err

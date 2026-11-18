@@ -202,6 +202,14 @@ export interface AppSettingsDTO {
      * never written to the file.
      */
     "fileProblem"?: string;
+
+    /**
+     * ResetToDefaults asks a save to store this version's defaults in place
+     * of the document's other values (ADR 0126 decision 4). It rides on the
+     * existing save so a reset is that one action, and it is never written
+     * to the file.
+     */
+    "resetToDefaults"?: boolean;
 }
 
 /**
