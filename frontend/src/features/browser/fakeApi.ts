@@ -997,7 +997,7 @@ export function newFakeApi(): Api {
         type: "download",
         state: "running",
         source: `${req.container}/${req.prefix}`,
-        destination: "local directory (picker-selected)",
+        destination: "local directory /home/you/Downloads",
         sourceBookmarkId: req.bookmarkId,
         destBookmarkId: "",
         createdAt: "2026-08-29T10:00:00Z",

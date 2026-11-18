@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/csmart/aeronautes/internal/applog"
@@ -1067,7 +1068,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 		Type:               jobs.TypeUpload,
 		ItemRecordsVersion: 1,
 		Settings:           effectiveJSONWithProfile(Profile(req.Profile), settings, origins),
-		Source:             fmt.Sprintf("%d local %s", len(preflight.Items), plural(len(preflight.Items), "file", "files")),
+		Source:             fmt.Sprintf("%d local %s from %s", len(preflight.Items), plural(len(preflight.Items), "file", "files"), commonFolder(preflight.Items)),
 		Destination:        req.Container + "/" + req.Prefix,
 		DestBookmarkID:     req.BookmarkID,
 		Engine:             "rclone+native",
@@ -1205,12 +1206,15 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	if before := s.downloadBoundary; before != nil {
 		engine = wrapDownloadBoundary(engine, before)
 	}
+	// The destination names the path the operator picked, so the job says
+	// where the files went; the job still writes through the held
+	// directory, never by this text (ADR 0127 decision 1).
 	job, err := s.jobs.Create(ctx, jobs.Job{
 		Type:               jobs.TypeDownload,
 		ItemRecordsVersion: 1,
 		Settings:           effectiveJSONWithProfile(Profile(req.Profile), settings, origins),
 		Source:             req.Container + "/" + req.Prefix,
-		Destination:        "local directory (picker-selected)",
+		Destination:        "local directory " + destination.Path(),
 		SourceBookmarkID:   req.BookmarkID,
 		Engine:             "rclone+native",
 		SelectedMembers:    len(req.Members),
@@ -1489,4 +1493,29 @@ func (s *TransferService) requestScope(ctx context.Context, bookmarkID, containe
 		container:  container,
 		prefix:     prefix,
 	}, entry.session, nil
+}
+
+// commonFolder is the deepest folder that holds every file of an upload, so
+// the job says where its files came from (ADR 0127 decision 1).
+func commonFolder(items []local.UploadItem) string {
+	if len(items) == 0 {
+		return "no folder"
+	}
+	common := filepath.Dir(items[0].Path)
+	for _, item := range items[1:] {
+		for !within(filepath.Dir(item.Path), common) {
+			parent := filepath.Dir(common)
+			if parent == common {
+				break
+			}
+			common = parent
+		}
+	}
+	return common
+}
+
+// within reports whether dir is folder or inside it.
+func within(dir, folder string) bool {
+	rel, err := filepath.Rel(folder, dir)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
