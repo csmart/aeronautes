@@ -31,7 +31,8 @@ These tests exercise the pinned client against a synthetic Secret Service and ca
 The release workflow's test job also fetches and verifies the official rclone pin before running Go tests.
 It exposes the binary through the same PATH and `AERONAUTES_OFFICIAL_RCLONE_DIR` settings as ordinary CI because the mock Copy tests need the real runner there too.
 Fetching sidecars in the later packaging jobs cannot supply this earlier, separate test job.
-Manual release dispatch builds unsigned artifacts for all six targets; it does not create a tag or publish a GitHub release.
+Manual release dispatch builds the unsigned Linux packages, for amd64 and arm64; it does not create a tag or publish a GitHub release.
+macOS and Windows build only for a tag, or when the dispatch ticks "Also build macOS and Windows": on a private repository their runners cost many times the Linux minutes, and a test build is for the packages the operator installs.
 
 ## Non-blocking checks
 

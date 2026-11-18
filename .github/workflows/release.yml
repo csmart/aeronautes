@@ -9,6 +9,14 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      # A test build is for the Linux packages the operator installs; the
+      # macOS and Windows runners cost many times more minutes on a private
+      # repository, so they build only for a tag or when asked for here.
+      all_platforms:
+        description: "Also build macOS and Windows"
+        type: boolean
+        default: false
 
 env:
   # Branch dispatches are development builds; only a validated tag is a release.
@@ -104,6 +112,7 @@ jobs:
 
   macos:
     needs: test
+    if: github.event_name == 'push' || inputs.all_platforms
     strategy:
       fail-fast: false
       matrix:
@@ -152,6 +161,7 @@ jobs:
 
   windows:
     needs: test
+    if: github.event_name == 'push' || inputs.all_platforms
     strategy:
       fail-fast: false
       matrix:
