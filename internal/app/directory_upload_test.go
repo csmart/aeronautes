@@ -119,8 +119,14 @@ func TestPickUploadDirectoryUploadsAFolderAsAFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job := awaitTerminal(t, h, id); job.State != "complete" || job.Counters.ObjectsCopied != 3 {
+	job := awaitTerminal(t, h, id)
+	if job.State != "complete" || job.Counters.ObjectsCopied != 3 {
 		t.Fatalf("the folder did not upload whole: %s %+v", job.State, job.Counters)
+	}
+	// The job names the folder picked, so the drawer says where the files
+	// came from (ADR 0127 decision 1).
+	if want := "3 local files from " + picker.dir; job.Source != want {
+		t.Errorf("job source = %q, want %q", job.Source, want)
 	}
 	for name, want := range map[string]int64{"inbox/photos/a/image.jpg": 5, "inbox/photos/b/image.jpg": 5, "inbox/photos/.hidden": 1} {
 		detail, err := h.inspector.Object(ctx, bookmark, "media", name)

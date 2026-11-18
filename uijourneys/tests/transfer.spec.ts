@@ -113,7 +113,9 @@ test.describe.serial("transfer", () => {
     await control.pickFolder(elsewhere);
     await dialog.getByRole("button", { name: "Choose directory…" }).click();
     await dialog.getByRole("button", { name: "Start download" }).click();
-    await finish(page, dialog);
+    // The job names the folder picked, so the drawer says where the files
+    // went (ADR 0127 decision 1).
+    expect(await finish(page, dialog)).toContain(`local directory ${elsewhere}`);
     for (const [name, digest] of digests) {
       expect(digestOf(join(elsewhere, basename(folder), name)), name).toBe(digest);
     }

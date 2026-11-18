@@ -188,7 +188,7 @@ func downloadPortableNameService(t *testing.T, h *Harness, route, shape string) 
 	for _, event := range events {
 		if event.Operation == "transfer.download.start" {
 			starts++
-			if event.Result != "applied" || event.Resource != source+"/"+prefix+" → local directory (picker-selected)" || !strings.HasPrefix(event.Summary, "job "+id+" · ") {
+			if event.Result != "applied" || event.Resource != source+"/"+prefix+" → local directory "+selected || !strings.HasPrefix(event.Summary, "job "+id+" · ") {
 				t.Errorf("near-miss control lost exact start audit identity: %+v", event)
 			}
 		}
