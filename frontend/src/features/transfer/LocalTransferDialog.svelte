@@ -13,6 +13,7 @@
   import JobSettingsFields from "./JobSettingsFields.svelte";
   import { newJobSettings, requestSettings } from "./jobSettings";
   import { countOfSelected } from "./selectionSummary";
+  import { parentPrefix } from "../../lib/listing";
 
   let {
     browser,
@@ -126,12 +127,16 @@
     : warnings.filter((p) => p.kind === "exists").length);
 
   function scope(): Scope {
+    // A folder is downloaded as the one folder member of its parent, so it
+    // keeps its name as a selected folder does (ADR 0108 decision 8).
+    const folderAlone = downloadSource?.kind === "folder" ? downloadSource.prefix : "";
+    const members = folderAlone !== "" ? [folderAlone] : downloadSource?.members ?? [];
     return {
       bookmarkId: browser.connectedBookmarkId ?? "",
       container: browser.containerName ?? "",
-      prefix: downloadSource ? downloadSource.prefix : browser.prefix,
-      // Left out for an upload and for a whole scope, whose requests stay as before.
-      members: downloadSource && downloadSource.members.length > 0 ? downloadSource.members : undefined,
+      prefix: folderAlone !== "" ? parentPrefix(folderAlone) : downloadSource ? downloadSource.prefix : browser.prefix,
+      // Left out for an upload and for a whole container, whose requests stay as before.
+      members: members.length > 0 ? members : undefined,
       profile: jobSettings.profile,
       // A download segments nothing, so it never sends a chunk size.
       settings: requestSettings(mode === "upload" ? jobSettings : { ...jobSettings, chunkSize: "" }),
@@ -284,7 +289,9 @@
           ? "Choose files to upload into this prefix, or a folder to upload as a folder of its own name inside it; every collision is reported before anything is written."
           : downloadSource && downloadSource.members.length > 0
             ? "Choose a destination directory; what is selected, with everything in each selected folder, is checked for collisions first."
-            : "Choose a destination directory; the whole scope is checked for collisions first."}
+            : downloadSource?.kind === "folder"
+              ? `Choose a destination directory; the folder is written inside it as ${downloadSource.prefix.slice(parentPrefix(downloadSource.prefix).length)}, and checked for collisions first.`
+              : "Choose a destination directory; the whole container is checked for collisions first."}
       </p>
       {#if folder}
         <p class="folder" class:hint={!folderWarns(folder)} class:callout={folderWarns(folder)} class:warning={folderWarns(folder)} role="status">{folderSummary(folder, `${browser.containerName}/${browser.prefix}`)}</p>

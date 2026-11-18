@@ -161,7 +161,10 @@ describe.each(["upload", "download"] as const)("%s preflight binding", (mode) =>
     start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
-    const expected = { bookmarkId: "source", container: "media", prefix: "selected/", profile: "auto",
+    // A browsed folder is downloaded as its parent's one folder member, so
+    // it keeps its name (ADR 0108 decision 8); an upload goes into it.
+    const where = mode === "upload" ? { prefix: "selected/" } : { prefix: "", members: ["selected/"] };
+    const expected = { bookmarkId: "source", container: "media", ...where, profile: "auto",
       settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
       // The dialog acknowledges an overwrite only when asked to, and the
       // exact-forwarding assertion is where that stays visible (ADR 0081
@@ -513,7 +516,15 @@ describe.each(["upload", "download"] as Mode[])("%s selection scope", (mode) => 
     const f = show(mode);
     f.choose();
     const picker = mode === "upload" ? f.api.pickUploadFiles : f.api.pickDownloadDir;
-    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
+    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: mode === "upload" ? "selected/" : "" });
+  });
+
+  it("downloads a whole container with no members", async () => {
+    if (mode === "upload") return;
+    const f = show(mode, (_, browser) => { browser.prefix = ""; });
+    await f.reach("ready");
+    expect(f.api.pickDownloadDir).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "" });
+    expect(vi.mocked(f.api.preflightDownload).mock.calls[0][0].members).toBeUndefined();
   });
 
   it("does not retarget a pick that is already open", async () => {
@@ -523,7 +534,7 @@ describe.each(["upload", "download"] as Mode[])("%s selection scope", (mode) => 
     changeScope(f, "prefix");
     await settle();
     const picker = mode === "upload" ? f.api.pickUploadFiles : f.api.pickDownloadDir;
-    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: "selected/" });
+    expect(picker).toHaveBeenCalledExactlyOnceWith({ bookmarkId: "source", container: "media", prefix: mode === "upload" ? "selected/" : "" });
   });
 });
 
