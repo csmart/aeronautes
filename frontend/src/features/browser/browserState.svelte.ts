@@ -116,6 +116,9 @@ const notOfferedReasons: Record<keyof FeatureStatesDTO, string> = {
   containerQuotas: "This store's /info does not list container_quotas: it would keep these quotas and not enforce them.",
 };
 
+/** When a job's container is read again after the job ended. */
+const countCatchUpMs = [5_000, 30_000];
+
 interface FindRequest {
   readonly scope: number;
   readonly seq: number;
@@ -1365,6 +1368,21 @@ export class BrowserState {
    * wrote to, by id, with the account and container they changed. */
   #watchedJobs = new Map<string, WatchedChange>();
 
+  /** A container's object count and bytes, and the account's, are updated
+   * by the store in the background after the objects change, so the read
+   * at a job's end can still show the old numbers. They are read twice
+   * more, a few seconds and half a minute later, while the operator is
+   * still in that container (operator, 18 November 2026). */
+  #catchUpCounts(changed: WatchedChange) {
+    for (const delay of countCatchUpMs) {
+      setTimeout(() => {
+        if (changed.bookmarkId !== this.connectedBookmarkId || changed.container !== this.containerName) return;
+        void this.loadContainers();
+        void this.refreshContainerDetail();
+      }, delay);
+    }
+  }
+
   /** Follow one job this client started until it ends, then re-read what
    * it changed if that is still on screen: the open container's view, or
    * only the container column when the job wrote elsewhere in the same
@@ -1399,6 +1417,7 @@ export class BrowserState {
             await this.#leaveContainer();
           } else {
             await this.refreshView();
+            this.#catchUpCounts(changed);
           }
         }
         return;
