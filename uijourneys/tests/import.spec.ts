@@ -31,10 +31,20 @@ test("import bookmarks from an rclone config", async ({ page }, info) => {
   await dialog.getByRole("button", { name: "Import 2 bookmarks" }).click();
   await expect(dialog.getByText("Imported and verified.")).toBeVisible();
   await expect(dialog.getByText(`Imported, but did not verify: ${refused}.`)).toBeVisible();
-  await dialog.locator("footer").getByRole("button", { name: "Close" }).click();
-
   const rail = page.getByRole("navigation", { name: "Bookmarks" });
   await expect(rail.getByRole("img", { name: `Did not verify: ${refused}` })).toBeVisible();
+
+  // Edit the one that failed from the results, give it the right key, and
+  // come back to the results, which now say it has signed in (found by the
+  // operator: saving closed everything instead).
+  await dialog.getByRole("button", { name: "Edit journey refused" }).click();
+  await page.getByLabel("API key").fill("testing");
+  await page.getByRole("button", { name: "Save & connect" }).click();
+  await expect(dialog.getByText("Imported; it has signed in since.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Edit journey refused" })).toHaveCount(0);
+  await expect(dialog.getByText("Imported and verified.")).toBeVisible();
+  await expect(rail.getByRole("img", { name: `Did not verify: ${refused}` })).toHaveCount(0);
+  await dialog.locator("footer").getByRole("button", { name: "Close" }).click();
   const imported = rail.getByRole("button", { name: "journey imported", exact: true });
   await imported.click();
   await expect(imported).toHaveAttribute("aria-pressed", "true");

@@ -83,6 +83,12 @@ export class ImportState {
     }
   }
 
+  /** Follow again an unfinished verification, when the list is shown again
+   * after the operator left it to edit a bookmark. */
+  resume() {
+    if (this.result !== null && !this.result.done && this.#following === null) this.#follow(this.result.token);
+  }
+
   /** Stop following; Go's verification goes on and its flags still land. */
   stop() {
     if (this.#following !== null) clearTimeout(this.#following);

@@ -3,15 +3,21 @@
   the verification after it, which goes on if the dialog is closed. -->
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import type { ImportOutcomeDTO } from "../../lib/api";
+  import type { BookmarkDTO, ImportOutcomeDTO } from "../../lib/api";
   import type { ImportState } from "../browser/importState.svelte";
   import { trapFocus } from "../../lib/trapFocus";
 
   let {
     imports,
+    bookmarks,
     onClose,
     onEditBookmark,
-  }: { imports: ImportState; onClose: () => void; onEditBookmark: (bookmarkId: string) => void } = $props();
+  }: {
+    imports: ImportState;
+    bookmarks: BookmarkDTO[];
+    onClose: () => void;
+    onEditBookmark: (bookmarkId: string) => void;
+  } = $props();
   const id = $props.id();
 
   onDestroy(() => imports.stop());
@@ -27,7 +33,24 @@
     return imports.preview?.rows.find((row) => row.index === index)?.hasSecret ?? true;
   }
 
+  // The operator can leave the list to edit a bookmark and come back to it,
+  // so a row is read against the bookmark as it is now: one that has signed
+  // in since, which clears its flag, or has been given its key, is done.
+  function current(outcome: ImportOutcomeDTO): BookmarkDTO | undefined {
+    return outcome.bookmarkId ? bookmarks.find((b) => b.id === outcome.bookmarkId) : undefined;
+  }
+
+  function fixedSince(outcome: ImportOutcomeDTO): boolean {
+    const bookmark = current(outcome);
+    if (!bookmark) return false;
+    if (outcome.verify === "failed") return !bookmark.verifyFailure;
+    return !hadSecret(outcome.index) && bookmark.hasCredential;
+  }
+
   function outcomeText(outcome: ImportOutcomeDTO): string {
+    if (fixedSince(outcome)) {
+      return outcome.verify === "failed" ? "Imported; it has signed in since." : "Imported; its key has been entered.";
+    }
     switch (outcome.verify) {
       case "verified":
         return "Imported and verified.";
@@ -65,10 +88,13 @@
       {#if imports.result}
         <ul class="outcomes" aria-label="Import results">
           {#each imports.result.outcomes as outcome (outcome.index)}
-            <li class:failed={outcome.verify === "failed" || outcome.verify === "not_saved"}>
-              <span class="name">{outcome.name}</span>
+            {@const fixed = fixedSince(outcome)}
+            <li class:failed={!fixed && (outcome.verify === "failed" || outcome.verify === "not_saved")}>
+              <span class="name">{current(outcome)?.displayName ?? outcome.name}</span>
               <span class="what">{outcomeText(outcome)}</span>
-              {#if outcome.verify === "failed" && outcome.bookmarkId}
+              {#if fixed}
+                <!-- Nothing left to do for this row. -->
+              {:else if outcome.verify === "failed" && outcome.bookmarkId}
                 <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Edit {outcome.name}">Edit</button>
               {:else if outcome.bookmarkId && !hadSecret(outcome.index)}
                 <button onclick={() => onEditBookmark(outcome.bookmarkId)} aria-label="Enter key for {outcome.name}">Enter key</button>

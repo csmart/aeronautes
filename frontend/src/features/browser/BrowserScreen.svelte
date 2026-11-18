@@ -43,6 +43,9 @@
 
   // The native picker opens first; the dialog shows what it read, or why
   // it could not, and nothing when the pick was cancelled.
+  // Set while the editor was opened from the import list's results.
+  let editorReturnsToImport = $state(false);
+
   async function openImport() {
     if ((await browser.imports.pick()) !== "cancelled") importOpen = true;
   }
@@ -357,6 +360,11 @@
     onClose={() => {
       editorOpen = false;
       editorCopyOf = null;
+      if (editorReturnsToImport) {
+        editorReturnsToImport = false;
+        browser.imports.resume();
+        importOpen = true;
+      }
     }}
   />
 {/if}
@@ -410,11 +418,16 @@
 {#if importOpen}
   <ImportBookmarksDialog
     imports={browser.imports}
+    bookmarks={browser.bookmarks}
     onClose={() => (importOpen = false)}
     onEditBookmark={(bookmarkId) => {
-      importOpen = false;
       editorExisting = browser.bookmarks.find((b) => b.id === bookmarkId) ?? null;
-      editorOpen = editorExisting !== null;
+      if (editorExisting === null) return;
+      // The editor takes the import list's place, and the list comes back
+      // when the editor closes, saved or not.
+      importOpen = false;
+      editorReturnsToImport = true;
+      editorOpen = true;
     }}
   />
 {/if}
