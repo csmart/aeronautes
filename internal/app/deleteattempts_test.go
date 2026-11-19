@@ -11,8 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-
-	"github.com/csmart/aeronautes/internal/deletion"
 )
 
 func deletionAttemptTestCache(t *testing.T) (string, string) {
@@ -31,7 +29,7 @@ func deletionAttemptTestCache(t *testing.T) (string, string) {
 	return cache, filepath.Join(cache, "aeronautes", "deletion-attempts")
 }
 
-func readDeletionAttempts(t *testing.T, path string) []deletion.UnindexedAttempt {
+func readDeletionAttempts(t *testing.T, path string) []deletionAttempt {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -40,13 +38,13 @@ func readDeletionAttempts(t *testing.T, path string) []deletion.UnindexedAttempt
 	if !bytes.HasSuffix(data, []byte("\n")) {
 		t.Fatal("evidence is not terminated JSONL")
 	}
-	var got []deletion.UnindexedAttempt
+	var got []deletionAttempt
 	for _, line := range bytes.Split(bytes.TrimSuffix(data, []byte("\n")), []byte("\n")) {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(line, &fields); err != nil || len(fields) != 2 || fields["name"] == nil || fields["detail"] == nil {
 			t.Fatalf("attempt fields=%v err=%v", fields, err)
 		}
-		var attempt deletion.UnindexedAttempt
+		var attempt deletionAttempt
 		if err := json.Unmarshal(line, &attempt); err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +55,7 @@ func readDeletionAttempts(t *testing.T, path string) []deletion.UnindexedAttempt
 
 func TestRetainDeletionAttemptsExactJSONL(t *testing.T) {
 	_, directory := deletionAttemptTestCache(t)
-	want := []deletion.UnindexedAttempt{
+	want := []deletionAttempt{
 		{Name: "", Detail: ""},
 		{Name: "../outside/provider-name", Detail: "cannot establish this attempt"},
 		{Name: "a/b%2Fc+ d", Detail: "500 quoted \"status\"\nsecond line\r\ttab\\slash"},
@@ -97,7 +95,7 @@ func TestRetainDeletionAttemptsExactJSONL(t *testing.T) {
 
 func TestRetainDeletionAttemptsEmptyCreatesNothing(t *testing.T) {
 	cache, directory := deletionAttemptTestCache(t)
-	for _, attempts := range [][]deletion.UnindexedAttempt{nil, {}} {
+	for _, attempts := range [][]deletionAttempt{nil, {}} {
 		if path, err := retainDeletionAttempts(attempts); path != "" || err != nil {
 			t.Fatalf("empty retention: path=%q err=%v", path, err)
 		}
@@ -120,7 +118,7 @@ func TestRetainDeletionAttemptsRefusesUnavailableCache(t *testing.T) {
 	default:
 		t.Setenv("XDG_CACHE_HOME", "relative-cache")
 	}
-	path, err := retainDeletionAttempts([]deletion.UnindexedAttempt{{Name: "issued"}})
+	path, err := retainDeletionAttempts([]deletionAttempt{{Name: "issued"}})
 	if path != "" || err == nil || !strings.Contains(err.Error(), "resolve deletion attempt cache") {
 		t.Fatalf("unavailable cache: path=%q err=%v", path, err)
 	}
@@ -137,7 +135,7 @@ func TestRetainDeletionAttemptsReportsBlockedDirectory(t *testing.T) {
 	if err := os.WriteFile(directory, []byte("sentinel"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path, err := retainDeletionAttempts([]deletion.UnindexedAttempt{{Name: "issued"}})
+	path, err := retainDeletionAttempts([]deletionAttempt{{Name: "issued"}})
 	if path != "" || err == nil || !strings.Contains(err.Error(), "create deletion attempt directory") {
 		t.Fatalf("blocked directory: path=%q err=%v", path, err)
 	}
@@ -157,7 +155,7 @@ func TestRetainDeletionAttemptsRefusesRelativeCache(t *testing.T) {
 		t.Setenv("XDG_CACHE_HOME", "")
 		t.Setenv("HOME", "relative-home")
 	}
-	path, err := retainDeletionAttempts([]deletion.UnindexedAttempt{{Name: "issued"}})
+	path, err := retainDeletionAttempts([]deletionAttempt{{Name: "issued"}})
 	if path != "" || err == nil || !strings.Contains(err.Error(), "location is not absolute") {
 		t.Fatalf("relative cache: path=%q err=%v", path, err)
 	}
@@ -179,7 +177,7 @@ func TestRetainDeletionAttemptsReportsFileCreationFailure(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	path, err := retainDeletionAttempts([]deletion.UnindexedAttempt{{Name: "issued"}})
+	path, err := retainDeletionAttempts([]deletionAttempt{{Name: "issued"}})
 	if path != "" || !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "create deletion attempt evidence") {
 		t.Fatalf("file creation failure: path=%q err=%v", path, err)
 	}
@@ -188,14 +186,14 @@ func TestRetainDeletionAttemptsReportsFileCreationFailure(t *testing.T) {
 func TestRetainDeletionAttemptsRefusesLossyJSON(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		attempt deletion.UnindexedAttempt
+		attempt deletionAttempt
 	}{
-		{"invalid name", deletion.UnindexedAttempt{Name: "issued\xff", Detail: "available"}},
-		{"invalid detail", deletion.UnindexedAttempt{Name: "issued", Detail: "detail\xff"}},
+		{"invalid name", deletionAttempt{Name: "issued\xff", Detail: "available"}},
+		{"invalid detail", deletionAttempt{Name: "issued", Detail: "detail\xff"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			deletionAttemptTestCache(t)
-			attempts := []deletion.UnindexedAttempt{{Name: "valid first", Detail: "available"}, test.attempt}
+			attempts := []deletionAttempt{{Name: "valid first", Detail: "available"}, test.attempt}
 			path, err := retainDeletionAttempts(attempts)
 			if path != "" || err == nil || !strings.Contains(err.Error(), "invalid UTF-8") {
 				t.Fatalf("lossy record advertised: path=%q err=%v", path, err)
@@ -212,7 +210,7 @@ func TestWriteDeletionAttemptsChecksClosedFile(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	err = writeDeletionAttempts(file, []deletion.UnindexedAttempt{{Name: "issued", Detail: "small buffered record"}})
+	err = writeDeletionAttempts(file, []deletionAttempt{{Name: "issued", Detail: "small buffered record"}})
 	if !errors.Is(err, os.ErrClosed) || !strings.Contains(err.Error(), "flush deletion attempts") || !strings.Contains(err.Error(), "close deletion attempt evidence") {
 		t.Fatalf("closed owned file: %v", err)
 	}
@@ -251,7 +249,7 @@ func TestWriteDeletionAttemptsBufferedIO(t *testing.T) {
 				if large {
 					detail = strings.Repeat("x", 16*1024)
 				}
-				attempts := []deletion.UnindexedAttempt{{Name: "issued", Detail: detail}}
+				attempts := []deletionAttempt{{Name: "issued", Detail: detail}}
 				err = writeDeletionAttempts(file, attempts)
 				if _, closeCheck := file.WriteString("must be closed"); !errors.Is(closeCheck, os.ErrClosed) {
 					t.Fatalf("writer left its owned handle usable: %v", closeCheck)
