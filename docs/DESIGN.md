@@ -2344,6 +2344,12 @@ Checkers                 64
 
 Always clean up the benchmark container and report cleanup failures.
 
+Cleanup is bounded to the benchmark's own 200 generated names, as defined by [ADR 0130](adr/0130-bounded-benchmark-cleanup.md).
+Record each attempted PUT and DELETE before sending it, never adopt listed names into cleanup, and never repeat an issued DELETE.
+An unresolved deletion retains the container and its exact attempted-name evidence; it cannot produce a successful phase or recommendation.
+The store's answer supplies the outcome without a post-delete read or a new sweep.
+This benchmark-specific replacement leaves product deletion records, historical accounting qualifiers and Mirror's planning and execution refusal intact.
+
 A benchmark writes real objects, so it must not run casually against a production bookmark on the strength of a special container name alone: require either a dedicated benchmark bookmark or a typed confirmation of the cluster name before it runs.
 
 ---
