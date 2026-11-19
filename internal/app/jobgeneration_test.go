@@ -71,6 +71,14 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 		start = func() (string, error) {
 			return service.StartBenchmark(t.Context(), BenchmarkRequestDTO{BookmarkID: source, Confirm: "AUTH_test"})
 		}
+	case "segments":
+		service := NewDeleteService(h.transfer.connections, h.transfer.jobs, h.transfer.runner, h.evidence)
+		seedSLO(h, "media", "scope/big.slo", "media_segments", map[string]string{"scope/0001": "contents"})
+		request := SegmentsDeleteRequestDTO{
+			BookmarkID: source, Container: "media", Name: "scope/big.slo", Confirm: "scope/big.slo", Force: true,
+			Reviewed: reviewOf(t, service, source, "media", "scope/big.slo"),
+		}
+		start = func() (string, error) { return service.DeleteManifestWithSegments(t.Context(), request) }
 	default:
 		t.Fatalf("unknown job kind %q", kind)
 	}
@@ -78,7 +86,7 @@ func generationJobStart(t *testing.T, h *harness, kind, source string) (func() (
 }
 
 func TestQueuedJobsKeepCredentialGenerations(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -135,7 +143,7 @@ func TestQueuedJobsKeepCredentialGenerations(t *testing.T) {
 }
 
 func TestFailedJobCreationReleasesGenerations(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)

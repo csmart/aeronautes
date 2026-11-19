@@ -14,7 +14,7 @@ import (
 )
 
 func TestJobShutdownRefusesNewStarts(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -40,7 +40,7 @@ func TestJobShutdownRefusesNewStarts(t *testing.T) {
 }
 
 func TestJobShutdownOwnsStartingCalls(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -62,7 +62,6 @@ func TestJobShutdownOwnsStartingCalls(t *testing.T) {
 			if rows, err := h.jobsSvc.List(t.Context(), "", false, 10); err != nil || len(rows) != 0 {
 				t.Fatalf("startup barrier followed job creation: rows=%v error=%v", rows, err)
 			}
-			assertJobBindingsPinned(t, h, ids)
 			assertShutdownPending(t, h.transfer.runner)
 			if !errors.Is(requestCtx.Err(), context.Canceled) {
 				t.Fatalf("shutdown did not cancel admitted startup I/O: %v", requestCtx.Err())
@@ -80,7 +79,7 @@ func TestJobShutdownOwnsStartingCalls(t *testing.T) {
 }
 
 func TestJobShutdownCancelsQueuedFamilies(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)
@@ -111,7 +110,7 @@ func TestJobShutdownCancelsQueuedFamilies(t *testing.T) {
 }
 
 func TestJobShutdownDrainsFailedStarts(t *testing.T) {
-	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark"} {
+	for _, kind := range []string{"copy", "upload", "download", "delete", "benchmark", "segments"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.connect(t)

@@ -365,6 +365,16 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 	if req.Confirm != req.Name {
 		return "", fmt.Errorf("confirmation does not match the object name — type it exactly")
 	}
+	owner, ctx, err := s.runner.admit(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer owner.finishStart()
+	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
+	if err != nil {
+		return "", err
+	}
+	owner.hold(releasePins)
 	session, err := s.connections.SessionFor(ctx, req.BookmarkID)
 	if err != nil {
 		return "", err
@@ -429,16 +439,6 @@ func (s *DeleteService) DeleteManifestWithSegments(ctx context.Context, req Segm
 		Planned: true, Admitted: true, ListedBytes: req.Reviewed.Length,
 		ListedETag: req.Reviewed.ETag, ListedSLO: detail.Class == swiftcontrol.ClassSLO,
 	}
-	owner, ctx, err := s.runner.admit(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer owner.finishStart()
-	releasePins, err := s.connections.pinForJob(ctx, req.BookmarkID)
-	if err != nil {
-		return "", err
-	}
-	owner.hold(releasePins)
 	// The manifest and a static object's reviewed entries are fixed names,
 	// checked now; a dynamic object's namespace is swept, so it is claimed
 	// like any sweep (ADR 0105 decision 3).
