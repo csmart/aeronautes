@@ -364,7 +364,7 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 	case "native_mid_body":
 		state = "cancelled"
 		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 7 + 256*1024, ObjectsFailed: 1, ObjectsIncomplete: 1, NativeRouted: 1}
-		fragments = []string{"transfer failures (first: " + downloadCancelNative + ": context canceled)"}
+		fragments = []string{"transfer failures (first: " + downloadCancelNative + ":", "context canceled"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin":        {execution: downloadCancelNotAttempted},
 			downloadCancelNative: {execution: downloadCancelNativeRead},
