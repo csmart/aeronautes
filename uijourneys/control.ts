@@ -63,5 +63,16 @@ export const control = {
   // Stops the application with no shutdown, as a crash does; the runner
   // starts it again as after quit.
   crash: () => endRun("/crash"),
-  teardown: (): Promise<{ failures: number }> => call("/teardown", {}),
+  // Starts the run's teardown and waits for its end: on a real store it can
+  // take longer than any one request may stay open.
+  teardown: async (): Promise<{ failures: number }> => {
+    await call("/teardown", {});
+    const deadline = Date.now() + 60 * 60 * 1000;
+    for (;;) {
+      const status = await call("/teardown-status", {});
+      if (status.done) return { failures: status.failures };
+      if (Date.now() > deadline) throw new Error("the run's teardown did not end within an hour");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  },
 };
