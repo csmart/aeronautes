@@ -55,13 +55,25 @@ const (
 	SkipUnsupportedAuth = "states an auth version Aeronautes does not offer"
 )
 
-// Read returns the accounts file describes. secure is the clouds.yaml
-// secure.yaml from the same folder, or nil; an rclone config ignores it.
-func Read(file, secure []byte) ([]Source, error) {
-	if len(file) > MaxFileSize || len(secure) > MaxFileSize {
+// Read returns the accounts file describes. loadSecure reads the optional
+// secure.yaml companion only after the content is identified as clouds YAML;
+// an unrelated companion must not prevent importing an rclone config.
+func Read(file []byte, loadSecure func() ([]byte, error)) ([]Source, error) {
+	if len(file) > MaxFileSize {
 		return nil, ErrTooLarge
 	}
 	if clouds, ok := parseClouds(file); ok {
+		var secure []byte
+		if loadSecure != nil {
+			var err error
+			secure, err = loadSecure()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(secure) > MaxFileSize {
+			return nil, ErrTooLarge
+		}
 		return readClouds(clouds, secure)
 	}
 	first := firstContentLine(file)

@@ -137,18 +137,17 @@ func (s *BookmarkImportService) PreviewImport(ctx context.Context) (ImportPrevie
 	if err != nil {
 		return ImportPreviewDTO{}, err
 	}
-	// The OpenStack clients read secure.yaml from beside clouds.yaml; an
-	// rclone config ignores it.
-	var secure []byte
-	if securePath := filepath.Join(filepath.Dir(picked[0]), "secure.yaml"); securePath != filepath.Clean(picked[0]) {
-		if secure, err = readBounded(securePath); errors.Is(err, os.ErrNotExist) {
-			secure, err = nil, nil
+	sources, err := bookmarkimport.Read(file, func() ([]byte, error) {
+		securePath := filepath.Join(filepath.Dir(picked[0]), "secure.yaml")
+		if securePath == filepath.Clean(picked[0]) {
+			return nil, nil
 		}
-		if err != nil {
-			return ImportPreviewDTO{}, err
+		secure, err := readBounded(securePath)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
 		}
-	}
-	sources, err := bookmarkimport.Read(file, secure)
+		return secure, err
+	})
 	if err != nil {
 		return ImportPreviewDTO{}, err
 	}
