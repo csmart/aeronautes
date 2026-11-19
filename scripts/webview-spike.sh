@@ -50,16 +50,21 @@ command -v Xvfb >/dev/null || {
 # binary's own listening sockets, which the sandbox does not change.
 
 XVFB_DISPLAY=":97"
-APP_LOG=$(mktemp -t aeronautes-spike.XXXXXX)
-XVFB_LOG=$(mktemp -t aeronautes-spike-xvfb.XXXXXX)
-remove_logs() { rm -f "$APP_LOG" "$XVFB_LOG"; }
+private="${XDG_CACHE_HOME:-$HOME/.cache}/aeronautes-spikes"
+mkdir -p "$private"
+chmod 700 "$private"
+private=$(mktemp -d "$private/run.XXXXXX")
+mkdir -p "$private/state"
+APP_LOG="$private/app.log"
+XVFB_LOG="$private/xvfb.log"
+echo "spike evidence: $private"
 # Everything this script starts is a process group the library owns, and the
 # trap stops all of them however this script ends — installed before the first
 # launch. This replaces a kill by pid plus a pkill over a command-line pattern:
 # the pattern was there because dbus-run-session does not pass a signal to its
 # child, which is precisely what signalling the GROUP does cover, and a pattern
 # matches any command line holding that path, including a caller's own.
-app_install_traps remove_logs
+app_install_traps
 
 app_start "$XVFB_LOG" Xvfb "$XVFB_DISPLAY" -screen 0 1280x800x24
 XVFB_GROUP="$APP_LAST_GROUP"
@@ -90,7 +95,8 @@ command -v dbus-run-session >/dev/null || {
 # The app's stdio goes to a scratch log, never to this script's pipeline:
 # any straggling child inheriting our stdout would otherwise hold a
 # caller's pipe open long after the spike is done.
-app_start "$APP_LOG" env DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" \
+app_start "$APP_LOG" env -u AERONAUTES_LOG_FILE DISPLAY="$XVFB_DISPLAY" WAYLAND_DISPLAY="" \
+	AERONAUTES_STATE_DIR="$private/state" \
 	dbus-run-session -- "$PWD/$BIN"
 APP_GROUP="$APP_LAST_GROUP"
 sleep 5
