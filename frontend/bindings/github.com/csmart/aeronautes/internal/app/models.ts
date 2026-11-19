@@ -1195,8 +1195,8 @@ export interface JobItemTotalsDTO {
     "failed": number;
 
     /**
-     * Incomplete is the names a cancellation stopped part-way, which Failed
-     * does not include (ADR 0129).
+     * Incomplete is the names a cancellation stopped part-way: the part of
+     * Failed that is not a real failure (ADR 0129).
      */
     "incomplete"?: number;
     "conflicts": number;
