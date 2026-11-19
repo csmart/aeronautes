@@ -18,7 +18,7 @@ func readOne(t *testing.T, file, secure string) map[string]Source {
 	if secure != "" {
 		secureBytes = []byte(secure)
 	}
-	sources, err := Read([]byte(file), secureBytes)
+	sources, err := Read([]byte(file), func() ([]byte, error) { return secureBytes, nil })
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestReadRefusesWhatIsNotAConfiguration(t *testing.T) {
 	if got["r"].Skip != "" || got["r"].Bookmark.AuthVersion != 1 {
 		t.Errorf("plain file behind a marker comment = %+v", got["r"])
 	}
-	if _, err := Read([]byte("clouds:\n  c: {}\n"), []byte("not: [yaml")); !errors.Is(err, ErrSecureFile) {
+	if _, err := Read([]byte("clouds:\n  c: {}\n"), func() ([]byte, error) { return []byte("not: [yaml"), nil }); !errors.Is(err, ErrSecureFile) {
 		t.Errorf("a broken secure.yaml = %v, want ErrSecureFile", err)
 	}
 }

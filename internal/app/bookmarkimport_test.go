@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/csmart/aeronautes/internal/bookmarkimport"
 )
 
 // importFixture writes an rclone.conf naming accounts on authURL and
@@ -94,7 +96,11 @@ func TestImportPreviewSaveAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newImportService(h, importFixture(t, h.authURL))
+	file := importFixture(t, h.authURL)
+	if err := os.Mkdir(filepath.Join(filepath.Dir(file), "secure.yaml"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := newImportService(h, file)
 
 	preview, err := s.PreviewImport(ctx)
 	if err != nil {
@@ -188,6 +194,49 @@ func TestImportPreviewSaveAndVerify(t *testing.T) {
 		if bytes.Contains(raw, []byte("not-the-key-41")) {
 			t.Fatalf("%s holds an imported key (K-SEC-003)", file)
 		}
+	}
+}
+
+func TestImportCloudsReadsItsSecureCompanion(t *testing.T) {
+	const cloud = "clouds:\n  imported:\n    region_name: RegionOne\n    auth:\n      auth_url: https://identity.example/v3\n      user_id: user-id\n      project_id: project-id\n"
+	for _, tc := range []struct {
+		name, secure                     string
+		directory, wantError, wantSecret bool
+	}{
+		{name: "missing"},
+		{name: "password", secure: "clouds:\n  imported:\n    auth:\n      password: private-fixture\n", wantSecret: true},
+		{name: "directory", directory: true, wantError: true},
+		{name: "too large", secure: strings.Repeat("#", bookmarkimport.MaxFileSize+1), wantError: true},
+		{name: "malformed", secure: "not: [yaml", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			dir := t.TempDir()
+			file := filepath.Join(dir, "accounts.config")
+			if err := os.WriteFile(file, []byte(cloud), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			secure := filepath.Join(dir, "secure.yaml")
+			if tc.directory {
+				if err := os.Mkdir(secure, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else if tc.secure != "" {
+				if err := os.WriteFile(secure, []byte(tc.secure), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			preview, err := newImportService(h, file).PreviewImport(t.Context())
+			if tc.wantError {
+				if err == nil || preview.Token != "" {
+					t.Fatalf("invalid companion produced a preview: %+v, %v", preview, err)
+				}
+				return
+			}
+			if err != nil || len(preview.Rows) != 1 || preview.Rows[0].State != "importable" || preview.Rows[0].HasSecret != tc.wantSecret {
+				t.Fatalf("cloud preview = %+v, %v", preview, err)
+			}
+		})
 	}
 }
 
