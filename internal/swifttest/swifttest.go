@@ -724,6 +724,9 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 	// clone it under the lock because the header loop below ranges it after
 	// the unlock, while another request's SetContainerMeta may write c.Meta.
 	snapshot.Meta = maps.Clone(c.Meta)
+	// Listing fields must describe these names even if another request
+	// replaces an object or deletes the container before encoding finishes.
+	snapshot.objects = maps.Clone(c.objects)
 	count := len(c.objects)
 	s.mu.Unlock()
 	sort.Strings(objectNames)
@@ -762,7 +765,7 @@ func (s *Server) handleContainer(w http.ResponseWriter, r *http.Request, name st
 		objectNames = append(append([]string(nil), objectNames...), stale...)
 		sort.Strings(objectNames)
 	}
-	s.writeObjectListing(w, r, name, objectNames)
+	s.writeObjectListing(w, r, snapshot.objects, objectNames)
 }
 
 // createContainer implements container PUT: create with storage policy
@@ -1317,7 +1320,7 @@ type listingRow struct {
 // naming a subdir group skips the whole group. Only an object named
 // exactly at the *query* prefix (no delimiter left in its remainder)
 // lists as an object row.
-func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, container string, names []string) {
+func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, objects map[string]Object, names []string) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 {
@@ -1358,9 +1361,7 @@ func (s *Server) writeObjectListing(w http.ResponseWriter, r *http.Request, cont
 				continue
 			}
 		}
-		s.mu.Lock()
-		o := s.containers[container].objects[name]
-		s.mu.Unlock()
+		o := objects[name]
 		rows = append(rows, listingRow{
 			Name:         name,
 			Bytes:        o.Bytes,
