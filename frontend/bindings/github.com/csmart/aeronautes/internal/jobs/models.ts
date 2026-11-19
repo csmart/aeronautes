@@ -11,8 +11,8 @@ export interface Counters {
     "objectsFailed": number;
 
     /**
-     * ObjectsIncomplete counts the names a cancellation stopped part-way,
-     * which ObjectsFailed does not include (ADR 0129).
+     * ObjectsIncomplete counts the names a cancellation stopped part-way: the
+     * part of ObjectsFailed that is not a real failure (ADR 0129).
      */
     "objectsIncomplete"?: number;
     "bytesPlanned": number;
