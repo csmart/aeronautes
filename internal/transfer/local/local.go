@@ -567,15 +567,9 @@ func PreflightDownloadBounded(ctx context.Context, src *swiftcontrol.Session, co
 	return PreflightDownloadIntoBounded(ctx, src, container, prefix, destination, objectCeiling)
 }
 
-// PreflightDownloadInto runs the same complete report through a held
-// destination handle, so the directory inspected is the directory the
-// job writes into whatever its pathname names later.
-func PreflightDownloadInto(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot) (report *DownloadPreflight, err error) {
-	return PreflightDownloadIntoBounded(ctx, src, container, prefix, destination, 0)
-}
-
-// PreflightDownloadIntoBounded is PreflightDownloadInto with the selection
-// ceiling of PreflightDownloadBounded.
+// PreflightDownloadIntoBounded keeps the preview tied to the held directory
+// even if its pathname is replaced. Its selection ceiling has the same
+// zero/unbounded meaning as PreflightDownloadBounded.
 func PreflightDownloadIntoBounded(ctx context.Context, src *swiftcontrol.Session, container, prefix string, destination *DestinationRoot, objectCeiling int64) (report *DownloadPreflight, err error) {
 	return PreflightDownloadMembersInto(ctx, src, container, prefix, destination, objectCeiling, nil)
 }
