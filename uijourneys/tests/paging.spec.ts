@@ -35,6 +35,24 @@ test("page a folder past the retention ceiling and back, and delete it", async (
     await expect(page.getByText(`keeps ${shown} rows`)).toBeVisible();
     await page.getByRole("button", { name: "Close settings" }).click();
   };
+  // Reconnect after the upload so its completion refresh cannot replace
+  // a page while this window is appending it (finding F83).
+  await openContainer(page, info.project.name, container);
+  await openFolder(page, folder);
+  const foot = page.locator(".pane-foot");
+  await expect(foot.getByText("1000 rows (more on server) · none selected", { exact: true })).toBeVisible();
+  await objectRow(page, names[0]).click();
+  await foot.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(foot.getByText("2000 rows · 1 selected", { exact: true })).toBeVisible();
+  await expect(objectRow(page, names[0])).toHaveAttribute("aria-selected", "true");
+  await expect(foot.getByRole("button", { name: "Load more", exact: true })).toHaveCount(0);
+  // The list is virtualised: filter to the final name instead of assuming
+  // all 2,000 options exist in the DOM.
+  await page.getByRole("textbox", { name: "Filter", exact: true }).fill(names.at(-1)!);
+  await expect(objectRow(page, names.at(-1)!)).toBeVisible();
+  await page.getByRole("textbox", { name: "Filter", exact: true }).fill("");
+  await expect(objectRow(page, names[0])).toBeVisible();
+
   await retention("1000", "1,000");
   try {
     // A fresh page: the one that started the upload re-reads the open view
@@ -42,7 +60,6 @@ test("page a folder past the retention ceiling and back, and delete it", async (
     // put the list back on its first rows (finding F83).
     await openContainer(page, info.project.name, container);
     await openFolder(page, folder);
-    const foot = page.locator(".pane-foot");
     await expect(foot.getByText(/1,000 rows loaded, the retention ceiling/)).toBeVisible();
     await objectRow(page, names[0]).click();
 
