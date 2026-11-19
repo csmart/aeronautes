@@ -64,6 +64,12 @@ func (s *Session) PutObject(ctx context.Context, container, name string, body io
 	return etagValue(respHeaders["Etag"]), nil
 }
 
+// DynamicManifestHeader escapes raw names once: Swift URL-decodes this
+// header before looking up the segments, including any literal %XX names.
+func DynamicManifestHeader(container, prefix string) string {
+	return (&url.URL{Path: container + "/" + prefix}).EscapedPath()
+}
+
 // StaticSegment is one whole object a static manifest names, with the
 // size and entity tag the store must find it at.
 type StaticSegment struct {
