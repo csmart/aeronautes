@@ -13,11 +13,14 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 | Go — fmt, vet, build, test (race) | Formatting, vet, application build, binding drift, Go race tests and isolated keychain protocol tests |
 | Frontend — lint, build, test | Type checking, frontend build and tests |
 | Integration — containerized Swift (SAIO) | Internal race tests against two Swift accounts with the pinned official rclone |
-| Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting to and browsing the mock account |
+| Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting and browsing; full mock browser journeys through the real frontend and Go services |
 | CI — all required jobs passed | Every preceding job completed with `success` |
 
-The smoke check proves desktop startup, connection and listing; it does not run a transfer.
-Transfer outcomes and independent byte checks belong to the service tests and [browser journeys](journeys.md).
+The native smoke proves desktop startup, connection and listing; it does not run a transfer.
+The same required job then runs all mock [browser journeys](journeys.md), including transfers and independent byte checks, with no cloud credentials.
+Browser journeys substitute the native dialogs and secret store; they do not prove native clipboard, keyring or dialog behaviour.
+They run serially without retries, and a focused `test.only` fails CI rather than silently reducing coverage.
+Failure details stay in the run's private directory; only journey names and outcomes enter the job log, and raw application logs are not uploaded.
 The aggregate uses `always()` so that a failed dependency cannot silently skip it.
 It refuses failed, cancelled, skipped or missing job results.
 Its shell regression test exercises each refusal for all four required jobs and runs in the aggregate job.

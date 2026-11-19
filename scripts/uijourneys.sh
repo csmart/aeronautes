@@ -2,7 +2,7 @@
 # UI journeys (ADR 0112): build the application in Wails server mode with the
 # uijourney stand-ins, run it on loopback with its state in a fresh directory,
 # and drive the real frontend from Chromium with Playwright, against the mock
-# and, when CLOUDS names a clouds.yaml, the two real clouds. Local only.
+# and, locally when CLOUDS names a clouds.yaml, the two real clouds.
 #
 # Everything that could name a provider, a host or an account goes to one
 # private directory under the user cache directory; the output names only
@@ -12,6 +12,10 @@
 #   scripts/uijourneys.sh --project=mock tests/slash.spec.ts
 #   scripts/uijourneys.sh --headed
 set -euo pipefail
+if [[ -n "${CI:-}" && -n "${CLOUDS:-}" ]]; then
+	echo "real-cloud UI journeys run locally only; CI uses the disposable mock" >&2
+	exit 1
+fi
 cd "$(dirname "$0")/.."
 
 private="${XDG_CACHE_HOME:-$HOME/.cache}/aeronautes-journeys/$(date -u +%Y%m%dT%H%M%SZ)-ui"
