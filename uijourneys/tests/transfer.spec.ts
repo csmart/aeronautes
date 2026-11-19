@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  armDelete, connect, digestOf, expect, expectInside, finish, inspector, localFolder, objectRow, openContainer, openFolder, openUpload,
+  armDelete, connect, digestOf, expect, expectInside, finish, inspector, lag, localFolder, objectRow, openContainer, openFolder, openUpload,
   ownContainer, typedDelete, writeFiles,
 } from "../helpers.ts";
 
@@ -215,7 +215,15 @@ test.describe.serial("transfer", () => {
   });
 
   test("delete an object, the prefix and the container", async ({ page }, info) => {
-    await openContainer(page, info.project.name, container);
+    const target = info.project.name;
+    const f = basename(folder);
+    // Neighbours each deletion before the container's must leave: a name
+    // that starts as the deleted object's does, a folder whose name starts
+    // as the deleted prefix's does, and an object at the container's top.
+    const neighbours = [`${f}/file00.bin.old`, `${f}x/file00.bin`, "top.bin"];
+    for (const name of neighbours) await control.put(target, container, name, "a neighbour that stays");
+    const inFolder = (names: string[]) => names.map((name) => `${f}/${name}`);
+    await openContainer(page, target, container);
     await openFolder(page, folder);
     await objectRow(page, "file00.bin").click();
     await inspector(page).getByRole("button", { name: "Delete object…" }).click();
@@ -226,14 +234,17 @@ test.describe.serial("transfer", () => {
     await words.fill((await words.getAttribute("placeholder"))!);
     await objectDialog.getByRole("button", { name: "Delete object" }).click();
     await expect(objectRow(page, "file00.bin")).toHaveCount(0);
+    await expect.poll(async () => (await control.names(target, container)).sort(), lag)
+      .toEqual([...inFolder(["file01.bin", "file02.bin"]), ...neighbours].sort());
 
     // The folder still holds the segmented file. The option that deletes its
     // segments after its manifest starts ticked (ADR 0120), and the words to
     // type name it.
     await page.getByRole("button", { name: "Delete prefix…" }).click();
     await typedDelete(page, "Delete prefix", "ticked");
-    await openContainer(page, info.project.name, container);
-    await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(0);
+    await expect.poll(async () => (await control.names(target, container)).sort(), lag)
+      .toEqual(neighbours.filter((name) => !name.startsWith(`${f}/`)).sort());
+    await openContainer(page, target, container);
 
     // The segments were in the container named after this one, which still
     // exists. The dialog says a container of that name exists, and once the
