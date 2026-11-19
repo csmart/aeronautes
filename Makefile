@@ -65,7 +65,7 @@ test-integration:
 	AERONAUTES_SAIO_AUTH_URL=$${AERONAUTES_SAIO_AUTH_URL:-http://127.0.0.1:8080/auth/v1.0} \
 		go test -race -count=1 -v ./internal/integration
 
-## rpm: build bin/aeronautes.rpm (nfpm; installable with dnf install ./bin/aeronautes.rpm)
+## rpm: build a versioned unsigned RPM in bin/ (see README for installation)
 rpm:
 	wails3 task linux:create:rpm
 
