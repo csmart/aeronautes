@@ -2342,7 +2342,8 @@ Delete engine    bulk-delete
 Checkers                 64
 ```
 
-Always clean up the benchmark container and report cleanup failures.
+Remove the benchmark container only after every name whose PUT was issued has a settled deletion answer.
+Retain it when a deletion is unresolved, and report cleanup failures.
 
 Cleanup is bounded to the benchmark's own 200 generated names, as defined by [ADR 0130](adr/0130-bounded-benchmark-cleanup.md).
 Record each attempted PUT and DELETE before sending it, never adopt listed names into cleanup, and never repeat an issued DELETE.
