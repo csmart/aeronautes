@@ -30,15 +30,17 @@ Layer 2, at the end of this page, drives the real frontend in a browser (ADR 011
 
 ## Journeys (each on both clouds, and across them where it says so)
 
-1. Upload a folder of small files and one file larger than the chunk size (segmented), then re-upload with overwrite acknowledged.
+1. Upload a folder of small files and one file larger than the chunk size (segmented) to one cloud (`TestCopyJourney`).
    The segmented file is chosen static in odd rounds and dynamic in even rounds, so two rounds or more cover both choices on both clouds (ADR 0111).
    A static choice is published static on the Swift cloud and dynamic on the Ceph RGW cloud, which does not return static manifests (decision 10).
-2. Copy a whole container from one cloud to the other, with two objects, one of them written in segments, carrying metadata of their own that has to arrive with them, and run the same copy again, which has to write nothing; copy a selection of two of N; copy within a container into a subfolder; copy a folder up to the container's top.
-3. Download a folder, a selection and a large object; compare every file's digest with the source, and check that the folder the copy is downloaded into holds the files and nothing else.
-4. Edit object and container metadata and the run's own account metadata key, and read them back; set and clear a read ACL on the run's container with the acknowledgement.
-5. Delete one object, a marker, a manifest with its segments, a selection, a prefix, a container's contents and the container.
-6. Switch between the two bookmarks repeatedly; check that the listing and remembered settings follow the account and that no sign-in repeats.
-7. Settings: save, restart the services over the same temporary files, read back; export and restore the backup, inside the temporary directory.
+2. Copy that container to the other cloud, with metadata of their own that has to arrive with the objects, and the same copy again, which has to write nothing; copy two selected files (`TestCopyJourney`); within a cloud, copy a folder to a sibling folder, up to the container's top, and two selected files into a folder inside their own (`TestCopyWithinJourney`).
+3. Download the copy back and compare every file's digest with the source, and check the folder holds those files and nothing else (`TestCopyJourney`).
+4. Edit object and container metadata and the run's own account metadata key, and read them back; set and clear a read ACL with the acknowledgement (`TestMetadataJourney`).
+5. Delete one object, a selection, a prefix, a container's contents and the container, checking after each that exactly what was meant is gone and everything else is still there (`TestDeleteJourney`).
+6. Switch between the two bookmarks repeatedly; check that the listing and remembered settings follow the account (`TestSwitchJourney`).
+
+Settings saved, read back after a restart, backed up and restored are tested by the browser journeys on the mock and by the Go tests, not here.
+Re-uploading with the overwrite acknowledged, downloading a selection or a large object alone, and deleting a marker, a manifest or segments are browser journeys.
 
 Each journey runs `REPEAT` times (default 3) so intermittent store faults, like the 502 on a large copy, show up as a count rather than a one-off.
 
@@ -88,7 +90,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Containers | the closed "Possible backstage" group and the segment-store caution | find a container named like a segment store behind its heading | the row is absent until the group is opened; the caution is read as a mark on the path's row and in the delete dialog |
 | Containers | the All view, and "Scan" over every loaded container | scan every container in the All view | the count the scan reaches is the number of rows, and no row is left marked "not read" |
 | Containers | a settings badge and its tooltip, across a bookmark switch | give a container CORS origins and keep its badge across a switch | the "cors" badge's tooltip names CORS and when it was observed, before and after switching away and back (mock: a second bookmark of the same account) |
-| Containers | the Backstage mode; load more containers; stopping a scan | not yet | |
+| Containers | load more containers; stopping a scan | not yet: read-only, and container listing pages are tested in Go | |
 | Listing | open a folder and go up | upload a folder with a segmented file and browse it | the uploaded names are listed |
 | Listing | the "/" folder at a container's top, and an upload into a typed prefix | see the slash folder at the top of a container | the folder, and the upload inside it, are listed |
 | Listing | the next page past the retention ceiling, and back to the start (mock only) | page a folder past the retention ceiling and back | the 1,001st name shows in place of the first thousand with nothing selected, a folder of exactly 2,000 offers no further page, and the first name returns |
@@ -156,7 +158,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Delete | an object and a large object where the container keeps history, with no segments option offered | a history location keeps what is deleted, and every segment (Swift cloud only) | the run's own session finds each in the archive with its deletion marker, and every segment still listed |
 | Delete | a container that keeps history, then its archive with the option ticked | a history location keeps what is deleted, and every segment; deleting the archive takes the versions and their segments (Swift cloud only) | the archive holds what the container held and every segment is still listed; then neither container is listed and no segment is |
 | Delete | "Empty container…" from a container's menu | find a container named like a segment store behind its heading | the dialog opens with the caution; nothing is sent |
-| Delete | the segments option in another container's archive; a selection's segments option | not yet; layer 1 journey 5 | |
+| Delete | the segments option in another container's archive; a selection's segments option | not yet | |
 | Delete | a marker | delete a marker and a manifest, and keep what they hold | the run's own listing holds the objects under it and not the marker |
 | Delete | one large object's manifest with the segments option unticked | delete a marker and a manifest, and keep what they hold | the run's own listing of the segments container is unchanged |
 | Delete | the wrong words refused by the prefix, empty and delete-container dialogs; "Empty container…" carried through; counts after emptying | refuse the wrong words for each container deletion, and empty a container | each button stays disabled; the run's own listing is empty and the container stays; inspector and row counts read 0 within 30 s without refresh |
@@ -172,4 +174,6 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Settings | the default profile reaches the upload dialog | start the upload dialog at the default profile | a fresh upload dialog's Profile is balanced |
 | Settings | connection cap 1 (mock only) | browse and inspect under a connection cap of one | a session opened under the cap lists the container and inspects each object |
 | Window | the welcome dialog; credential status; use by keyboard alone | not yet | |
+| Jobs | the benchmark | not offered in this release (v1Offers.benchmark is off); tested in Go | |
+| Recent changes | search the audit trail and "Export log…" | not yet | |
 | Window | the status bar's bookmark, the About link and the About dialog | the status bar and the About dialog | "connected to" and the bookmark; the version line's twelve characters and its hover text are the checkout's revision |
