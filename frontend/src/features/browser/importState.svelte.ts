@@ -18,6 +18,7 @@ export class ImportState {
   // must show.
   #onChanged: () => void;
   #following: ReturnType<typeof setTimeout> | null = null;
+  #followGeneration = 0;
 
   constructor(api: Api, onChanged: () => void) {
     this.#api = api;
@@ -91,15 +92,16 @@ export class ImportState {
 
   /** Stop following; Go's verification goes on and its flags still land. */
   stop() {
+    this.#followGeneration++;
     if (this.#following !== null) clearTimeout(this.#following);
     this.#following = null;
   }
 
-  #follow(token: string) {
+  #follow(token: string, generation = this.#followGeneration) {
     this.#following = setTimeout(async () => {
       try {
         const result = await this.#api.importStatus(token);
-        if (this.#following === null) return;
+        if (generation !== this.#followGeneration) return;
         this.result = result;
         if (result.done) {
           this.#following = null;
@@ -107,11 +109,12 @@ export class ImportState {
           return;
         }
       } catch (error) {
+        if (generation !== this.#followGeneration) return;
         this.error = messageOf(error);
         this.#following = null;
         return;
       }
-      this.#follow(token);
+      this.#follow(token, generation);
     }, followEveryMs);
   }
 }
