@@ -115,7 +115,7 @@ func TestCredentialStatusDTOReportsUnverifiedWork(t *testing.T) {
 	ctx := t.Context()
 	// The pass after the delete must leave the row for this test to have
 	// work to report: the fixture answers the removal as unresolved.
-	f.recorded.deleteErr = fmt.Errorf("%w: the fixture held the key", secrets.ErrUnresolved)
+	f.recorded.deleteErr = fmt.Errorf("%w: private-fixture-key at %s", secrets.ErrUnresolved, f.ref)
 	if err := f.service.Delete(ctx, f.id); err != nil {
 		t.Fatal(err)
 	}
@@ -127,8 +127,8 @@ func TestCredentialStatusDTOReportsUnverifiedWork(t *testing.T) {
 	if own.Retired != 1 || own.Unverified != 0 {
 		t.Fatalf("the recording authority reported its own work as unconfirmed: %+v", own)
 	}
-	if !strings.Contains(own.CleanupReason, "the fixture held the key") {
-		t.Fatalf("the status does not say why cleanup left the row: %+v", own)
+	if own.CleanupReason != "credential operation unresolved" {
+		t.Fatalf("the status must give the local category without backend material: %+v", own)
 	}
 
 	other := NewBookmarkService(f.otherAuthority(), nil, nil)
