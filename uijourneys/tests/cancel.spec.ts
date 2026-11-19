@@ -2,7 +2,7 @@ import { test, type Locator, type Page } from "@playwright/test";
 import { readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
-import { armDelete, digestOf, expect, finish, localFolder, openContainer, ownContainer, sha256, uploadFolder, writeFiles } from "../helpers.ts";
+import { armDelete, digestOf, expect, finish, localFolder, openContainer, ownContainer, sha256, terminalJobLabel, uploadFolder, writeFiles } from "../helpers.ts";
 
 // Jobs on the mock finish in moments, so a job that has to be caught running
 // is held back by its own per-job bandwidth limit: the 2 MiB file at a few
@@ -62,10 +62,10 @@ async function cancel(page: Page, id: string): Promise<void> {
   await page.goto("/");
   await openDrawer(page);
   const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
-  if (!/^(complete|partial|cancelled|cancelled, incomplete|failed)$/.test((await badge(page, id).textContent()) ?? "")) {
+  if (!terminalJobLabel.test((await badge(page, id).textContent()) ?? "")) {
     await row.getByRole("button", { name: "Cancel", exact: true }).click();
   }
-  await expect(badge(page, id)).toHaveText(/^(complete|partial|cancelled|cancelled, incomplete|failed)$/, { timeout: 2 * 60 * 1000 });
+  await expect(badge(page, id)).toHaveText(terminalJobLabel, { timeout: 2 * 60 * 1000 });
 }
 
 // Store visibility can precede the engine's answer (F80). Wait for that
