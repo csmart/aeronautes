@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -1312,21 +1311,6 @@ func provenDistinctAccounts(a, b string) bool {
 // and is compared as possibly any account.
 func distinctAccounts(idA, idB string) bool {
 	return idA != "" && idB != "" && idA != idB
-}
-
-// canonicalEndpoint normalizes a storage URL for identity comparison:
-// scheme+host (lowercased, default ports dropped) + path without a
-// trailing slash — two bookmarks naming one account through cosmetic
-// URL differences still count as the same target.
-func canonicalEndpoint(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return strings.TrimSuffix(raw, "/")
-	}
-	host := strings.ToLower(u.Host)
-	host = strings.TrimSuffix(host, ":443")
-	host = strings.TrimSuffix(host, ":80")
-	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimSuffix(u.Path, "/")
 }
 
 // InterruptedItemFactsDTO is the acknowledged item ledger for one interrupted

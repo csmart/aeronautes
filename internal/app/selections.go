@@ -210,17 +210,6 @@ func (s *selectionStore) takeSources(token string, want selectionScope) ([]local
 	return sources, nil
 }
 
-// getDir returns the exact picker spelling for display and records.
-func (s *selectionStore) getDir(token string, want selectionScope) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entry, err := s.resolve(token, selectionDownload, want)
-	if err != nil {
-		return "", err
-	}
-	return entry.dir, nil
-}
-
 // leaseDir derives a handle for a read-only report, beside the exact
 // spelling. The caller owns the derived handle until it closes it, and
 // the selection stays available for the start that follows. A pick that
