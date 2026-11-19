@@ -61,6 +61,7 @@ pids+=($!)
 # asked for is not restarted, so a crash still fails the journeys after it.
 start_app() {
 	env -u WAILS_SERVER_HOST -u WAILS_SERVER_PORT \
+		-u AERONAUTES_STATE_DIR -u AERONAUTES_LOG_FILE \
 		HOME="$state/home" XDG_CONFIG_HOME="$state/config" XDG_DATA_HOME="$state/data" \
 		XDG_STATE_HOME="$state/state" XDG_CACHE_HOME="$state/cache" \
 		ORACLE_CLOUDS="${CLOUDS:-}" AERONAUTES_UIJOURNEY_LISTEN="$1" \

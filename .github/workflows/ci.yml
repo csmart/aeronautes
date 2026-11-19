@@ -66,6 +66,8 @@ jobs:
         run: make verify-swift-source
       - name: Test Swift diagnostic collection
         run: python3 scripts/saio-diagnostics-test.py
+      - name: Test application launcher isolation
+        run: python3 scripts/launcher-isolation-test.py
       - name: Test Swift logging startup
         run: python3 scripts/saio-start-test.py
       - name: Test Swift storage admission

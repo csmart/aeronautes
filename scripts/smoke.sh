@@ -82,7 +82,7 @@ printf 'wrapper=%s WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=%s\n' \
 # its own owned group. Sets APP_LAST_GROUP; never call it in a subshell.
 start_app() {
   local log="$1"; shift
-  app_start "$log" env "${APP_ENV[@]}" "$@" "${APP_WRAPPER[@]}" ./bin/aeronautes
+  app_start "$log" env -u AERONAUTES_LOG_FILE "${APP_ENV[@]}" "$@" "${APP_WRAPPER[@]}" ./bin/aeronautes
 }
 
 # log_saw <file> <pattern> <seconds>: wait for a line to appear in a log. The
