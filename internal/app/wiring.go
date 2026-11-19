@@ -70,12 +70,6 @@ func BenchmarkScale(s *BenchmarkService, objects int, levels []int) {
 	s.setScale(objects, levels)
 }
 
-// WireRecommendationSource attaches the benchmark store's per-bookmark
-// recommendation lookup.
-func WireRecommendationSource(s *TransferService, f func(bookmarkID string) *TransferSettingsDTO) {
-	s.setRecommendationSource(f)
-}
-
 // WireBenchmarkRecommendations connects the benchmark store's lookup to
 // the transfer service — composition, never a bridge method.
 func WireBenchmarkRecommendations(ts *TransferService, bench *BenchmarkService) {
