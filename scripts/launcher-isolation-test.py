@@ -22,6 +22,30 @@ def command(source, prefix):
 
 
 class LauncherIsolation(unittest.TestCase):
+    def test_socket_check_requires_successful_observation(self):
+        source = (SCRIPTS / "webview-spike.sh").read_text()
+        guard = source[source.index("PIDS=$(pgrep"):]
+        for name, pids, process_status, sockets, socket_status, accepted in (
+            ("no listeners", "123\n456", 0, "", 0, True),
+            ("other process", "123\n456", 0, 'users:(("other",pid=789,fd=3))', 0, True),
+            ("owned listener", "123\n456", 0, 'users:(("helper",pid=456,fd=3))', 0, False),
+            ("socket tool failed", "123", 0, "", 127, False),
+            ("partial socket result", "123", 0, "partial output", 1, False),
+            ("process tool failed", "", 1, "", 0, False),
+            ("empty process set", "", 0, "", 0, False),
+        ):
+            with self.subTest(case=name):
+                env = dict(os.environ, PROBE_PIDS=pids, PROCESS_STATUS=str(process_status),
+                           PROBE_SOCKETS=sockets, SOCKET_STATUS=str(socket_status))
+                result = subprocess.run(["bash", "-c", """
+set -euo pipefail
+APP_GROUP=123
+pgrep() { printf '%s' "$PROBE_PIDS"; return "$PROCESS_STATUS"; }
+ss() { printf '%s' "$PROBE_SOCKETS"; return "$SOCKET_STATUS"; }
+""" + guard], env=env, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+                self.assertEqual("PASS:" in result.stdout, accepted)
+
     def test_application_paths_belong_to_the_run(self):
         for launcher in ("uijourneys", "webview-spike", "smoke"):
             with self.subTest(launcher=launcher), tempfile.TemporaryDirectory() as directory:
