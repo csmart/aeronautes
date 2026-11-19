@@ -17,6 +17,7 @@ The audit trail keeps a deleted bookmark's id as plain text and labels it unavai
 1. **A bookmark with finished jobs can be deleted.**
    Its complete, partial, cancelled and failed jobs stay in the job history with everything they recorded: their route, counts, items and errors.
    Their link to the deleted bookmark is cleared, so they show no bookmark and the drawer's account filter lists them under all accounts only.
+   Single-job and item reads accept an empty bookmark only for a finished job whose two bookmark links are empty; when one link remains, the caller must name that bookmark.
    Such a copy job is not re-run: re-running it is refused in words, since it has no bookmark to run against, and a new copy is started instead.
 2. **A running, queued or paused job still refuses the deletion**, with ADR 0015's words naming how many jobs use it.
 3. **The bookmark's benchmark result goes with it**: it describes the deleted bookmark's endpoint and nothing else reads it.

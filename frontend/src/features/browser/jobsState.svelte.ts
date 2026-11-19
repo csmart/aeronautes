@@ -139,8 +139,13 @@ export class JobsState {
 
   async get(jobId: string, bookmarkId: string) {
     const job = await this.#api.job(jobId, bookmarkId);
-    if (job && (job.id !== jobId || !bookmarkId
-      || (job.sourceBookmarkId !== bookmarkId && job.destBookmarkId !== bookmarkId))) {
+    if (!job) return job;
+    // ADR 0128 keeps finished history after both bookmark links are cleared.
+    const matchesAccount = bookmarkId
+      ? job.sourceBookmarkId === bookmarkId || job.destBookmarkId === bookmarkId
+      : !job.sourceBookmarkId && !job.destBookmarkId
+        && ["complete", "partial", "cancelled", "failed"].includes(job.state);
+    if (job.id !== jobId || !matchesAccount) {
       throw new Error("job does not match the requested account and identity");
     }
     return job;
