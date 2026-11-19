@@ -47,6 +47,40 @@ function entryIndex(f: Fixture, name: string): number {
 }
 
 describe("live reader generation acceptance", () => {
+  it.each([false, true])("discards container facts after switching bookmarks (switch back: %s)", async (switchBack) => {
+    const f = await connected();
+    const other = await f.state.saveBookmark({ ...f.bookmark, id: "", displayName: "Other account" }, "testing");
+    const detail = await f.api.containerDetail("fixtures", f.bookmark.id);
+    const old = { ...detail, settings: { ...detail.settings, versioningMode: "history_location", versioningArchive: "old-archive" } };
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const read = f.api.containerDetail;
+    f.api.containerDetail = async (name, bookmarkId) => {
+      if (name === "fixtures" && bookmarkId === f.bookmark.id) {
+        await held;
+        return old;
+      }
+      return read(name, bookmarkId);
+    };
+    f.state.containers = f.state.containers.map((row) => ({ ...row, settings: null }));
+    const pending = f.state.containerFacts("fixtures");
+    await f.state.connect(other.id);
+    if (switchBack) await f.state.connect(f.bookmark.id);
+    expect(f.state.account?.scope.generation).toBe(1);
+    const before = f.state.containers.find((row) => row.name === "fixtures")?.settings;
+    release();
+    expect(await pending).toBeNull();
+    expect(f.state.containers.find((row) => row.name === "fixtures")?.settings).toEqual(before);
+  });
+
+  it("publishes container facts while the original connection is current", async () => {
+    const f = await connected();
+    f.state.containers = f.state.containers.map((row) => ({ ...row, settings: null }));
+    const facts = await f.state.containerFacts("fixtures");
+    expect(facts?.generation).toBe(1);
+    expect(f.state.containers.find((row) => row.name === "fixtures")?.settings).toEqual(facts);
+  });
+
   it("accepts detail, manifest and segment replies of the held generation", async () => {
     const f = await connected();
     f.state.select(entryIndex(f, "external-slo")); await settle();

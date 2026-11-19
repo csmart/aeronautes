@@ -2058,11 +2058,12 @@ export class BrowserState {
 
   /** A settings fact is shown only under the connection generation it was
    * observed in, as the backend store already keeps it (ADR 0071 decision
-   * 3): the reply's scope must be this account's current generation and the
+   * 3): the reply must name this bookmark and its current generation, and the
    * fact must carry that same generation. */
   #factCurrent(detail: ContainerDetailDTO): boolean {
-    const generation = this.account?.scope.generation;
-    return generation !== undefined && detail.scope.generation === generation && detail.settings.generation === generation;
+    const portrait = this.account?.scope;
+    return portrait != null && this.#readerScopeMatches(detail.scope, this.connectedBookmarkId ?? "", portrait)
+      && detail.settings.generation === portrait.generation;
   }
 
   /** Fold one HEAD's facts into the loaded row for that container, so a
@@ -2511,9 +2512,11 @@ export class BrowserState {
     if (row?.settings) return row.settings;
     const bookmarkId = this.connectedBookmarkId;
     if (!bookmarkId) return null;
+    const connection = this.#connectionRevision;
     try {
       const detail = await this.#api.containerDetail(container, bookmarkId);
-      if (detail.name === container && this.#answeredBy(detail.scope, bookmarkId) && this.#factCurrent(detail)) {
+      if (this.connecting || connection !== this.#connectionRevision) return null;
+      if (detail.name === container && this.#factCurrent(detail)) {
         this.#applySettings(container, detail.settings);
         return detail.settings;
       }
