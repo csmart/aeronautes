@@ -27,11 +27,10 @@ type jobRunner struct {
 	// the constant itself so TestJobCeilingSurvivesResize can still raise
 	// a runner and exercise the resize machinery; see setMaxActiveJobs.
 	ceiling int
-	// queueCapacity bounds the jobs that may wait behind the active
-	// slots (ADR 0074 decision 2): admit refuses a start when as many
-	// owners are already waiting for a slot. queued counts them: owners
-	// inside acquireSlot's wait, not owners still in their start phase,
-	// so a burst of concurrent starts is admitted as before.
+	// queueCapacity bounds waiting work (ADR 0074 decision 2). Admission
+	// also bounds all owners by capacity plus queueCapacity, so startup and
+	// final cleanup cannot retain unbounded resources outside the slot wait.
+	// queued counts only owners inside acquireSlot's wait.
 	queueCapacity int
 	queued        int
 	// paused counts the runs parked at a unit boundary (ADR 0104). A parked
@@ -159,6 +158,9 @@ func (r *jobRunner) admit(ctx context.Context) (*jobOwner, context.Context, erro
 			return nil, nil, fmt.Errorf("%w: %d running and %d waiting or paused; wait for one to finish, resume one or cancel one", errJobQueueFull, r.active, held)
 		}
 		return nil, nil, fmt.Errorf("%w: %d running and %d waiting; wait for one to finish or cancel one", errJobQueueFull, r.active, held)
+	}
+	if held := len(r.owners); held >= r.capacity+r.queueCapacity {
+		return nil, nil, fmt.Errorf("%w: %d jobs already admitted; wait for one to finish or cancel one", errJobQueueFull, held)
 	}
 	startCtx, cancelStart := context.WithCancel(ctx)
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))

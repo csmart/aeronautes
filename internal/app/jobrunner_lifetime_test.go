@@ -132,7 +132,7 @@ func TestJobShutdownConcurrentAdmission(t *testing.T) {
 			owner, _, err := runner.admit(t.Context())
 			if owner != nil {
 				owners <- owner
-			} else if !errors.Is(err, errJobRunnerStopped) {
+			} else if !errors.Is(err, errJobRunnerStopped) && !errors.Is(err, errJobQueueFull) {
 				errorsSeen <- err
 			}
 		})
