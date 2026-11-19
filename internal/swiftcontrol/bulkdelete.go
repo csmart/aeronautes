@@ -3,6 +3,7 @@ package swiftcontrol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -192,7 +193,8 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		ResponseBody   json.RawMessage `json:"Response Body"`
 	}
 	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, fmt.Errorf("bulk-delete response: %w", err)
+		// Decoder errors can quote a provider value, including a reflected key.
+		return nil, errors.New("bulk-delete response has invalid JSON or field values")
 	}
 	result := &BulkDeleteResult{}
 	if decoded.NumberDeleted != nil {

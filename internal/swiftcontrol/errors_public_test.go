@@ -173,3 +173,29 @@ func TestNormalizePublicHTTPTransactionID(t *testing.T) {
 		})
 	}
 }
+
+func TestBulkDeleteMalformedCounterWithholdsProviderText(t *testing.T) {
+	const secret = "123456789012345678901234567890"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/auth/") {
+			w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+			w.Header().Set("X-Auth-Token", secret)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"Number Deleted":   json.Number(r.Header.Get("X-Auth-Token")),
+			"Number Not Found": 0, "Response Status": "200 OK", "Errors": [][]string{},
+		}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	result, err := mustSession(t, server.URL).BulkDelete(t.Context(), "media", []string{"a"})
+	if result != nil || err == nil {
+		t.Fatalf("malformed counter was accepted: %+v %v", result, err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("decoder exposed provider text: %v", err)
+	}
+}
