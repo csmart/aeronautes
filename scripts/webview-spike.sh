@@ -118,8 +118,20 @@ app_leader_running "$APP_GROUP" || {
 # socket belonging to them. The group is more precise than a name pattern: it
 # cannot pick up another run's processes, and it cannot miss a helper whose name
 # changes.
-PIDS=$(pgrep -g "$APP_GROUP" | paste -sd'|' -)
-LISTENERS=$(ss -tulnp 2>/dev/null | grep -E "pid=(${PIDS})," || true)
+PIDS=$(pgrep -g "$APP_GROUP") || {
+	echo "FAIL: could not observe the shell's process group"
+	exit 1
+}
+[ -n "$PIDS" ] || {
+	echo "FAIL: the shell's process group is empty"
+	exit 1
+}
+PIDS=$(printf '%s\n' "$PIDS" | paste -sd'|' -)
+SOCKETS=$(ss -tulnp) || {
+	echo "FAIL: could not inspect listening sockets"
+	exit 1
+}
+LISTENERS=$(grep -E "pid=(${PIDS})," <<<"$SOCKETS" || true)
 if [ -n "$LISTENERS" ]; then
 	echo "FAIL: production shell exposes listening sockets (§55):"
 	echo "$LISTENERS"
