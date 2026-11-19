@@ -11,9 +11,7 @@ func TestRemainingReadsAreAccountScoped(t *testing.T) {
 	h := New(t)
 	ctx := t.Context()
 
-	const shared = "l11-remain"
-	h.rawPut(h.Primary, "/"+shared, nil, nil)
-	t.Cleanup(func() { h.purge(h.Primary, shared) })
+	shared := h.Container(h.Primary, "l11-remain")
 	h.rawPut(h.Secondary, "/"+shared, nil, nil)
 	t.Cleanup(func() { h.purge(h.Secondary, shared) })
 	h.rawPut(h.Primary, "/"+shared+"/only-in-primary", []byte("p"), nil)

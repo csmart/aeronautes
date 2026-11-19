@@ -17,9 +17,7 @@ func TestListingReadsAreAccountScoped(t *testing.T) {
 
 	// One container name in BOTH accounts holding different objects, which
 	// is ordinary: container names are per-account and collide in general.
-	const shared = "l11-shared"
-	h.rawPut(h.Primary, "/"+shared, nil, nil)
-	t.Cleanup(func() { h.purge(h.Primary, shared) })
+	shared := h.Container(h.Primary, "l11-shared")
 	h.rawPut(h.Secondary, "/"+shared, nil, nil)
 	t.Cleanup(func() { h.purge(h.Secondary, shared) })
 	h.rawPut(h.Primary, "/"+shared+"/only-in-primary", []byte("p"), nil)
@@ -27,9 +25,7 @@ func TestListingReadsAreAccountScoped(t *testing.T) {
 	// A second container on the primary, so a one-row page has a row after
 	// it and so a next marker, whatever else the account holds: a page that
 	// ends the listing has none (ADR 0074 decision 6).
-	const second = "l11-second"
-	h.rawPut(h.Primary, "/"+second, nil, nil)
-	t.Cleanup(func() { h.purge(h.Primary, second) })
+	h.Container(h.Primary, "l11-second")
 
 	connect := func(t *testing.T, id, label string) {
 		t.Helper()
