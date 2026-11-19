@@ -45,6 +45,24 @@ test.describe.serial("segments without versioning", () => {
     for (const upload of uploads) {
       await openContainer(page, target, container);
       await openFolder(page, upload.folder);
+      await objectRow(page, "file00.bin").click();
+      const shown = inspector(page).locator(".segments tbody tr td:nth-child(2)");
+      await expect(shown).toHaveText(upload.segments.map((name) =>
+        upload.kind === "static" ? `${sidecar}/${name}` : name));
+      await inspector(page).getByRole("button", { name: "Open segments backstage" }).click();
+      await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: sidecar, exact: true })).toBeVisible();
+      await expect(page.getByRole("note", { name: /^Backstage: segments of / })).toContainText("Backstage");
+      // The engine's DLO prefix has no trailing slash, so the hierarchy
+      // first offers its directory; an exact SLO opens that directory.
+      if (upload.kind === "dynamic") {
+        const directory = upload.segments[0].slice(0, upload.segments[0].lastIndexOf("/"));
+        await openFolder(page, directory);
+      }
+      await expect(page.getByRole("listbox", { name: "Objects" }).getByRole("option")).toHaveCount(segmentsOfLarge);
+      for (const name of upload.segments) await expect(objectRow(page, basename(name))).toBeVisible();
+      await expect(page.getByRole("button", { name: "Upload…", exact: true })).toBeDisabled();
+      await openContainer(page, target, container);
+      await openFolder(page, upload.folder);
       const dialog = await openManifestDelete(page, "file00.bin", upload.kind);
       await expect(dialog.getByRole("checkbox")).toBeChecked();
       const confirm = dialog.getByLabel("Type the object name to arm it:");
