@@ -152,6 +152,9 @@ func (st *Store) publicationResult(ctx context.Context, previous, proposed recor
 }
 
 func samePublication(a, b record) bool {
+	// Verification status has its own writer and does not change the binding
+	// or revision. It cannot decide whether this publication committed.
+	a.VerifyFailure, b.VerifyFailure = "", ""
 	return a.Bookmark == b.Bookmark && a.ref == b.ref && a.origin == b.origin &&
 		a.generation == b.generation && a.revision == b.revision
 }
