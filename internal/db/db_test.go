@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -78,6 +80,60 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	if first != second {
 		t.Fatalf("re-open re-applied migrations: %d then %d", first, second)
+	}
+}
+
+func TestOpenUsesLiteralPaths(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	for i, name := range []string{
+		"state?tail.sqlite", "state#tail.sqlite", "state%2ftail.sqlite",
+		"state%00tail.sqlite", "résumé + data.sqlite", "folder?part/state.sqlite",
+	} {
+		for j, relative := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/relative=%t", name, relative), func(t *testing.T) {
+				if runtime.GOOS == "windows" && strings.ContainsRune(name, '?') {
+					t.Skip("Windows does not permit question marks in filenames")
+				}
+				want := filepath.Join(root, fmt.Sprintf("%d-%d", i, j), filepath.FromSlash(name))
+				if err := os.MkdirAll(filepath.Dir(want), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				path := want
+				if relative {
+					var err error
+					path, err = filepath.Rel(root, want)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				d, err := Open(t.Context(), path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer d.Close()
+				var actual string
+				if err := d.Reader().QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&actual); err != nil {
+					t.Fatal(err)
+				}
+				requested, err := os.Stat(want)
+				if err != nil {
+					t.Fatalf("requested database missing: %v (SQLite opened %q)", err, actual)
+				}
+				opened, err := os.Stat(actual)
+				if err != nil || !os.SameFile(requested, opened) {
+					t.Fatalf("SQLite opened %q instead of %q: %v", actual, want, err)
+				}
+			})
+		}
+	}
+}
+
+func TestOpenRefusesNULInPath(t *testing.T) {
+	d, err := Open(t.Context(), filepath.Join(t.TempDir(), "state\x00tail.sqlite"))
+	if err == nil {
+		d.Close()
+		t.Fatal("Open accepted a NUL that truncates the database filename")
 	}
 }
 
