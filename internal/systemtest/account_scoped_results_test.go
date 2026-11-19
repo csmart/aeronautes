@@ -24,6 +24,12 @@ func TestListingReadsAreAccountScoped(t *testing.T) {
 	t.Cleanup(func() { h.purge(h.Secondary, shared) })
 	h.rawPut(h.Primary, "/"+shared+"/only-in-primary", []byte("p"), nil)
 	h.rawPut(h.Secondary, "/"+shared+"/only-in-secondary", []byte("s"), nil)
+	// A second container on the primary, so a one-row page has a row after
+	// it and so a next marker, whatever else the account holds: a page that
+	// ends the listing has none (ADR 0074 decision 6).
+	const second = "l11-second"
+	h.rawPut(h.Primary, "/"+second, nil, nil)
+	t.Cleanup(func() { h.purge(h.Primary, second) })
 
 	connect := func(t *testing.T, id, label string) {
 		t.Helper()
