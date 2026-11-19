@@ -24,7 +24,7 @@ test("create a bookmark in the editor and connect", async ({ page }, info) => {
 test("duplicate a bookmark and connect with the copy", async ({ page }, info) => {
   test.skip(info.project.name !== "mock", "the editor is driven against the mock only");
   await connect(page, "mock");
-  await page.getByRole("button", { name: "Edit journey mock" }).click();
+  await page.getByRole("button", { name: "Edit journey mock", exact: true }).click();
   await expectInside(page.getByRole("form", { name: "Edit bookmark" }));
   await page.getByRole("button", { name: "Duplicate…" }).click();
   await expect(page.getByText("Copied from journey mock.")).toBeVisible();

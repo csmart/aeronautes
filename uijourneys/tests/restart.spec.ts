@@ -109,7 +109,7 @@ async function giveTheMockItsKey(page: Page): Promise<void> {
     await expect(page.getByRole("navigation", { name: "Bookmarks" })).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 60_000 });
   const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name: "journey mock", exact: true });
-  await page.getByRole("button", { name: "Edit journey mock" }).click();
+  await page.getByRole("button", { name: "Edit journey mock", exact: true }).click();
   await page.getByLabel("API key").fill("testing");
   await page.getByRole("button", { name: "Save & connect" }).click();
   await expect(tile).toHaveAttribute("aria-pressed", "true");

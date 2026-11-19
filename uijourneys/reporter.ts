@@ -13,8 +13,16 @@ export default class PrivateReporter implements Reporter {
       console.log(`skip ${title}`);
       return;
     }
-    console.log(`${result.status === "passed" ? "ok  " : "FAIL"} ${title}`);
-    if (result.status !== "passed") {
+    // A journey marked test.fail() names a known bug and is expected to
+    // fail; it is reported as such and does not turn the run red, while one
+    // that unexpectedly passes does, so the mark is removed with the fix.
+    const outcome = test.outcome();
+    if (outcome === "expected" && result.status !== "passed") {
+      console.log(`bug  ${title} (fails as expected: a known bug)`);
+      return;
+    }
+    console.log(`${outcome === "expected" ? "ok  " : "FAIL"} ${title}`);
+    if (outcome !== "expected") {
       this.failed++;
       const details = result.errors.map((e) => e.stack ?? e.message ?? String(e)).join("\n\n");
       appendFileSync(`${process.env.AERONAUTES_PRIVATE}/failures.txt`, `== ${title} (${result.status})\n${details}\n\n`);
