@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
@@ -64,6 +65,118 @@ func selectedConfirmation(req SelectedDeleteRequestDTO) string {
 	return words
 }
 
+func (s *DeleteService) validateSelected(ctx context.Context, req SelectedDeleteRequestDTO) error {
+	if req.Container == "" {
+		return errors.New("a selected-set deletion needs its container")
+	}
+	if len(req.Members) == 0 {
+		return errors.New("nothing is selected; a selected-set deletion needs at least one object or folder")
+	}
+	if ceiling := s.selectionCeiling(ctx); len(req.Members) > ceiling {
+		return fmt.Errorf("%d members exceed the selection ceiling of %d; narrow the selection", len(req.Members), ceiling)
+	}
+	seen := make(map[string]bool, len(req.Members))
+	folders := map[string]bool{}
+	for _, member := range req.Members {
+		switch {
+		case member.Name == "":
+			return errors.New("a member needs its name; an empty name would address the container itself")
+		case member.Kind == "prefix" && !strings.HasSuffix(member.Name, "/"):
+			return fmt.Errorf("%q is a folder row whose name does not end in a slash", member.Name)
+		case member.Kind != "object" && member.Kind != "prefix":
+			return fmt.Errorf("%q is a %s row; only objects and folders are deleted here", member.Name, member.Kind)
+		case seen[member.Name]:
+			return fmt.Errorf("%q is selected twice; a member is deleted once", member.Name)
+		}
+		seen[member.Name] = true
+		if member.Kind == "prefix" {
+			folders[member.Name] = true
+		}
+	}
+	// A member inside a selected folder would be deleted twice, once as
+	// itself and once with the folder.
+	for _, member := range req.Members {
+		for i := 0; i < len(member.Name)-1; i++ {
+			if folder := member.Name[:i+1]; member.Name[i] == '/' && folders[folder] {
+				return fmt.Errorf("%q is inside the selected folder %q, which is deleted with everything in it; select one or the other", member.Name, folder)
+			}
+		}
+	}
+	return nil
+}
+
+// SelectedFolderPreviewDTO keeps a failed count beside the folder it could
+// not read, without hiding the answers from the other selected folders.
+type SelectedFolderPreviewDTO struct {
+	Prefix  string            `json:"prefix"`
+	Preview *DeletePreviewDTO `json:"preview"`
+	Error   string            `json:"error"`
+}
+
+// PreviewSelectedDelete counts selected folders with at most eight readers
+// and shares one archive observation. Object-only selections do not read an
+// archive scan, matching the dialog's conservative segment default.
+func (s *DeleteService) PreviewSelectedDelete(ctx context.Context, req SelectedDeleteRequestDTO) ([]SelectedFolderPreviewDTO, error) {
+	if err := s.validateSelected(ctx, req); err != nil {
+		return nil, err
+	}
+	entry, _, _, err := s.connections.boundSnapshot(ctx, req.Scope)
+	if err != nil {
+		return nil, err
+	}
+	previews := make([]SelectedFolderPreviewDTO, 0)
+	for _, member := range req.Members {
+		if member.Kind == "prefix" {
+			previews = append(previews, SelectedFolderPreviewDTO{Prefix: member.Name})
+		}
+	}
+	work := make(chan int)
+	var readers sync.WaitGroup
+	for range min(8, len(previews)) {
+		readers.Go(func() {
+			for i := range work {
+				if ctx.Err() != nil {
+					continue
+				}
+				preview, err := countDeleteScope(ctx, entry.session, req.Container, previews[i].Prefix)
+				previews[i].Preview = preview
+				if err != nil {
+					previews[i].Error = err.Error()
+				}
+			}
+		})
+	}
+dispatch:
+	for i := range previews {
+		select {
+		case work <- i:
+		case <-ctx.Done():
+			break dispatch
+		}
+	}
+	close(work)
+	readers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// A failed count has no preview. Do not scan when none could be read,
+	// and do not let one failed folder clear the dialog's unknown default.
+	var owners *swiftcontrol.ArchiveOwners
+	for i := range previews {
+		if preview := previews[i].Preview; preview != nil {
+			if owners == nil {
+				read := entry.session.ArchiveOwners(ctx, req.Container, archiveScanBound)
+				owners = &read
+			}
+			setDeleteArchive(preview, *owners)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return previews, nil
+}
+
 // StartSelectedDelete deletes the selected objects, and everything under each
 // selected folder, as one job whose items are each deleted by one DELETE of
 // the name (ADR 0093 decisions 2 and 8, ADR 0122 decision 6). The request is
@@ -77,41 +190,8 @@ func (s *DeleteService) StartSelectedDelete(ctx context.Context, req SelectedDel
 	if err := refuseIfDeferred("DeleteService.StartSelectedDelete"); err != nil {
 		return "", err
 	}
-	if req.Container == "" {
-		return "", errors.New("a selected-set deletion needs its container")
-	}
-	if len(req.Members) == 0 {
-		return "", errors.New("nothing is selected; a selected-set deletion needs at least one object or folder")
-	}
-	if ceiling := s.selectionCeiling(ctx); len(req.Members) > ceiling {
-		return "", fmt.Errorf("%d members exceed the selection ceiling of %d; narrow the selection", len(req.Members), ceiling)
-	}
-	seen := make(map[string]bool, len(req.Members))
-	folders := map[string]bool{}
-	for _, member := range req.Members {
-		switch {
-		case member.Name == "":
-			return "", errors.New("a member needs its name; an empty name would address the container itself")
-		case member.Kind == "prefix" && !strings.HasSuffix(member.Name, "/"):
-			return "", fmt.Errorf("%q is a folder row whose name does not end in a slash", member.Name)
-		case member.Kind != "object" && member.Kind != "prefix":
-			return "", fmt.Errorf("%q is a %s row; only objects and folders are deleted here", member.Name, member.Kind)
-		case seen[member.Name]:
-			return "", fmt.Errorf("%q is selected twice; a member is deleted once", member.Name)
-		}
-		seen[member.Name] = true
-		if member.Kind == "prefix" {
-			folders[member.Name] = true
-		}
-	}
-	// A member inside a selected folder would be deleted twice, once as
-	// itself and once with the folder.
-	for _, member := range req.Members {
-		for i := 0; i < len(member.Name)-1; i++ {
-			if folder := member.Name[:i+1]; member.Name[i] == '/' && folders[folder] {
-				return "", fmt.Errorf("%q is inside the selected folder %q, which is deleted with everything in it; select one or the other", member.Name, folder)
-			}
-		}
+	if err := s.validateSelected(ctx, req); err != nil {
+		return "", err
 	}
 	if want := selectedConfirmation(req); req.Confirm != want {
 		return "", fmt.Errorf("confirmation %q does not match %q; type it exactly", req.Confirm, want)

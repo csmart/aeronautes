@@ -338,7 +338,7 @@ describe("the selected-set dialog", () => {
   it("starts the segments option unticked for objects alone, because no folder preview read the archive scan", async () => {
     const f = await state();
     vi.spyOn(f.browser, "containerFacts").mockResolvedValue(unversioned);
-    const preview = vi.spyOn(f.fake, "previewDelete");
+    const preview = vi.spyOn(f.fake, "previewSelectedDelete");
     f.browser.select(f.index("empty-object"));
     f.browser.toggleRow(f.index("external-slo"));
     await settle();
@@ -373,12 +373,31 @@ describe("the selected-set dialog", () => {
 
   it("starts the segments option unticked where a folder's preview names another container's archive", async () => {
     const f = await dialog(unversioned, (fake) => {
-      const real = fake.previewDelete;
-      fake.previewDelete = async (req) => ({ ...(await real(req)), archiveOf: ["owner"] });
+      const real = fake.previewSelectedDelete;
+      fake.previewSelectedDelete = async (req, signal) => (await real(req, signal)).map((row) => ({
+        ...row, preview: row.preview ? { ...row.preview, archiveOf: ["owner"] } : null,
+      }));
     });
     expect(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
     expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.placeholder).toBe("delete 3");
     expect(f.root.textContent).toContain("It starts unticked here");
+  });
+
+  it.each(["archive unknown", "request failed"] as const)("keeps consent conservative when the selected preview is %s", async (failure) => {
+    const f = await dialog(unversioned, (fake) => {
+      const real = fake.previewSelectedDelete;
+      fake.previewSelectedDelete = async (req, signal) => {
+        if (failure === "request failed") throw new Error("preview unavailable");
+        return (await real(req, signal)).map((row) => ({
+          ...row, preview: row.preview ? { ...row.preview, archiveUnestablished: "a container could not be read" } : null,
+        }));
+      };
+    });
+    expect(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+    expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.placeholder).toBe("delete 3");
+    if (failure === "request failed") expect(f.root.textContent).toContain("what it holds could not be counted: preview unavailable");
+    type(f.root, "delete 3");
+    expect(button("Delete 2 objects and 1 folder", f.root).disabled).toBe(false);
   });
 
   it("offers the deletion for folders selected alone", async () => {
@@ -388,6 +407,68 @@ describe("the selected-set dialog", () => {
     await settle();
     expect(f.browser.openSelectedDelete()).toBe(true);
     expect(f.browser.selectedDelete!.members.map((m) => [m.kind, m.name])).toEqual([["prefix", "fake/"], ["prefix", "normal/"]]);
+  });
+
+  it("previews the captured selection in one request and keeps a failed folder unknown", async () => {
+    const f = await state();
+    vi.spyOn(f.browser, "containerFacts").mockResolvedValue(unversioned);
+    const legacy = vi.spyOn(f.fake, "previewDelete");
+    const preview = vi.spyOn(f.fake, "previewSelectedDelete").mockResolvedValue([
+      { prefix: "fake/", preview: null, error: "listing refused" },
+      { prefix: "normal/", preview: { objects: 7, bytes: 12, possibleManifests: 1,
+        requestCost: 7, strategy: "per-name", archiveOf: [], archiveUnestablished: "" }, error: "" },
+    ]);
+    f.browser.select(f.index("normal/"));
+    f.browser.toggleRow(f.index("fake/"));
+    await settle();
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    const snapshot = f.browser.selectedDelete!;
+    mounted.add(mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } }));
+    flushSync(); await settle();
+    expect(preview).toHaveBeenCalledOnce();
+    expect(preview.mock.calls[0][0]).toEqual({ scope: snapshot.listingScope, container: snapshot.container,
+      members: snapshot.members, confirm: "", segments: false });
+    expect(preview.mock.calls[0][1].aborted).toBe(false);
+    expect(legacy).not.toHaveBeenCalled();
+    expect(f.root.textContent).toContain("what it holds could not be counted: listing refused");
+    expect(f.root.textContent).toContain("7 objects");
+    expect(f.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+    expect(f.root.querySelector<HTMLInputElement>(".confirm input")!.placeholder).toBe("delete 2");
+  });
+
+  it.each(["close", "navigation", "selection"] as const)("cancels a held preview on %s and ignores its late answer", async (retirement) => {
+    const f = await state();
+    const start = vi.spyOn(f.fake, "startSelectedDelete");
+    let finish!: (value: Awaited<ReturnType<Api["previewSelectedDelete"]>>) => void;
+    const preview = vi.spyOn(f.fake, "previewSelectedDelete").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    f.browser.select(f.index("normal/"));
+    f.browser.toggleRow(f.index("fake/"));
+    await settle();
+    expect(f.browser.openSelectedDelete()).toBe(true);
+    const component = mount(SelectedDeleteDialog, { target: f.root, props: { browser: f.browser, onClose: vi.fn() } });
+    mounted.add(component);
+    flushSync(); await settle();
+    expect(preview).toHaveBeenCalledOnce();
+    const signal = preview.mock.calls[0][1];
+    expect(signal.aborted).toBe(false);
+    if (retirement === "close") {
+      await unmount(component);
+      mounted.delete(component);
+    } else if (retirement === "navigation") {
+      await f.browser.goTo("normal/");
+    } else {
+      f.browser.clearSelection();
+    }
+    await settle();
+    expect(signal.aborted).toBe(true);
+    finish([{ prefix: "normal/", preview: null, error: "late response must not appear" }]);
+    await settle();
+    expect(f.root.textContent).not.toContain("late response must not appear");
+    if (retirement !== "close") {
+      expect(f.root.textContent).toContain("Nothing was deleted");
+      expect(f.root.querySelector(".confirm input")).toBeNull();
+    }
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("states the operator's selection ceiling, the download object ceiling setting", async () => {

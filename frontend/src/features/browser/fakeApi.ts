@@ -1023,6 +1023,12 @@ export function newFakeApi(): Api {
       });
       return id;
     },
+    previewSelectedDelete: async (req) => (req.members ?? []).filter((row) => row.kind === "prefix").map((row) => ({
+      prefix: row.name,
+      preview: { objects: 42, bytes: 9_000_000, possibleManifests: 2, requestCost: 42,
+        strategy: "per-name", archiveOf: [], archiveUnestablished: "" },
+      error: "",
+    })),
     previewDelete: async (req) => ({
       objects: 42,
       bytes: 9_000_000,

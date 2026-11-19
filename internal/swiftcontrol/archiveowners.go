@@ -58,26 +58,31 @@ func (s *Session) ArchiveOwners(ctx context.Context, target string, bound int) A
 	}
 	readings := make([]reading, len(names))
 	var wg sync.WaitGroup
-	slots := make(chan struct{}, archiveReaders)
-	for i, name := range names {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			detail, err := s.ContainerDetail(ctx, name)
-			if IsNotFound(err) {
-				// Listed, and gone before it was read: a container that no
-				// longer exists archives into nothing, which is an answer.
-				return
+	work := make(chan int)
+	for range min(archiveReaders, len(names)) {
+		wg.Go(func() {
+			for i := range work {
+				if ctx.Err() != nil {
+					readings[i].err = ctx.Err()
+					continue
+				}
+				detail, err := s.ContainerDetail(ctx, names[i])
+				if IsNotFound(err) {
+					// A container gone since listing archives into nothing.
+					continue
+				}
+				if err != nil {
+					readings[i].err = err
+					continue
+				}
+				readings[i].archive = detail.Versioning.Archive
 			}
-			if err != nil {
-				readings[i].err = err
-				return
-			}
-			readings[i].archive = detail.Versioning.Archive
-		}()
+		})
 	}
+	for i := range names {
+		work <- i
+	}
+	close(work)
 	wg.Wait()
 	var owners ArchiveOwners
 	for i, r := range readings {

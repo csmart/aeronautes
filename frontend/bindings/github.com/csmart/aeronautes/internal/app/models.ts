@@ -1661,6 +1661,16 @@ export interface SelectedDeleteRequestDTO {
 }
 
 /**
+ * SelectedFolderPreviewDTO keeps a failed count beside the folder it could
+ * not read, without hiding the answers from the other selected folders.
+ */
+export interface SelectedFolderPreviewDTO {
+    "prefix": string;
+    "preview": DeletePreviewDTO | null;
+    "error": string;
+}
+
+/**
  * SelectionScopeDTO is the scope a pick is being made for. The service
  * resolves the named bookmark's current generation itself and, whenever
  * there is an active connection, requires the pick to name it — before

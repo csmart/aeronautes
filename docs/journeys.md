@@ -198,3 +198,8 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Jobs | the benchmark | not offered in this release (v1Offers.benchmark is off); tested in Go | |
 | Recent changes | search the audit trail and "Export log…" | not yet | |
 | Window | the status bar's bookmark, the About link and the About dialog | the status bar and the About dialog | "connected to" and the bookmark; the version line's twelve characters and its hover text are the checkout's revision |
+
+The selected-delete browser journey checks the rendered count and the eventual deletion.
+The service tests additionally check that a multi-folder preview shares one archive observation, and held HTTP tests check the eight-reader bound and cancellation.
+Mounted dialog tests check cancellation on close, navigation and selection changes, and keep failed counts unknown with the segment option unticked.
+Those concurrency and cancellation checks are not claims made by the browser journey itself.

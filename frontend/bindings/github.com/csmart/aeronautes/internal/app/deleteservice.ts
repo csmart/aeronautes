@@ -50,6 +50,15 @@ export function PreviewDelete(req: $models.DeleteRequestDTO): $CancellablePromis
 }
 
 /**
+ * PreviewSelectedDelete counts selected folders with at most eight readers
+ * and shares one archive observation. Object-only selections do not read an
+ * archive scan, matching the dialog's conservative segment default.
+ */
+export function PreviewSelectedDelete(req: $models.SelectedDeleteRequestDTO): $CancellablePromise<$models.SelectedFolderPreviewDTO[] | null> {
+    return $Call.ByID(628178512, req);
+}
+
+/**
  * StartDelete validates the typed confirmation and launches the job: a
  * per-name sweep over the scope whose members are durable items of the job
  * (ADR 0095, ADR 0122 decision 6). The three modes share it; the

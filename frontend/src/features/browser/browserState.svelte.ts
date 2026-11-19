@@ -2505,6 +2505,10 @@ export class BrowserState {
     }
   }
 
+  previewSelectedDelete(req: SelectedDeleteRequestDTO, signal: AbortSignal) {
+    return this.#api.previewSelectedDelete(req, signal);
+  }
+
   async startSelectedDelete(req: SelectedDeleteRequestDTO): Promise<string> {
     const id = await this.#api.startSelectedDelete(req);
     this.#watchJob(id, { bookmarkId: req.scope.bookmarkId, container: req.container });

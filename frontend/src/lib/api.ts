@@ -134,6 +134,7 @@ export type {
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SelectedDeleteRequestDTO,
+  SelectedFolderPreviewDTO,
   TransferSettingsDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
@@ -161,6 +162,7 @@ import type {
   SegmentOwnershipDTO,
   SegmentsDeleteRequestDTO,
   SelectedDeleteRequestDTO,
+  SelectedFolderPreviewDTO,
   UploadRequestDTO,
 } from "../../bindings/github.com/csmart/aeronautes/internal/app";
 
@@ -305,6 +307,7 @@ export interface Api {
   /** Delete the selected objects as one job (ADR 0093): the members are the
    * listing rows as shown and the confirmation is their count, typed. */
   startSelectedDelete(req: SelectedDeleteRequestDTO): Promise<string>;
+  previewSelectedDelete(req: SelectedDeleteRequestDTO, signal: AbortSignal): Promise<SelectedFolderPreviewDTO[]>;
   startBenchmark(req: BenchmarkRequestDTO): Promise<string>;
   latestBenchmark(bookmarkId: string): Promise<BenchmarkResultDTO | null>;
   appSettings(): Promise<AppSettingsDTO>;
@@ -431,6 +434,11 @@ export const liveApi: Api = {
   },
   startDelete: (req) => DeleteService.StartDelete(req),
   startSelectedDelete: (req) => DeleteService.StartSelectedDelete(req),
+  previewSelectedDelete: async (req, signal) => {
+    const preview = await DeleteService.PreviewSelectedDelete(req).cancelOn(signal);
+    if (!preview) throw new Error("empty selected preview");
+    return preview;
+  },
   startBenchmark: (req) => BenchmarkService.StartBenchmark(req),
   latestBenchmark: (bookmarkId) => BenchmarkService.Latest(bookmarkId),
   appSettings: async () => {
