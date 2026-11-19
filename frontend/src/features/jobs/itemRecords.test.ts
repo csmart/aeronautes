@@ -321,14 +321,15 @@ it("pages exact download destinations without acquiring rerun authority", async 
 });
 
 it.each([
-  ["partial", false, false], ["partial", false, true],
-  ["partial", true, false], ["partial", true, true],
-  ["running", false, false], ["running", false, true],
-  ["running", true, false], ["running", true, true],
-] as const)("preserves item pages during unchanged %s polls (fresh=%s, pending=%s)", async (state, fresh, pending) => {
+  ["partial", false, false, "a"], ["partial", false, true, "a"],
+  ["partial", true, false, "a"], ["partial", true, true, "a"],
+  ["running", false, false, "a"], ["running", false, true, "a"],
+  ["running", true, false, "a"], ["running", true, true, "a"],
+  ["cancelled", true, false, ""],
+] as const)("preserves item pages during unchanged %s polls (fresh=%s, pending=%s, bookmark=%s)", async (state, fresh, pending, bookmarkId) => {
   vi.useFakeTimers();
   const api = newFakeApi();
-  const download = { ...job("download", state), type: "download", destBookmarkId: "" };
+  const download = { ...job("download", state), type: "download", sourceBookmarkId: bookmarkId, destBookmarkId: "" };
   const first = item(0, "scope\n<script>/étude-0.bin");
   const last = item(400, "scope\n<script>/");
   const tail: JobItemPageDTO = { status: "available", items: [last], nextCursor: "" };
@@ -356,7 +357,7 @@ it.each([
   await vi.advanceTimersByTimeAsync(1500);
   flushSync();
   expect(api.jobs).toHaveBeenCalledOnce();
-  expect(api.job).toHaveBeenCalledExactlyOnceWith("download", "a");
+  expect(api.job).toHaveBeenCalledExactlyOnceWith("download", bookmarkId);
   expect(browser.jobs.list[0].counters.bytesCopied).toBe(fresh ? 17 : 0);
   expect(document.body.textContent).toContain("Item page 2");
   expect(api.jobItems).not.toHaveBeenCalled();
@@ -370,6 +371,16 @@ it.each([
   expect(document.querySelector("summary code")?.textContent).toBe(last.keyDisplay);
   expect(document.querySelector(".item-records")?.getAttribute("aria-busy")).toBe("false");
   expect(button("Next item page").disabled).toBe(true);
+});
+
+it.each(["active", "attached", "wrong-id", "wrong-account"])("refuses a %s reply as detached history", async (condition) => {
+  const api = newFakeApi();
+  const retained = { ...job(condition === "wrong-id" ? "other" : "retained", condition === "active" ? "running" : "complete"),
+    sourceBookmarkId: "", destBookmarkId: condition === "attached" ? "b" : "" };
+  api.job = async () => retained;
+  const browser = new BrowserState(api);
+  await expect(browser.jobs.get("retained", condition === "wrong-account" ? "unrelated" : ""))
+    .rejects.toThrow("job does not match the requested account and identity");
 });
 
 it.each(["empty", "unavailable"])("keeps new download records %s distinct from historical uncaptured jobs", async (condition) => {

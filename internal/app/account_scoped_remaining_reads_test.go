@@ -251,6 +251,13 @@ func TestJobGetIsAccountScoped(t *testing.T) {
 		if !errors.Is(err, ErrAccountScopeChanged) {
 			t.Fatalf("Get empty = %v", err)
 		}
+		unbound, err := h.jobsSvc.jobs.Create(ctx, jobs.Job{Type: jobs.TypeDownload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.jobsSvc.Get(ctx, "", unbound.ID); !errors.Is(err, ErrAccountScopeChanged) {
+			t.Fatalf("Get unbound active job = %v", err)
+		}
 	})
 
 	t.Run("item pages carry the same binding", func(t *testing.T) {

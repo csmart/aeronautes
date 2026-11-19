@@ -1176,7 +1176,7 @@ func (s *JobService) List(ctx context.Context, bookmarkID string, activeOnly boo
 	return out, nil
 }
 
-// Get returns one job bound to the named bookmark (ADR 0059).
+// Get binds a job to its bookmark, or to detached terminal history (ADR 0128).
 func (s *JobService) Get(ctx context.Context, bookmarkID, jobID string) (*JobDTO, error) {
 	j, err := s.jobInAccount(ctx, bookmarkID, jobID)
 	if err != nil {
@@ -1187,15 +1187,19 @@ func (s *JobService) Get(ctx context.Context, bookmarkID, jobID string) (*JobDTO
 }
 
 func (s *JobService) jobInAccount(ctx context.Context, bookmarkID, jobID string) (jobs.Job, error) {
-	if bookmarkID == "" {
-		return jobs.Job{}, fmt.Errorf("%w: name the bookmark the read is for", ErrAccountScopeChanged)
-	}
 	j, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
 		if errors.Is(err, jobs.ErrItemJobNotFound) {
 			return jobs.Job{}, jobs.ErrItemJobNotFound
 		}
 		return jobs.Job{}, err
+	}
+	if bookmarkID == "" {
+		// Deleting a bookmark keeps finished records without a live account.
+		if j.SourceBookmarkID == "" && j.DestBookmarkID == "" && jobs.Terminal(j.State) {
+			return j, nil
+		}
+		return jobs.Job{}, fmt.Errorf("%w: name the bookmark the read is for", ErrAccountScopeChanged)
 	}
 	if j.SourceBookmarkID != bookmarkID && j.DestBookmarkID != bookmarkID {
 		return jobs.Job{}, fmt.Errorf("%w: job is not for that bookmark", ErrAccountScopeChanged)
