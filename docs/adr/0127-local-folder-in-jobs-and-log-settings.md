@@ -25,6 +25,7 @@ Testing candidate 9b5d7127 on 18 November 2026, the operator asked for two thing
 2. **Settings has a Diagnostics section with the log level.**
    "Log level" offers debug, info, warn and error, and the default is info, as ADR 0099 set.
    A change applies at once, to every line written after it, and is saved with the other settings.
+   Debug adds each job's creation, every change of its state and its end with its counts, by the job's id and type only: nothing that names an object, a container or an account.
 3. **Settings can keep a log file.**
    "Keep a log file" writes the log to `aeronautes.log` in the state folder [ADR 0109](0109-where-aeronautes-keeps-its-files.md) names (on Linux `$XDG_STATE_HOME/aeronautes/`, the place it gives for logs), as well as to standard error.
    The section shows the file's full path with a copy button, so the operator can find it.

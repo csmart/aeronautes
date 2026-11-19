@@ -161,7 +161,7 @@
 
   // The log's level and file, applied at once (ADR 0127 decisions 2 to 4).
   const LOG_LEVELS = ["debug", "info", "warn", "error"];
-  const LOG_LEVEL_NOTE = "The least important lines the log writes: debug adds detail for working out a problem, info is the usual, warn and error write less. It applies at once. The AERONAUTES_LOG_LEVEL switch, when set, wins at launch.";
+  const LOG_LEVEL_NOTE = "The least important lines the log writes: debug adds each job's steps for working out a problem, info is the usual, warn and error write less. It applies at once. The AERONAUTES_LOG_LEVEL switch, when set, wins at launch.";
   const LOG_FILE_NOTE = "Writes the log to a file as well, for a support request; it starts again past 10 MiB, keeping the one before. Off stops writing and keeps the file. The AERONAUTES_LOG_FILE switch, when set, names the file and wins at launch.";
   let logLevelError: string | null = $state(null);
   let logFileError: string | null = $state(null);
