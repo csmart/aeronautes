@@ -13,7 +13,7 @@ license: "Apache-2.0"
 release: "1"
 
 contents:
-  - src: "./bin/aeronautes"
+  - src: {{printf "%q" .Binary}}
     dst: "/usr/local/bin/aeronautes"
   - src: "./bin/build-identity/identity.json"
     dst: "/usr/share/doc/aeronautes/build-identity.json"

@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func put(t *testing.T, root, name, value string) {
@@ -301,5 +303,55 @@ func TestBinaryAndArtifactProvenance(t *testing.T) {
 	put(t, root, i.Binary, "replaced binary")
 	if _, err := readIdentity(root); err == nil {
 		t.Fatal("replaced binary accepted")
+	}
+}
+
+func TestLinuxPackageSelectsTheRecordedBinary(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux package output uses a native Linux fixture build")
+	}
+	for _, kind := range []string{"default", "relative", "absolute"} {
+		t.Run(kind, func(t *testing.T) {
+			root := fixture(t)
+			output := "bin/aeronautes"
+			if kind != "default" {
+				put(t, root, "bin/aeronautes", "stale default binary")
+				output = `bin/custom "output"`
+			}
+			if kind == "absolute" {
+				output = filepath.Join(root, output)
+			}
+			if err := build(root, "v1.2.3", "linux", runtime.GOARCH, output, false); err != nil {
+				t.Fatal(err)
+			}
+			i, err := readIdentity(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(root, metadataDir, "nfpm.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct{ Contents []struct{ Src, Dst string } }
+			if err := yaml.Unmarshal(data, &config); err != nil {
+				t.Fatal(err)
+			}
+			selected := ""
+			for _, entry := range config.Contents {
+				if entry.Dst == "/usr/local/bin/aeronautes" {
+					selected = entry.Src
+				}
+			}
+			if filepath.Clean(selected) != filepath.Clean(output) || i.Binary != output {
+				t.Fatalf("package selects %q and identity records %q, want compiled output %q", selected, i.Binary, output)
+			}
+			path := selected
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(root, path)
+			}
+			if digest, err := checksum(path); err != nil || digest != i.BinarySHA256 {
+				t.Fatalf("package binary digest %q, %v; identity %q", digest, err, i.BinarySHA256)
+			}
+		})
 	}
 }

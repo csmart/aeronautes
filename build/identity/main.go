@@ -212,6 +212,7 @@ func build(root, tag, goos, arch, output string, dev bool) error {
 	if err != nil {
 		return err
 	}
+	i.Binary = output
 	if err := generate(root, i); err != nil {
 		return err
 	}
@@ -235,10 +236,11 @@ func build(root, tag, goos, arch, output string, dev bool) error {
 	if err != nil {
 		return err
 	}
+	// The output is a fixed build input, not a source observation.
+	after.Binary = output
 	if after != i {
 		return errors.New("source identity changed during compilation; rebuild before packaging")
 	}
-	i.Binary = output
 	path := output
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(root, path)
