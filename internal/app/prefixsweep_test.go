@@ -271,9 +271,10 @@ func TestPrefixSweepLaterPassRequestsOnlyNewNames(t *testing.T) {
 	var written atomic.Bool
 	h.mock.AfterRequest = func(method, path string) {
 		// A writer lands under the scope after the first pass listed it and
-		// before the second pass lists it.
+		// before the second pass lists it. The name sorts before the first
+		// page's last name, so it cannot appear on a continuation page.
 		if method == "DELETE" && strings.Contains(path, "/sweep/scope/") && written.CompareAndSwap(false, true) {
-			seedObject(h.mock, "sweep", "scope/late.txt", "late", nil)
+			seedObject(h.mock, "sweep", "scope/0-late.txt", "late", nil)
 		}
 	}
 	jobID, err := service.StartDelete(t.Context(), DeleteRequestDTO{BookmarkID: bookmark, Container: "sweep", Prefix: "scope/", Mode: ModePrefix, Confirm: "delete sweep/scope/"})
@@ -289,7 +290,7 @@ func TestPrefixSweepLaterPassRequestsOnlyNewNames(t *testing.T) {
 		t.Fatalf("job message %q lacks %q", job.Error, want)
 	}
 	items := sweepItems(t, h, jobID)
-	if late := items["scope/late.txt"]; late.Execution == nil || late.Execution.Result != jobs.ItemDeleted || stillReadable(t, h, "sweep", "scope/late.txt") {
+	if late := items["scope/0-late.txt"]; late.Execution == nil || late.Execution.Result != jobs.ItemDeleted || stillReadable(t, h, "sweep", "scope/0-late.txt") {
 		t.Fatalf("the late name was not deleted in a later pass: %+v", late)
 	}
 	if held := items["scope/held.txt"]; held.Execution == nil || held.Execution.Result != jobs.ItemFailed || held.Execution.Diagnostic.HTTPStatus != http.StatusForbidden {
