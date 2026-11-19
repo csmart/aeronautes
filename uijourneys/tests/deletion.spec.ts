@@ -135,7 +135,9 @@ test("delete a prefix with the segments option unticked", async ({ page }, info)
   const folder = basename(await uploadFolder(page, [large]));
   await expect.poll(async () => (await control.names(target, sidecar)).length, lag).toBe(3);
   const segments = await control.names(target, sidecar);
+  const kept = await putNeighbours(target, container, folder);
 
+  await page.getByRole("button", { name: "Refresh listing" }).click();
   await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${folder}/ `) }).click();
   await page.getByRole("button", { name: "Delete prefix…" }).click();
   const dialog = page.getByRole("dialog", { name: "Delete" });
@@ -153,7 +155,7 @@ test("delete a prefix with the segments option unticked", async ({ page }, info)
   await dialog.getByRole("button", { name: "Delete prefix" }).click();
   await finish(page, dialog);
 
-  await expect.poll(() => control.names(target, container), lag).toEqual([]);
+  await expect.poll(async () => (await control.names(target, container)).sort(), lag).toEqual(kept);
   expect((await control.names(target, sidecar)).sort(), "the large object's segments").toEqual(segments.sort());
 });
 
@@ -206,6 +208,17 @@ async function uploadFolder(page: Page, sizes: number[]): Promise<string> {
   return folder;
 }
 
+// putNeighbours writes, from the run's own session, the objects a deletion
+// of the folder's prefix must leave: one in a folder whose name starts as
+// the folder's does, and one at the container's top. Without them a
+// container that held only the prefix could not tell a deletion of the
+// prefix from one of the whole container. It returns their names, sorted.
+async function putNeighbours(target: string, container: string, folder: string): Promise<string[]> {
+  const names = [`${folder}x/file00.bin`, "top.bin"];
+  for (const name of names) await control.put(target, container, name, "a neighbour that stays");
+  return names.sort();
+}
+
 // pressBelowTheRows presses the list where no row is, as a person clicks
 // under the last row.
 async function pressBelowTheRows(page: Page) {
@@ -251,6 +264,7 @@ test("delete a prefix whose object changed after the preview", async ({ page }, 
   await upload.getByRole("button", { name: "Choose folder…" }).click();
   await upload.getByRole("button", { name: "Start upload" }).click();
   await finish(page, upload);
+  const kept = await putNeighbours(info.project.name, container, basename(folder));
 
   await page.getByRole("button", { name: "Refresh listing" }).click();
   await openFolder(page, folder);
@@ -267,5 +281,5 @@ test("delete a prefix whose object changed after the preview", async ({ page }, 
   await confirm.fill((await confirm.getAttribute("placeholder"))!);
   await dialog.getByRole("button", { name: "Delete prefix" }).click();
   await finish(page, dialog);
-  await expect.poll(() => control.names(info.project.name, container), lag).toEqual([]);
+  await expect.poll(async () => (await control.names(info.project.name, container)).sort(), lag).toEqual(kept);
 });
