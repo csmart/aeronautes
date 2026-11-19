@@ -10,7 +10,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,8 +40,15 @@ type DB struct {
 // Open opens (creating if needed) the database at path, configures the
 // connection pragmas, and applies any pending migrations.
 func Open(ctx context.Context, path string) (*DB, error) {
+	if strings.ContainsRune(path, 0) {
+		return nil, errors.New("database path contains NUL")
+	}
+	// SQLite decodes URI paths: escape filename characters before adding
+	// options, or a question mark, fragment or percent escape selects a
+	// different file. Escaping only the path preserves relative/drive paths.
+	file := url.URL{Path: filepath.ToSlash(path)}
 	// _pragma values apply to every pooled connection, not just the first.
-	dsn := "file:" + filepath.ToSlash(path) + "?" + strings.Join([]string{
+	dsn := "file:" + file.EscapedPath() + "?" + strings.Join([]string{
 		"_pragma=busy_timeout(5000)",
 		"_pragma=journal_mode(WAL)",
 		"_pragma=foreign_keys(1)",
