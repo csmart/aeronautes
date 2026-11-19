@@ -1,9 +1,10 @@
 import { test, type Locator, type Page } from "@playwright/test";
 import { randomBytes } from "node:crypto";
-import { basename } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  account, addMockBookmark, connect, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles,
+  account, addMockBookmark, connect, deleteBookmark, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles,
 } from "../helpers.ts";
 
 // Test plan step 11a. Account metadata is written only on the mock: a real
@@ -12,24 +13,70 @@ import {
 test("edit the account's metadata and find the write in Recent changes", async ({ page }, info) => {
   test.skip(info.project.name !== "mock", "account metadata is written on the mock only");
   const key = `Journey-${randomBytes(4).toString("hex")}`;
+  const name = `journey audit ${randomBytes(4).toString("hex")}`;
   await connect(page, "mock");
-  await inspector(page).getByRole("button", { name: "Edit metadata" }).click();
-  await page.getByRole("button", { name: "+ add key" }).click();
-  await page.getByLabel("metadata key").last().fill(key);
-  await page.getByLabel("metadata value").last().fill("account-value");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(inspector(page).getByRole("button", { name: "Edit metadata" })).toBeEnabled();
+  // A new bookmark attributes exactly one write to this journey, even
+  // when other journeys have already changed the same mock account.
+  await addMockBookmark(page, name);
+  try {
+    await inspector(page).getByRole("button", { name: "Edit metadata" }).click();
+    await page.getByRole("button", { name: "+ add key" }).click();
+    await page.getByLabel("metadata key").last().fill(key);
+    await page.getByLabel("metadata value").last().fill("account-value");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(inspector(page).getByRole("button", { name: "Edit metadata" })).toBeEnabled();
 
-  // Read back over a fresh connection, not from the page's memory.
-  await connect(page, "mock");
-  const metadata = card(page, "Account metadata");
-  await expect(metadata.locator(".kv", { hasText: key })).toContainText("account-value");
+    // Read back over a fresh connection, not from the page's memory.
+    await page.reload();
+    const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name, exact: true });
+    await tile.click();
+    await expect(tile).toHaveAttribute("aria-pressed", "true");
+    const metadata = card(page, "Account metadata");
+    await expect(metadata.locator(".kv", { hasText: key })).toContainText("account-value");
 
-  await page.getByRole("button", { name: /jobs & changes/ }).click();
-  await page.getByRole("tab", { name: "Recent changes" }).click();
-  const write = page.locator(".event", { hasText: "account.metadata.update" }).first();
-  await expect(write).toContainText("applied");
-  await page.getByRole("button", { name: /▾ hide/ }).click();
+    await page.getByRole("button", { name: /jobs & changes/ }).click();
+    await page.getByRole("tab", { name: "Recent changes" }).click();
+    const bookmark = page.getByRole("combobox", { name: "Bookmark", exact: true });
+    const option = bookmark.getByRole("option", { name: new RegExp(`^${name} \\(`) });
+    await bookmark.selectOption((await option.getAttribute("value"))!);
+    const bookmarkId = await bookmark.inputValue();
+    const operation = page.getByRole("textbox", { name: "Operation prefix" });
+    await operation.fill("account.meta");
+    await operation.press("Tab");
+    const result = page.getByRole("combobox", { name: "Result", exact: true });
+    await result.selectOption("applied");
+    const write = page.locator(".event");
+    await expect(write).toHaveCount(1);
+    await expect(write.locator(".op")).toHaveText("account.metadata.update");
+    await expect(write.locator(".audit-bookmark")).toHaveText(`${name} (${bookmarkId})`);
+
+    const exportRows = async () => {
+      const into = localFolder();
+      await control.pickFolder(into);
+      await page.getByRole("button", { name: "Export log…" }).click();
+      await expect(page.getByText(/^Exported \d+ events? to /)).toBeVisible();
+      const files = readdirSync(into).filter((file) => file.endsWith(".jsonl"));
+      expect(files, "one completed export").toHaveLength(1);
+      return readFileSync(join(into, files[0]), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    };
+    await result.selectOption("failed");
+    await expect(page.getByText("No matching audit events.")).toBeVisible();
+    expect(await exportRows(), "the export respects the empty result filter").toEqual([]);
+    await result.selectOption("applied");
+    await expect(write).toHaveCount(1);
+    await operation.fill("no-such-operation.");
+    await operation.press("Tab");
+    await expect(page.getByText("No matching audit events.")).toBeVisible();
+    await operation.fill("account.meta");
+    await operation.press("Tab");
+    await expect(write).toHaveCount(1);
+    expect(await exportRows()).toEqual([expect.objectContaining({
+      bookmarkId, operation: "account.metadata.update", resource: "account", result: "applied",
+    })]);
+  } finally {
+    await page.goto("/");
+    await deleteBookmark(page, name);
+  }
 });
 
 // Test plan step 11b: the account's cards and its raw headers, which start

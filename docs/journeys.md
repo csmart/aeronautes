@@ -201,7 +201,7 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Window | welcome at the minimum 960 × 600 window size; keyboard focus and dismissal | import clouds.yaml from the welcome dialog using its keyboard controls (mock only) | controls fit; Tab and Shift+Tab stay inside the modal; Escape dismisses it for this window; Enter opens import; a fresh page offers welcome again |
 | Window | credential status; use of the rest of the application by keyboard alone | not yet | |
 | Jobs | the benchmark | not offered in this release (v1Offers.benchmark is off); tested in Go | |
-| Recent changes | search the audit trail and "Export log…" | not yet | |
+| Recent changes | search the audit trail and "Export log…" | edit the account's metadata and find the write in Recent changes (mock only) | a fresh bookmark attributes one known write; bookmark, operation-prefix and result filters select it, empty searches recover, and actual JSONL exports contain zero or exactly that applied account event under the selected filters |
 | Window | the status bar's bookmark, the About link and the About dialog | the status bar and the About dialog | "connected to" and the bookmark; the version line's twelve characters and its hover text are the checkout's revision |
 
 The selected-delete browser journey checks the rendered count and the eventual deletion.
