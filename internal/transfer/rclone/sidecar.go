@@ -125,9 +125,19 @@ func resolveBundled(exeDir string) (path, source string, err error) {
 func resolveSidecar(dir string) (string, error) {
 	for _, name := range sidecarNames() {
 		path := filepath.Join(dir, name)
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
+		// A dangling link is present, so only Lstat can establish absence.
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
 			continue
+		}
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			info, err = os.Stat(path)
+		}
+		if err != nil {
+			return "", fmt.Errorf("inspect bundled rclone at %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("bundled rclone at %s is not a regular file", path)
 		}
 		expected := manifestChecksum()
 		if expected == "" {

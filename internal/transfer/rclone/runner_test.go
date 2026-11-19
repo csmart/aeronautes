@@ -522,6 +522,43 @@ func TestSidecarIntegrity(t *testing.T) {
 	}
 }
 
+func TestSidecarInspection(t *testing.T) {
+	fallback := stub(t, PinnedVersion, "exit 0")
+	t.Setenv("PATH", filepath.Dir(fallback)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, kind := range []string{"absent", "directory", "dangling link", "link loop"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, sidecarNames()[0])
+			switch kind {
+			case "directory":
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "dangling link", "link loop":
+				target := path
+				if kind == "dangling link" {
+					target = filepath.Join(dir, "missing")
+				}
+				if err := os.Symlink(target, path); err != nil {
+					if runtime.GOOS == "windows" {
+						t.Skipf("creating a symlink requires permission: %v", err)
+					}
+					t.Fatal(err)
+				}
+			}
+			withExecutableDir(t, dir)
+			resolution, err := Resolve(Options{})
+			if kind == "absent" {
+				if err != nil || resolution.Source != SourcePath || resolution.Path != fallback {
+					t.Fatalf("absent sidecar must allow PATH: %+v, %v", resolution, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), path) || resolution.Path != "" {
+				t.Fatalf("present unusable sidecar must refuse: %+v, %v", resolution, err)
+			}
+		})
+	}
+}
+
 // TestSidecarOfficialBinary runs only when the verified official build
 // is present (fetched by scripts/fetch-rclone.sh in CI or locally):
 // the sidecar must be selected over PATH and pass both checksum and
@@ -542,6 +579,21 @@ func TestSidecarOfficialBinary(t *testing.T) {
 	if !strings.HasPrefix(runner.binary, official) {
 		t.Fatalf("sidecar not selected: %s", runner.binary)
 	}
+	t.Run("verified symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		name := sidecarNames()[0]
+		if err := os.Symlink(filepath.Join(official, name), filepath.Join(dir, name)); err != nil {
+			if runtime.GOOS == "windows" {
+				t.Skipf("creating a symlink requires permission: %v", err)
+			}
+			t.Fatal(err)
+		}
+		withExecutableDir(t, dir)
+		resolution, err := Resolve(Options{})
+		if err != nil || !resolution.Verified || resolution.Source != SourceBeside {
+			t.Fatalf("verified symlink refused: %+v, %v", resolution, err)
+		}
+	})
 }
 
 func TestArgvHygiene(t *testing.T) {
