@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -574,12 +575,29 @@ func (e *Executor) nativeCopy(ctx context.Context, name string, replaces bool) (
 	if _, complete := runDigest(src.ETag); complete && src.Class == swiftcontrol.ClassPlain {
 		headers["ETag"] = strings.Trim(src.ETag, `"`)
 	}
-	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+name, body, src.ContentType, headers); err != nil {
+	stream := &nativeCopyReader{Reader: body}
+	if _, err := e.cfg.Dest.PutObject(ctx, e.cfg.DstContainer, e.cfg.DstPrefix+name, stream, src.ContentType, headers); err != nil {
 		return putFailed("native-put", err)
 	}
-	result = copied(src.ContentLength, "native")
+	result = copied(stream.bytes, "native")
 	result.overwrote = replaces
 	return result
+}
+
+// A chunked GET has no declared length: count the bytes sent and enforce
+// the single-PUT ceiling without asking a later HEAD to describe this body.
+type nativeCopyReader struct {
+	io.Reader
+	bytes int64
+}
+
+func (r *nativeCopyReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.bytes += int64(n)
+	if r.bytes > maxSinglePut {
+		return 0, errors.New("native copy exceeds the single-PUT limit")
+	}
+	return n, err
 }
 
 // copySymlink carries a Swift symlink AS a symlink (§17.1's

@@ -1,6 +1,8 @@
 package copy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -12,6 +14,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -774,5 +777,102 @@ func TestARejectedTokenGetsOneFreshChild(t *testing.T) {
 	report, err := e.Run(t.Context(), []plan.Item{newItem("a.txt")})
 	if err != nil || reauthenticated != 1 || len(engine.calls) != 2 || report.Copied != 1 {
 		t.Fatalf("report = %+v, %v, reauthenticated %d, engine runs %d", report, err, reauthenticated, len(engine.calls))
+	}
+}
+
+func TestNativeCopyKeepsTheWholeStoredRepresentation(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte("stored text")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name             string
+		body             []byte
+		encoding         string
+		partial, chunked bool
+	}{
+		{name: "partial large object", body: []byte("abc"), partial: true},
+		{name: "opaque gzip", body: compressed.Bytes(), encoding: "gzip"},
+		{name: "chunked whole object", body: []byte("whole stored content"), chunked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writes := make(chan []byte, 1)
+			var extraRequests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/auth/v1.0" {
+					w.Header().Set("X-Auth-Token", "fixture")
+					w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+					return
+				}
+				switch r.Method {
+				case http.MethodPut:
+					content, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Error(err)
+					}
+					writes <- content
+					w.WriteHeader(http.StatusCreated)
+				case http.MethodGet:
+					w.Header().Set("X-Static-Large-Object", "True")
+					w.Header().Set("Content-Encoding", tc.encoding)
+					if tc.partial {
+						w.Header().Set("Content-Range", "bytes 0-2/12")
+						w.WriteHeader(http.StatusPartialContent)
+					}
+					if tc.chunked {
+						w.(http.Flusher).Flush()
+					}
+					if _, err := w.Write(tc.body); err != nil {
+						t.Error(err)
+					}
+				default:
+					extraRequests.Add(1)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			t.Cleanup(server.Close)
+			session := authenticateMock(t, server)
+			t.Cleanup(session.Close)
+			e := &Executor{cfg: Config{Source: session, Dest: session, SrcContainer: "source", DstContainer: "destination"}}
+			result := e.nativeCopy(t.Context(), "line\nname", false)
+			if tc.partial {
+				if result.Result != ResultFailed || result.Effect != EffectNotAttempted || len(writes) != 0 {
+					t.Fatalf("partial source published: result=%+v writes=%d", result, len(writes))
+				}
+				return
+			}
+			if result.Result != ResultCopied || result.Effect != EffectReportedApplied || result.CopiedBytes != int64(len(tc.body)) || extraRequests.Load() != 0 {
+				t.Fatalf("copy=%+v, extra requests=%d", result, extraRequests.Load())
+			}
+			select {
+			case got := <-writes:
+				if !bytes.Equal(got, tc.body) {
+					t.Fatalf("stored representation changed: got %x, want %x", got, tc.body)
+				}
+			default:
+				t.Fatal("the copy sent no bytes")
+			}
+		})
+	}
+}
+
+func TestNativeCopyStreamStopsAtTheSinglePUTLimit(t *testing.T) {
+	const limit = int64(5 * 1024 * 1024 * 1024) // ADR 0122 decision 4.
+	for _, tail := range []string{"abc", "abcd"} {
+		// Three bytes remain after the preceding chunks; no multi-gigabyte
+		// fixture is needed to exercise the last read at the boundary.
+		stream := &nativeCopyReader{Reader: strings.NewReader(tail), bytes: limit - 3}
+		got, err := io.ReadAll(stream)
+		if len(tail) == 3 {
+			if err != nil || string(got) != tail || stream.bytes != limit {
+				t.Fatalf("exact limit: got %q, bytes=%d, error=%v", got, stream.bytes, err)
+			}
+		} else if err == nil || len(got) != 0 {
+			t.Fatalf("oversized chunk was forwarded: got %q, error=%v", got, err)
+		}
 	}
 }

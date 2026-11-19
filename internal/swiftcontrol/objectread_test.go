@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/md5"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,7 +18,7 @@ import (
 	"github.com/ncw/swift/v2"
 )
 
-func TestObjectContentRequiresCompleteOpaqueResponse(t *testing.T) {
+func TestObjectReadsRequireCompleteOpaqueResponse(t *testing.T) {
 	var encoded bytes.Buffer
 	compressor := gzip.NewWriter(&encoded)
 	if _, err := compressor.Write([]byte("stored representation")); err != nil {
@@ -59,6 +61,7 @@ func TestObjectContentRequiresCompleteOpaqueResponse(t *testing.T) {
 					t.Error("object content request lost its full opaque representation")
 				}
 				w.Header().Set("X-Trans-Id", "tx-content")
+				w.Header().Set("Etag", fmt.Sprintf("%x", md5.Sum(tc.body)))
 				if tc.encoding != "" {
 					w.Header().Set("Content-Encoding", tc.encoding)
 				}
@@ -82,7 +85,7 @@ func TestObjectContentRequiresCompleteOpaqueResponse(t *testing.T) {
 					}
 				}
 			})
-			reader, err := session.OpenObjectContent(t.Context(), "owned", "a%2F +日本語")
+			reader, _, err := session.OpenObjectChecked(t.Context(), "owned", "a%2F +日本語")
 			if !tc.valid {
 				if reader != nil || err == nil {
 					if reader != nil {

@@ -3,6 +3,7 @@ package swiftcontrol
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"io"
 	"net/url"
@@ -25,31 +26,35 @@ func etagValue(e string) string { return strings.Trim(e, `"`) }
 // OpenObject GETs one object as the server serves it: for a DLO/SLO
 // manifest that is the assembled logical stream. The returned detail is
 // built from the response headers (Class still identifies a manifest).
+// ContentLength is -1 when the response does not declare its length.
 func (s *Session) OpenObject(ctx context.Context, container, name string) (io.ReadCloser, *ObjectDetail, error) {
 	return s.openObject(ctx, container, name, false)
 }
 
 // OpenObjectChecked is OpenObject with the store's entity tag checked
 // against the bytes read: when the whole body of a plain object has been
-// read, closing it reports bytes whose MD5 is not the tag. A large object's
-// tag is made from its segments' tags, so the library does not check it.
+// read, it reports bytes whose MD5 is not the tag. A large object's tag
+// is made from its segments' tags, so it cannot check the assembled bytes.
+// The caller must consume EOF and check Close before accepting the content.
 func (s *Session) OpenObjectChecked(ctx context.Context, container, name string) (io.ReadCloser, *ObjectDetail, error) {
 	return s.openObject(ctx, container, name, true)
 }
 
 func (s *Session) openObject(ctx context.Context, container, name string, checkHash bool) (io.ReadCloser, *ObjectDetail, error) {
-	file, headers, err := s.conn.ObjectOpen(ctx, container, name, checkHash, nil)
+	reader, err := s.openObjectContent(ctx, container, name)
 	if err != nil {
-		return nil, nil, Normalize(err)
+		return nil, nil, err
 	}
+	headers := reader.headers
 	detail := buildObjectDetail(canonicalHeaders(headers), time.Now().UTC())
 	detail.Name = name
-	if length, err := file.Length(ctx); err == nil {
-		detail.ContentLength = length
+	detail.ContentLength = reader.length
+	if checkHash && !headers.IsLargeObject() {
+		reader.hash = md5.New()
 	}
 	detail.ContentType = headers["Content-Type"]
 	detail.ETag = etagValue(headers["Etag"])
-	return file, detail, nil
+	return reader, detail, nil
 }
 
 // PutObject writes one object in a single PUT (create or atomic
