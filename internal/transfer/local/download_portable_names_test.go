@@ -2,14 +2,10 @@ package local
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
-
-	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
 type downloadPortableCase struct {
@@ -52,32 +48,6 @@ var downloadPortableCases = []downloadPortableCase{
 	{"marker_child", []string{"000-safe/", "foo/", "foo/one"}, "", ""},
 }
 
-// downloadPortableItems builds the exact plan the listing produces: the
-// source lists sorted names, so a control expectation cannot assume the
-// fixture insertion order.
-func downloadPortableItems(prefix, route string, fixture downloadPortableCase) []DownloadItem {
-	names := slices.Clone(fixture.names)
-	slices.Sort(names)
-	var items []DownloadItem
-	for _, name := range names {
-		item := DownloadItem{Name: prefix + name, RelPath: filepath.FromSlash(strings.TrimSuffix(name, "/")), Route: route}
-		if strings.HasSuffix(name, "/") {
-			item.Dir, item.Route = true, ""
-		} else {
-			item.Size = int64(len(downloadPortableBody(name)))
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-func downloadPortableBody(name string) string {
-	if strings.HasSuffix(name, "/") {
-		return ""
-	}
-	return "complete source bytes\x00\xff " + name
-}
-
 func TestDownloadPortableNamesPreflight(t *testing.T) {
 	for _, route := range []string{"rclone", "native"} {
 		for _, fixture := range downloadPortableCases {
@@ -88,7 +58,7 @@ func TestDownloadPortableNamesPreflight(t *testing.T) {
 					prefix = "scope\n/"
 				}
 				for _, name := range fixture.names {
-					seed(mock, "media", prefix+name, downloadPortableBody(name))
+					seed(mock, "media", prefix+name, downloadNamespaceBody(name))
 				}
 				root := t.TempDir()
 				writeFile(t, root, "keep", "unrelated bytes\x00\xff")
@@ -111,7 +81,10 @@ func TestDownloadPortableNamesPreflight(t *testing.T) {
 					}
 					return
 				}
-				want := downloadPortableItems(prefix, route, fixture)
+				// Listings sort names; fixture declaration order is not their order.
+				names := slices.Clone(fixture.names)
+				slices.Sort(names)
+				want := downloadNamespaceItems(prefix, route, names)
 				if plan.Rejected() || !reflect.DeepEqual(plan.Items, want) {
 					t.Fatalf("portable near-miss control lost its exact plan: %+v want=%+v", plan, want)
 				}
@@ -123,129 +96,13 @@ func TestDownloadPortableNamesPreflight(t *testing.T) {
 func TestDownloadPortableNamesDirect(t *testing.T) {
 	for _, route := range []string{"rclone", "native"} {
 		for _, fixture := range downloadPortableCases {
-			for _, recorded := range []bool{false, true} {
-				for _, reverse := range []bool{false, true} {
-					t.Run(fmt.Sprintf("%s/%s/recorded_%v/reverse_%v", route, fixture.name, recorded, reverse), func(t *testing.T) {
-						source, mock := session(t)
-						prefix := "scope/"
-						if route == "native" {
-							prefix = "scope\n/"
-						}
-						for _, name := range fixture.names {
-							seed(mock, "media", prefix+name, downloadPortableBody(name))
-						}
-						owned := t.TempDir()
-						root := filepath.Join(owned, "selected")
-						if err := os.Mkdir(root, 0o700); err != nil {
-							t.Fatal(err)
-						}
-						writeFile(t, root, "keep", "selected sentinel\x00\xff")
-						writeFile(t, owned, "outside", "outside sentinel\x00\xff")
-						items := downloadPortableItems(prefix, route, fixture)
-						if reverse {
-							slices.Reverse(items)
-						}
-						before := downloadDestinationSnapshot(t, owned)
-						plan := &DownloadPreflight{Items: items}
-						requests := mock.Requests()
-						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
-						var admissions []DownloadAdmission
-						executed, verified := map[DownloadItem]transfercopy.Observation{}, map[DownloadItem]transfercopy.Observation{}
-						progressCalls := 0
-						var recorders []*DownloadRecorder
-						if recorded {
-							recorders = []*DownloadRecorder{{
-								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
-							}}
-						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root, plan,
-							func(int64, int64, int64, int64) { progressCalls++ }, recorders...)
-						after := downloadDestinationSnapshot(t, owned)
-						if fixture.refused != "" {
-							if err == nil || report != nil || engine.calls != 0 || mock.Requests() != requests || len(admissions)+len(executed)+len(verified)+progressCalls != 0 {
-								t.Errorf("unportable component admitted a direct plan: report=%+v error=%v Copy calls=%d source requests=%d admissions=%+v executed=%+v verified=%+v progress=%d",
-									report, err, engine.calls, mock.Requests()-requests, admissions, executed, verified, progressCalls)
-							}
-							if err != nil && !strings.Contains(err.Error(), "does not preserve its unique selected name") {
-								t.Errorf("direct refusal changed its reported reason: %v", err)
-							}
-							if !reflect.DeepEqual(before, after) {
-								t.Errorf("refused direct plan changed owned entries: before=%+v after=%+v", before, after)
-							}
-							return
-						}
-						var total, files int64
-						for _, item := range items {
-							total += item.Size
-							if !item.Dir {
-								files++
-							}
-						}
-						want := &Report{Done: int64(len(items)), Verified: int64(len(items)), Bytes: total}
-						if route == "native" {
-							want.NativeRouted = files
-						}
-						wantCalls := 0
-						if route == "rclone" && files > 0 {
-							wantCalls = 1
-						}
-						if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
-							t.Fatalf("portable near-miss control failed: report=%+v error=%v Copy calls=%d progress=%d", report, err, engine.calls, progressCalls)
-						}
-						if recorded {
-							if len(admissions) != len(items) || len(executed) != len(items) || len(verified) != len(items) {
-								t.Fatalf("near-miss control lost records: %+v %+v %+v", admissions, executed, verified)
-							}
-							for index, item := range items {
-								a := admissions[index]
-								x, v := executed[item], verified[item]
-								if a.Item != item || x.Result != transfercopy.ResultCopied || x.Effect != transfercopy.EffectReportedApplied || x.CopiedBytes != item.Size || x.Diagnostic != (transfercopy.Diagnostic{}) ||
-									v.Result != transfercopy.ResultVerified || v.Effect != transfercopy.EffectNotAttempted || v.Diagnostic != (transfercopy.Diagnostic{}) || v.CopiedBytes != 0 {
-									t.Fatalf("near-miss control lost unchanged identity or observations: item=%+v admission=%+v execution=%+v verification=%+v", item, a, x, v)
-								}
-							}
-						}
-						for path, state := range before {
-							if after[path] != state {
-								t.Errorf("near-miss control changed existing entry %q: %+v -> %+v", path, state, after[path])
-							}
-							delete(after, path)
-						}
-						for _, name := range fixture.names {
-							path := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(name, "/")))
-							if !strings.HasSuffix(name, "/") {
-								state, ok := after[path]
-								if !ok || !state.mode.IsRegular() || state.body != downloadPortableBody(name) {
-									t.Fatalf("near-miss control full file bytes differ: %q %+v", path, state)
-								}
-								delete(after, path)
-							}
-						}
-						permittedDirectories := map[string]bool{}
-						for _, name := range fixture.names {
-							path := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(name, "/")))
-							if !strings.HasSuffix(name, "/") {
-								path = filepath.Dir(path)
-							}
-							for path != root {
-								permittedDirectories[path] = true
-								path = filepath.Dir(path)
-							}
-						}
-						for path := range permittedDirectories {
-							if state, ok := after[path]; !ok || !state.mode.IsDir() {
-								t.Errorf("near-miss control directory missing: %q %+v", path, state)
-							}
-							delete(after, path)
-						}
-						if len(after) != 0 {
-							t.Errorf("near-miss control left unexpected entries: %+v", after)
-						}
-					})
-				}
+			names := slices.Clone(fixture.names)
+			slices.Sort(names)
+			refusal := ""
+			if fixture.refused != "" {
+				refusal = "does not preserve its unique selected name"
 			}
+			testDownloadNamespaceDirect(t, route, fixture.name, names, refusal)
 		}
 	}
 }
