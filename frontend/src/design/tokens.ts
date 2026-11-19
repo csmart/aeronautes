@@ -36,11 +36,3 @@ export function resolvedTheme(): "light" | "dark" {
   }
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
-
-/**
- * Read a design token's computed value (e.g. token("--color-accent")) for
- * the rare consumer that renders outside CSS, like a canvas layer.
- */
-export function token(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
