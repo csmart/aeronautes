@@ -364,8 +364,14 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			names = append(names, name(i))
 		}
 		bulkStart := time.Now()
-		if result, err := deletion.DeleteNames(ctx, session, capabilities, container, names, deletion.Options{}); err != nil {
+		result, err := deletion.DeleteNames(ctx, session, capabilities, container, names, deletion.Options{})
+		if err != nil {
 			fail("bulk-delete", err, result)
+			return
+		}
+		if result.Failed != 0 || result.Unresolved != 0 || result.Remaining != 0 {
+			finish(jobs.StatePartial, fmt.Sprintf("bulk-delete incomplete: %d failed names, %d unresolved names, %d sampled names still present; benchmark container retained",
+				result.Failed, result.Unresolved, result.Remaining))
 			return
 		}
 		record("bulk-delete", 1, float64(len(names))/maxFloat(time.Since(bulkStart).Seconds(), 1e-6))
