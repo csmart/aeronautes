@@ -402,23 +402,6 @@ func (s *MutateService) containerAfterDTO(ctx context.Context, entry cachedSessi
 	return after
 }
 
-// record appends the audit event under whichever connection is active
-// when it is written and surfaces the error. The deletions still use it
-// and ignore the error (ADR 0058); the creations and the metadata writes
-// record their fact and audit in one required transaction.
-func (s *MutateService) record(ctx context.Context, operation, resource, summary string, result audit.Result, transIDs []string) error {
-	return s.recordFor(ctx, s.connections.ActiveBookmarkID(), operation, resource, summary, result, transIDs)
-}
-
-// recordFor appends the audit event attributed to the account the caller
-// captured when it admitted the operation.
-func (s *MutateService) recordFor(ctx context.Context, bookmarkID, operation, resource, summary string, result audit.Result, transIDs []string) error {
-	return appendAudit(ctx, s.audit, audit.Event{
-		BookmarkID: bookmarkID, Operation: operation, Resource: resource,
-		Summary: summary, Result: result, TransIDs: transIDs,
-	})
-}
-
 // recordMutationOutcome commits the attempt's outcome and its audit event
 // in one transaction, the required record of ADR 0058, 0062 and 0077.
 func (s *MutateService) recordMutationOutcome(ctx context.Context, identity, bookmarkID, operation, resource string, outcome mutationfacts.Outcome, result audit.Result, summary string, transIDs []string) error {
@@ -464,20 +447,6 @@ func objectMetadataFact(result *swiftcontrol.ObjectUpdateResult, err error, edit
 		return mutationfacts.OutcomeUnverified, audit.ResultUnverified, "metadata write unverified; " + summary, transIDs
 	}
 	return mutationfacts.OutcomeFailed, audit.ResultFailed, "metadata update failed", transIDs
-}
-
-func auditResult(outcome swiftcontrol.UpdateOutcome) audit.Result {
-	switch outcome {
-	case swiftcontrol.UpdateApplied:
-		return audit.ResultApplied
-	case swiftcontrol.UpdateConflict:
-		return audit.ResultConflict
-	case swiftcontrol.UpdateVerifyMismatch:
-		return audit.ResultVerifyMismatch
-	case swiftcontrol.UpdateUnverified:
-		return audit.ResultUnverified
-	}
-	return audit.ResultFailed
 }
 
 // AuditService exposes the §50 trail: reads for the viewer, and the §51
