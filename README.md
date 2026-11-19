@@ -68,14 +68,24 @@ make build   # production binary -> bin/aeronautes
 make run     # build + launch
 make dev     # hot-reload development mode
 make test    # go (race) + frontend suites, no cluster needed
-make rpm     # bin/aeronautes.rpm -> sudo dnf install ./bin/aeronautes.rpm
+make rpm     # versioned, unsigned RPM in bin/
+sudo dnf install "./bin/$(go run ./build/identity name).rpm"
 ```
 
-The Makefile is a thin directory over the real build system, the Wails v3 Taskfiles
-(`Taskfile.yml` + `build/`); `wails3 task --list` shows everything. The RPM (and deb/AppImage via
-`make package`) is built by [nfpm](https://nfpm.goreleaser.com) from `build/linux/nfpm/nfpm.yaml`
-— a convenience package of the built binary, not a Fedora-guidelines source build; a review-grade
-`.spec` (vendored sources through `rpmbuild`) is release-packaging work (§61, Phase 7).
+The Makefile is a thin directory over the Wails v3 Taskfiles (`Taskfile.yml` + `build/`); `wails3 task --list` shows every task.
+The RPM and deb are built by [nfpm](https://nfpm.goreleaser.com) from `build/linux/nfpm/nfpm.yaml`, with filenames derived from the verified build identity.
+They are convenience packages of the built binary; a Fedora source-package `.spec` remains separate release-packaging work (§61, Phase 7).
+`make package` also invokes Wails' AppImage task, which remains an unsupported development convenience without the release bundles' verified-engine contract or installation acceptance.
+
+## Contributing and testing a change
+
+Start with [the design](docs/DESIGN.md), [requirements](docs/REQUIREMENTS.md) and the relevant [decision records](docs/adr/), then trace the current caller before changing its contract.
+Swift and transfer rules belong in their Go domain packages; use `internal/systemtest` when the public service and its real store or engine boundary are the behaviour under test.
+Window behaviour belongs in the lowest owning Svelte component's tests, while [browser journeys and their coverage table](docs/journeys.md) describe what an operator can do end to end.
+Keep each rule at its owning layer, preserve meaningful failure cases and independent byte checks, and avoid tests that only repeat a scripted fake's answer.
+Build the frontend before running Go tests because the application embeds `frontend/dist`; `make build` above does this.
+Use `make test` for the local Go and frontend suites, and `make uijourneys` for mock browser journeys; real-cloud journeys require the separately documented disposable fixtures and credentials.
+The [CI guide](docs/CI.md) explains the required race, real-Swift, frontend and desktop smoke checks; native and representative-deployment acceptance remains in the [release test plan](docs/audits/2026-11-11/0.5.0-test-plan.md).
 
 ## Quickstart
 

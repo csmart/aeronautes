@@ -2,10 +2,11 @@
 
 ## Targets (§61.0)
 
-Three operating systems × two architectures, all required: Linux, macOS,
-and Windows on x86_64 and aarch64. The CI matrix in
-`.github/workflows/release.yml` builds all six on matched native runners
-(the webview links via CGO, so there is no cross-OS compilation).
+The build matrix covers Linux, macOS and Windows on x86_64 and aarch64.
+`.github/workflows/release.yml` builds all six on matched native runners for a tag, or when a manual dispatch requests all platforms; ordinary manual dispatches build Linux only.
+Linux is the accepted release scope: publication requires the Linux jobs and attaches their RPM, deb and tarball artifacts for both architectures.
+macOS and Windows remain development workflow artifacts until their own native acceptance runs are complete.
+The webview links via CGO, so these tasks do not cross-compile between operating systems.
 
 ## Signing status: UNSIGNED, on purpose
 
@@ -43,6 +44,9 @@ make build     # bin/aeronautes
 make rpm       # bin/*.rpm via nfpm
 make package   # rpm + deb + AppImage
 ```
+
+AppImage is an unsupported development convenience: it does not yet carry the release bundles' verified-engine contract or installation acceptance.
+Use RPM, deb or the tarball for the Linux release candidate.
 
 The binary is dynamically linked against the system WebKitGTK by design;
 a fully static binary is not possible (see README).

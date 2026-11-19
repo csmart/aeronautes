@@ -397,9 +397,8 @@ jobs:
           path: badges/
 
   # The headless release smoke (§65.8 item 6): the real binary under
-  # Xvfb against the in-repo mock cluster, ending in a real engine copy
-  # asserted server-side. A UI-breaking change cannot reach master
-  # green.
+  # Xvfb against the in-repo mock cluster, connecting and browsing its
+  # objects. Transfer outcomes are covered by service tests and journeys.
   smoke:
     name: Smoke — headless app against mock Swift
     runs-on: ubuntu-24.04

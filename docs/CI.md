@@ -13,9 +13,11 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 | Go — fmt, vet, build, test (race) | Formatting, vet, application build, binding drift, Go race tests and isolated keychain protocol tests |
 | Frontend — lint, build, test | Type checking, frontend build and tests |
 | Integration — containerized Swift (SAIO) | Internal race tests against two Swift accounts with the pinned official rclone |
-| Smoke — headless app against mock Swift | Built desktop application under Xvfb, including a real engine copy |
+| Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting to and browsing the mock account |
 | CI — all required jobs passed | Every preceding job completed with `success` |
 
+The smoke check proves desktop startup, connection and listing; it does not run a transfer.
+Transfer outcomes and independent byte checks belong to the service tests and [browser journeys](journeys.md).
 The aggregate uses `always()` so that a failed dependency cannot silently skip it.
 It refuses failed, cancelled, skipped or missing job results.
 Its shell regression test exercises each refusal for all four required jobs and runs in the aggregate job.
@@ -126,7 +128,7 @@ The [protected PR70 delivery record](experiments/2026-09-09-mock-scheduling.md#i
 Observed PR/master system packages take 792.682/826.057 seconds and integration jobs take 1,011/1,064 seconds within the unchanged limits.
 Keep measuring the complete inventory and both hosted durations as maintained download cases are added.
 
-The [fixture partition](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) separates three heavy groups from the complementary internal suite while preserving all tests and limits.
+The [fixture partition](experiments/2026-09-12-remaining-test-schedule.md#proposed-partition-across-fixtures) separates the heavy groups listed in [the partition script](../scripts/saio-partition.py) from the complementary internal suite while preserving all tests and limits.
 The two producers use separate runners and fixtures; `fail-fast: false` lets both retain diagnostics, while newer PR pushes still cancel the superseded workflow run.
 The protected Integration check requires both producers to succeed and validates their inventories, source/toolchain/run identity, actual exits and artifact hashes before combining atomic coverage with Go's normal reader.
 `saio-tests-main` and `saio-tests-heavy` retain each complete producer; `scenario-coverage` retains the combined profile and both independently validated scenario reports, with main's unchanged credits and the heavy report required to have zero credits.
