@@ -670,36 +670,34 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 // accounts cannot authorise a write under another.
 func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequestDTO, src, dst *swiftcontrol.Session,
 	observed swiftcontrol.ContainerVersioning, versioningErr error, segments string) error {
-	type candidate struct {
-		name    string
-		unknown bool
-	}
-	var candidates []candidate
+	total := 0
+	var names []string
 	if _, err := plan.Copy(ctx,
 		sourceObjects(ctx, req, src, dst, plan.NewSelection(req.Members)),
 		dst.Objects(ctx, req.DestContainer, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.DestPrefix}),
 		req.SourcePrefix, req.DestPrefix, func(item plan.Item) error {
-			if item.Verdict == plan.VerdictChanged || item.Verdict == plan.VerdictUnknown {
-				candidates = append(candidates, candidate{name: item.Name, unknown: item.Verdict == plan.VerdictUnknown})
+			switch item.Verdict {
+			case plan.VerdictChanged:
+			case plan.VerdictUnknown:
+				replaces, err := replacesUnknown(ctx, req, src, dst, item.Name)
+				if err != nil {
+					return err
+				}
+				if !replaces {
+					return nil
+				}
+			default:
+				return nil
+			}
+			total++
+			if len(names) < overwriteNameSample {
+				names = append(names, item.Name)
 			}
 			return nil
 		}); err != nil {
 		return err
 	}
-	var names []string
-	for _, c := range candidates {
-		if c.unknown {
-			replaces, err := replacesUnknown(ctx, req, src, dst, c.name)
-			if err != nil {
-				return err
-			}
-			if !replaces {
-				continue
-			}
-		}
-		names = append(names, c.name)
-	}
-	if len(names) == 0 {
+	if total == 0 {
 		return nil
 	}
 	if s.overwrites == nil {
@@ -723,7 +721,7 @@ func (s *TransferService) confirmCopyOverwrite(ctx context.Context, req CopyRequ
 	question, err := copyOverwriteQuestion(
 		s.connections.displayName(ctx, req.SourceBookmarkID), accountSuffix(src.StorageURL()),
 		s.connections.displayName(ctx, req.DestBookmarkID), accountSuffix(dst.StorageURL()),
-		req.DestContainer, req.DestPrefix, versioning, segments, names)
+		req.DestContainer, req.DestPrefix, versioning, segments, total, names)
 	if err != nil {
 		return err
 	}
@@ -772,7 +770,7 @@ func replacesUnknown(ctx context.Context, req CopyRequestDTO, src, dst *swiftcon
 // what happens to a replaced large object's old segments, or the names, so no
 // caller can raise a question that authorises nothing.
 func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
-	container, prefix, versioning, segments string, names []string) (OverwriteConfirmation, error) {
+	container, prefix, versioning, segments string, total int, names []string) (OverwriteConfirmation, error) {
 	switch {
 	case srcAccount == "":
 		return OverwriteConfirmation{}, errors.New("the source account could not be identified, so an overwrite is refused")
@@ -784,13 +782,13 @@ func copyOverwriteQuestion(srcLabel, srcAccount, dstLabel, dstAccount,
 		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
 	case segments == "":
 		return OverwriteConfirmation{}, errors.New("what happens to a replaced large object's old segments could not be stated, so an overwrite is refused")
-	case len(names) == 0:
+	case total <= 0 || len(names) == 0:
 		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
 	}
 	return OverwriteConfirmation{
 		Bookmark: titleText(dstLabel, 80), Account: titleText(dstAccount, 80),
 		SourceBookmark: titleText(srcLabel, 80), SourceAccount: titleText(srcAccount, 80),
-		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
+		Container: container, Prefix: prefix, Total: total, Names: names, Versioning: versioning,
 		Fragments: segments,
 	}, nil
 }

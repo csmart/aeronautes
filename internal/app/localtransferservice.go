@@ -117,9 +117,9 @@ func (s *TransferService) setFilePicker(picker FilePicker) {
 // OverwriteConfirmation is what the backend asks about, stated in its own
 // terms rather than the caller's: the bookmark and account suffix it
 // resolved, the container and prefix it resolved, the names it found live,
-// and what it observed about the container keeping versions. Names is the
-// whole set, so the question cannot be asked about fewer names than the
-// job will replace.
+// and what it observed about the container keeping versions. The whole
+// count stays separate from the sample so large copies need not retain
+// every name to ask the same bounded question.
 type OverwriteConfirmation struct {
 	// Bookmark is the display name the backend resolved, shortened for
 	// display. Account is the account the backend is connected to, in its
@@ -140,8 +140,8 @@ type OverwriteConfirmation struct {
 	Folder    string
 	Container string
 	Prefix    string
-	// Names are the live object names this job would replace, in the
-	// order the preflight reported them.
+	// Total covers every replacement; Names holds only the first sample.
+	Total int
 	Names []string
 	// Versioning is what the container said about keeping versions, as an
 	// observation and not a promise of recovery (ADR 0081 decision 8).
@@ -599,13 +599,17 @@ func uploadsLargeObject(items []local.UploadItem, chunkSize string) bool {
 // segments, from what keepsReplaced decided.
 func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadRequestDTO, scope selectionScope,
 	preflight *local.UploadPreflight, observed swiftcontrol.ContainerVersioning, versioningErr error, segments string) error {
+	total := 0
 	var names []string
 	for _, item := range preflight.Items {
 		if item.Replaces {
-			names = append(names, item.Name)
+			total++
+			if len(names) < overwriteNameSample {
+				names = append(names, item.Name)
+			}
 		}
 	}
-	if len(names) == 0 {
+	if total == 0 {
 		// Acknowledged, but nothing is there to replace, so there is
 		// nothing to ask about.
 		return nil
@@ -624,7 +628,7 @@ func (s *TransferService) confirmOverwrite(ctx context.Context, req UploadReques
 	}
 	before := s.observeConnection()
 	label, account, _ := s.pickBinding(ctx, scope)
-	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, names, segments)
+	question, err := overwriteQuestion(label, account, req.Container, req.Prefix, versioning, total, names, segments)
 	if err != nil {
 		return err
 	}
@@ -661,13 +665,17 @@ func (s *TransferService) askOverwrite(ctx context.Context, scope selectionScope
 // preflight found and the folder, account and container it names.
 func (s *TransferService) confirmDownloadOverwrite(ctx context.Context, req DownloadRequestDTO, scope selectionScope,
 	preflight *local.DownloadPreflight, folder string) error {
+	total := 0
 	var names []string
 	for _, item := range preflight.Items {
 		if item.Replaces {
-			names = append(names, item.RelPath)
+			total++
+			if len(names) < overwriteNameSample {
+				names = append(names, item.RelPath)
+			}
 		}
 	}
-	if len(names) == 0 {
+	if total == 0 {
 		return nil
 	}
 	if s.overwrites == nil {
@@ -680,7 +688,7 @@ func (s *TransferService) confirmDownloadOverwrite(ctx context.Context, req Down
 	}
 	return s.askOverwrite(ctx, scope, before, OverwriteConfirmation{
 		Folder: folder, SourceBookmark: titleText(label, 80), SourceAccount: titleText(account, 80),
-		Container: req.Container, Prefix: req.Prefix, Names: names,
+		Container: req.Container, Prefix: req.Prefix, Total: total, Names: names,
 	})
 }
 
@@ -725,7 +733,7 @@ func (s *TransferService) keepsReplaced(ctx context.Context, container, prefix s
 // tell them apart with. A question missing any other part of the plan it
 // would authorise is refused for the same reason. segments is the sentence
 // about a replaced large object's old segments (keepsReplaced).
-func overwriteQuestion(label, account, container, prefix, versioning string, names []string,
+func overwriteQuestion(label, account, container, prefix, versioning string, total int, names []string,
 	segments string) (OverwriteConfirmation, error) {
 	switch {
 	case account == "":
@@ -734,12 +742,12 @@ func overwriteQuestion(label, account, container, prefix, versioning string, nam
 		return OverwriteConfirmation{}, errors.New("the destination container could not be identified, so an overwrite is refused")
 	case versioning == "":
 		return OverwriteConfirmation{}, errors.New("the destination container's versioning could not be stated, so an overwrite is refused")
-	case len(names) == 0:
+	case total <= 0 || len(names) == 0:
 		return OverwriteConfirmation{}, errors.New("there is nothing live to ask about, so no overwrite is authorised")
 	}
 	return OverwriteConfirmation{
 		Bookmark: titleText(label, 80), Account: titleText(account, 80),
-		Container: container, Prefix: prefix, Names: names, Versioning: versioning,
+		Container: container, Prefix: prefix, Total: total, Names: names, Versioning: versioning,
 		Fragments: segments,
 	}, nil
 }

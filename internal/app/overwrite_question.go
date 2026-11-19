@@ -32,7 +32,7 @@ const overwriteNameSample = 8
 // to compose one whose account, container, versioning or name set is missing,
 // so no caller can ask this to render a question that authorises nothing.
 func OverwriteQuestion(about OverwriteConfirmation) (string, []string) {
-	total := len(about.Names)
+	total := about.Total
 	target := titleSafe(about.Container)
 	if about.Prefix != "" {
 		target += "/" + titleSafe(about.Prefix)
@@ -45,7 +45,7 @@ func OverwriteQuestion(about OverwriteConfirmation) (string, []string) {
 				fmt.Sprintf("%d file%s already in the folder %s may be REPLACED by the objects of %s in %s.",
 					total, plural(total, "", "s"), shortenText(titleSafe(about.Folder), 160), shortenText(target, 120),
 					bindingText(about.SourceBookmark, about.SourceAccount, 80)),
-				"Replacing — " + overwriteNames(about.Names),
+				"Replacing — " + overwriteNames(about.Names, total),
 				"Compared — " + compareRule,
 				"A replaced file is gone: it is not kept or moved to the trash.",
 				"This question comes from the application, not from the page.",
@@ -66,7 +66,7 @@ func OverwriteQuestion(about OverwriteConfirmation) (string, []string) {
 			bindingText(about.SourceBookmark, about.SourceAccount, 80))
 		title = fmt.Sprintf("Replace %d object%s?", total, plural(total, "", "s"))
 	}
-	lines := []string{replaceLine, "Replacing — " + overwriteNames(about.Names)}
+	lines := []string{replaceLine, "Replacing — " + overwriteNames(about.Names, total)}
 	if about.SourceAccount == "" {
 		// A copy has already found its names different from the listings
 		// (ADR 0122 decision 4) and replaces each one; an upload's engine
@@ -102,7 +102,7 @@ const compareRule = "each one is replaced only when it differs, as rclone copy d
 
 // overwriteNames lists the sample and says how many it did not list, so a
 // reader is never left believing the sample is the whole set.
-func overwriteNames(names []string) string {
+func overwriteNames(names []string, total int) string {
 	shown := names
 	if len(shown) > overwriteNameSample {
 		shown = shown[:overwriteNameSample]
@@ -112,7 +112,7 @@ func overwriteNames(names []string) string {
 		safe = append(safe, titleText(name, 120))
 	}
 	listed := strings.Join(safe, ", ")
-	if rest := len(names) - len(shown); rest > 0 {
+	if rest := total - len(shown); rest > 0 {
 		return fmt.Sprintf("%s and %d more", listed, rest)
 	}
 	return listed

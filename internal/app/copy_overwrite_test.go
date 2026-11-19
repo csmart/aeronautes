@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -86,16 +87,33 @@ func TestAConfirmedCopyReplacesAfterOneQuestionNamingBothAccounts(t *testing.T) 
 // A copy the operator declines writes nothing.
 func TestADeclinedCopyWritesNothing(t *testing.T) {
 	h, source, dest, mock, seen := twoClusters(t)
-	seedObject(h.mock, "media", "doc", "new source content", nil)
-	seedObject(mock, "backup", "doc", "old destination", nil)
-	h.transfer.setOverwriteConfirmer(&recordingOverwriteConfirmer{yes: false})
+	for i := range 12 {
+		name := fmt.Sprintf("doc-%02d", i)
+		seedObject(h.mock, "media", name, "new source content", nil)
+		seedObject(mock, "backup", name, "old", nil)
+	}
+	confirmer := &recordingOverwriteConfirmer{yes: false}
+	h.transfer.setOverwriteConfirmer(confirmer)
 
 	_, err := h.transfer.StartCopy(t.Context(), copyToBackup(source, dest, true))
 	if err == nil || !strings.Contains(err.Error(), "not confirmed") {
 		t.Fatalf("declined copy was not refused: %v", err)
 	}
-	if got := sizesIn(t, mock, "backup")["doc"]; got != int64(len("old destination")) || len(*seen) != 0 {
-		t.Fatalf("a declined copy left %d bytes at the name and built %d engines", got, len(*seen))
+	asked := confirmer.questions()
+	if len(asked) != 1 || len(asked[0].Names) != 8 {
+		t.Fatalf("want one bounded eight-name confirmation, got %+v", asked)
+	}
+	if title, lines := OverwriteQuestion(asked[0]); title != "Replace 12 objects?" || !strings.HasSuffix(lines[1], " and 4 more") {
+		t.Fatalf("the sample lost the whole count: %q %v", title, lines)
+	}
+	if got := sizesIn(t, mock, "backup"); len(got) != 12 || len(*seen) != 0 {
+		t.Fatalf("a declined copy left %d names and built %d engines", len(got), len(*seen))
+	} else {
+		for name, size := range got {
+			if size != 3 {
+				t.Fatalf("declined copy changed %s to %d bytes", name, size)
+			}
+		}
 	}
 }
 
@@ -104,7 +122,7 @@ func TestADeclinedCopyWritesNothing(t *testing.T) {
 // that the store describes as the same, nor a new name. A copy with nothing
 // to replace asks nothing.
 func TestTheCopyConfirmationAsksOnlyAboutWhatWillBeReplaced(t *testing.T) {
-	h, source, dest, mock, _ := twoClusters(t)
+	h, source, dest, mock, seen := twoClusters(t)
 	seedObject(h.mock, "media", "changed", "new source content", nil)
 	seedObject(mock, "backup", "changed", "old", nil)
 	seedObject(h.mock, "media", "empty", "", nil)
@@ -139,6 +157,16 @@ func TestTheCopyConfirmationAsksOnlyAboutWhatWillBeReplaced(t *testing.T) {
 	}
 	if asked := confirmer.questions(); len(asked) != 1 {
 		t.Fatalf("a copy with nothing to replace asked a question: %+v", asked[1:])
+	}
+
+	// Unknown pairs still need their detail read before any confirmation.
+	mock.FailNextObjectHEADs(1)
+	engines := len(*seen)
+	if id, err := h.transfer.StartCopy(t.Context(), copyToBackup(source, dest, true)); err == nil || id != "" {
+		t.Fatalf("copy with unreadable comparison started: %q %v", id, err)
+	}
+	if len(confirmer.questions()) != 1 || len(*seen) != engines {
+		t.Fatal("an unreadable comparison asked for authority or built an engine")
 	}
 }
 

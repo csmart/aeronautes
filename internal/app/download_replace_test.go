@@ -82,7 +82,7 @@ func TestADeclinedDownloadReplacementWritesNothing(t *testing.T) {
 	}
 	asked := confirmer.questions()
 	if len(asked) != 1 || asked[0].Folder != f.dest || asked[0].SourceAccount == "" || asked[0].Container != "media" ||
-		len(asked[0].Names) != 1 || asked[0].Names[0] != "report.txt" {
+		asked[0].Total != 1 || len(asked[0].Names) != 1 || asked[0].Names[0] != "report.txt" {
 		t.Fatalf("asked %+v, want one question naming the folder, the source account and container, and the file", asked)
 	}
 	jobs, err := f.h.jobsSvc.List(t.Context(), f.bookmark, false, 10)
