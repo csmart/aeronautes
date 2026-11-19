@@ -263,6 +263,7 @@ export class BrowserState {
   set connectedBookmarkId(value: string | null) {
     if (value !== this.#connectedBookmarkId) {
       this.#clearFind();
+      void this.cancelCount();
       this.#scopeRevision++;
       this.#connectionRevision++;
     }
@@ -388,6 +389,7 @@ export class BrowserState {
   set containerName(value: string | null) {
     if (value !== this.#containerName) {
       this.#clearFind();
+      void this.cancelCount();
       this.#scopeRevision++;
     }
     this.#containerName = value;
@@ -423,6 +425,7 @@ export class BrowserState {
   set prefix(value: string) {
     if (value !== this.#prefix) {
       this.#clearFind();
+      void this.cancelCount();
       this.#scopeRevision++;
     }
     this.#prefix = value;
@@ -1094,6 +1097,7 @@ export class BrowserState {
 
   async #loadEntries(prefix: string) {
     this.#clearFind();
+    void this.cancelCount();
     const seq = ++this.#listSeq;
     // A navigation supersedes an in-place refresh; its rows arrive here.
     this.entriesRefreshing = false;
@@ -1681,7 +1685,7 @@ export class BrowserState {
    * streams the listing, keeps no name, and can be stopped (ADR 0072). */
   async startCount() {
     if (this.containerName === null || this.connecting || !this.connectedBookmarkId) return;
-    await this.cancelCount();
+    const cancellation = this.cancelCount();
     const request: CountRequest = {
       scope: this.#scopeRevision, seq: ++this.#countSeq, bookmark: this.connectedBookmarkId, portrait: this.#portrait(),
       container: this.containerName, prefix: this.countTarget, at: this.prefix, started: false, id: null,
@@ -1692,6 +1696,8 @@ export class BrowserState {
     this.countRunning = true;
     const current = () => request === this.#countRequest && request.seq === this.#countSeq && this.#currentCountScope(request);
     try {
+      await cancellation;
+      if (!current()) return;
       request.started = true;
       request.id = await this.#api.startFind(request.container, request.prefix, "", request.bookmark, true);
       if (!current()) {
@@ -1724,7 +1730,9 @@ export class BrowserState {
     this.countRunning = false;
     const request = this.#countRequest;
     if (request === null || request.id === null) return;
-    await this.#api.cancelFind(request.id, request.bookmark).catch(() => undefined);
+    const id = request.id;
+    request.id = null;
+    await this.#api.cancelFind(id, request.bookmark).catch(() => undefined);
   }
 
   #currentFindScope(request: FindRequest): boolean {
