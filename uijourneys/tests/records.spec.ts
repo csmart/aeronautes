@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  digestOf, expect, finish, lag, localFolder, openContainer, ownContainer, sha256, uploadFolder, writeFiles,
+  digestOf, expect, finish, lag, localFolder, openContainer, ownContainer, sha256, terminalJobLabel, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // ADR 0104 through the window for the two routes that write to the store:
@@ -173,9 +173,9 @@ async function cancelIfRunning(page: Page, id: string): Promise<void> {
   await page.goto("/");
   await openDrawer(page);
   const row = jobRow(page, id);
-  if (/^(complete|partial|cancelled|failed)$/.test((await badge(row).textContent()) ?? "")) return;
+  if (terminalJobLabel.test((await badge(row).textContent()) ?? "")) return;
   await row.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(badge(row)).toHaveText(/^(complete|partial|cancelled|failed)$/, { timeout: 2 * 60 * 1000 });
+  await expect(badge(row)).toHaveText(terminalJobLabel, { timeout: 2 * 60 * 1000 });
 }
 
 async function downloadContainer(page: Page, target: string, container: string): Promise<string> {

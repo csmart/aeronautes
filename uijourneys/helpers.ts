@@ -69,6 +69,8 @@ export async function openContainer(page: Page, target: string, container: strin
   await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: container })).toBeVisible();
 }
 
+export const terminalJobLabel = /^(complete|partial|cancelled|cancelled, incomplete|failed)$/;
+
 // finish waits for the job a dialog started to end, requires that it
 // completed, and returns the text of its details as the drawer shows them,
 // which include what the job recorded it did. The job's row is found by its
@@ -78,7 +80,7 @@ export async function finish(page: Page, dialog: Locator): Promise<string> {
   const id = started!.split(" ")[1];
   await dialog.getByRole("button", { name: "Show in jobs" }).click();
   const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
-  const ended = row.getByText(/^(complete|partial|cancelled|failed)$/);
+  const ended = row.getByText(terminalJobLabel);
   await expect(ended).toBeVisible({ timeout: 8 * 60 * 1000 });
   await expect(ended).toHaveText("complete");
   const details = await row.innerText();

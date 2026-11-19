@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  addMockBookmark, connect, deleteBookmark, digestOf, escapeRegExp, expect, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, typedDelete, uploadFolder, writeFiles,
+  addMockBookmark, connect, deleteBookmark, digestOf, escapeRegExp, expect, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, terminalJobLabel, typedDelete, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // The jobs drawer, the job limits in Settings and the per-job settings,
@@ -78,9 +78,9 @@ async function openDrawer(page: Page): Promise<void> {
 async function cancel(page: Page, id: string): Promise<void> {
   await openDrawer(page);
   const row = jobRow(page, id);
-  if (/^(complete|partial|cancelled|failed)$/.test((await badge(row).textContent()) ?? "")) return;
+  if (terminalJobLabel.test((await badge(row).textContent()) ?? "")) return;
   await row.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(badge(row)).toHaveText(/^(complete|partial|cancelled|failed)$/, { timeout: 2 * 60 * 1000 });
+  await expect(badge(row)).toHaveText(terminalJobLabel, { timeout: 2 * 60 * 1000 });
 }
 
 // cancelAll cancels what a journey left running from a fresh page, whatever

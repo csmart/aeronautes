@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  digestOf, expect, finish, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, uploadFolder, writeFiles,
+  digestOf, expect, finish, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, terminalJobLabel, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // A folder is uploaded with a file and a folder inside it, so that one
@@ -220,6 +220,6 @@ async function finishSelectedDelete(page: Page, deletion: Locator): Promise<void
   const id = /is job (\S+)\./.exec(started!)![1];
   await deletion.getByRole("button", { name: "Show in jobs" }).click();
   const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
-  await expect(row.getByText(/^(complete|partial|cancelled|failed)$/)).toHaveText("complete", { timeout: 8 * 60 * 1000 });
+  await expect(row.getByText(terminalJobLabel)).toHaveText("complete", { timeout: 8 * 60 * 1000 });
   await page.getByRole("button", { name: /▾ hide/ }).click();
 }
