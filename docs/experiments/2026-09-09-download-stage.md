@@ -14,7 +14,7 @@ An existing file, directory or symlink refuses engine dispatch and remains uncha
 An eligible destination with a nil internal plan now returns a refusal before stage creation, completing the earlier review's entry-contract follow-up.
 
 Recursive deletion is removed.
-[Group cleanup](../../internal/transfer/local/download_stage.go) considers only the stage root and selected relative paths' ancestor directories, deepest first.
+[Group cleanup](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/transfer/local/download_stage.go) considers only the stage root and selected relative paths' ancestor directories, deepest first.
 It checks expected directories without following symlinks and uses directory-only removal, which cannot unlink a file substituted for the directory.
 It does not discover or delete arbitrary children.
 Nonempty or refused directories and unrelated entries remain, while ordinary empty selected ancestors are removed.
@@ -29,7 +29,7 @@ No schema or frontend DTO change is needed, and downloads remain record version 
 
 ## Maintained effect tests
 
-The [actual-service cases](../../internal/systemtest/download_stage_test.go) use pinned rclone with owned mock Swift and two-account SAIO fixtures.
+The [actual-service cases](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/systemtest/download_stage_test.go) use pinned rclone with owned mock Swift and two-account SAIO fixtures.
 Ten leaves per provider cover ordinary nested placement, refused staged unlink, an injected post-child error, four unrelated entry types, and three pre-existing stage types.
 The unrelated entries are a file, a populated directory, an empty directory and a symlink.
 Each is introduced and acknowledged while the selected GET is held at the existing response barrier.
@@ -40,7 +40,7 @@ The second job is observed queued before its exact generated stage path is popul
 After release, only the first child may complete; the second job fails without changing its existing stage.
 The first job's full bytes and counters are checked too.
 
-A narrow [per-invocation boundary](../../internal/app/download_stage.go), configured through backend wiring outside the frontend bridge, acknowledges the return of the actual child before placement.
+A narrow [per-invocation boundary](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/app/download_stage.go), configured through backend wiring outside the frontend bridge, acknowledges the return of the actual child before placement.
 The permission fixture first reads all 21 selected staged bytes and proves the final target is absent.
 It then removes write permission from the owned staged parent directory.
 After release, the final and staged files must identify the same actual hard link, while an independent unlink attempt must return permission denied.
@@ -49,9 +49,9 @@ The normal control removes the complete nested stage and finishes without a clea
 
 The post-child refusal fixture preserves the actual child's complete staged bytes after injecting an error before placement.
 It proves that this uncertain stage is retained beside the original failure reason and explicit cleanup result; it does not represent a child crash or a truncated network transfer.
-The [executor tests](../../internal/transfer/local/download_stage_test.go) separately preserve partial bytes, non-directory replacements and an outside empty directory behind a selected-ancestor symlink.
-The original smaller [permission fixture](../../internal/transfer/local/download_placement_test.go) is maintained alongside the broader service evidence.
-The [completion tests](../../internal/app/download_stage_test.go) cover eight combinations of earlier copies, failures, cancellation and later cleanup, and preserve simultaneous engine and injected boundary errors.
+The [executor tests](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/transfer/local/download_stage_test.go) separately preserve partial bytes, non-directory replacements and an outside empty directory behind a selected-ancestor symlink.
+The original smaller [permission fixture](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/transfer/local/download_placement_test.go) is maintained alongside the broader service evidence.
+The [completion tests](https://github.com/csmart/aeronautes/blob/856b7ee862a3b3822f57e0ef0798a8c5591c9441/internal/app/download_stage_test.go) cover eight combinations of earlier copies, failures, cancellation and later cleanup, and preserve simultaneous engine and injected boundary errors.
 
 Every service leaf checks exact public/durable counters, state and reason, the matching terminal audit and its durable bookmark identity, and complete owned local and remote collateral.
 History reruns remain refused, and an orderly fresh-process reopen preserves the complete saved state without storage requests or automatic cleanup.

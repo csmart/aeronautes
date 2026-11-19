@@ -72,7 +72,7 @@ The existing destination-limit test separately checks engine policy and persiste
 
 The verified candidate starts from the four unpublished staged-content commits ending at `a21bb0050bab50cb9ca47cd0cf2b2d7ba4f29152`.
 Its runner source SHA-256 is `14d38223a514a4dd594064489a9b43ea0a10736515959299ad2304d863c4c468` and Copy service source SHA-256 is `e67e4673c830eb306d8ee5a26b338cb12d3e84aaff60bc8b668773d2839d5b12`.
-The maintained [representation test](../../internal/systemtest/copy_staged_representation_test.go) has SHA-256 `c09ec9c94589444ae2c1f89d9788bb20baa8c417d17f27eede4560e8c2c61a78`.
+The maintained [representation test](https://github.com/csmart/aeronautes/blob/9b1c152dbd8c664582ed9ede0c45b1a743719145/internal/systemtest/copy_staged_representation_test.go) has SHA-256 `c09ec9c94589444ae2c1f89d9788bb20baa8c417d17f27eede4560e8c2c61a78`.
 Each producer retained all 769 input file hashes, the source archive and patch, exact command and exit, complete Go JSON output and unchanged-source check.
 The deliberately changed variants differ in only their named policy file from that candidate.
 

@@ -15,7 +15,7 @@ A successful link remains a copied object even if subsequent cleanup fails.
 
 ## Correction
 
-[Native completion](../../internal/transfer/local/download_close.go) checks the copied length, required file sync, file close and source close before attempting the final link.
+[Native completion](https://github.com/csmart/aeronautes/blob/ca3439bfc9165c1e46e985cffc63dd94b16507e7/internal/transfer/local/download_close.go) checks the copied length, required file sync, file close and source close before attempting the final link.
 Both handles receive one checked close attempt even when an earlier read, length or sync check fails.
 Source closure is also checked when destination-directory or temporary-file admission fails.
 The source reader can reject content on close after a successful read, so `io.Copy` success alone cannot authorise placement.
@@ -48,7 +48,7 @@ Orderly fresh-process reopening preserves the saved state and exact permitted fi
 The terminal audit retains the existing coarse `verify_mismatch` result for partial jobs; detailed native errors remain in the job reason, without introducing a new audit vocabulary.
 These remote fixtures contain ordinary objects and account sentinels, not shared DLO/SLO backing data.
 
-The [focused filesystem tests](../../internal/transfer/local/download_close_test.go) additionally exercise read, length, sync, file-close and source-close failures, simultaneous primary and close errors, and actual link/unlink permission effects.
+The [focused filesystem tests](https://github.com/csmart/aeronautes/blob/ca3439bfc9165c1e46e985cffc63dd94b16507e7/internal/transfer/local/download_close_test.go) additionally exercise read, length, sync, file-close and source-close failures, simultaneous primary and close errors, and actual link/unlink permission effects.
 They assert that closure occurs before the final name appears and that both handles receive exactly one close attempt.
 For the post-link cleanup refusal, this helper fixture uses separate temporary and final directories on the same owned filesystem, allowing a real link while the temporary parent refuses unlink.
 It proves actual `SameFile` identity, retained complete temporary bytes and successful-copy accounting beside the cleanup issue.
@@ -97,7 +97,7 @@ Independent review approved the native correction while identifying two gaps in 
 The production implementation already refuses the grown object and checks both admission-close paths.
 These follow-ups strengthen regression evidence without changing production behaviour.
 
-The [closure test](../../internal/transfer/local/download_close_test.go) now includes an object longer than its planned size and requires refusal, no final file, one close attempt per handle and no temporary residue.
+The [closure test](https://github.com/csmart/aeronautes/blob/ca3439bfc9165c1e46e985cffc63dd94b16507e7/internal/transfer/local/download_close_test.go) now includes an object longer than its planned size and requires refusal, no final file, one close attempt per handle and no temporary residue.
 The [admission tests](../../internal/transfer/local/download_admission_test.go) call the actual native download helper through a mock Swift session whose GET response body records close attempts.
 They require exactly one close after an existing destination file refuses directory creation or an owned directory's permissions refuse temporary-file creation.
 Each path has a successful-close control and a refused-close case; the latter must retain both filesystem and source-close causes.

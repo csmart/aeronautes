@@ -129,7 +129,7 @@ The operator ran rclone alone against the same store and saw what it does: each 
    Measured on the pinned engine: with that flag a file that exists is left untouched and the engine says so in a line that names it, and without it the file is replaced.
    The engine looks at a name once, just before it writes the file: a file the operator creates in the moment between is replaced, and nothing here can know of it.
    The flag stays forbidden for a copy to a store, where the plan decides what is replaced and the engine must not skip; the runner refuses it there.
-   The application makes the folders a file needs before the engine runs, one component at a time through the held folder, refusing a link or a mount point on the way and reporting the folders it made, as before ([ADR 0043](0043-download-created-directory-accounting.md)); the engine then writes files only.
+   The application makes the folders a file needs before the engine runs, one component at a time through the held folder, refusing a link or a mount point on the way and reporting the folders it made, as before ([ADR 0043](0043-cancellation-delta-authority.md)); the engine then writes files only.
    The preview's refusals stay: a file that exists, a name the filesystem cannot hold, and two names the filesystem would merge are about the operator's disk and not about another writer.
    **What a file's outcome is.**
    The engine's line for a file means it was downloaded.

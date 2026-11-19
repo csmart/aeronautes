@@ -121,7 +121,7 @@ The following text is proposed for the shared design sequence list and the UI-11
 
 For `docs/DESIGN.md`, after the manifest consent layout sequence:
 
-> The next bounded [container mode keyboard correction](experiments/2026-09-11-container-mode-keys.md) gives the Container mode tablist one roving tab stop, automatic activation on ArrowLeft, ArrowRight, Home and End, and an associated tab panel, consuming exactly those four keys so the §4.4 browser handler never moves the working list on them.
+> The next bounded [container mode keyboard correction](https://github.com/csmart/aeronautes/blob/0a4226c7f735e26e907e91d8c8de84af11078b33/docs/experiments/2026-09-11-container-mode-keys.md) gives the Container mode tablist one roving tab stop, automatic activation on ArrowLeft, ArrowRight, Home and End, and an associated tab panel, consuming exactly those four keys so the §4.4 browser handler never moves the working list on them.
 > It changes one component and pins the unchanged selected container, filter, prefix and working-list selection across a keyboard mode change.
 > Screen readers, other platforms, zoom and the remaining §4.4 shortcuts stay open.
 
