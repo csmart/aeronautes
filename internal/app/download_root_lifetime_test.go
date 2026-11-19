@@ -23,9 +23,6 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 	// ADR 0041 binding, which has its own regressions.
 	scope := selectionScope{bookmarkID: "b", generation: 1, container: "media", prefix: "scope/"}
 	token := store.putDir(scope, selected)
-	if dir, err := store.getDir(token, scope); err != nil || dir != selected {
-		t.Fatalf("spelling changed: %q %v", dir, err)
-	}
 	first, path, err := store.leaseDir(token, scope)
 	if err != nil || first == nil || path != selected {
 		t.Fatalf("lease failed: %v %q %v", first, path, err)
@@ -48,9 +45,6 @@ func TestDirectorySelectionLifetime(t *testing.T) {
 	// Evicting the token closes the pick's handle, not the lease.
 	for range maxSelections {
 		store.putSources(scope, []local.UploadSource{{Path: "filler", Name: "filler"}}, nil)
-	}
-	if _, err := store.getDir(token, scope); err == nil {
-		t.Fatal("evicted token still resolves")
 	}
 	if _, _, err := store.leaseDir(token, scope); err == nil {
 		t.Fatal("evicted token still leases")

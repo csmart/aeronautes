@@ -715,13 +715,6 @@ func TestSchedulerBudgetQueues(t *testing.T) {
 	}
 }
 
-// droppingEngine claims success while copying nothing.
-type droppingEngine struct{ httpEngine }
-
-func (e *droppingEngine) Copy(ctx context.Context, src, dst string, names []string, onEvent func(rclone.Event)) (*rclone.Result, error) {
-	return &rclone.Result{}, nil
-}
-
 func TestFindInContainer(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
