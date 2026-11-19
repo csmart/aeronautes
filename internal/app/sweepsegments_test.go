@@ -222,6 +222,18 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 		"an entry with an empty entity tag": {func(t *testing.T, h *harness) {
 			putManifest(h, "media", "scope/in/big", `[{"name":"/media_segments/big/0001","hash":"","bytes":10}]`)
 		}, "no recorded entity tag"},
+		"a partial manifest response": {func(t *testing.T, h *harness) {
+			putManifest(h, "media", "scope/in/big", "["+part+"}]")
+			h.mock.SetManifestReadFault("media", "scope/in/big", "partial")
+		}, "its manifest could not be read"},
+		"a ranged manifest response": {func(t *testing.T, h *harness) {
+			putManifest(h, "media", "scope/in/big", "["+part+"}]")
+			h.mock.SetManifestReadFault("media", "scope/in/big", "ranged")
+		}, "its manifest could not be read"},
+		"a manifest with trailing content": {func(t *testing.T, h *harness) {
+			putManifest(h, "media", "scope/in/big", "["+part+"}]")
+			h.mock.SetManifestReadFault("media", "scope/in/big", "trailing")
+		}, "its manifest could not be read"},
 		"a dynamic manifest that reads a name outside its namespace": {func(t *testing.T, h *harness) {
 			seedObject(h.mock, "media_segments", "big0/other", "another object's", nil)
 			h.mock.PutObject("media", "scope/in/big", swifttest.Object{Manifest: "media_segments/big"})

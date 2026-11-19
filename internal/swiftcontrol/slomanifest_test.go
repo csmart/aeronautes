@@ -88,6 +88,8 @@ func TestSLOManifestBadShapes(t *testing.T) {
 	cases := map[string]string{
 		"no container/object split": `[{"name": "/justonepart", "bytes": 1}]`,
 		"bad range":                 `[{"name": "/c/o", "range": "10-"}]`,
+		"trailing content":          `[{"name":"/c/o"}] trailing`,
+		"second array":              `[{"name":"/c/o"}] []`,
 		"bad inline base64":         `[{"data": "%%%"}]`,
 		"empty object name":         `[{"name": "/c/", "bytes": 1}]`,
 	}
@@ -96,6 +98,27 @@ func TestSLOManifestBadShapes(t *testing.T) {
 		if _, err := s.SLOManifest(context.Background(), "media", "archive.tar"); err == nil {
 			t.Errorf("%s: parse must fail loudly, never drop or invent entries", label)
 		}
+	}
+}
+
+func TestSLOManifestRefusesACloseFailure(t *testing.T) {
+	closeFailure := errors.New("fixture close failure")
+	body := &contentResultBody{data: []byte(`[{"name":"/parts/a"}]`), readErr: io.EOF, closeErr: closeFailure}
+	session, err := New(Config{AuthURL: "http://127.0.0.1/auth", Username: "fixture", APIKey: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(session.Close)
+	session.conn.Transport = admissionRoundTrip(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/auth" {
+			return &http.Response{StatusCode: 200, Header: http.Header{
+				"X-Storage-Url": {"http://127.0.0.1/v1/AUTH_fixture"}, "X-Auth-Token": {"fixture"},
+			}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: body, Request: request}, nil
+	})
+	if _, err := session.SLOManifest(t.Context(), "owned", "object"); !errors.Is(err, closeFailure) {
+		t.Fatalf("manifest accepted despite close failure: %v", err)
 	}
 }
 
@@ -277,7 +300,7 @@ func newSLOManifestPartialSession(t *testing.T, status int, header, value, body 
 	return s
 }
 
-func TestSLOManifestEntriesRequiresACompleteResponse(t *testing.T) {
+func TestSLOManifestRequiresACompleteResponse(t *testing.T) {
 	// A partial body that happens to parse is not the
 	// manifest. Same contract as OpenObjectContent: HTTP 200, no
 	// Content-Range.
@@ -292,16 +315,16 @@ func TestSLOManifestEntriesRequiresACompleteResponse(t *testing.T) {
 	} {
 		t.Run(label, func(t *testing.T) {
 			s := newSLOManifestPartialSession(t, tc.status, tc.header, tc.value, body)
-			if _, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20); err == nil {
+			if _, err := s.SLOManifest(context.Background(), "media", "archive.tar"); err == nil {
 				t.Fatal("a partial response was admitted as a complete manifest")
 			}
 		})
 	}
 	t.Run("complete_response_is_admitted", func(t *testing.T) {
 		s := newSLOManifestPartialSession(t, http.StatusOK, "", "", body)
-		entries, err := s.SLOManifestEntries(context.Background(), "media", "archive.tar", 10, 1<<20)
-		if err != nil || len(entries) != 1 {
-			t.Fatalf("entries = %+v, err = %v", entries, err)
+		manifest, err := s.SLOManifest(context.Background(), "media", "archive.tar")
+		if err != nil || len(manifest.Entries) != 1 {
+			t.Fatalf("manifest = %+v, err = %v", manifest, err)
 		}
 	})
 }

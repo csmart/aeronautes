@@ -72,86 +72,11 @@ type RawEntry struct {
 
 func (RawEntry) isSLOEntry() {}
 
-// SLOManifest GETs ?multipart-manifest=get and parses the manifest into
-// the exact model. It does not verify that the object is an SLO first —
-// callers hold an ObjectDetail with ClassSLO from the HEAD (§20).
+// SLOManifest uses the application's manifest limits for display and for
+// destructive membership: neither may mistake a partial answer for the list.
+// Callers hold an ObjectDetail with ClassSLO from the HEAD (§20).
 func (s *Session) SLOManifest(ctx context.Context, container, name string) (*SLOManifest, error) {
-	// The library's operation wrappers authenticate lazily; a direct Call
-	// (needed for the query parameter) must do the same, and refresh its
-	// target on mid-call re-auth. This is the inspector's read, so a refused
-	// token is re-authenticated transparently.
-	credentials, err := s.Credentials(ctx, 0)
-	if err != nil {
-		return nil, err
-	}
-	resp, _, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
-		Container:  container,
-		ObjectName: name,
-		Operation:  "GET",
-		Parameters: url.Values{"multipart-manifest": []string{"get"}},
-		OnReAuth:   s.auth.storageTarget,
-	})
-	if err != nil {
-		return nil, Normalize(err)
-	}
-	defer resp.Body.Close()
-	return parseSLOManifest(resp.Body, container, name)
-}
-
-// The bounds the reviewed-graph re-read is parsed within, matching the
-// project's manifest limits elsewhere, so the live graph that authorises a
-// DELETE is read whole within the same budget rather than trusted unbounded.
-const (
-	maxReviewedManifestEntries = 10000
-	maxReviewedManifestBytes   = 8 << 20
-)
-
-// sloManifestWith reads a static large object's manifest under credentials
-// the caller already holds, pinned to that snapshot's storage URL and token
-// with no re-authentication callback, so a segment job reads the graph
-// immediately before its comparison HEAD under the one snapshot and names the
-// same storage authority the comparison and the DELETE will use (ADR 0095
-// decision 8). A token refused here invalidates the token and surfaces as
-// unauthorized, and the caller restarts the whole comparison under fresh
-// credentials rather than reading the graph from one account and deleting at
-// another. It is never the inspector's read, which re-authenticates in place.
-func (s *Session) sloManifestWith(ctx context.Context, credentials StorageCredentials, container, name string, maxEntries int, maxBytes int64) (manifest *SLOManifest, err error) {
-	if container == "" || name == "" {
-		return nil, &SwiftError{Kind: KindUnknown, Message: "read SLO manifest: the container and object name must both be present"}
-	}
-	target := credentials.StorageURL + "/" + escapeObjectPath(container) + "/" + escapeObjectPath(name) + "?multipart-manifest=get"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return nil, Normalize(err)
-	}
-	req.Header.Set("X-Auth-Token", credentials.Token)
-	resp, err := s.raw.Do(req)
-	if err != nil {
-		return nil, Normalize(err)
-	}
-	// A graph that could not be read and closed cleanly is not evidence a
-	// DELETE may rest on, so the close error joins the result.
-	defer func() { err = errors.Join(err, resp.Body.Close()) }()
-	transID := transIDOf(resp.Header)
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		s.ForceReauth()
-		return nil, &SwiftError{Kind: KindUnauthorized, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: the token was refused", TransID: transID}
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, &SwiftError{Kind: KindNotFound, HTTPStatus: resp.StatusCode, Message: "read SLO manifest: not found", TransID: transID}
-	}
-	// This graph authorises a DELETE, so it is read as an operation's
-	// authoritative record and not as a display: a complete, bounded response —
-	// HTTP 200 with no Content-Range, parsed whole with a clean end and no
-	// trailing content — on the same contract the strict readers use. A partial
-	// body (HTTP 206, or 200 with a Content-Range) or a valid array followed by
-	// other bytes is refused rather than credited as the manifest (ADR 0081
-	// decision 5), because a short or padded read credited as the exact graph
-	// would authorise deleting against a membership the server never sent.
-	if !completeManifestResponse(resp) {
-		return nil, fmt.Errorf("read SLO manifest for %s/%s requires a complete HTTP 200 without Content-Range (received HTTP %d)", container, name, resp.StatusCode)
-	}
-	entries, err := parseSLOManifestEntries(resp.Body, maxEntries, maxBytes, container+"/"+name)
+	entries, err := s.SLOManifestEntries(ctx, container, name, 10000, 8<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -171,27 +96,6 @@ func completeManifestResponse(resp *http.Response) bool {
 		}
 	}
 	return true
-}
-
-// parseSLOManifest decodes the ?multipart-manifest=get body into the exact
-// model. Field order inside entries doesn't matter, entry order does; numbers
-// stay json.Number so large sizes survive the round-trip untouched.
-func parseSLOManifest(body io.Reader, container, name string) (*SLOManifest, error) {
-	decoder := json.NewDecoder(body)
-	decoder.UseNumber()
-	var rawEntries []map[string]any
-	if err := decoder.Decode(&rawEntries); err != nil {
-		return nil, fmt.Errorf("parse SLO manifest for %s/%s: %w", container, name, err)
-	}
-	manifest := &SLOManifest{Entries: make([]SLOEntry, 0, len(rawEntries))}
-	for i, fields := range rawEntries {
-		entry, err := parseSLOEntry(fields)
-		if err != nil {
-			return nil, fmt.Errorf("SLO manifest entry %d of %s/%s: %w", i, container, name, err)
-		}
-		manifest.Entries = append(manifest.Entries, entry)
-	}
-	return manifest, nil
 }
 
 // errManifestBudget stops a decoder the moment it asks for more than the
@@ -242,39 +146,13 @@ func (b *budgetReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// SLOManifestEntries reads the manifest strictly and within bounds, as its
-// ordered entries, for a caller that decides something from which entries
-// it names.
-//
-// It exists because SLOManifest is a display read: it decodes one array
-// without checking the status, the absence of a Content-Range, a clean
-// end, or any byte bound, so a partial or trailing-garbage response parses
-// as a manifest. This read requires a complete response, HTTP 200 with no
-// Content-Range, on the same contract OpenObjectContent uses, because a
-// partial body that happens to parse is not the manifest. It never reads
-// past its byte budget: the budget bounds the decoder's input, including
-// the opening token and the read that confirms the end of the stream,
-// rather than being checked once an entry has already been buffered. It
-// refuses instead of truncating once maxEntries is passed, refuses
-// trailing content after the entry list, and refuses when the body cannot
-// be closed cleanly. A response this build will not read whole is an
-// error here rather than a shorter answer.
+// SLOManifestEntries requires a complete HTTP 200 without Content-Range,
+// bounded input and entry count, a clean end, and a successful body close.
+// A manifest this build cannot read whole is refused, never truncated.
 func (s *Session) SLOManifestEntries(ctx context.Context, container, name string, maxEntries int, maxBytes int64) (entries []SLOEntry, err error) {
-	return readSLOManifest(ctx, s, container, name, func(body io.Reader, where string) ([]SLOEntry, error) {
-		return parseSLOManifestEntries(body, maxEntries, maxBytes, where)
-	})
-}
-
-// readSLOManifest performs the manifest GET and the response checks of the
-// strict read: HTTP 200, no Content-Range, and the body closed with its
-// error joined, because a read that could not be completed cleanly is not
-// evidence.
-func readSLOManifest[T any](ctx context.Context, s *Session, container, name string,
-	parse func(io.Reader, string) (T, error)) (result T, err error) {
-	var zero T
 	credentials, err := s.Credentials(ctx, 0)
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 	resp, headers, err := s.conn.Call(ctx, credentials.StorageURL, swift.RequestOpts{
 		Container:  container,
@@ -287,20 +165,20 @@ func readSLOManifest[T any](ctx context.Context, s *Session, container, name str
 		if resp != nil && resp.Body != nil {
 			err = errors.Join(err, resp.Body.Close())
 		}
-		return zero, WithTransID(Normalize(err), headers)
+		return nil, WithTransID(Normalize(err), headers)
 	}
 	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 
 	if !completeManifestResponse(resp) {
-		return zero, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
+		return nil, fmt.Errorf("SLO manifest for %s/%s requires HTTP 200 without Content-Range (received HTTP %d)",
 			container, name, resp.StatusCode)
 	}
 	body := &countingReader{reader: resp.Body}
-	result, err = parse(body, container+"/"+name)
+	entries, err = parseSLOManifestEntries(body, maxEntries, maxBytes, container+"/"+name)
 	if err != nil && body.read == 0 {
-		return zero, fmt.Errorf("SLO manifest for %s/%s: %w", container, name, ErrManifestNotReturned)
+		return nil, fmt.Errorf("SLO manifest for %s/%s: %w", container, name, ErrManifestNotReturned)
 	}
-	return result, err
+	return entries, err
 }
 
 // ErrManifestNotReturned is a complete 200 answer to a static manifest read
