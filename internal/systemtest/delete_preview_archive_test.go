@@ -42,4 +42,18 @@ func deletePreviewArchiveCases(t *testing.T, makeHarness func(*testing.T) *Harne
 	if len(ownerPreview.ArchiveOf) != 0 || ownerPreview.ArchiveUnestablished != "" {
 		t.Fatalf("the owner's own preview names an owner: %+v", ownerPreview)
 	}
+	selected, read := h.PreviewSelectedDelete(t.Context(), app.SelectedDeleteRequestDTO{
+		Scope: h.ActiveScope(t.Context()), Container: archive,
+		Members: []app.ListingRowDTO{{Kind: "prefix", Name: "00bsome-object/"}, {Kind: "prefix", Name: "empty/"}},
+	})
+	if read.err != nil || len(selected) != 2 {
+		t.Fatalf("selected preview = %+v, %v", selected, read.err)
+	}
+	for i, row := range selected {
+		p := row.Preview
+		if row.Error != "" || p == nil || p.Objects != int64(1-i) || len(p.ArchiveOf) != 1 || p.ArchiveOf[0] != owner || p.ArchiveUnestablished != "" {
+			t.Fatalf("selected folder %s lost its count or archive: %+v, %q", row.Prefix, p, row.Error)
+		}
+	}
+	read.CreditRead()
 }

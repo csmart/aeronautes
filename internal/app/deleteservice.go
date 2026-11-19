@@ -150,8 +150,17 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 	if err != nil {
 		return nil, err
 	}
+	preview, err := countDeleteScope(ctx, session, req.Container, req.Prefix)
+	if err != nil {
+		return nil, err
+	}
+	setDeleteArchive(preview, session.ArchiveOwners(ctx, req.Container, archiveScanBound))
+	return preview, nil
+}
+
+func countDeleteScope(ctx context.Context, session *swiftcontrol.Session, container, prefix string) (*DeletePreviewDTO, error) {
 	preview := &DeletePreviewDTO{Strategy: sweepStrategy}
-	for entry, err := range session.Objects(ctx, req.Container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: req.Prefix}) {
+	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, Prefix: prefix}) {
 		if err != nil {
 			return nil, err
 		}
@@ -164,17 +173,19 @@ func (s *DeleteService) PreviewDelete(ctx context.Context, req DeleteRequestDTO)
 		}
 	}
 	preview.RequestCost = preview.Objects
+	return preview, nil
+}
+
+func setDeleteArchive(preview *DeletePreviewDTO, owners swiftcontrol.ArchiveOwners) {
 	// Whose archive this is, which the operator cannot see from inside it.
 	// The owners are stored names on a sentence the operator reads before
 	// destroying, so they are sanitised and bounded here, as the archive
 	// name in the overwrite question is; the match itself used the raw
 	// names.
-	owners := session.ArchiveOwners(ctx, req.Container, archiveScanBound)
 	for _, owner := range owners.Owners {
 		preview.ArchiveOf = append(preview.ArchiveOf, titleText(owner, 80))
 	}
 	preview.ArchiveUnestablished = owners.Unestablished
-	return preview, nil
 }
 
 // sweepStrategy names, in the job's effective configuration, what a bulk

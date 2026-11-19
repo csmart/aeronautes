@@ -107,6 +107,7 @@ export type {
     SegmentRefDTO,
     SegmentsDeleteRequestDTO,
     SelectedDeleteRequestDTO,
+    SelectedFolderPreviewDTO,
     SelectionScopeDTO,
     StoragePolicyDTO,
     TempURLKeyEditDTO,

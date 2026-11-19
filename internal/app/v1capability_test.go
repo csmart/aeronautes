@@ -105,7 +105,8 @@ func TestEveryBridgeActionIsClassified(t *testing.T) {
 		"MutateService.DeleteMarker": true, "MutateService.DeleteManifest": true,
 		// Bulk deletion and the manifest-with-segments job returned on 1
 		// November 2026 (ADR 0052 decision 14).
-		"DeleteService.PreviewDelete": true, "DeleteService.StartDelete": true,
+		"DeleteService.PreviewSelectedDelete": true,
+		"DeleteService.PreviewDelete":         true, "DeleteService.StartDelete": true,
 		"DeleteService.CheckSegmentOwnership": true, "DeleteService.DeleteManifestWithSegments": true,
 		// Copy and its job re-run were returned on 31 October 2026 (ADR 0052
 		// decision 12), once ADR 0087's overwrite and ADR 0096's full-fidelity

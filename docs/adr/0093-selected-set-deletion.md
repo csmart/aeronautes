@@ -102,7 +102,9 @@ The job also builds, once, the per-name protocol that 0.2.x's prefix deletion th
    **What a running transfer holds.**
    The job claims each folder member as a prefix deletion claims its prefix ([ADR 0105](0105-concurrent-jobs.md) decision 3), so it is refused while an upload or a copy writes inside a selected folder, and no transfer starts inside one while it runs; an object member keeps the refusal it has.
    **What the operator is told, and what the confirmation binds.**
-   The dialog lists the selected objects and the selected folders, and for each folder what a listing of it holds now, from the preview the prefix deletion already offers: its objects and bytes, and its possible manifests, the listed large objects and zero-byte rows, in the words the prefix dialog uses for them, saying that their segments go when the segments option is ticked and stay when it is not.
+   The dialog lists the selected objects and the selected folders, and for each folder what a listing of it holds now, using the same counting rules as the prefix deletion preview: its objects and bytes, and its possible manifests, the listed large objects and zero-byte rows, in the words the prefix dialog uses for them, saying that their segments go when the segments option is ticked and stay when it is not.
+   The selected-set preview shares one archive-owner observation and counts at most eight folders concurrently.
+   Closing or retiring the confirmation cancels its preview; failed folder counts remain individually unknown, and object-only selections keep the unread archive default.
    It says that everything under each folder goes, including anything written there before the job lists it.
    The confirmation is decision 9's words; the request is built from the snapshot, and the snapshot check of decision 5 applies to the folder rows as to the objects.
    The line naming the prefix rows left out is withdrawn, with its tests.

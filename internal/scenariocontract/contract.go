@@ -190,6 +190,7 @@ var inventory = map[string]Action{
 	"TransferService.PauseJob":      {Kind: Session},
 	"TransferService.ResumeJob":     {Kind: Session},
 	// DeleteService
+	"DeleteService.PreviewSelectedDelete": {Kind: Read},
 	"DeleteService.PreviewDelete":         {Kind: Read},
 	"DeleteService.CheckSegmentOwnership": {Kind: Read},
 	// ADR 0093 decision 6 and ADR 0095 decision 9: a deletion job never

@@ -519,6 +519,11 @@ func (h *Harness) StartSelectedDelete(ctx context.Context, req app.SelectedDelet
 	return &Receipt{h: h, action: "DeleteService.StartSelectedDelete", jobID: jobID, err: err}
 }
 
+func (h *Harness) PreviewSelectedDelete(ctx context.Context, req app.SelectedDeleteRequestDTO) ([]app.SelectedFolderPreviewDTO, *Receipt) {
+	preview, err := h.Delete.PreviewSelectedDelete(ctx, req)
+	return preview, &Receipt{h: h, action: "DeleteService.PreviewSelectedDelete", err: err}
+}
+
 func (h *Harness) DeleteManifestWithSegments(ctx context.Context, req app.SegmentsDeleteRequestDTO) *Receipt {
 	// The manifest-with-segments deletion is a job now (ADR 0095 decision 8):
 	// the receipt carries the job id so a refusal credits from the returned

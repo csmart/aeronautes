@@ -11,7 +11,7 @@
   import { trapFocus } from "../../lib/trapFocus";
   import { onMount } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
-  import type { ContainerSettingsDTO, DeletePreviewDTO, DeleteRequestDTO } from "../../lib/api";
+  import type { ContainerSettingsDTO, DeletePreviewDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
   import { versioningSentence, whySegmentsStay } from "./versioningSentence";
 
@@ -55,30 +55,33 @@
   // The first problem ends the confirmation for good, so a selection restored
   // to the same rows cannot re-arm a snapshot the operator has not re-read.
   let abandoned: string | null = $state(null);
+  const previewRequest = new AbortController();
   $effect(() => {
     if (pending && problem !== null && abandoned === null) abandoned = problem;
+    if (!pending || abandoned !== null || browser.selectedDelete !== op) previewRequest.abort();
   });
 
-  async function previewOf(prefix: string): Promise<Count> {
+  async function readPreview(): Promise<Map<string, Count>> {
+    if (folders.length === 0) return new Map();
     try {
-      const preview = await browser.previewDelete({
-        bookmarkId: op.listingScope.bookmarkId, container: op.container, prefix,
-        mode: "prefix" as DeleteRequestDTO["mode"], confirm: "", segments: false,
-      });
-      return { preview, error: null };
+      const rows = await browser.previewSelectedDelete({
+        scope: { ...op.listingScope }, container: op.container, members: op.members.map((m) => ({ ...m })),
+        confirm: "", segments: false,
+      }, previewRequest.signal);
+      return new Map(rows.map((row) => [row.prefix, { preview: row.preview, error: row.error }]));
     } catch (err) {
-      return { preview: null, error: err instanceof Error ? err.message : String(err) };
+      const error = err instanceof Error ? err.message : String(err);
+      return new Map(folders.map((row) => [row.name, { preview: null, error }]));
     }
   }
 
-  onMount(async () => {
-    const [result, read] = await Promise.all([
-      browser.containerFacts(op.container),
-      Promise.all(folders.map(async (row) => [row.name, await previewOf(row.name)] as const)),
-    ]);
-    if (browser.selectedDelete !== op) return;
-    facts = result;
-    counts = new Map(read);
+  onMount(() => {
+    void Promise.all([browser.containerFacts(op.container), readPreview()]).then(([result, read]) => {
+      if (previewRequest.signal.aborted || browser.selectedDelete !== op) return;
+      facts = result;
+      counts = read;
+    });
+    return () => previewRequest.abort();
   });
 
   const previews = $derived([...(counts?.values() ?? [])]);
