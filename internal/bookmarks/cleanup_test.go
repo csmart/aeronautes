@@ -161,29 +161,56 @@ func TestCleanupRemovesTheReplacedKeyAndKeepsTheCurrentOne(t *testing.T) {
 }
 
 func TestCleanupKeepsTheRowWhenRemovalIsUnresolved(t *testing.T) {
-	backend := verifiedBackend("one")
-	st, d, _ := newCleanupStore(t, backend)
-	id, r := saveOne(t, st)
-	if err := st.Delete(t.Context(), id); err != nil {
-		t.Fatal(err)
-	}
-	backend.mode = "unresolved"
-	result, err := st.Cleanup(t.Context(), "")
-	if err != nil || result.Removed != 0 || result.Pending != 1 || !strings.Contains(result.Reason, "the prompt was dismissed") {
-		t.Fatalf("unresolved cleanup = %+v, %v", result, err)
-	}
-	if retiredCount(t, d) != 1 {
-		t.Fatal("an unresolved removal lost its journal row")
-	}
-	status, err := st.CredentialStatus(t.Context())
-	if err != nil || status.Retired != 1 || status.CleanupReason != result.Reason {
-		t.Fatalf("status after an unresolved pass = %+v, %v", status, err)
-	}
-	// The next pass, once the store answers, removes it.
-	backend.mode = ""
-	result, err = st.Cleanup(t.Context(), "")
-	if err != nil || result.Removed != 1 || retiredCount(t, d) != 0 || backend.has(r.ref) {
-		t.Fatalf("retry = %+v, %v, retired=%d present=%v", result, err, retiredCount(t, d), backend.has(r.ref))
+	const private = "synthetic-private-key"
+	for _, tc := range []struct {
+		name, reason       string
+		deleteErr, readErr error
+		retain             bool
+	}{
+		{name: "unresolved", deleteErr: fmt.Errorf("%w: %s", secrets.ErrUnresolved, private), reason: secrets.ErrUnresolved.Error()},
+		{name: "unreachable", deleteErr: fmt.Errorf("%w: %s", secrets.ErrAuthorityUnreachable, private), reason: secrets.ErrAuthorityUnreachable.Error()},
+		{name: "delete failed", deleteErr: errors.New(private), reason: "the credential removal failed"},
+		{name: "read back failed", readErr: errors.New(private), reason: "the removal could not be confirmed"},
+		{name: "still present", retain: true, reason: "the store still holds the key after answering the removal"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := verifiedBackend("one")
+			st, d, _ := newCleanupStore(t, backend)
+			id, r := saveOne(t, st)
+			if err := st.Delete(t.Context(), id); err != nil {
+				t.Fatal(err)
+			}
+			st.secrets = hookedSecrets{SecretStore: backend,
+				del: func(ctx context.Context, name string) error {
+					if tc.deleteErr != nil || tc.retain {
+						return tc.deleteErr
+					}
+					return backend.Delete(ctx, name)
+				},
+				get: func(ctx context.Context, name string) ([]byte, error) {
+					if tc.readErr != nil {
+						return nil, tc.readErr
+					}
+					return backend.Get(ctx, name)
+				},
+			}
+			result, err := st.Cleanup(t.Context(), "")
+			if err != nil || result.Removed != 0 || result.Pending != 1 || result.Reason != tc.reason {
+				t.Fatalf("unresolved cleanup = %+v, %v", result, err)
+			}
+			if retiredCount(t, d) != 1 {
+				t.Fatal("an unresolved removal lost its journal row")
+			}
+			status, err := st.CredentialStatus(t.Context())
+			if err != nil || status.Retired != 1 || status.CleanupReason != tc.reason || strings.Contains(status.CleanupReason, private) {
+				t.Fatalf("status after an unresolved pass = %+v, %v", status, err)
+			}
+			st.secrets = backend
+			result, err = st.Cleanup(t.Context(), "")
+			if err != nil || result.Removed != 1 || result.Pending != 0 || result.Reason != "" || retiredCount(t, d) != 0 || backend.has(r.ref) {
+				t.Fatalf("retry = %+v, %v, retired=%d present=%v", result, err, retiredCount(t, d), backend.has(r.ref))
+			}
+		})
 	}
 }
 

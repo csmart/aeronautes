@@ -58,11 +58,20 @@ func (st *Store) Cleanup(ctx context.Context, bookmarkID string) (CleanupResult,
 		}
 		deleteCtx, cancel := context.WithTimeout(ctx, cleanupWait)
 		deleteErr := st.secrets.Delete(deleteCtx, row.ref)
-		if deleteErr == nil || errors.Is(deleteErr, secrets.ErrNotFound) {
+		switch {
+		case deleteErr == nil || errors.Is(deleteErr, secrets.ErrNotFound):
 			// A removal is confirmed by reading the key back, as a write is
 			// (ADR 0017): a dismissed or ignored prompt can answer a delete
 			// without removing anything.
 			deleteErr = st.confirmRemoved(deleteCtx, row.ref)
+		case errors.Is(deleteErr, secrets.ErrUnresolved):
+			deleteErr = secrets.ErrUnresolved
+		case errors.Is(deleteErr, secrets.ErrAuthorityUnreachable):
+			deleteErr = secrets.ErrAuthorityUnreachable
+		default:
+			// Backend messages can contain credential material. Only local
+			// reasons may reach the retained status shown to the operator.
+			deleteErr = errors.New("the credential removal failed")
 		}
 		cancel()
 		st.mu.Lock()
@@ -164,6 +173,6 @@ func (st *Store) confirmRemoved(ctx context.Context, ref string) error {
 	case err == nil:
 		return errors.New("the store still holds the key after answering the removal")
 	default:
-		return errors.New("the removal could not be confirmed: " + err.Error())
+		return errors.New("the removal could not be confirmed")
 	}
 }
