@@ -35,8 +35,9 @@ The implementation passes all 56 cases with no requests from obsolete or unavail
 An acknowledged HTTP barrier delays a 401 until after replacement for native account and PUT requests and raw bulk-delete and symlink requests.
 None may send another authentication or storage request, while a fresh replacement session must operate successfully.
 Deleting the bookmark after the first listing row must refuse the next page, with one row and no extra storage request, for both container and object listings.
-A stream opened before deletion can still be read, but a later contextual seek that would reopen it must refuse without another request.
-All seven retry/page/reopen cases also fail on the unchanged parent and pass after the change.
+A stream opened before deletion can still be read and closed, but reopening the object through the held session must refuse without another request.
+The original regression exercised the wire library's contextual seek; the complete whole-object reader now exposes only the `io.ReadCloser` contract used by the application, so the current regression reopens through `Session.OpenObject`.
+At the original validation, all seven retry/page/reopen cases failed on the unchanged parent and passed after the change.
 
 Engine tests retain assertions for original and freshly edited trust, refuse both a captured remote source and new engine setup from an obsolete session, and check the callback on previously captured remotes.
 Gateway tests cover initial creation refusal and subsequent GET, HEAD, staged PUT, sidecar creation, capability discovery and bulk-delete requests after revocation.
