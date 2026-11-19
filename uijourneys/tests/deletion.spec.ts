@@ -116,7 +116,12 @@ test("refuse the wrong words for each container deletion, and empty a container"
   const half = { timeout: 30_000 };
   const objects = inspector(page).locator(".kv", { has: page.getByText("Objects", { exact: true }) }).locator(".kv-value");
   await expect(objects).toHaveText("0", half);
-  await expect(page.getByRole("button", { name: new RegExp(`^${container} .* 0 objects$`) })).toBeVisible(half);
+  // The row's count comes from the account's listing, which a real store
+  // updates in the background, sometimes after the application's last
+  // re-read (F77); the inspector's count above is the container's own.
+  if (target === "mock") {
+    await expect(page.getByRole("button", { name: new RegExp(`^${container} .* 0 objects$`) })).toBeVisible(half);
+  }
   await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: container })).toBeVisible();
 });
 
