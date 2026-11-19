@@ -2,15 +2,10 @@ package local
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 )
 
 // Names that differ only by Unicode normalization form address one
@@ -100,27 +95,6 @@ var nameFormCases = []nameFormCase{
 
 func (c nameFormCase) refused() bool { return c.ancestor != "" || c.twinKind != "" }
 
-func nameFormBody(name string) string {
-	if strings.HasSuffix(name, "/") {
-		return ""
-	}
-	return "complete source bytes\x00\xff " + name
-}
-
-func nameFormItems(prefix, route string, fixture nameFormCase) []DownloadItem {
-	var items []DownloadItem
-	for _, name := range fixture.names {
-		item := DownloadItem{Name: prefix + name, RelPath: filepath.FromSlash(strings.TrimSuffix(name, "/")), Route: route}
-		if strings.HasSuffix(name, "/") {
-			item.Dir, item.Route = true, ""
-		} else {
-			item.Size = int64(len(nameFormBody(name)))
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
 func TestDownloadNameFormPreflight(t *testing.T) {
 	for _, route := range []string{"rclone", "native"} {
 		for _, fixture := range nameFormCases {
@@ -131,7 +105,7 @@ func TestDownloadNameFormPreflight(t *testing.T) {
 					prefix = "scope\n/"
 				}
 				for _, name := range fixture.names {
-					seed(mock, "media", prefix+name, nameFormBody(name))
+					seed(mock, "media", prefix+name, downloadNamespaceBody(name))
 				}
 				root := t.TempDir()
 				writeFile(t, root, "keep", "unrelated bytes\x00\xff")
@@ -168,7 +142,7 @@ func TestDownloadNameFormPreflight(t *testing.T) {
 				if !fixture.refused() {
 					// The plan follows listing order, so compare the exact
 					// set rather than the fixture's declaration order.
-					want := nameFormItems(prefix, route, fixture)
+					want := downloadNamespaceItems(prefix, route, fixture.names)
 					got := append([]DownloadItem(nil), plan.Items...)
 					byName := func(items []DownloadItem) {
 						sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
@@ -212,142 +186,11 @@ func TestDownloadNameFormPreflight(t *testing.T) {
 func TestDownloadNameFormDirect(t *testing.T) {
 	for _, route := range []string{"rclone", "native"} {
 		for _, fixture := range nameFormCases {
-			for _, recorded := range []bool{false, true} {
-				for _, reverse := range []bool{false, true} {
-					t.Run(fmt.Sprintf("%s/%s/recorded_%v/reverse_%v", route, fixture.name, recorded, reverse), func(t *testing.T) {
-						source, mock := session(t)
-						prefix := "scope/"
-						if route == "native" {
-							prefix = "scope\n/"
-						}
-						for _, name := range fixture.names {
-							seed(mock, "media", prefix+name, nameFormBody(name))
-						}
-						owned := t.TempDir()
-						root := filepath.Join(owned, "selected")
-						if err := os.Mkdir(root, 0o700); err != nil {
-							t.Fatal(err)
-						}
-						writeFile(t, root, "keep", "selected sentinel\x00\xff")
-						writeFile(t, owned, "outside", "outside sentinel\x00\xff")
-						items := nameFormItems(prefix, route, fixture)
-						if reverse {
-							slices.Reverse(items)
-						}
-						before := downloadDestinationSnapshot(t, owned)
-						plan := &DownloadPreflight{Items: items}
-						requests := mock.Requests()
-						engine := &downloadRecordingEngine{Engine: &fsEngine{session: source}}
-						var admissions []DownloadAdmission
-						executed, verified := map[DownloadItem]transfercopy.Observation{}, map[DownloadItem]transfercopy.Observation{}
-						progressCalls := 0
-						var recorders []*DownloadRecorder
-						if recorded {
-							recorders = []*DownloadRecorder{{
-								Admit:   func(admission DownloadAdmission) error { admissions = append(admissions, admission); return nil },
-								Execute: func(item DownloadItem, result transfercopy.Observation) error { executed[item] = result; return nil },
-								Verify:  func(item DownloadItem, result transfercopy.Observation) error { verified[item] = result; return nil },
-							}}
-						}
-						report, err := Download(t.Context(), source, engine, "remote:media", "media", prefix, root,
-							plan, func(int64, int64, int64, int64) { progressCalls++ }, recorders...)
-						after := downloadDestinationSnapshot(t, owned)
-						if !fixture.refused() {
-							// An accepted control must prove the download
-							// happened, not merely that admission returned.
-							// A no-op executor that admits and returns an
-							// empty successful report must fail here.
-							var total, fileCount int64
-							for _, item := range items {
-								total += item.Size
-								if !item.Dir {
-									fileCount++
-								}
-							}
-							want := &Report{Done: int64(len(items)), Verified: int64(len(items)), Bytes: total}
-							wantCalls := 0
-							if route == "native" {
-								want.NativeRouted = fileCount
-							} else if fileCount > 0 {
-								wantCalls = 1
-							}
-							if err != nil || !reflect.DeepEqual(report, want) || engine.calls != wantCalls || progressCalls == 0 {
-								t.Fatalf("accepted control lost its exact outcome: report=%+v want=%+v error=%v Copy calls=%d want=%d progress=%d",
-									report, want, err, engine.calls, wantCalls, progressCalls)
-							}
-							if recorded {
-								if len(admissions) != len(items) || len(executed) != len(items) || len(verified) != len(items) {
-									t.Fatalf("accepted control lost records: admissions=%+v executed=%+v verified=%+v", admissions, executed, verified)
-								}
-								for index, item := range items {
-									a := admissions[index]
-									x, v := executed[item], verified[item]
-									if a.Item != item || x.Result != transfercopy.ResultCopied || x.Effect != transfercopy.EffectReportedApplied ||
-										x.CopiedBytes != item.Size || x.Diagnostic != (transfercopy.Diagnostic{}) ||
-										v.Result != transfercopy.ResultVerified || v.Effect != transfercopy.EffectNotAttempted ||
-										v.Diagnostic != (transfercopy.Diagnostic{}) || v.CopiedBytes != 0 {
-										t.Fatalf("accepted control lost identity or observations: item=%+v admission=%+v execution=%+v verification=%+v", item, a, x, v)
-									}
-								}
-							}
-							// Every owned entry that existed must be
-							// unchanged, every selected name must be present
-							// with its exact bytes, and nothing else may
-							// appear.
-							remaining := map[string]downloadDestinationEntry{}
-							for path, state := range after {
-								remaining[path] = state
-							}
-							for path, state := range before {
-								if remaining[path] != state {
-									t.Errorf("accepted control changed existing entry %q: %+v -> %+v", path, state, remaining[path])
-								}
-								delete(remaining, path)
-							}
-							for _, name := range fixture.names {
-								path := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(name, "/")))
-								if strings.HasSuffix(name, "/") {
-									continue
-								}
-								state, ok := remaining[path]
-								if !ok || !state.mode.IsRegular() || state.body != nameFormBody(name) {
-									t.Fatalf("accepted control lost the full file bytes for %q: %+v", name, state)
-								}
-								delete(remaining, path)
-							}
-							permitted := map[string]bool{}
-							for _, name := range fixture.names {
-								path := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(name, "/")))
-								if !strings.HasSuffix(name, "/") {
-									path = filepath.Dir(path)
-								}
-								for path != root && strings.HasPrefix(path, root) {
-									permitted[path] = true
-									path = filepath.Dir(path)
-								}
-							}
-							for path := range permitted {
-								if state, ok := remaining[path]; !ok || !state.mode.IsDir() {
-									t.Errorf("accepted control is missing the directory %q: %+v", path, state)
-								}
-								delete(remaining, path)
-							}
-							if len(remaining) != 0 {
-								t.Errorf("accepted control left unexpected entries: %+v", remaining)
-							}
-							return
-						}
-						if err == nil || report != nil || engine.calls != 0 || mock.Requests() != requests ||
-							len(admissions)+len(executed)+len(verified)+progressCalls != 0 {
-							t.Errorf("collision admitted a direct plan: report=%+v error=%v Copy calls=%d source requests=%d admissions=%+v executed=%+v verified=%+v progress=%d",
-								report, err, engine.calls, mock.Requests()-requests, admissions, executed, verified, progressCalls)
-						}
-						if !reflect.DeepEqual(before, after) {
-							t.Errorf("refused direct plan changed owned entries: before=%+v after=%+v", before, after)
-						}
-					})
-				}
+			refusal := ""
+			if fixture.refused() {
+				refusal = "download selection"
 			}
+			testDownloadNamespaceDirect(t, route, fixture.name, fixture.names, refusal)
 		}
 	}
 }
