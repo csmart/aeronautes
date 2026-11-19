@@ -11,6 +11,51 @@ import (
 	"github.com/csmart/aeronautes/internal/jobs"
 )
 
+func TestConcurrentStartsRespectTheJobLimit(t *testing.T) {
+	runner := newJobRunner(nil, nil)
+	runner.setMaxActiveJobs(1)
+	runner.setMaxQueuedJobs(1)
+	type admission struct {
+		owner *jobOwner
+		err   error
+	}
+	gate := make(chan struct{})
+	results := make(chan admission, 32)
+	for range cap(results) {
+		go func() {
+			<-gate
+			owner, _, err := runner.admit(t.Context())
+			results <- admission{owner, err}
+		}()
+	}
+	close(gate)
+	var owners []*jobOwner
+	defer func() {
+		for _, owner := range owners {
+			owner.finishStart()
+		}
+	}()
+	// Keep every accepted start open so none can free capacity for the burst.
+	for range cap(results) {
+		result := <-results
+		if result.owner != nil {
+			owners = append(owners, result.owner)
+		} else if !errors.Is(result.err, errJobQueueFull) {
+			t.Errorf("unexpected admission refusal: %v", result.err)
+		}
+	}
+	if len(owners) != 2 {
+		t.Fatalf("admitted %d simultaneous starts, want the limit of two", len(owners))
+	}
+	owners[0].finishStart()
+	owners = owners[1:]
+	owner, _, err := runner.admit(t.Context())
+	if err != nil {
+		t.Fatalf("a finished start did not free its place: %v", err)
+	}
+	owners = append(owners, owner)
+}
+
 // ADR 0074 decision 2: once as many jobs wait behind the active slots as
 // the operator's queue depth allows, a start is refused at the bridge with
 // the count named, leaving no job row behind; a cancelled queued job frees
@@ -108,18 +153,8 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 		}
 	}
 	waitForOwners(2)
-	// The depth counts owners waiting for a slot, so a refusal needs the
-	// queued job INSIDE that wait, not merely launched or merely holding a
-	// queued row. A row exists before the owner reaches the wait, so a
-	// refusal asserted on the row alone can be asked while the runner still
-	// counts nothing queued; the third start below would then be admitted
-	// and fail on the selection token it had already consumed, reporting
-	// "unknown selection" where the queue bound was the thing under test.
-	//
-	// This case did fail master once with exactly that message. That
-	// ordering is consistent with the failure and is the reason to wait
-	// here, but it was not observed directly and is not offered as the
-	// established cause.
+	// Wait for this phase to check its running/waiting refusal text and
+	// queued cancellation; admission itself is bounded before the slot wait.
 	waitForQueued := func(n int) {
 		t.Helper()
 		deadline := time.Now().Add(10 * time.Second)
@@ -188,9 +223,6 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 	if got, err := h.transfer.jobs.Get(ctx, admitted); err != nil || got.State != jobs.StateQueued {
 		t.Fatalf("admitted job = %+v %v", got, err)
 	}
-	// The same wait as above, for the same reason: the depth is about owners
-	// in the wait, so the next refusal needs this job inside it.
-	waitForQueued(1)
 	if _, err := h.transfer.StartDownload(ctx, req); !errors.Is(err, errJobQueueFull) {
 		t.Fatalf("the depth did not apply again: %v", err)
 	}
