@@ -107,7 +107,8 @@ The job also builds, once, the per-name protocol that 0.2.x's prefix deletion th
    Closing or retiring the confirmation cancels its preview; failed folder counts remain individually unknown, and object-only selections keep the unread archive default.
    `DeleteService.PreviewSelectedDelete` is a read action requiring the `happy` scenario in the scenario contract.
    Its oracle is the captured selection's folder counts and archive-owner disclosure, returned without a job, audit entry or destructive request; the existing mock and real-Swift archive-preview cases witness that read.
-   This adds one required identity and removes or reclassifies none: every previously protected pair remains required and protected, including the existing single-prefix preview.
+   This adds one required identity and removes or reclassifies none: no previously protected pair changes.
+   The existing single-prefix preview remains required and uncovered.
    Admit its required snapshot and every credited pair through the [ADR 0069 drift route](0069-preserve-covered-scenario-cells.md#review-every-baseline-change), retaining the candidate's expected drift refusal and producer evidence before an independently reviewed baseline update and a fresh full CI run.
    It says that everything under each folder goes, including anything written there before the job lists it.
    The confirmation is decision 9's words; the request is built from the snapshot, and the snapshot check of decision 5 applies to the folder rows as to the objects.
