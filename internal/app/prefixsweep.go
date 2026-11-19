@@ -72,8 +72,8 @@ type prefixSweep struct {
 	mu    sync.Mutex
 	lost  string
 	tally sweepCounts
-	// leftCount and leftFirst are the large objects whose segments this sweep
-	// did not delete, or not all of them, and why the first was.
+	// leftCount and leftFirst track incomplete segment cleanup, including
+	// unreadable rows whose type and segment membership remain unknown.
 	leftCount int64
 	leftFirst string
 }

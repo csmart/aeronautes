@@ -75,7 +75,13 @@ func (r *prefixSweep) largeObject(ctx, background context.Context, queue chan<- 
 		return false, false
 	}
 	detail, err := r.session.ObjectDetail(ctx, m.container, m.name)
-	if err != nil || detail.FollowedSymlink || detail.SymlinkTarget != "" {
+	if err != nil {
+		if swiftcontrol.IsNotFound(err) {
+			return r.leave(ctx, m, "the object was not found, so any remaining segments could not be identified")
+		}
+		return r.leave(ctx, m, "its headers could not be read, so any segments were left")
+	}
+	if detail.FollowedSymlink || detail.SymlinkTarget != "" {
 		// The row is queued as an ordinary member, deleted by its name.
 		return false, false
 	}
@@ -241,10 +247,10 @@ func (r *prefixSweep) sweepNamespace(ctx, background context.Context, m sweepMem
 	return false
 }
 
-// leave records that a large object's segments were not deleted, or not all
-// of them, and why. The job ends partial for it and its audit trail names
-// each such object, because the ledger's outcome for the manifest itself is
-// deleted and has no place for what became of its segments. A reason that is
+// leave records incomplete segment cleanup, including a row whose type
+// could not be read. The job ends partial for it and its audit trail names
+// each such object, because its recorded DELETE outcome says nothing about
+// any remaining segments. A reason that is
 // only the job's own cancellation is not recorded: the cancelled job says
 // what it did not attempt.
 func (r *prefixSweep) leave(ctx context.Context, m sweepMember, reason string) (handled, cancelled bool) {
@@ -261,15 +267,15 @@ func (r *prefixSweep) leave(ctx context.Context, m sweepMember, reason string) (
 	return false, false
 }
 
-// segmentsLeft is the sentence a job that left segments ends with, empty when
-// it left none.
+// Membership can be unknown, so the summary counts incomplete work rather
+// than claiming every affected row is a large object.
 func (r *prefixSweep) segmentsLeft() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.leftCount == 0 {
 		return ""
 	}
-	return fmt.Sprintf("the segments of %d large object(s) were left or not all deleted; the first: %s", r.leftCount, r.leftFirst)
+	return fmt.Sprintf("segment cleanup was incomplete for %d object(s); the first: %s", r.leftCount, r.leftFirst)
 }
 
 // deleteManifestMember sends one manifest member's DELETE and records the
