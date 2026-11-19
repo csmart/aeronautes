@@ -24,11 +24,14 @@ test.describe("pause and resume what writes to the store", () => {
     const target = info.project.name;
     const container = await ownContainer(target, "ui-pause-upload");
     const folder = localFolder();
-    mkdirSync(join(folder, "a"));
-    mkdirSync(join(folder, "b"));
-    writeFileSync(join(folder, "a", "big.bin"), big);
-    writeFileSync(join(folder, "b", "small.bin"), "the second folder\n");
-    const digests = new Map([["a/big.bin", sha256(big)], ["b/small.bin", digestOf(join(folder, "b", "small.bin"))]]);
+    const digests = new Map<string, string>();
+    for (const dir of ["a", "b"]) {
+      mkdirSync(join(folder, dir));
+      writeFileSync(join(folder, dir, "big.bin"), big);
+      writeFileSync(join(folder, dir, "started.txt"), "unit started\n");
+      digests.set(`${dir}/big.bin`, sha256(big));
+      digests.set(`${dir}/started.txt`, digestOf(join(folder, dir, "started.txt")));
+    }
     const name = basename(folder);
 
     await openContainer(page, target, container);
@@ -36,17 +39,24 @@ test.describe("pause and resume what writes to the store", () => {
     const dialog = page.getByRole("dialog", { name: "Upload" });
     await dialog.getByText("Per-job settings").click();
     await dialog.getByLabel("Bandwidth").fill(slow);
+    await dialog.getByLabel("Transfers", { exact: true }).fill("2");
     await control.pickFolder(folder);
     await dialog.getByRole("button", { name: "Choose folder…" }).click();
     await dialog.getByRole("button", { name: "Start upload" }).click();
     const id = await jobOf(dialog);
     try {
+      // Either directory may be first. Its small file witnesses entry into
+      // the unit while the large file leaves time to request the pause.
+      await expect.poll(async () => (await control.names(target, container)).length, lag).toBeGreaterThan(0);
       await pauseAndResume(page, id, async () => {
-        await expect.poll(async () => (await control.names(target, container)).sort(), lag).toEqual([`${name}/a/big.bin`]);
+        const groups = ["a", "b"].map((dir) => [`${name}/${dir}/big.bin`, `${name}/${dir}/started.txt`]);
+        await expect(async () => {
+          expect(groups).toContainEqual((await control.names(target, container)).sort());
+        }).toPass(lag);
       });
       await expect(badge(jobRow(page, id))).toHaveText("complete", { timeout: 4 * 60 * 1000 });
       const records = await itemRecords(page, id);
-      await expect(total(records, "Recorded items")).toHaveText("2");
+      await expect(total(records, "Recorded items")).toHaveText("4");
       for (const file of digests.keys()) {
         await expect(records.locator("article.item-record", { hasText: `${name}/${file}` })).toHaveCount(1);
         await expect(records.locator("article.item-record", { hasText: `${name}/${file}` }).getByText(/^Execution: copied · /)).toBeVisible();

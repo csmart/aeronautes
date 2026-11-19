@@ -64,7 +64,9 @@ test.describe.serial("replace", () => {
     expect(question.title).toBe("Replace up to 3 objects?");
     const lines = question.text.split("\n");
     expect(lines[0]).toMatch(new RegExp(`^3 objects already in ${escapeRegExp(container)} may be REPLACED in ${binding}\\.$`));
-    expect(lines[1]).toBe(`Replacing — ${[...digests.keys()].map((file) => `${name}/${file}`).join(", ")}`);
+    expect(lines[1]).toMatch(/^Replacing — /);
+    expect(lines[1].slice("Replacing — ".length).split(", ").sort())
+      .toEqual([...digests.keys()].map((file) => `${name}/${file}`).sort());
     expect(lines[2]).toMatch(/^Compared — each one is replaced only when it differs, as rclone copy decides: /);
     expect(lines[3]).toBe("Versioning observed — none: what is replaced is not kept");
     expect(lines[4]).toMatch(new RegExp(`^Segments — where a large object is replaced, the transfer engine REMOVES its old segments in ${escapeRegExp(container)}_segments `));
