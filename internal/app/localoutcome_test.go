@@ -4,30 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 )
 
 func TestLocalMissingOutcomeRefusesCompletion(t *testing.T) {
-	for _, test := range []struct {
-		kind    jobs.Type
-		version int
-	}{{jobs.TypeDownload, 0}, {jobs.TypeUpload, 1}} {
-		t.Run(string(test.kind), func(t *testing.T) {
+	for _, kind := range []jobs.Type{jobs.TypeDownload, jobs.TypeUpload} {
+		t.Run(string(kind), func(t *testing.T) {
 			h := newHarness(t)
 			bm := h.ensureBookmark(t)
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: test.kind, ItemRecordsVersion: test.version, DestBookmarkID: bm})
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: kind, ItemRecordsVersion: 1, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
-			h.transfer.runLocal(ctx, job.ID, "", test.version, job.Counters, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, "", job.Counters, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 				return nil, nil
 			})
 			got, err := h.jobsSvc.Get(t.Context(), h.bookmarkID(), job.ID)
@@ -76,14 +75,37 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 			h.connect(t)
 			bookmark := h.transfer.connections.ActiveBookmarkID()
 			base := jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 30}
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, DestBookmarkID: bookmark, Counters: base})
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, ItemRecordsVersion: 1, DestBookmarkID: bookmark, Counters: base})
 			if err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
-			h.transfer.runLocal(ctx, job.ID, bookmark, job.ItemRecordsVersion, base, func(_ context.Context, progress func(int64, int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, bookmark, base, func(_ context.Context, progress func(int64, int64, int64, int64)) (*local.Report, error) {
+				recorder := h.transfer.uploadItemRecorder(ctx, job.ID, UploadRequestDTO{BookmarkID: bookmark, Container: "media"})
+				if test.done != 0 {
+					item := local.UploadItem{Path: filepath.Join(t.TempDir(), "first"), Name: "live/first", Size: 10}
+					if err := recorder.Admit(local.UploadAdmission{Item: item}); err != nil {
+						t.Fatal(err)
+					}
+					if err := recorder.Execute(item, transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 10}); err != nil {
+						t.Fatal(err)
+					}
+					if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if test.failure {
+					item := local.UploadItem{Path: filepath.Join(t.TempDir(), "second"), Name: "live/second", Size: 20}
+					if err := recorder.Admit(local.UploadAdmission{Item: item}); err != nil {
+						t.Fatal(err)
+					}
+					if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultFailed, Effect: transfercopy.EffectNotAttempted,
+						Diagnostic: transfercopy.Diagnostic{Stage: transfercopy.StageVerification, Code: transfercopy.CodeUnknown}}); err != nil {
+						t.Fatal(err)
+					}
+				}
 				progress(2, 0, 2, 20)
 				report := &local.Report{Done: test.done, Verified: test.done, Bytes: 10 * test.done, NativeRouted: 1, PostCommitIssues: test.issues}
 				if test.issues > 0 {
@@ -115,7 +137,7 @@ func TestLocalPostCommitTerminalOutcome(t *testing.T) {
 					}
 				}
 			}
-			if test.failure && !strings.Contains(got.Error, "1 failed (first: live/second: size mismatch)") {
+			if test.failure && !strings.Contains(got.Error, "transfer failures (first: live/second: size mismatch)") {
 				t.Errorf("terminal transfer failure hidden: %q", got.Error)
 			}
 			if test.runError != nil && (test.state == "partial" || !errors.Is(test.runError, context.Canceled)) && !strings.Contains(got.Error, test.runError.Error()) {
@@ -154,7 +176,7 @@ func TestLocalOutcomeSurvivesADirectoryNamedForACredential(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			h.transfer.runLocal(t.Context(), job.ID, bookmark, 1, base, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(t.Context(), job.ID, bookmark, base, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 				return &local.Report{
 					Failures:           []local.Failure{{Name: dir + "/vault.kdbx", Err: "placement refused"}},
 					CreatedDirectories: 1, CreatedDirectorySamples: []string{dir},

@@ -32,7 +32,7 @@ func launchUnits(t *testing.T, h *harness, bookmark string, units int) *unitJob 
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeUpload, DestBookmarkID: bookmark})
+	job, err := h.transfer.jobs.Create(ctx, jobs.Job{Type: jobs.TypeUpload, ItemRecordsVersion: 1, DestBookmarkID: bookmark})
 	if err != nil {
 		unpin()
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func launchUnits(t *testing.T, h *harness, bookmark string, units int) *unitJob 
 	runner.register(job.ID, owner.cancel)
 	u := &unitJob{id: job.ID, reached: make(chan int, units), proceed: make(chan struct{})}
 	finish := func(ctx context.Context, state jobs.State) {
-		h.transfer.finishLocal(ctx, job.ID, bookmark, 0, job.Counters, state, "", "")
+		h.transfer.finishLocal(ctx, job.ID, bookmark, job.Counters, state, "", "")
 	}
 	owner.hold(unpin)
 	owner.launch(job.ID, bookmark, func(ctx context.Context) {

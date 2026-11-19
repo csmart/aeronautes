@@ -51,7 +51,7 @@ func TestUploadItemRecordingCost(t *testing.T) {
 	}
 	recording := time.Since(started)
 	counters := jobs.Counters{ObjectsPlanned: count, BytesPlanned: count * 5, ObjectsCopied: count, ObjectsVerified: count, BytesCopied: count * 5}
-	h.transfer.finishLocal(t.Context(), job.ID, "captured", 1, counters, jobs.StateComplete, "", "")
+	h.transfer.finishLocal(t.Context(), job.ID, "captured", counters, jobs.StateComplete, "", "")
 	if totals, err := store.ReadItemTotals(t.Context(), job.ID); err != nil || totals != (jobs.ItemTotals{Items: count, Planned: count, Admitted: count}) {
 		t.Fatalf("recording lost the complete admitted scope: %+v %v", totals, err)
 	}

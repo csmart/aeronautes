@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/jobs"
+	transfercopy "github.com/csmart/aeronautes/internal/transfer/copy"
 	"github.com/csmart/aeronautes/internal/transfer/local"
 )
 
@@ -17,7 +19,7 @@ func TestLocalCompletionAdmission(t *testing.T) {
 		t.Run(fault, func(t *testing.T) {
 			h := newHarness(t)
 			bm := h.ensureBookmark(t)
-			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, DestBookmarkID: bm})
+			job, err := h.transfer.jobs.Create(t.Context(), jobs.Job{Type: jobs.TypeUpload, ItemRecordsVersion: 1, DestBookmarkID: bm})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,8 +45,19 @@ func TestLocalCompletionAdmission(t *testing.T) {
 			defer cancel()
 			h.transfer.runner.register(job.ID, cancel)
 			called := false
-			h.transfer.runLocal(ctx, job.ID, "", job.ItemRecordsVersion, job.Counters, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
+			h.transfer.runLocal(ctx, job.ID, "", job.Counters, func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 				called = true
+				recorder := h.transfer.uploadItemRecorder(ctx, job.ID, UploadRequestDTO{BookmarkID: bm, Container: "media"})
+				item := local.UploadItem{Path: filepath.Join(t.TempDir(), "first"), Name: "first", Size: 10}
+				if err := recorder.Admit(local.UploadAdmission{Item: item}); err != nil {
+					t.Fatal(err)
+				}
+				if err := recorder.Execute(item, transfercopy.Observation{Result: transfercopy.ResultCopied, Effect: transfercopy.EffectReportedApplied, CopiedBytes: 10}); err != nil {
+					t.Fatal(err)
+				}
+				if err := recorder.Verify(item, transfercopy.Observation{Result: transfercopy.ResultVerified, Effect: transfercopy.EffectNotAttempted}); err != nil {
+					t.Fatal(err)
+				}
 				report := &local.Report{Done: 1, Verified: 1, Bytes: 10}
 				if fault == "error" {
 					report.Failures = []local.Failure{{Name: "other", Stage: "verify", Err: "size mismatch"}}
