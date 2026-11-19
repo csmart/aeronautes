@@ -58,7 +58,7 @@ done
 						args[i+1] = "<private>"
 					}
 				}
-				want := []string{command, "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--files-from-raw", "<private>"}
+				want := []string{command, "--no-traverse", "--ignore-times", "--use-json-log", "-vv", "--stats", "1s", "--no-unicode-normalization", "--files-from-raw", "<private>"}
 				if got := read("list"); got != "a b\nphotos/x.jpg\n" {
 					t.Errorf("selected names = %q", got)
 				}
