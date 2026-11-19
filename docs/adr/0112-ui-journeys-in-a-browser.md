@@ -32,7 +32,8 @@ What server mode cannot do is show a native dialog: the file and folder pickers 
    The bookmark editor itself is driven only against the mock, with a fixed test key.
 5. **Two targets, one suite.**
    The same journeys run against the in-repository mock (`cmd/mockswift`), which needs no credentials, and against the two real clouds when a clouds.yaml is given, under layer 1's safety rules: every container is one the run created, through `internal/journeys`' ownership record held by the control listener, and teardown removes only those.
-   The mock target can later become a CI job; neither is a required check by this record.
+   The mock target runs in the required CI smoke job alongside the native desktop smoke.
+   Real-cloud journeys stay local only; CI refuses a `CLOUDS` path and uses no cloud credentials.
 6. **Playwright drives a real browser.**
    The suite lives in `uijourneys/` with its own pinned `package.json`, apart from the frontend's dependencies, and drives Chromium through Playwright, finding controls by role and accessible name as the operator would, not by test-only attributes.
 7. **Output names no provider, host, account or secret.**

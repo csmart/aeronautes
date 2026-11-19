@@ -22,6 +22,22 @@ def command(source, prefix):
 
 
 class LauncherIsolation(unittest.TestCase):
+    def test_ci_refuses_cloud_credentials_before_building(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            npm = root / "npm"
+            npm.write_text("#!/bin/sh\nexit 92\n")
+            npm.chmod(0o700)
+            env = dict(os.environ, CI="true", CLOUDS=str(root / "clouds.yaml"),
+                       XDG_CACHE_HOME=str(root / "cache"),
+                       PATH=f"{root}:{os.environ['PATH']}")
+            result = subprocess.run(["bash", str(SCRIPTS / "uijourneys.sh")],
+                                    env=env, text=True, capture_output=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("real-cloud UI journeys run locally only", result.stderr)
+            self.assertNotIn(env["CLOUDS"], result.stdout + result.stderr)
+            self.assertFalse((root / "cache").exists())
+
     def test_socket_check_requires_successful_observation(self):
         source = (SCRIPTS / "webview-spike.sh").read_text()
         guard = source[source.index("PIDS=$(pgrep"):]
