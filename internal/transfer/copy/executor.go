@@ -536,7 +536,7 @@ func (e *Executor) carry(ctx context.Context, item queued, segments rclone.Segme
 	headers := item.carry
 	switch {
 	case segments.Prefix != "":
-		headers["X-Object-Manifest"] = segments.Container + "/" + segments.Prefix
+		headers["X-Object-Manifest"] = swiftcontrol.DynamicManifestHeader(segments.Container, segments.Prefix)
 	case item.bytes > e.cfg.ChunkBytes:
 		return failed(EffectUnresolved, StageCommit, CodeIncomplete, "metadata", errors.New(
 			"the object was copied, and its metadata was not set: the engine did not report where it put the object's segments, and a metadata request that does not name them would empty the object"))

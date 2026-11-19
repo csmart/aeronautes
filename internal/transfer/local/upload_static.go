@@ -71,7 +71,7 @@ func (u *uploadRun) makeStatic(ctx context.Context, dst *swiftcontrol.Session, c
 		// The store took a static manifest it does not give back, so nothing
 		// could later read which segments this object uses. The dynamic
 		// manifest names them by their prefix instead.
-		dynamic := map[string]string{"X-Object-Manifest": segments.Container + "/" + segments.Prefix, mtime: modified}
+		dynamic := map[string]string{"X-Object-Manifest": swiftcontrol.DynamicManifestHeader(segments.Container, segments.Prefix), mtime: modified}
 		if _, err := dst.PutObject(ctx, container, item.Name, strings.NewReader(""), contentType, dynamic); err != nil {
 			return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageCommit, transfercopy.CodeIO, "static-manifest",
 				fmt.Errorf("the store does not return static manifests and the dynamic manifest could not be put back, so the name holds a static manifest: %w", err))

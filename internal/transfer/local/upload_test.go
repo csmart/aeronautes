@@ -390,7 +390,7 @@ func TestUploadKeepsDynamicWhereStaticManifestsAreNotReturned(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	preflight := staticPlan(t, s, false, writeFile(t, dir, "big", "0123456789abcdefghijKLMNO"), writeFile(t, dir, "bigger", "0123456789abcdefghijKLMNOPQRSTUVWXYZ"))
+	preflight := staticPlan(t, s, false, writeFile(t, dir, "big%2F+雪", "0123456789abcdefghijKLMNO"), writeFile(t, dir, "bigger", "0123456789abcdefghijKLMNOPQRSTUVWXYZ"))
 	var learned []bool
 	recorder := &UploadRecorder{
 		Admit:           func(UploadAdmission) error { return nil },
@@ -404,15 +404,15 @@ func TestUploadKeepsDynamicWhereStaticManifestsAreNotReturned(t *testing.T) {
 	if err != nil || report.Done != 2 || len(report.Failures) != 0 || !reflect.DeepEqual(learned, []bool{false}) {
 		t.Fatalf("report = %+v, %v, learned %v", report, err, learned)
 	}
-	if puts := count(log, "PUT /v1/AUTH_test/media/up/big?multipart-manifest=put") + count(log, "PUT /v1/AUTH_test/media/up/bigger?multipart-manifest=put"); puts != 1 {
+	if puts := count(log, "PUT /v1/AUTH_test/media/up/big%2F+雪?multipart-manifest=put") + count(log, "PUT /v1/AUTH_test/media/up/bigger?multipart-manifest=put"); puts != 1 {
 		t.Fatalf("static manifest writes = %d, want the first file's alone: %q", puts, log)
 	}
-	for _, name := range []string{"up/big", "up/bigger"} {
+	for _, name := range []string{"up/big%2F+雪", "up/bigger"} {
 		if got := classOf(t, s, name); got != swiftcontrol.ClassDLO {
 			t.Fatalf("%s is %s, want a dynamic large object", name, got)
 		}
 	}
-	if readLive(t, s, "media", "up/big") != "0123456789abcdefghijKLMNO" {
+	if readLive(t, s, "media", "up/big%2F+雪") != "0123456789abcdefghijKLMNO" {
 		t.Fatal("the dynamic object put back does not assemble the file")
 	}
 }
