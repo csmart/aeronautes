@@ -62,18 +62,20 @@ async function cancel(page: Page, id: string): Promise<void> {
   await page.goto("/");
   await openDrawer(page);
   const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
-  if (!/^(complete|partial|cancelled|failed)$/.test((await badge(page, id).textContent()) ?? "")) {
-    await row.getByRole("button", { name: "Cancel" }).click();
+  if (!/^(complete|partial|cancelled|cancelled, incomplete|failed)$/.test((await badge(page, id).textContent()) ?? "")) {
+    await row.getByRole("button", { name: "Cancel", exact: true }).click();
   }
-  await expect(badge(page, id)).toHaveText(/^(complete|partial|cancelled|failed)$/, { timeout: 2 * 60 * 1000 });
+  await expect(badge(page, id)).toHaveText(/^(complete|partial|cancelled|cancelled, incomplete|failed)$/, { timeout: 2 * 60 * 1000 });
 }
 
 // expectCancelledPartway checks that a job cancelled after some of its files
-// landed ended partial, saying that it was cancelled.
+// landed reads as cancelled and incomplete, not as a failure (ADR 0129): the
+// file it was writing is counted incomplete and nothing is counted failed.
 async function expectCancelledPartway(page: Page, id: string): Promise<void> {
-  await expect(badge(page, id)).toHaveText("partial");
+  await expect(badge(page, id)).toHaveText("cancelled, incomplete");
   const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
-  await expect(row).toContainText(/cancel/i);
+  await expect(row.locator(".counts")).toContainText(/\d+ incomplete/);
+  await expect(row.locator(".counts")).not.toContainText("failed");
 }
 
 // filesIn lists every file under a folder by its path inside it.
@@ -89,11 +91,11 @@ test.describe("cancelled jobs", () => {
   // What a cancelled upload wrote is whole: each object it left has its
   // file's bytes, read back by a download, and it left nothing else. It is
   // cancelled once the small files are in the store and the big one is still
-  // being sent, so the job wrote something and says it is partial: a
-  // transfer says "cancelled" only when nothing landed.
+  // being sent, so the job wrote something and reads "cancelled,
+  // incomplete": a transfer reads plain "cancelled" only when nothing landed.
   test("a cancelled upload leaves only whole objects", async ({ page }, info) => {
     const target = info.project.name;
-    const container = await ownContainer(target, "ui-cancelled-upload");
+    const container = await ownContainer(target, "ui-stopped-upload");
     const { folder, digests } = files([16, 32]);
     const f = basename(folder);
     await openContainer(page, target, container);
@@ -123,7 +125,7 @@ test.describe("cancelled jobs", () => {
   // ends ".partial", may be there besides.
   test("a cancelled download leaves only whole files", async ({ page }, info) => {
     const target = info.project.name;
-    const container = await ownContainer(target, "ui-cancelled-download");
+    const container = await ownContainer(target, "ui-stopped-download");
     const { folder, digests } = files([16, 32]);
     const f = basename(folder);
     await openContainer(page, target, container);

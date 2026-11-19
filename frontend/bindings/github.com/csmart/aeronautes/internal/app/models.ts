@@ -1193,6 +1193,12 @@ export interface JobItemTotalsDTO {
     "planned": number;
     "admitted": number;
     "failed": number;
+
+    /**
+     * Incomplete is the names a cancellation stopped part-way, which Failed
+     * does not include (ADR 0129).
+     */
+    "incomplete"?: number;
     "conflicts": number;
     "refused": number;
     "unresolved": number;

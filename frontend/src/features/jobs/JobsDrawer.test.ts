@@ -120,6 +120,30 @@ it("counts the files a job left because they were already the same", async () =>
   expect(document.querySelector(".counts")?.textContent).toMatch(/2\s*\/5/);
 });
 
+// ADR 0129: a job stopped after something landed is stored partial with the
+// names it stopped counted incomplete, and reads as cancelled and incomplete,
+// not as a failure; a real failure beside them still reads failed.
+it("words a job stopped part-way as cancelled and incomplete", async () => {
+  const api = newFakeApi();
+  const job: JobDTO = {
+    id: "stopped", type: "upload", state: "partial", source: "3 local files from /home/you", destination: "media/",
+    sourceBookmarkId: "", destBookmarkId: "a", createdAt: "", startedAt: "", finishedAt: "",
+    engine: "rclone+native", settings: "", error: "", recoveryRecords: 0, pause: "",
+    counters: { objectsPlanned: 3, objectsCopied: 2, objectsVerified: 2, objectsFailed: 0, objectsIncomplete: 1,
+      bytesPlanned: 30, bytesCopied: 20, overwrites: 0, overwritesRefused: 0, objectsSame: 0, nativeRouted: 0, objectsDeleted: 0 },
+  };
+  const broken: JobDTO = { ...job, id: "broken", counters: { ...job.counters, objectsFailed: 1, objectsIncomplete: 0 } };
+  api.jobs = async () => [job, broken];
+  show(new BrowserState(api));
+  await vi.waitFor(() => expect(document.querySelectorAll(".badge.partial")).toHaveLength(2));
+  const [stopped, failed] = [...document.querySelectorAll(".job")];
+  expect(stopped.querySelector(".badge")?.textContent).toBe("cancelled, incomplete");
+  expect(stopped.querySelector(".counts")?.textContent).toContain("1 incomplete");
+  expect(stopped.querySelector(".counts")?.textContent).not.toContain("failed");
+  expect(failed.querySelector(".badge")?.textContent).toBe("partial");
+  expect(failed.querySelector(".counts")?.textContent).toContain("1 failed");
+});
+
 it("shows global and per-job retained records without changing a completed result", async () => {
   const api = newFakeApi();
   const job: JobDTO = {

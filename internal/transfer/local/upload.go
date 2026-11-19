@@ -176,7 +176,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if !final || !planned || recorded[name] || recordLost {
 				return
 			}
-			outcome := engineOutcome(answers, item, nil)
+			outcome := engineOutcome(answers, item, nil, nil)
 			if class == swiftcontrol.ClassSLO && outcome.Result == transfercopy.ResultCopied && item.Size > preflight.ChunkBytes {
 				return
 			}
@@ -188,6 +188,13 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			progress()
 		}
 		result, engineErr := u.copy(ctx, dst, engine, group.dir, strings.TrimSuffix(dstSpec+"/"+group.into, "/"), names, heard)
+		// A file the engine was stopped on by a cancellation, and nothing
+		// else, is recorded as cancelled, as a download's is, so the job reads
+		// it as incomplete rather than failed (ADR 0129).
+		var cancelled error
+		if engineErr == nil && engineCancelled(ctx, result) {
+			cancelled = ctx.Err()
+		}
 		if engineErr == nil {
 			engineErr = transfercopy.ResultFailure(result)
 		}
@@ -204,7 +211,7 @@ func Upload(ctx context.Context, dst *swiftcontrol.Session, engine Engine, dstSp
 			if recorded[filepath.Base(item.Path)] {
 				continue
 			}
-			outcome := engineOutcome(answers, item, engineErr)
+			outcome := engineOutcome(answers, item, engineErr, cancelled)
 			// The engine uploads a file larger than the chunk size in
 			// segments, behind a dynamic manifest at the file's name.
 			if u.stopped == nil && outcome.Result == transfercopy.ResultCopied && class == swiftcontrol.ClassSLO && item.Size > preflight.ChunkBytes {
@@ -258,10 +265,11 @@ func destinationDir(item UploadItem) string {
 // engineOutcome is one file's outcome from what the engine said (ADR 0122
 // decision 7). A file the engine reported as copied is written. One it
 // reported an error for failed with that error. One it said nothing about is
-// unknown when the engine itself stopped in failure, and was not written
+// cancelled when a cancellation alone stopped the engine, unknown when the
+// engine itself stopped in failure, and was not written
 // when the engine finished cleanly: the pinned engine lists every file it
 // writes.
-func engineOutcome(answers rclone.Answers, item UploadItem, engineErr error) uploadResult {
+func engineOutcome(answers rclone.Answers, item UploadItem, engineErr, cancelled error) uploadResult {
 	name := filepath.Base(item.Path)
 	switch {
 	case answers.Copied[name]:
@@ -270,6 +278,8 @@ func engineOutcome(answers rclone.Answers, item UploadItem, engineErr error) upl
 		return uploadSame()
 	case answers.Refused[name] != "":
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeIO, "engine", errors.New(answers.Refused[name]))
+	case cancelled != nil:
+		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeCancelled, "engine", cancelled)
 	case engineErr != nil:
 		return uploadFailed(transfercopy.EffectUnresolved, transfercopy.StageEngine, transfercopy.CodeUnknown, "engine",
 			fmt.Errorf("the engine stopped without reporting this file: %w", engineErr))

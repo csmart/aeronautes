@@ -141,6 +141,7 @@
       <div><dt>Planned</dt><dd>{totals.planned}</dd></div>
       <div><dt>Admitted</dt><dd>{totals.admitted}</dd></div>
       <div><dt>Failed names</dt><dd>{totals.failed}</dd></div>
+      <div><dt>Incomplete</dt><dd>{totals.incomplete ?? 0}</dd></div>
       <div><dt>Conflicts</dt><dd>{totals.conflicts}</dd></div>
       <div><dt>Refused</dt><dd>{totals.refused}</dd></div>
       <div><dt>Unresolved effects</dt><dd>{totals.unresolved}</dd></div>
@@ -185,7 +186,8 @@
               <p class="observation">
                 <strong>{label}:</strong>
                 {#if observation}
-                  {observation.result.replaceAll("_", " ")} · effects: {observation.effect.replaceAll("_", " ")}
+                  <!-- ADR 0129: a name a cancellation stopped is incomplete, not failed. -->
+                  {observation.result === "failed" && observation.code === "cancelled" ? "incomplete" : observation.result.replaceAll("_", " ")} · effects: {observation.effect.replaceAll("_", " ")}
                   {#if observation.result === "copied"} · {observation.copiedBytes} reported copied bytes{/if}
                   {#if observation.code} · {observation.stage}: {observation.code}{/if}
                   {#if observation.httpStatus} · HTTP {observation.httpStatus}{/if}

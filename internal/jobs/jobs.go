@@ -81,8 +81,11 @@ type Counters struct {
 	ObjectsCopied   int64 `json:"objectsCopied"`
 	ObjectsVerified int64 `json:"objectsVerified"`
 	ObjectsFailed   int64 `json:"objectsFailed"`
-	BytesPlanned    int64 `json:"bytesPlanned"`
-	BytesCopied     int64 `json:"bytesCopied"`
+	// ObjectsIncomplete counts the names a cancellation stopped part-way,
+	// which ObjectsFailed does not include (ADR 0129).
+	ObjectsIncomplete int64 `json:"objectsIncomplete,omitempty"`
+	BytesPlanned      int64 `json:"bytesPlanned"`
+	BytesCopied       int64 `json:"bytesCopied"`
 	// Overwrites counts the writes an upload, a copy or a download made,
 	// after the operator confirmed replacing, to names its preview found in
 	// use, once the engine or the store answered for them; it is not a count

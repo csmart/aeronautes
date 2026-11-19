@@ -157,13 +157,14 @@ func itemTotals(ctx context.Context, tx *sql.Tx, jobID string) (ItemTotals, erro
 		COALESCE(SUM(CASE WHEN e.diagnostic_code!='' OR v.diagnostic_code!='' THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN i.issued_at IS NOT NULL THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN e.result='deleted' THEN 1 ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN i.issued_at IS NOT NULL AND e.item_id IS NULL THEN 1 ELSE 0 END),0)
+		COALESCE(SUM(CASE WHEN i.issued_at IS NOT NULL AND e.item_id IS NULL THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN e.result='failed' AND e.diagnostic_code='cancelled' THEN 1 ELSE 0 END),0)
 		FROM job_items i
 		LEFT JOIN job_item_observations e ON e.item_id=i.id AND e.phase='execution'
 		LEFT JOIN job_item_observations v ON v.item_id=i.id AND v.phase='verification'
 		WHERE i.job_id=?`, jobID).Scan(&totals.Items, &totals.Planned, &totals.Admitted, &totals.Failed,
 		&totals.Conflicts, &totals.Refused, &totals.Unresolved, &totals.Unverified, &totals.Problems,
-		&totals.Issued, &totals.Deleted, &totals.Unsettled)
+		&totals.Issued, &totals.Deleted, &totals.Unsettled, &totals.Incomplete)
 	return totals, err
 }
 

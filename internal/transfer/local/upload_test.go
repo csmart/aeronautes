@@ -687,3 +687,28 @@ func TestUploadStartsTheEngineOnceMoreAfterARefusedToken(t *testing.T) {
 		})
 	}
 }
+
+// ADR 0129: a file the engine said nothing about is cancelled when a
+// cancellation alone stopped the engine, so the job counts it incomplete,
+// and unknown when the engine stopped in failure, which still counts as
+// failed. A refusal the engine reported stays the refusal.
+func TestUploadOutcomeOfASilentFileSaysWhyTheEngineStopped(t *testing.T) {
+	item := UploadItem{Path: "/home/you/a.txt", Name: "a.txt"}
+	for _, tc := range []struct {
+		name               string
+		answers            rclone.Answers
+		engineErr, stopped error
+		code               transfercopy.Code
+	}{
+		{name: "stopped by a cancellation", engineErr: errors.New("engine child cancelled"), stopped: context.Canceled, code: transfercopy.CodeCancelled},
+		{name: "stopped in failure", engineErr: errors.New("exit status 3"), code: transfercopy.CodeUnknown},
+		{name: "refused before the cancellation", answers: rclone.Answers{Refused: map[string]string{"a.txt": "403"}}, engineErr: errors.New("engine child cancelled"), stopped: context.Canceled, code: transfercopy.CodeIO},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := engineOutcome(tc.answers, item, tc.engineErr, tc.stopped)
+			if got.Result != transfercopy.ResultFailed || got.Diagnostic.Code != tc.code {
+				t.Fatalf("outcome = %+v, want failed with %s", got, tc.code)
+			}
+		})
+	}
+}
