@@ -15,10 +15,10 @@ updates:
     # @wailsio/runtime below, was removed: everything it matched is older
     # than the pin and would never be proposed. Stable Wails releases are
     # weekly minor bumps. A bot PR carrying one is a notification and not a
-    # merge: three of the five Wails pins are `go install` arguments no bot
-    # can see (scripts/wails-version-coherence.sh), so that PR fails the
-    # coherence check, and a coherent upgrade is always a hand-made
-    # five-pin slice. Wails is therefore left out of the weekly groups, here
+    # merge: the Go module and npm runtime must move together, while
+    # scripts/wails.mjs derives the CLI version from the module. A coherent
+    # upgrade is still a deliberate two-ecosystem change. Wails is left out
+    # of the weekly groups, here
     # and for @wailsio/runtime below, so its notification arrives as a PR of
     # its own and never holds back the other updates it would be grouped with.
     groups:
