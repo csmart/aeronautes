@@ -448,6 +448,7 @@ type hookedSecrets struct {
 	secrets.SecretStore
 	put func(context.Context, string, []byte) error
 	get func(context.Context, string) ([]byte, error)
+	del func(context.Context, string) error
 }
 
 func (s hookedSecrets) Put(ctx context.Context, name string, value []byte) error {
@@ -462,6 +463,13 @@ func (s hookedSecrets) Get(ctx context.Context, name string) ([]byte, error) {
 		return s.get(ctx, name)
 	}
 	return s.SecretStore.Get(ctx, name)
+}
+
+func (s hookedSecrets) Delete(ctx context.Context, name string) error {
+	if s.del != nil {
+		return s.del(ctx, name)
+	}
+	return s.SecretStore.Delete(ctx, name)
 }
 
 func publicationGate(t *testing.T) (chan struct{}, func()) {
