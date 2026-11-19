@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -27,7 +28,6 @@ import (
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/bookmarks"
 	"github.com/csmart/aeronautes/internal/db"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/secrets"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
@@ -1016,11 +1016,9 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	}
 }
 
-// TestDeletionEngineRealSwift drives both §31.2 executors against the
-// real bulk middleware: a synthetic namespace with hostile names dies
-// completely, shared-segment manifests die manifest-only, and Empty
-// Container preserves every piece of container configuration (§33).
-func TestDeletionEngineRealSwift(t *testing.T) {
+// The real middleware must preserve exact names, shared segments and
+// container settings. Job admission and sweeps are service-level contracts.
+func TestDeletionPrimitivesRealSwift(t *testing.T) {
 	h := harness(t)
 	ctx := context.Background()
 	capabilities, err := h.Session.FetchCapabilities(ctx)
@@ -1038,12 +1036,8 @@ func TestDeletionEngineRealSwift(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 120; i++ {
-		if err := h.put(ctx, container, fmt.Sprintf("doomed/obj-%04d", i), []byte("x"), "text/plain", nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, name := range []string{"doomed/a b", "doomed/line\nbreak", "doomed/日本語", "doomed//lead", "doomed/trail/"} {
+	doomed := []string{"doomed/a b", "doomed/line\nbreak", "doomed/日本語", "doomed//lead", "doomed/trail/"}
+	for _, name := range doomed {
 		if err := h.put(ctx, container, name, []byte("hostile"), "text/plain", nil); err != nil {
 			t.Fatal(err)
 		}
@@ -1062,16 +1056,21 @@ func TestDeletionEngineRealSwift(t *testing.T) {
 		}
 	}
 
-	// Bulk path.
-	result, err := deletion.DeletePrefix(ctx, h.Session, capabilities, container, "doomed/", deletion.Options{BulkSize: 50})
+	doomed = append(doomed, "doomed/shared-video")
+	result, err := h.Session.BulkDelete(ctx, container, doomed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Strategy != deletion.StrategyBulk || result.Remaining != 0 || len(result.Failures) != 0 {
+	if !result.Validated || len(result.Failures) != 0 {
 		t.Fatalf("bulk result = %+v (failures %+v)", result, result.Failures)
 	}
-	if result.Deleted != 126 {
-		t.Errorf("deleted = %d, want 126", result.Deleted)
+	if result.Deleted != int64(len(doomed)) {
+		t.Errorf("deleted = %d, want %d", result.Deleted, len(doomed))
+	}
+	for _, name := range doomed {
+		if _, err := h.Session.ObjectDetail(ctx, container, name); !swiftcontrol.IsNotFound(err) {
+			t.Errorf("requested object %q was not removed: %v", name, err)
+		}
 	}
 	// The sibling manifest still assembles: 3000 logical bytes.
 	d, err := h.Session.ObjectDetail(ctx, container, "kept-video")
@@ -1082,25 +1081,24 @@ func TestDeletionEngineRealSwift(t *testing.T) {
 		t.Fatalf("shared segments harmed: sibling = %d bytes", d.ContentLength)
 	}
 
-	// Parallel path empties what remains ("" prefix = Empty Container's
-	// engine); container config must be untouched (§33).
+	// Native deletion of the survivors must leave container settings intact.
 	before, err := h.Session.ContainerDetail(ctx, container)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err = deletion.DeletePrefix(ctx, h.Session, capabilities, container, "", deletion.Options{ForceParallel: true, Workers: 8})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Strategy != deletion.StrategyParallel || result.Remaining != 0 {
-		t.Fatalf("parallel result = %+v", result)
+	for _, name := range []string{"kept.txt", "kept-video"} {
+		if err := h.Session.DeleteObject(ctx, container, name); err != nil {
+			t.Fatal(err)
+		}
 	}
 	after, err := h.Session.ContainerDetail(ctx, container)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := deletion.SnapshotConfig(before).Diff(deletion.SnapshotConfig(after)); diff != "" {
-		t.Fatalf("Empty Container changed config: %s", diff)
+	if before.StoragePolicy != after.StoragePolicy || !maps.Equal(before.Meta, after.Meta) ||
+		before.ReadACL != after.ReadACL || before.WriteACL != after.WriteACL ||
+		before.Versioning != after.Versioning || before.QuotaBytes != after.QuotaBytes {
+		t.Fatalf("object deletion changed container settings: before=%+v after=%+v", before, after)
 	}
 	if after.Meta["Team"] != "ops" || after.ReadACL != ".r:*" {
 		t.Fatalf("config survived wrong: %+v", after)
@@ -1221,10 +1219,6 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 		skipOrFailSecondAccount(t)
 	}
 	ctx := context.Background()
-	capabilities, err := h.Session2().FetchCapabilities(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	src := h.Container("mirror-src")
 	dst := h.Prefix + "mirror-dst"
@@ -1324,11 +1318,11 @@ func TestCopyAndManifestDeleteComponentsRealSwift(t *testing.T) {
 	// DLO over the SHARED prefix before the delete half runs.
 	seed2("scope/obsolete.txt", nil, map[string]string{"X-Object-Manifest": segStore + "/shared/"})
 
-	result, err := deletion.DeleteNames(ctx, h.Session2(), capabilities, dst, destOnly, deletion.Options{})
+	result, err := h.Session2().BulkDelete(ctx, dst, destOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Deleted != int64(len(destOnly)) || result.Remaining != 0 {
+	if !result.Validated || result.Deleted != int64(len(destOnly)) || len(result.Failures) != 0 {
 		t.Fatalf("delete half = %+v (destOnly %v)", result, destOnly)
 	}
 	// Both fixtures hold: the out-of-scope manifest still assembles at

@@ -62,3 +62,8 @@ Preserve negative controls and run race tests, owned real-Swift checks, the full
 
 Only then remove the unused executor, private index, options, snapshots and their implementation-specific tests.
 The benchmark remains deferred by its existing release gate; this refactor does not enable it or release 0.5.0.
+
+The replacement is implemented in `internal/app/benchmarkservice.go`.
+Bulk protocol and effect contracts live beside the adapter in `internal/swiftcontrol/bulk_contract_test.go`.
+The real-Swift integration checks call the supported deletion primitives directly; they do not certify Mirror execution.
+The former `internal/deletion` package has no remaining caller and is removed.
