@@ -85,7 +85,9 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Bookmarks | duplicate a bookmark | duplicate a bookmark and connect with the copy (mock only) | the copy holds the first's details and no key, and connects once its key is entered |
 | Bookmarks | delete a bookmark that has run a job | delete a bookmark that has run a job, keeping the job (mock only) | the bookmark leaves the rail and the job stays in the history |
 | Bookmarks | switch between accounts from the rail | switch between the two clouds (both clouds) | each account lists its own container and not the other's |
-| Bookmarks | verify a bookmark; Keystone discovery from a URL without /v3; user and project IDs; import from a clouds.yaml; the import from the welcome dialog | not yet | |
+| Bookmarks | verify typed details without saving; correct a refused key | verify a bookmark without saving it, then correct a refused key (mock only) | success is cleared when the key changes; a wrong key is refused; the corrected key verifies; a fresh page has no saved bookmark |
+| Bookmarks | import clouds.yaml from the welcome dialog | import clouds.yaml from the welcome dialog using its keyboard controls (mock only) | import verifies, a fresh page connects, and the saved v3 URL, project and region are read back without the password |
+| Bookmarks | Keystone discovery from a URL without /v3; user and project IDs | not yet | |
 | Bookmarks | create a Keystone v3 bookmark in the editor; an Identity URL with no v3 refused | make a Keystone v3 bookmark in the editor, and refuse a URL with no v3 (mock only) | the account's containers are listed; the editor shows "does not offer Keystone v3 at the same address" |
 | Bookmarks | edit a connected bookmark's user | change a bookmark's user: a wrong one is refused, the right one connects (mock only) | the editor shows the refusal; restored, it connects, and a fresh page connects with the saved user |
 | Bookmarks | a store that does not answer | a bookmark whose store is unreachable is refused promptly (mock only) | the editor shows "connection refused" within 15 s and stays usable |
@@ -196,7 +198,8 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Settings | where the settings file and the database are kept | the settings file and the database hold no key (mock only) | settings.json in the run's XDG config folder holds the change as JSON; the database exists in the data folder; neither holds the key (this build keeps keys in memory, so this checks the bookmark's own record, not a keyring) |
 | Settings | the default profile reaches the upload dialog | start the upload dialog at the default profile | a fresh upload dialog's Profile is balanced |
 | Settings | connection cap 1 (mock only) | browse and inspect under a connection cap of one | a session opened under the cap lists the container and inspects each object |
-| Window | the welcome dialog; credential status; use by keyboard alone | not yet | |
+| Window | welcome at the minimum 960 × 600 window size; keyboard focus and dismissal | import clouds.yaml from the welcome dialog using its keyboard controls (mock only) | controls fit; Tab and Shift+Tab stay inside the modal; Escape dismisses it for this window; Enter opens import; a fresh page offers welcome again |
+| Window | credential status; use of the rest of the application by keyboard alone | not yet | |
 | Jobs | the benchmark | not offered in this release (v1Offers.benchmark is off); tested in Go | |
 | Recent changes | search the audit trail and "Export log…" | not yet | |
 | Window | the status bar's bookmark, the About link and the About dialog | the status bar and the About dialog | "connected to" and the bookmark; the version line's twelve characters and its hover text are the checkout's revision |

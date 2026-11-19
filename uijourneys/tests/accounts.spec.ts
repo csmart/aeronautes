@@ -1,6 +1,9 @@
 import { test, type Locator, type Page } from "@playwright/test";
 import { createServer, type AddressInfo } from "node:net";
-import { deleteBookmark, expect } from "../helpers.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { control } from "../control.ts";
+import { deleteBookmark, expect, expectInside, localFolder } from "../helpers.ts";
 
 // Bookmarks made and changed in the editor, against the mock only: its key
 // is a fixed test key, and a real cloud's password never reaches the page
@@ -77,6 +80,85 @@ test("a bookmark whose store is unreachable is refused promptly", async ({ page 
     await expect(editor.getByRole("alert")).toContainText("connection refused", { timeout: 15_000 });
     await expect(editor.getByRole("button", { name: "Save & connect" })).toBeEnabled();
     await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  } finally {
+    await cleanUp(page, [name]);
+  }
+});
+
+test("verify a bookmark without saving it, then correct a refused key", async ({ page }) => {
+  const name = "journey verify only";
+  try {
+    const editor = await startBookmark(page, name, process.env.AERONAUTES_MOCK!);
+    await editor.getByRole("button", { name: "Verify", exact: true }).click();
+    await expect(editor.getByText(/^Verified: account AUTH_test, /)).toBeVisible();
+    await editor.getByLabel("API key").fill("not-the-key");
+    await expect(editor.getByText(/^Verified:/)).toHaveCount(0);
+    await editor.getByRole("button", { name: "Verify", exact: true }).click();
+    await expect(editor.getByRole("alert")).toContainText("HTTP 401");
+    await editor.getByLabel("API key").fill("testing");
+    await editor.getByRole("button", { name: "Verify", exact: true }).click();
+    await expect(editor.getByText(/^Verified: account AUTH_test, /)).toBeVisible();
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await loadRail(page);
+    await expect(page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name, exact: true })).toHaveCount(0);
+  } finally {
+    await cleanUp(page, [name]);
+  }
+});
+
+test("import clouds.yaml from the welcome dialog using its keyboard controls", async ({ page }) => {
+  const name = "journey welcome cloud";
+  const identity = `${new URL(process.env.AERONAUTES_MOCK!).origin}/v3`;
+  const path = join(localFolder(), "clouds.yaml");
+  writeFileSync(path, `clouds:
+  ${name}:
+    region_name: RegionOne
+    auth:
+      auth_url: ${identity}
+      username: test:tester
+      password: testing
+      user_domain_name: Default
+      project_name: test
+      project_domain_name: Default
+`);
+  try {
+    await page.setViewportSize({ width: 960, height: 600 });
+    await loadRail(page);
+    const welcome = page.getByRole("dialog", { name: "Welcome", exact: true });
+    await expect(welcome).toBeVisible();
+    await expectInside(welcome);
+    // Both ends of the tab order stay inside the modal; Escape dismisses
+    // it for this window, while a fresh page still offers first-run help.
+    await expect(welcome.getByRole("button", { name: "Not now" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(welcome.getByRole("button", { name: "Add a bookmark" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(welcome.getByRole("button", { name: "Not now" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(welcome).toHaveCount(0);
+    await loadRail(page);
+    await expect(welcome.getByRole("button", { name: "Not now" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(welcome.getByRole("button", { name: "Import bookmarks…" })).toBeFocused();
+    await control.pickFiles([path]);
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog", { name: "Import bookmarks", exact: true });
+    await expect(dialog.getByLabel(`Import ${name}`, { exact: true })).toBeChecked();
+    await expectInside(dialog);
+    await dialog.getByRole("button", { name: "Import 1 bookmark", exact: true }).click();
+    await expect(dialog.getByText("Imported and verified.")).toBeVisible();
+    await dialog.locator("footer").getByRole("button", { name: "Close", exact: true }).click();
+    await page.reload();
+    const rail = page.getByRole("navigation", { name: "Bookmarks" });
+    await rail.getByRole("button", { name, exact: true }).click();
+    await expectConnected(page, name);
+    const editor = await editBookmark(page, name);
+    await expect(editor.getByLabel("Auth type")).toHaveValue("3");
+    await expect(editor.getByLabel(/^Identity URL/)).toHaveValue(identity);
+    await expect(editor.getByLabel("Project", { exact: true })).toHaveValue("test");
+    await expect(editor.getByLabel("Region", { exact: true })).toHaveValue("RegionOne");
+    await expect(editor.getByLabel("Password")).toHaveValue("");
   } finally {
     await cleanUp(page, [name]);
   }
