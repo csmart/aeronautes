@@ -7,9 +7,10 @@ import {
 } from "../helpers.ts";
 
 // Test plan step 9: what the next start says about a job that was running
-// when a run ended. Quitting as closing the window does cancels the job
-// cleanly, so it is a cancelled job with its record and nothing is
-// disclosed; a run that ends with no shutdown at all, as a crash or a power
+// when a run ended. Quitting as closing the window does stops the job
+// cleanly: it ends cancelled, or partial when part of a file had landed and
+// that file is recorded as not finished (ADR 0122 decision 7), keeps its
+// record, and nothing is disclosed; a run that ends with no shutdown at all, as a crash or a power
 // cut ends it, leaves the job unfinished, and the next start discloses it,
 // saying what it knows about what was and was not done, and dismissing that
 // keeps the job's record.
@@ -32,7 +33,7 @@ test.afterEach(async ({ page }) => {
 });
 
 test.describe.serial("a run that ends with a job running", () => {
-  test("quitting cancels the running job and keeps its record", async ({ page }) => {
+  test("quitting stops the running job and keeps its record", async ({ page }) => {
     const container = await startLongUpload(page, "ui-quit");
     const before = await control.started();
     restarted = true;
@@ -40,12 +41,12 @@ test.describe.serial("a run that ends with a job running", () => {
     await reopen(page, before);
     await page.getByRole("button", { name: /jobs & changes/ }).click();
     const row = page.locator("div.job").filter({ hasText: `→ ${container}/` });
-    await expect(row.getByText("cancelled", { exact: true })).toBeVisible();
+    await expect(row.getByText(/^(cancelled|partial)$/)).toBeVisible();
     // The notice is read once, when the page loads; reloading and waiting
     // for the job list again makes its absence a read, not a race.
     await page.reload();
     await page.getByRole("button", { name: /jobs & changes/ }).click();
-    await expect(row.getByText("cancelled", { exact: true })).toBeVisible();
+    await expect(row.getByText(/^(cancelled|partial)$/)).toBeVisible();
     await expect(page.getByRole("region", { name: "Interrupted jobs from a previous run" })).toHaveCount(0);
     await page.getByRole("button", { name: /▾ hide/ }).click();
   });
