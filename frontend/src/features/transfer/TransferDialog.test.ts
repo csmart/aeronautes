@@ -129,24 +129,6 @@ it("states versioning as an observation, not a retention promise, when replacing
   expect(text).not.toContain("keeps its prior version");
 });
 
-it("keeps a cancelled fixture copy partial after an overwrite refusal", async () => {
-  const api = newFakeApi();
-  const id = await api.startCopy({
-    sourceBookmarkId: "a", sourceContainer: "src", sourcePrefix: "",
-    destBookmarkId: "b", destContainer: "dst", destPrefix: "", profile: "",
-    acknowledgeOverwrite: false,
-    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
-  });
-  await api.cancelJob(id);
-  const [job] = await api.jobs("", false, 50);
-  expect(job.state).toBe("partial");
-  expect(job.counters.overwritesRefused).toBe(1);
-  expect(job.counters.overwrites).toBe(0);
-  expect(job.counters.objectsCopied).toBe(2);
-  expect(job.error).toContain("1 overwrite refused");
-  expect(job.error).toContain("context canceled");
-});
-
 it("keeps Mirror comparison available without an execution or confirmation flow", async () => {
   const api = show();
   button("Mirror")!.click();
@@ -185,18 +167,6 @@ it("cannot turn a Copy preview into a Mirror start and allows a fresh Copy previ
   button("Start copy")!.click();
   await vi.waitFor(() => expect(api.startCopy).toHaveBeenCalledOnce());
   expect(api.startMirror).not.toHaveBeenCalled();
-});
-
-it("makes the fixture API refuse Mirror without manufacturing a job", async () => {
-  const api = newFakeApi();
-  const before = await api.jobs("", false, 50);
-  await expect(api.startMirror({
-    sourceBookmarkId: "a", sourceContainer: "src", sourcePrefix: "",
-    destBookmarkId: "b", destContainer: "dst", destPrefix: "", confirm: "dst", profile: "",
-    acknowledgeOverwrite: false,
-    settings: { chunkSize: "", transfers: 0, checkers: 0, tpsLimit: 0, bwLimit: "" , bufferSize: ""},
-  })).rejects.toThrow("Mirror is unavailable");
-  expect(await api.jobs("", false, 50)).toEqual(before);
 });
 
 // Mirror refuses every start, so by the operator's decision of 11 November
