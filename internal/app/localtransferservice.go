@@ -1073,7 +1073,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 	}
 
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
 			background := context.WithoutCancel(innerCtx)
 			recorder := s.uploadItemRecorder(background, job.ID, req)
 			recorder.StaticManifests = func(returned bool) error {
@@ -1097,7 +1097,7 @@ func (s *TransferService) StartUpload(ctx context.Context, req UploadRequestDTO)
 			return report, err
 		})
 	}, func(cancelCtx context.Context) {
-		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "", "")
 	})
 	return job.ID, nil
 }
@@ -1221,12 +1221,12 @@ func (s *TransferService) StartDownload(ctx context.Context, req DownloadRequest
 	}
 
 	owner.launch(job.ID, req.BookmarkID, func(runCtx context.Context) {
-		s.runLocal(runCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
+		s.runLocal(runCtx, job.ID, req.BookmarkID, job.Counters, func(innerCtx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error) {
 			return local.DownloadInto(innerCtx, session, engine, "aeronautes_src:"+req.Container, req.Container, req.Prefix, destination, preflight,
 				onProgress, s.downloadItemRecorder(context.WithoutCancel(innerCtx), job.ID, req, destination.Path()))
 		})
 	}, func(cancelCtx context.Context) {
-		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateCancelled, "", "")
+		s.finishLocal(cancelCtx, job.ID, req.BookmarkID, job.Counters, jobs.StateCancelled, "", "")
 	})
 	return job.ID, nil
 }
@@ -1237,7 +1237,7 @@ func (s *TransferService) startLocalAudit(ctx context.Context, job jobs.Job, boo
 		Summary: "job " + job.ID + " · " + job.Settings, Result: audit.ResultApplied,
 	})
 	if err != nil {
-		s.finishLocal(context.WithoutCancel(ctx), job.ID, bookmarkID, job.ItemRecordsVersion, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error(), "")
+		s.finishLocal(context.WithoutCancel(ctx), job.ID, bookmarkID, job.Counters, jobs.StateFailed, "start audit unavailable before first write: "+err.Error(), "")
 		return fmt.Errorf("start audit unavailable: %w", err)
 	}
 	return nil
@@ -1302,28 +1302,24 @@ func localDisclosures(report *local.Report, state jobs.State) ([]disclosure, job
 	return out, state
 }
 
-func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, version int, counters jobs.Counters, state jobs.State, message, auditSummary string) {
+func (s *TransferService) finishLocal(ctx context.Context, jobID, bookmarkID string, counters jobs.Counters, state jobs.State, message, auditSummary string) {
 	// A completed body must no longer accept cancellation, even when
 	// persistence fails and the shared store reports unavailability.
 	s.runner.release(jobID)
-	finish := s.jobs.Finish
-	if version == 1 {
-		finish = s.jobs.FinishFromItems
-		totals, err := s.jobs.ReadItemTotals(ctx, jobID)
-		if err != nil {
-			if message != "" {
-				message += "; "
-			}
-			message += err.Error()
-			if state == jobs.StateComplete {
-				state = jobs.StatePartial
-			}
-		} else if state == jobs.StateComplete && (totals.Failed != 0 || totals.Conflicts != 0 || totals.Refused != 0 || totals.Unresolved != 0 || totals.Unverified != 0 || totals.Problems != 0) {
-			state = jobs.StatePartial
-			message = "retained item outcomes contain failures or uncertainty"
+	totals, err := s.jobs.ReadItemTotals(ctx, jobID)
+	if err != nil {
+		if message != "" {
+			message += "; "
 		}
+		message += err.Error()
+		if state == jobs.StateComplete {
+			state = jobs.StatePartial
+		}
+	} else if state == jobs.StateComplete && (totals.Failed != 0 || totals.Conflicts != 0 || totals.Refused != 0 || totals.Unresolved != 0 || totals.Unverified != 0 || totals.Problems != 0) {
+		state = jobs.StatePartial
+		message = "retained item outcomes contain failures or uncertainty"
 	}
-	err := finish(ctx, jobID, jobs.Completion{
+	err = s.jobs.FinishFromItems(ctx, jobID, jobs.Completion{
 		State: state, Counters: counters, Error: message,
 		Audit: audit.Event{BookmarkID: bookmarkID, Operation: "transfer.local." + string(state), Resource: "job " + jobID, Summary: auditSummary, Result: terminalAuditResult(state)},
 	}, s.runner.audit)
@@ -1348,7 +1344,7 @@ func onlyCancellations(failures []local.Failure) bool {
 // the Planning half; execution verifies per object as it goes (§27.5),
 // so the lifecycle is Planning → Running → Verifying → terminal with
 // verification counted from the per-object checks.
-func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, version int, base jobs.Counters,
+func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string, base jobs.Counters,
 	run func(ctx context.Context, onProgress func(done, same, total, bytes int64)) (*local.Report, error)) {
 
 	background := context.WithoutCancel(ctx)
@@ -1362,7 +1358,7 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 			messages = append(messages, d.message)
 			audits = append(audits, d.audit)
 		}
-		s.finishLocal(background, jobID, bookmarkID, version, counters, state, joinNotes(messages...), joinNotes(audits...))
+		s.finishLocal(background, jobID, bookmarkID, counters, state, joinNotes(messages...), joinNotes(audits...))
 	}
 	for _, state := range []jobs.State{jobs.StatePlanning, jobs.StateRunning} {
 		if err := s.jobs.Available(); err != nil {
@@ -1408,17 +1404,10 @@ func (s *TransferService) runLocal(ctx context.Context, jobID, bookmarkID string
 		// is unknown.
 		counters.Overwrites = report.Replaced
 		counters.ObjectsSame = report.Same
-		if version == 0 {
-			counters.ObjectsFailed = int64(len(report.Failures))
-		}
 	}
 	failures := ""
 	if report != nil && len(report.Failures) > 0 {
-		label := "transfer failures"
-		if version == 0 {
-			label = fmt.Sprintf("%d failed", len(report.Failures))
-		}
-		failures = fmt.Sprintf("%s (first: %s: %s)", label, report.Failures[0].Name, report.Failures[0].Err)
+		failures = fmt.Sprintf("transfer failures (first: %s: %s)", report.Failures[0].Name, report.Failures[0].Err)
 	}
 	switch {
 	case report != nil && report.PostCommitIssues > 0:

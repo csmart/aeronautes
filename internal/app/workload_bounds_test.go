@@ -116,7 +116,7 @@ func TestQueueDepthRefusesAtTheBoundary(t *testing.T) {
 		}
 		runner.register(job.ID, owner.cancel)
 		finish := func(ctx context.Context) {
-			h.transfer.finishLocal(ctx, job.ID, bookmark, 1, job.Counters, jobs.StateCancelled, "", "")
+			h.transfer.finishLocal(ctx, job.ID, bookmark, job.Counters, jobs.StateCancelled, "", "")
 		}
 		owner.hold(unpin)
 		owner.launch(job.ID, bookmark, func(ctx context.Context) {

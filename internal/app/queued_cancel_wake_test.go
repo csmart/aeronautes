@@ -107,12 +107,12 @@ func TestQueuedCancelWake(t *testing.T) {
 				owner.hold(func() { unpin(); cleaned = true })
 				owner.launch(job.ID, bookmark, func(ctx context.Context) {
 					bodyRan = true
-					h.transfer.runLocal(ctx, job.ID, bookmark, 1, job.Counters,
+					h.transfer.runLocal(ctx, job.ID, bookmark, job.Counters,
 						func(context.Context, func(int64, int64, int64, int64)) (*local.Report, error) {
 							return &local.Report{}, nil
 						})
 				}, func(ctx context.Context) {
-					h.transfer.finishLocal(ctx, job.ID, bookmark, 1, job.Counters, jobs.StateCancelled, "", "")
+					h.transfer.finishLocal(ctx, job.ID, bookmark, job.Counters, jobs.StateCancelled, "", "")
 				})
 				<-check.checked
 				if err := check.Context.Err(); err != nil {
