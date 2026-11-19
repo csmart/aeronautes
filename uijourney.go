@@ -130,6 +130,11 @@ type journeyControl struct {
 	// asked is what each native surface was asked since the runner last
 	// read it, so a journey checks the words a person would read there.
 	asked []asked
+	// tearing is the run's teardown, started once and polled to its end.
+	tearing struct {
+		started, done bool
+		failures      int
+	}
 	// started tells one start of the application from the next, so a
 	// journey that quit it waits for the new start, not the old one's last
 	// moments, before it loads the page again.
@@ -300,7 +305,9 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply, c.asked = append([]asked{}, c.asked...), nil
 		c.mu.Unlock()
 	case "/teardown":
-		reply = c.teardown(ctx)
+		reply = c.startTeardown()
+	case "/teardown-status":
+		reply = c.teardownStatus()
 	default:
 		http.Error(w, "unknown", http.StatusNotFound)
 		return
@@ -452,15 +459,40 @@ func (c *journeyControl) put(ctx context.Context, label, container, name, body s
 	return map[string]bool{"written": true}, owned.Put(ctx, container, name, []byte(body))
 }
 
-// teardown removes what the run created on every account it opened and
+// startTeardown removes what the run created on every account it opened and
 // reports how many removals failed, not why: a reason can name a host.
-func (c *journeyControl) teardown(ctx context.Context) any {
+//
+// It runs in the background, with a deadline of its own, and the runner
+// polls for its end: on a real store it deletes every object of every
+// container the run made, one request each, which can outlast both a
+// request's deadline and the runner's wait for a reply, and an abandoned
+// teardown leaves the run's containers behind.
+func (c *journeyControl) startTeardown() any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	failures := 0
-	for _, open := range c.accounts {
-		failures += len(open.owned.Teardown(ctx))
+	if !c.tearing.started {
+		c.tearing.started = true
+		accounts := c.accounts
+		c.accounts = map[string]openAccount{}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+			defer cancel()
+			failures := 0
+			for _, open := range accounts {
+				failures += len(open.owned.Teardown(ctx))
+			}
+			c.mu.Lock()
+			c.tearing.done, c.tearing.failures = true, failures
+			c.mu.Unlock()
+		}()
 	}
-	c.accounts = map[string]openAccount{}
-	return map[string]int{"failures": failures}
+	return map[string]bool{"started": true}
+}
+
+// teardownStatus says whether the teardown has ended, and how many of its
+// removals failed, not why: a reason can name a host.
+func (c *journeyControl) teardownStatus() any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return map[string]any{"done": c.tearing.done, "failures": c.tearing.failures}
 }

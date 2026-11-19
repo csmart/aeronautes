@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import type { Reporter, TestCase, TestResult, FullResult } from "@playwright/test/reporter";
+import type { FullResult, Reporter, TestCase, TestError, TestResult } from "@playwright/test/reporter";
 
 // Prints only each journey's title and outcome. An assertion's message can
 // quote page text, and page text can name a host, so every detail goes to
@@ -27,6 +27,15 @@ export default class PrivateReporter implements Reporter {
       const details = result.errors.map((e) => e.stack ?? e.message ?? String(e)).join("\n\n");
       appendFileSync(`${process.env.AERONAUTES_PRIVATE}/failures.txt`, `== ${title} (${result.status})\n${details}\n\n`);
     }
+  }
+
+  // An error outside every journey, such as a teardown that could not
+  // remove what the run made, fails the run; it is said here, with its
+  // detail kept private, so a failed run never has nothing to show.
+  onError(error: TestError) {
+    this.failed++;
+    console.log("FAIL the run's own setup or teardown");
+    appendFileSync(`${process.env.AERONAUTES_PRIVATE}/failures.txt`, `== setup or teardown\n${error.stack ?? error.message ?? String(error)}\n\n`);
   }
 
   onEnd(result: FullResult) {

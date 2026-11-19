@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/csmart/aeronautes/internal/app"
 	"github.com/csmart/aeronautes/internal/swifttest"
@@ -115,8 +116,17 @@ func TestJourneyControlReopeningAnAccountKeepsWhatItOwns(t *testing.T) {
 	if _, err := control.account(ctx, "mock", authURL); err != nil {
 		t.Fatal(err)
 	}
-	if failures := control.teardown(ctx).(map[string]int)["failures"]; failures != 0 {
-		t.Fatalf("teardown failed %d removals", failures)
+	control.startTeardown()
+	var status map[string]any
+	for deadline := time.Now().Add(30 * time.Second); ; {
+		status = control.teardownStatus().(map[string]any)
+		if status["done"] == true || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if status["done"] != true || status["failures"] != 0 {
+		t.Fatalf("teardown = %v, want done with no failed removals", status)
 	}
 	deleted := false
 	for _, line := range mock.RequestLog() {
