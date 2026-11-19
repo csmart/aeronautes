@@ -17,12 +17,12 @@ func TestBufferSizeDefaultsAndBounds(t *testing.T) {
 			t.Fatalf("%s override = %+v %v", profile, settings, err)
 		}
 	}
-	for _, size := range []string{"512k", "2Gi", "abc", "0"} {
+	for _, size := range []string{"512k", "2Gi", "2097152", "abc", "0"} {
 		if err := (TransferSettingsDTO{BufferSize: size}).Validate(); err == nil {
 			t.Fatalf("buffer size %q accepted", size)
 		}
 	}
-	for _, size := range []string{"1Mi", "16Mi", "1Gi", "256M"} {
+	for _, size := range []string{"1Mi", "1024", "16Mi", "1Gi", "256M"} {
 		if err := (TransferSettingsDTO{BufferSize: size}).Validate(); err != nil {
 			t.Fatalf("buffer size %q refused: %v", size, err)
 		}

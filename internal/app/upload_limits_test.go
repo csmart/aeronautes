@@ -17,9 +17,11 @@ func TestDestinationChunkSettings(t *testing.T) {
 				name, info, chunk, want, refusal string
 			}{
 				{name: "above_maximum", info: `{"swift":{"max_file_size":1048576}}`, chunk: "8Mi", refusal: "exceeds the destination"},
+				{name: "suffixless_above_maximum", info: `{"swift":{"max_file_size":5368709120}}`, chunk: "8388608", refusal: "exceeds the destination"},
 				{name: "below_minimum", chunk: "512Ki", refusal: "below 1Mi"},
 				{name: "zero", chunk: "0", refusal: "below 1Mi"},
 				{name: "at_maximum", info: `{"swift":{"max_file_size":1048576}}`, chunk: "1Mi", want: "1Mi"},
+				{name: "suffixless_at_maximum", info: `{"swift":{"max_file_size":1048576}}`, chunk: "1024", want: "1024"},
 				{name: "capped_default", info: `{"swift":{"max_file_size":1048576}}`, want: "1048576b"},
 				{name: "small_cluster_default", info: `{"swift":{"max_file_size":524288}}`, want: "524288b"},
 				{name: "standard_default", want: "5Gi"},

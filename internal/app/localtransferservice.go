@@ -492,7 +492,7 @@ func (s *TransferService) uploadPreflight(ctx context.Context, req UploadRequest
 		if report.LargeObjects, report.LargeObjectsOrigin, err = s.largeObjectsFor(ctx, req, session); err != nil {
 			return nil, err
 		}
-		report.ChunkBytes, _ = engineChunkBytes(effective.ChunkSize)
+		report.ChunkBytes, _ = ParseSize(effective.ChunkSize)
 		_, report.StaticManifestsReturned = s.connections.staticManifestsOf(session)
 	}
 	return report, nil
@@ -575,8 +575,8 @@ func discloseWalk(report *local.UploadPreflight, walk *local.DirectorySelection)
 // a file larger than the effective --swift-chunk-size. A native-routed name is
 // one plain PutObject whatever its size, so it never counts.
 func uploadsLargeObject(items []local.UploadItem, chunkSize string) bool {
-	chunkBytes, ok := engineChunkBytes(chunkSize)
-	if !ok {
+	chunkBytes, err := ParseSize(chunkSize)
+	if err != nil || chunkBytes <= 0 {
 		return false
 	}
 	for _, item := range items {
@@ -585,27 +585,6 @@ func uploadsLargeObject(items []local.UploadItem, chunkSize string) bool {
 		}
 	}
 	return false
-}
-
-// engineChunkBytes converts a --swift-chunk-size value to bytes the way the
-// pinned rclone does, so the preview names the same threshold execution uses.
-// rclone's SizeSuffix agrees with ParseSize on every unit suffix but reads a
-// bare number as KiB, not bytes; naming the placement with ParseSize's reading
-// would disclose the wrong threshold for a suffixless override. ParseSize stays
-// the admission and capping parser it already is.
-func engineChunkBytes(chunkSize string) (int64, bool) {
-	if chunkSize == "" {
-		return 0, false
-	}
-	normalized := chunkSize
-	if last := chunkSize[len(chunkSize)-1]; last >= '0' && last <= '9' {
-		normalized += "Ki" // a bare number is KiB to the engine, not bytes
-	}
-	bytes, err := ParseSize(normalized)
-	if err != nil || bytes <= 0 {
-		return 0, false
-	}
-	return bytes, true
 }
 
 // confirmOverwrite raises the one native confirmation that authorises
