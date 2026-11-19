@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/db"
 )
 
@@ -276,6 +277,7 @@ func (s *Store) Create(ctx context.Context, j Job) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	applog.Debugf("job %s created: %s", j.ID, j.Type)
 	return j, nil
 }
 
@@ -326,6 +328,11 @@ func (s *Store) Transition(ctx context.Context, id string, to State) error {
 			_, err = tx.ExecContext(ctx, `UPDATE jobs SET state=?, finished_at=? WHERE id=?`, string(to), now, id)
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE jobs SET state=? WHERE id=?`, string(to), id)
+		}
+		if err == nil {
+			// Debug detail for diagnosing a run (ADR 0127 decision 2): the
+			// job's id and states, never a name it touched.
+			applog.Debugf("job %s: %s → %s", id, current, to)
 		}
 		return err
 	})

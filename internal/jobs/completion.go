@@ -44,6 +44,11 @@ func (s *Store) FinishFromItems(ctx context.Context, id string, result Completio
 
 func (s *Store) finish(ctx context.Context, id string, result Completion, trail *audit.Store, fromItems bool) (err error) {
 	defer func() {
+		if err == nil {
+			// Debug detail for diagnosing a run (ADR 0127 decision 2): the
+			// job's id, end and counts, never a name it touched.
+			applog.Debugf("job %s finished %s: %+v", id, result.State, result.Counters)
+		}
 		if err != nil {
 			// Callers reduce this error to a fixed sentence before they report
 			// it, so the cause is logged here, where it is still whole.
