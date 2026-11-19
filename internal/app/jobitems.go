@@ -67,8 +67,8 @@ type JobItemTotalsDTO struct {
 	Planned  int64  `json:"planned"`
 	Admitted int64  `json:"admitted"`
 	Failed   int64  `json:"failed"`
-	// Incomplete is the names a cancellation stopped part-way, which Failed
-	// does not include (ADR 0129).
+	// Incomplete is the names a cancellation stopped part-way: the part of
+	// Failed that is not a real failure (ADR 0129).
 	Incomplete int64 `json:"incomplete,omitempty"`
 	Conflicts  int64 `json:"conflicts"`
 	Refused    int64 `json:"refused"`
@@ -143,7 +143,7 @@ func (s *JobService) ItemTotals(ctx context.Context, bookmarkID, jobID string) (
 		return JobItemTotalsDTO{}, itemReadError(err)
 	}
 	return JobItemTotalsDTO{Status: "available", Items: totals.Items, Planned: totals.Planned,
-		Admitted: totals.Admitted, Failed: totals.Failed - totals.Incomplete, Incomplete: totals.Incomplete, Conflicts: totals.Conflicts,
+		Admitted: totals.Admitted, Failed: totals.Failed, Incomplete: totals.Incomplete, Conflicts: totals.Conflicts,
 		Refused: totals.Refused, Unresolved: totals.Unresolved, Unverified: totals.Unverified, Problems: totals.Problems,
 		Issued: totals.Issued, Deleted: totals.Deleted, Unsettled: totals.Unsettled}, nil
 }

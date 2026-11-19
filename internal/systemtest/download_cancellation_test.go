@@ -353,37 +353,37 @@ func downloadCancellationCase(t *testing.T, h *Harness, mode string) {
 	switch mode {
 	case "native_held_headers":
 		state = "cancelled"
-		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 26, ObjectsFailed: 1, NativeRouted: 1}
+		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 26, ObjectsFailed: 1, ObjectsIncomplete: 1, NativeRouted: 1}
 		fragments = []string{"transfer failures (first: " + downloadCancelNative + ":", "context canceled"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin":        {execution: downloadCancelNotAttempted},
 			"scope/b.bin":        {execution: downloadCancelNotAttempted},
 			downloadCancelNative: {execution: downloadCancelNativeRead},
 		}
-		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Problems: 3}
+		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Problems: 3, Incomplete: 1}
 	case "native_mid_body":
 		state = "cancelled"
-		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 7 + 256*1024, ObjectsFailed: 1, NativeRouted: 1}
+		counters = jobs.Counters{ObjectsPlanned: 2, BytesPlanned: 7 + 256*1024, ObjectsFailed: 1, ObjectsIncomplete: 1, NativeRouted: 1}
 		fragments = []string{"transfer failures (first: " + downloadCancelNative + ": context canceled)"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin":        {execution: downloadCancelNotAttempted},
 			downloadCancelNative: {execution: downloadCancelNativeRead},
 		}
-		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Problems: 2}
+		totals = jobs.ItemTotals{Items: 2, Planned: 2, Admitted: 2, Failed: 1, Problems: 2, Incomplete: 1}
 	case "engine_running":
 		// What the engine reported is downloaded; the file it was writing is
 		// unknown, and the interrupted engine removed its partial file
 		// (ADR 0122 decision 5). The job says such a file may remain,
 		// because it cannot know the engine was not killed.
 		state = "partial"
-		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 14 + int64(len(downloadCancelLarge())), ObjectsCopied: 2, ObjectsVerified: 2, BytesCopied: 14, ObjectsFailed: 1}
+		counters = jobs.Counters{ObjectsPlanned: 3, BytesPlanned: 14 + int64(len(downloadCancelLarge())), ObjectsCopied: 2, ObjectsVerified: 2, BytesCopied: 14, ObjectsFailed: 1, ObjectsIncomplete: 1}
 		fragments = []string{"transfer failures (first: " + downloadCancelEngineHeld + ": context canceled)", "a name ending .partial"}
 		want = map[string]downloadCancelWant{
 			"scope/a.bin":            {execution: downloadCancelCopied(7), verification: downloadCancelVerified},
 			"scope/b.bin":            {execution: downloadCancelCopied(7), verification: downloadCancelVerified},
 			downloadCancelEngineHeld: {execution: downloadCancelUnknown},
 		}
-		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Unresolved: 1, Problems: 1}
+		totals = jobs.ItemTotals{Items: 3, Planned: 3, Admitted: 3, Failed: 1, Unresolved: 1, Problems: 1, Incomplete: 1}
 		files = map[string][]byte{"a.bin": a, "b.bin": b}
 	}
 	saved := interruptionOutcome(t, h, id, state, counters, fragments...)

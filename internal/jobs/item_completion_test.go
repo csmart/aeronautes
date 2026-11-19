@@ -348,7 +348,8 @@ func TestItemFinishDoesNotReplaceTerminalDiagnostic(t *testing.T) {
 
 // ADR 0129 decision 1: a name a cancellation stopped is incomplete, not
 // failed. Its item still counts in Failed, so the job is never complete,
-// and the job's counts report it apart from a real failure.
+// and the job's counts carry it as the incomplete part of the failed names,
+// which the window reads apart from a real failure.
 func TestItemCompletionCountsAStoppedNameIncomplete(t *testing.T) {
 	s, bookmark := newStore(t)
 	job := recordedJob(t, s, TypeUpload)
@@ -371,7 +372,7 @@ func TestItemCompletionCountsAStoppedNameIncomplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.Get(t.Context(), job.ID)
-	if err != nil || got.Counters.ObjectsFailed != 1 || got.Counters.ObjectsIncomplete != 1 {
-		t.Fatalf("counters = %+v %v, want one failed and one incomplete", got.Counters, err)
+	if err != nil || got.Counters.ObjectsFailed != 2 || got.Counters.ObjectsIncomplete != 1 {
+		t.Fatalf("counters = %+v %v, want two failed names of which one incomplete", got.Counters, err)
 	}
 }

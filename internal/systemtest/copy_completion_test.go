@@ -717,7 +717,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 		// a partial file (ADR 0122 decision 5); public totals remain
 		// unavailable after the refused completion.
 		wantFirstState = "cancelled"
-		wantFirstCounters = jobs.Counters{ObjectsPlanned: 1, ObjectsFailed: 1, BytesPlanned: 10}
+		wantFirstCounters = jobs.Counters{ObjectsPlanned: 1, ObjectsFailed: 1, ObjectsIncomplete: 1, BytesPlanned: 10}
 		const retained = "the transfer engine did not end normally: a file it was writing may remain in the selected directory under a name ending .partial"
 		unavailable := h.jobStore.Available()
 		if unavailable == nil || !strings.Contains(firstState.Job.Error, retained) || !strings.HasSuffix(firstState.Job.Error, unavailable.Error()) || firstState.Job.FinishedAt == "" ||
@@ -732,7 +732,7 @@ func copyCompletionQueued(t *testing.T, h *Harness, fault string) {
 	}
 	wantTotals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
 	if stoppedBeside {
-		wantTotals.Failed, wantTotals.Unresolved, wantTotals.Problems = 1, 1, 1
+		wantTotals.Failed, wantTotals.Unresolved, wantTotals.Problems, wantTotals.Incomplete = 1, 1, 1, 1
 	}
 	if !firstState.ItemsCaptured || firstState.ItemTotals != wantTotals || len(firstState.Items) != 1 {
 		t.Fatalf("running download lost its admitted item facts: %+v", firstState)

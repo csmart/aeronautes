@@ -81,8 +81,8 @@ type Counters struct {
 	ObjectsCopied   int64 `json:"objectsCopied"`
 	ObjectsVerified int64 `json:"objectsVerified"`
 	ObjectsFailed   int64 `json:"objectsFailed"`
-	// ObjectsIncomplete counts the names a cancellation stopped part-way,
-	// which ObjectsFailed does not include (ADR 0129).
+	// ObjectsIncomplete counts the names a cancellation stopped part-way: the
+	// part of ObjectsFailed that is not a real failure (ADR 0129).
 	ObjectsIncomplete int64 `json:"objectsIncomplete,omitempty"`
 	BytesPlanned      int64 `json:"bytesPlanned"`
 	BytesCopied       int64 `json:"bytesCopied"`

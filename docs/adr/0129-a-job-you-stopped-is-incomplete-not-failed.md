@@ -12,8 +12,8 @@ The operator asked for a word that is neither a failure nor a promise that the j
 ## Decision
 
 1. **A file the engine was stopped on is incomplete.**
-   An item whose execution failed with the code `cancelled` is counted as incomplete, not failed, in the job's counts and in its item totals, and its record in the item details reads "incomplete".
-   It is still not complete, and a job holding one is never complete.
+   An item whose execution failed with the code `cancelled` is counted as incomplete in the job's counts and in its item totals, as the part of the failed names that is not a real failure, and the window reads it apart: the counts show failed names less incomplete ones as failed, and the incomplete ones as incomplete; its record in the item details reads "incomplete".
+   It is still a failed execution in the ledger, so a job holding one is never complete, and every count and total that existed before keeps its meaning.
 2. **A job you stopped after something landed reads "cancelled, incomplete".**
    Where a job ended partial and holds incomplete items, its badge reads "cancelled, incomplete" and its counts read, for example, "2 copied · 1 incomplete".
    A job stopped before anything landed reads "cancelled", as now.
@@ -27,6 +27,6 @@ The states a job can reach and when it reaches them; what the item ledger record
 
 ## Required proof (tier 2)
 
-Go: a job finished from items holding one item failed with code `cancelled` and one failed with another code reports one failed and one incomplete in its counts and item totals.
+Go: a job finished from items holding one item failed with code `cancelled` and one failed with another code reports two failed names of which one is incomplete, in its counts and its item totals; an upload's file the engine was stopped on by a cancellation alone is recorded with the code `cancelled`; the system tests of cancelled and interrupted transfers expect the incomplete count.
 Frontend: a partial job with incomplete items shows "cancelled, incomplete" and "1 incomplete"; an item failed with code `cancelled` reads "incomplete".
 Journey, on the mock: an upload slowed by a bandwidth limit and cancelled from the drawer after part of it landed reads "cancelled, incomplete" with no failed count.

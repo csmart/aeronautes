@@ -248,6 +248,11 @@ func interruptedUpload(t *testing.T, h *Harness, mode string) {
 	if mode == "complete_control" {
 		want.ObjectsFailed = 0
 	}
+	if cancelled {
+		// The file the cancellation stopped is the incomplete part of the
+		// failed names (ADR 0129).
+		want.ObjectsIncomplete = 1
+	}
 	for _, i := range live {
 		want.ObjectsCopied++
 		want.ObjectsVerified++
@@ -306,11 +311,11 @@ func assertInterruptedUploadItems(t *testing.T, h *Harness, id, container, mode 
 	}
 	// A refused PUT wrote nothing. Only the PUT cancelled before its answer
 	// leaves the name unknown.
-	var unresolved int64
+	var unresolved, incomplete int64
 	if cancelled {
-		unresolved = 1
+		unresolved, incomplete = 1, 1
 	}
-	want := jobs.ItemTotals{Items: int64(count), Planned: int64(count), Admitted: int64(count), Failed: failed, Unresolved: unresolved, Problems: failed}
+	want := jobs.ItemTotals{Items: int64(count), Planned: int64(count), Admitted: int64(count), Failed: failed, Unresolved: unresolved, Problems: failed, Incomplete: incomplete}
 	if !saved.ItemsCaptured || saved.ItemTotals != want || len(saved.Items) != count {
 		t.Fatalf("interruption lost admitted upload identities: captured=%t totals=%+v rows=%d want=%+v", saved.ItemsCaptured, saved.ItemTotals, len(saved.Items), want)
 	}

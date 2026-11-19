@@ -11,7 +11,7 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import JobHistory from "./JobHistory.svelte";
   import JobItems from "./JobItems.svelte";
-  import { stateWords } from "./jobState";
+  import { realFailures, stateWords } from "./jobState";
 
   let { browser }: { browser: BrowserState } = $props();
   const id = $props.id();
@@ -388,7 +388,7 @@
       `${job.source} → ${job.destination}`,
       `accounts: ${accountsOf(job) || "none recorded"}`,
       `started: ${job.startedAt || "not started"}; finished: ${job.finishedAt || "not finished"}`,
-      `objects: ${c.objectsCopied} of ${c.objectsPlanned}, verified ${c.objectsVerified}, failed ${c.objectsFailed}, incomplete ${c.objectsIncomplete ?? 0}, deleted ${c.objectsDeleted}`,
+      `objects: ${c.objectsCopied} of ${c.objectsPlanned}, verified ${c.objectsVerified}, failed ${realFailures(c)}, incomplete ${c.objectsIncomplete ?? 0}, deleted ${c.objectsDeleted}`,
       `bytes: ${c.bytesCopied} of ${c.bytesPlanned}; overwrites ${c.overwrites}, refused ${c.overwritesRefused}`,
       `engine: ${job.engine}`,
       `settings: ${settings}`,
@@ -688,8 +688,8 @@
                     {#if (job.counters.objectsIncomplete ?? 0) > 0}
                       · {job.counters.objectsIncomplete} incomplete
                     {/if}
-                    {#if job.counters.objectsFailed > 0}
-                      · <em class="bad">{job.counters.objectsFailed} failed</em>
+                    {#if realFailures(job.counters) > 0}
+                      · <em class="bad">{realFailures(job.counters)} failed</em>
                     {/if}
                     {#if job.counters.overwritesRefused > 0}
                       · <em class="bad">{job.counters.overwritesRefused} {job.counters.overwritesRefused === 1 ? "overwrite" : "overwrites"} refused</em>
