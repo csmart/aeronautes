@@ -156,9 +156,6 @@ it("renders all enabled capability names and keeps unknown text inert", async ()
   document.querySelector<HTMLButtonElement>(".drawer .bar")!.click();
   await settle();
   expect(labels()).toContain("Benchmark…");
-  expect(v1Offers.rerun).toBe(true);
-  expect(v1Offers.markerDelete).toBe(true);
-  expect(v1Offers.manifestDelete).toBe(true);
 });
 
 it("retains the inline-SLO destruction disclosure on the manifest-only path", async () => {

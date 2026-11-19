@@ -2,7 +2,6 @@
   import { onDestroy } from "svelte";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { PrefixDetailDTO } from "../../lib/api";
-  import { v1Offers } from "../../lib/v1.svelte";
   import { isLiteralPlainObject } from "../../lib/objectKind";
   import type { BrowserState } from "../browser/browserState.svelte";
 import { isLink } from "../browser/browserState.svelte";
@@ -141,12 +140,10 @@ import { isLink } from "../browser/browserState.svelte";
         Listed facts only; nothing is read for a summary. Ctrl or Cmd with a click toggles a row, Shift with a click
         extends the selection, Ctrl or Cmd with A selects every loaded row, and Escape clears it.
       </p>
-      {#if v1Offers.objectDelete}
-        <p class="teach">
-          Delete selected… in the working list deletes the objects, and each folder with everything in it, as one
-          job, one request each, whatever each name holds when its request arrives.
-        </p>
-      {/if}
+      <p class="teach">
+        Delete selected… in the working list deletes the objects, and each folder with everything in it, as one
+        job, one request each, whatever each name holds when its request arrives.
+      </p>
     </section>
   {:else if entry && entry.kind === "object"}
     <header class="head">
@@ -164,7 +161,7 @@ import { isLink } from "../browser/browserState.svelte";
     {#if detail}
       <div class="actions-row">
         <button class="edit-btn" disabled={editingObject} onclick={() => (editingObject = true)}>Edit metadata</button>
-        {#if v1Offers.objectDelete && isLiteralPlainObject(detail)}
+        {#if isLiteralPlainObject(detail)}
           <button class="edit-btn danger" onclick={() => browser.openObjectDelete()}>Delete object…</button>
         {/if}
       </div>
@@ -243,9 +240,9 @@ import { isLink } from "../browser/browserState.svelte";
         {/if}
         <div class="lo-actions">
           <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
-          {#if v1Offers.manifestDelete && isLink(detail)}
+          {#if isLink(detail)}
             <p class="teach">This name is a symbolic link to the manifest: deleting a link is not offered here, and the manifest is deleted at its own name.</p>
-          {:else if v1Offers.manifestDelete}
+          {:else}
             <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
@@ -300,9 +297,9 @@ import { isLink } from "../browser/browserState.svelte";
           {#if segmentsAt !== ""}
             <button class="edit-btn inline" onclick={openBackstage}>Open segments backstage</button>
           {/if}
-          {#if v1Offers.manifestDelete && isLink(detail)}
+          {#if isLink(detail)}
             <p class="teach">This name is a symbolic link to the manifest: deleting a link is not offered here, and the manifest is deleted at its own name.</p>
-          {:else if v1Offers.manifestDelete}
+          {:else}
             <button class="edit-btn inline danger" onclick={() => browser.openManifestDelete()}>
               Delete manifest…
             </button>
@@ -358,35 +355,27 @@ import { isLink } from "../browser/browserState.svelte";
         </p>
       {/if}
     </section>
-    {#if (v1Offers.markerCreate || v1Offers.markerDelete) && pd && !browser.detailLoading}
+    {#if pd && !browser.detailLoading}
       <section class="card">
         <h3 class="card-title">Marker</h3>
         {#if !pd.selfObject}
-          {#if v1Offers.markerCreate}
-            <button
-              class="edit-btn inline"
-              disabled={markerBusy}
-              onclick={() => markerAction(pd, () => browser.createMarker(pd.prefix))}
-            >
-              Create marker object
-            </button>
-            <p class="teach">
-              An explicit marker keeps this prefix visible even with no children.
-            </p>
-          {:else}
-            <p class="teach">Marker creation is not offered in this build.</p>
-          {/if}
+          <button
+            class="edit-btn inline"
+            disabled={markerBusy}
+            onclick={() => markerAction(pd, () => browser.createMarker(pd.prefix))}
+          >
+            Create marker object
+          </button>
+          <p class="teach">
+            An explicit marker keeps this prefix visible even with no children.
+          </p>
         {:else if pd.markerBacked && pd.selfObject && isLink(pd.selfObject)}
           <p class="teach">This name is a symbolic link to a marker: deleting a link is not offered here, and the marker is deleted at its own name.</p>
         {:else if pd.markerBacked}
-          {#if v1Offers.markerDelete}
-            <button class="edit-btn inline danger" onclick={() => browser.openMarkerDelete()}>
-              Delete marker…
-            </button>
-            <p class="teach">Opens the delete for the marker object only; children are untouched.</p>
-          {:else}
-            <p class="teach">Marker deletion is not offered in this build; the marker and its children are untouched.</p>
-          {/if}
+          <button class="edit-btn inline danger" onclick={() => browser.openMarkerDelete()}>
+            Delete marker…
+          </button>
+          <p class="teach">Opens the delete for the marker object only; children are untouched.</p>
         {:else}
           <p class="teach">No marker action: a real object occupies this name.</p>
         {/if}

@@ -1,7 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { SegmentOwnershipDTO, PrefixDetailDTO, MutationResultDTO, Api } from "../../lib/api";
-import { v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import CreateContainerDialog from "../browser/CreateContainerDialog.svelte";
@@ -19,10 +18,6 @@ const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
   for (const component of mounted) await unmount(component);
   mounted.clear(); document.body.innerHTML = "";
-  v1Offers.markerCreate = true;
-  v1Offers.markerDelete = false;
-  v1Offers.manifestDelete = false;
-  v1Offers.bulkDelete = false;
 });
 async function settle() {
   for (let i = 0; i < 12; i++) { await Promise.resolve(); flushSync(); }
@@ -54,7 +49,6 @@ const segmentJobId = "job-seg-1";
 // unmounts the dialog, as the screen does.
 async function manifest() {
   const f = await setup();
-  v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   const check = deferred<SegmentOwnershipDTO>();
   f.api.checkSegmentOwnership = vi.fn(() => check.promise);
   const done = vi.fn();
@@ -236,26 +230,16 @@ describe("container creation lifetime", () => {
 });
 
 describe("marker action ownership", () => {
-  it("offers marker creation but not deletion in a v1 build", async () => {
+  it("offers creation for an implied folder and deletion for its new marker", async () => {
     const f = await setup("implied/");
     mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
     const labels = () => [...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim());
     expect(labels()).toContain("Create marker object");
     await f.browser.createMarker("implied/"); await settle();
-    expect(labels()).not.toContain("Delete marker…");
+    expect(labels()).toContain("Delete marker…");
   });
 
-  it("withholds marker creation when that affordance is not offered", async () => {
-    v1Offers.markerCreate = false;
-    const f = await setup("implied/");
-    mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    const labels = () => [...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim());
-    expect(labels()).not.toContain("Create marker object");
-  });
-
-  describe("when deletion is returned", () => {
-    beforeEach(() => { v1Offers.markerDelete = true; });
-
+  describe("marker actions", () => {
     it("admits one creation despite duplicate events", async () => {
       const f = await setup("implied/");
       const reply = deferred<PrefixDetailDTO>(); f.api.createMarker = vi.fn(() => reply.promise);
@@ -314,17 +298,7 @@ it.each(["external-dlo", "external-slo"])("%s distinguishes unavailable segment 
 });
 
 describe("mutation follow-up ownership", () => {
-  it("an unmounted inspector does not offer marker deletion in a v1 build", async () => {
-    const f = await setup("implied/"); await f.browser.createMarker("implied/");
-    const old = mount(Inspector, { target: f.root, props: { browser: f.browser } }); mounted.add(old); flushSync();
-    expect([...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Delete marker…");
-    await unmount(old); mounted.delete(old);
-    mounted.add(mount(Inspector, { target: f.root, props: { browser: f.browser } })); flushSync();
-    expect([...f.root.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Delete marker…");
-  });
-
   it("the marker button opens the browser-owned operation and deletes nothing by itself", async () => {
-    v1Offers.markerDelete = true;
     const f = await setup("implied/"); await f.browser.createMarker("implied/");
     f.api.deleteMarker = vi.fn().mockResolvedValue(applied);
     const old = mount(Inspector, { target: f.root, props: { browser: f.browser } }); mounted.add(old); flushSync();

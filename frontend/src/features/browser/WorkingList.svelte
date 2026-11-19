@@ -4,7 +4,6 @@
   import { breadcrumbs } from "../../lib/listing";
   import { formatBytes, formatCount } from "../../lib/format";
   import type { ListingRowDTO } from "../../lib/api";
-  import { v1Offers } from "../../lib/v1.svelte";
   import type { BrowserState } from "./browserState.svelte";
   import FindPanel from "./FindPanel.svelte";
   import NewFolderDialog from "./NewFolderDialog.svelte";
@@ -53,21 +52,17 @@
     const noScope = browser.containerName === null || browser.backstageFrom !== null;
     const items: MenuItem[] = [];
     if (entry.kind === "prefix") items.push({ label: "Open", run: () => browser.activate(entry) });
-    if (v1Offers.download) {
-      items.push({ label: `Download ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("download") });
-    }
-    if (v1Offers.copy) {
-      items.push({ label: `Copy ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("copy") });
-    }
+    items.push({ label: `Download ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("download") });
+    items.push({ label: `Copy ${sourceWord}…`, disabled: noScope, run: () => browser.openTransfer("copy") });
     items.push({ label: "Copy name", run: () => void browser.copyText(entry.name) });
     if (rowDelete) items.push({ label: rowDelete.label, danger: true, run: () => openSelectionDelete(browser) });
-    if (v1Offers.objectDelete && browser.chosenRows.length > 1) {
+    if (browser.chosenRows.length > 1) {
       items.push({ label: "Delete selected…", danger: true, run: () => browser.openSelectedDelete() });
     }
     // The prefix deletion's target is the selected folder only when that
     // folder is the one row selected; otherwise the dialog would act on the
     // folder being browsed or the container, under a label naming this row.
-    if (v1Offers.bulkDelete && entry.kind === "prefix" && browser.selectedPrefix === entry.name) {
+    if (entry.kind === "prefix" && browser.selectedPrefix === entry.name) {
       items.push({ label: "Delete prefix…", danger: true, disabled: noScope, run: () => (browser.deleteOpen = "prefix") });
     }
     return items;
@@ -227,52 +222,44 @@
       that comes and goes has a slot kept for it, so selecting a row moves
       neither the buttons nor the list below them. -->
     <div class="actions" role="group" aria-label="Actions">
-      {#if v1Offers.upload}
+      <button
+        class="find"
+        title="Upload local files to this prefix"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (browser.localTransfer = "upload")}
+      >
+        Upload…
+      </button>
+      <button
+        class="find"
+        title="Create a folder here: an empty marker object that keeps it listed"
+        disabled={browser.containerName === null || browser.backstageFrom !== null}
+        onclick={() => (newFolderOpen = true)}
+      >
+        New folder…
+      </button>
+      <span class="steady">
+        <span class="sizer" aria-hidden="true">Download container…</span>
         <button
           class="find"
-          title="Upload local files to this prefix"
+          title="Download it to a local directory"
           disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => (browser.localTransfer = "upload")}
+          onclick={() => browser.openTransfer("download")}
         >
-          Upload…
+          Download {sourceWord}…
         </button>
-      {/if}
-      {#if v1Offers.markerCreate}
+      </span>
+      <span class="steady">
+        <span class="sizer" aria-hidden="true">Copy container…</span>
         <button
           class="find"
-          title="Create a folder here: an empty marker object that keeps it listed"
+          title="Copy it to another account, container or folder"
           disabled={browser.containerName === null || browser.backstageFrom !== null}
-          onclick={() => (newFolderOpen = true)}
+          onclick={() => browser.openTransfer("copy")}
         >
-          New folder…
+          Copy {sourceWord}…
         </button>
-      {/if}
-      {#if v1Offers.download}
-        <span class="steady">
-          <span class="sizer" aria-hidden="true">Download container…</span>
-          <button
-            class="find"
-            title="Download it to a local directory"
-            disabled={browser.containerName === null || browser.backstageFrom !== null}
-            onclick={() => browser.openTransfer("download")}
-          >
-            Download {sourceWord}…
-          </button>
-        </span>
-      {/if}
-      {#if v1Offers.copy}
-        <span class="steady">
-          <span class="sizer" aria-hidden="true">Copy container…</span>
-          <button
-            class="find"
-            title="Copy it to another account, container or folder"
-            disabled={browser.containerName === null || browser.backstageFrom !== null}
-            onclick={() => browser.openTransfer("copy")}
-          >
-            Copy {sourceWord}…
-          </button>
-        </span>
-      {/if}
+      </span>
       <span class="deletions">
       <!-- One slot for the deletion that fits what is selected (ADR 0125
         decision 7): with rows selected only theirs, so the place being
@@ -295,7 +282,7 @@
             <button class="find danger" title="Delete only the selected row" onclick={() => openSelectionDelete(browser)}>
               {rowDelete.label}
             </button>
-          {:else if v1Offers.objectDelete && browser.chosenRows.length > 1}
+          {:else if browser.chosenRows.length > 1}
             <button
               class="find danger"
               title="Delete the selected objects, and each selected folder with everything in it, as one job"
@@ -304,7 +291,7 @@
               Delete selected…
             </button>
           {/if}
-        {:else if v1Offers.bulkDelete && browser.prefix === "" && browser.selectedPrefix === ""}
+        {:else if browser.prefix === "" && browser.selectedPrefix === ""}
           <button
             class="find danger"
             title="Delete everything in this container; the container and its settings stay"
@@ -321,7 +308,7 @@
           >
             Delete container…
           </button>
-        {:else if v1Offers.bulkDelete}
+        {:else}
           <button
             class="find danger"
             title={browser.selectedPrefix

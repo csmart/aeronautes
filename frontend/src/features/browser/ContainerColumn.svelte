@@ -2,7 +2,6 @@
   import type { BrowserState, ContainerMode } from "./browserState.svelte";
   import type { ContainerRowDTO, ContainerSettingsDTO } from "../../lib/api";
   import { formatBytes, formatCount } from "../../lib/format";
-  import { v1Offers } from "../../lib/v1.svelte";
   import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
 
   let { browser, onCreate }: { browser: BrowserState; onCreate: () => void } = $props();
@@ -24,18 +23,17 @@
   }
 
   function menuItems(name: string): MenuItem[] {
-    const items: MenuItem[] = [{ label: "Open", run: () => void browser.openContainer(name) }];
-    if (v1Offers.upload) items.push({ label: "Upload…", run: () => void inContainer(name, () => (browser.localTransfer = "upload")) });
-    if (v1Offers.download) items.push({ label: "Download container…", run: () => void inContainer(name, () => (browser.localTransfer = "download")) });
-    if (v1Offers.copy) items.push({ label: "Copy container…", run: () => void inContainer(name, () => (browser.transferOpen = true)) });
-    items.push({ label: "Copy name", run: () => void browser.copyText(name) });
-    if (v1Offers.bulkDelete) {
+    return [
+      { label: "Open", run: () => void browser.openContainer(name) },
+      { label: "Upload…", run: () => void inContainer(name, () => (browser.localTransfer = "upload")) },
+      { label: "Download container…", run: () => void inContainer(name, () => (browser.localTransfer = "download")) },
+      { label: "Copy container…", run: () => void inContainer(name, () => (browser.transferOpen = true)) },
+      { label: "Copy name", run: () => void browser.copyText(name) },
       // Two actions, never one that chooses between them inside its dialog:
       // deleting also destroys the container's settings (ADR 0121).
-      items.push({ label: "Empty container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "empty")) });
-      items.push({ label: "Delete container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "delete_container")) });
-    }
-    return items;
+      { label: "Empty container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "empty")) },
+      { label: "Delete container…", danger: true, run: () => void inContainer(name, () => (browser.deleteOpen = "delete_container")) },
+    ];
   }
 
   function openMenuAt(event: MouseEvent, name: string) {

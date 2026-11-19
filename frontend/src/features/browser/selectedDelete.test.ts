@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, ContainerSettingsDTO, ListingRowDTO } from "../../lib/api";
-import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import Inspector from "../inspector/Inspector.svelte";
@@ -16,14 +15,12 @@ import BrowserScreen from "./BrowserScreen.svelte";
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
 
-const shipped = { ...v1Offers };
 const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
   for (const component of [...mounted].reverse()) await unmount(component);
   mounted.clear();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
-  Object.assign(v1Offers, shipped);
 });
 
 async function settle() {
@@ -258,7 +255,6 @@ describe("the working list", () => {
 describe("the selected-set dialog", () => {
   async function dialog(facts: ContainerSettingsDTO | null | "real" = "real", prepare?: (fake: Awaited<ReturnType<typeof state>>["fake"]) => void) {
     const f = await state();
-    applyEnabledCapabilities(["Object deletion"]);
     if (facts !== "real") vi.spyOn(f.browser, "containerFacts").mockResolvedValue(facts);
     prepare?.(f.fake);
     f.browser.select(f.index("empty-object"));
@@ -341,7 +337,6 @@ describe("the selected-set dialog", () => {
 
   it("starts the segments option unticked for objects alone, because no folder preview read the archive scan", async () => {
     const f = await state();
-    applyEnabledCapabilities(["Object deletion"]);
     vi.spyOn(f.browser, "containerFacts").mockResolvedValue(unversioned);
     const preview = vi.spyOn(f.fake, "previewDelete");
     f.browser.select(f.index("empty-object"));
@@ -388,7 +383,6 @@ describe("the selected-set dialog", () => {
 
   it("offers the deletion for folders selected alone", async () => {
     const f = await state();
-    applyEnabledCapabilities(["Object deletion"]);
     f.browser.select(f.index("normal/"));
     f.browser.toggleRow(f.index("fake/"));
     await settle();
@@ -398,7 +392,6 @@ describe("the selected-set dialog", () => {
 
   it("states the operator's selection ceiling, the download object ceiling setting", async () => {
     const f = await state();
-    applyEnabledCapabilities(["Object deletion"]);
     await f.browser.settings.load();
     await f.browser.settings.save({ ...f.browser.settings.document!, downloadObjectCeiling: 1000, browserRetentionCeiling: 2000 });
     f.browser.select(f.index("empty-object"));
@@ -414,7 +407,6 @@ describe("the selected-set dialog", () => {
 
   it("cannot confirm until the versioning consequence is known or explicitly unknown", async () => {
     const f = await state();
-    applyEnabledCapabilities(["Object deletion"]);
     let settleFacts!: (facts: ContainerSettingsDTO | null) => void;
     vi.spyOn(f.browser, "containerFacts").mockReturnValue(new Promise((resolve) => { settleFacts = resolve; }));
     const start = vi.spyOn(f.fake, "startSelectedDelete");

@@ -8,9 +8,6 @@ import type { SegmentOwnershipDTO } from "../../lib/api";
 import { BrowserState } from "../browser/browserState.svelte";
 import { newFakeApi } from "../browser/fakeApi";
 import ManifestDeleteDialog from "./ManifestDeleteDialog.svelte";
-import { v1Offers } from "../../lib/v1.svelte";
-
-const shipped = { ...v1Offers };
 
 const LONG_TARGET =
   "backing/long-prefix/" + "p".repeat(520) + "/segments/";
@@ -25,7 +22,6 @@ function deferred<T>() {
 }
 const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
-  Object.assign(v1Offers, shipped);
   for (const component of mounted) await unmount(component);
   mounted.clear(); document.body.innerHTML = "";
 });
@@ -50,7 +46,6 @@ const ownership: SegmentOwnershipDTO =
 // with-segments option ticked (ADR 0120 decision 3), which asks the
 // ownership check; a case about the manifest-only deletion unticks it.
 async function dialog(segments = true) {
-  v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   const api = newFakeApi();
   const browser = new BrowserState(api);
   const bookmark = await browser.saveBookmark({ id: "", displayName: "Mock", authUrl: "http://mock/auth/v1.0", username: "test:tester", storageUrlOverride: "", authVersion: 1, userDomain: "", projectName: "", projectDomain: "", region: "", tlsMode: "system", caPem: "", hasCa: false, hasCredential: false }, "testing");
