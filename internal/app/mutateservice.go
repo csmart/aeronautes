@@ -137,6 +137,7 @@ func (s *MutateService) UpdateObjectMetadata(ctx context.Context, scope ListingS
 	}
 	if result.After != nil {
 		after := toObjectDetailDTO(result.After)
+		after.Scope = scope
 		dto.ObjectAfter = &after
 	}
 	return dto, nil
