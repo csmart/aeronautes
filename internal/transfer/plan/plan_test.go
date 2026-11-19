@@ -145,6 +145,7 @@ func TestRouting(t *testing.T) {
 		obj("a/./b", 1, "c3"),
 		obj("a//b", 1, "cc"),
 		obj("line\nbreak", 1, "dd"),
+		obj("line\rbreak", 1, "dd"),
 		obj("trail/", 1, "ee"),
 	)
 	items, summary := collect(t, src, stream(), "", "")
@@ -154,7 +155,7 @@ func TestRouting(t *testing.T) {
 	// traversal (measured 2026-08-29). Dots inside a segment are fine.
 	wantNative := map[string]bool{
 		"/lead": true, "a b": false, "a. b.": false, "a//b": true,
-		"a/../b": true, "a/./b": true, "line\nbreak": true, "trail/": true,
+		"a/../b": true, "a/./b": true, "line\nbreak": true, "line\rbreak": true, "trail/": true,
 	}
 	for name, native := range wantNative {
 		item := items["new:"+name]
@@ -166,7 +167,7 @@ func TestRouting(t *testing.T) {
 			t.Errorf("%q reason = %s", name, item.Reason)
 		}
 	}
-	if summary.NativeRouted != 6 {
+	if summary.NativeRouted != 7 {
 		t.Errorf("NativeRouted = %d", summary.NativeRouted)
 	}
 }

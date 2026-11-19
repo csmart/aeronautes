@@ -931,14 +931,14 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	dir := t.TempDir()
 	big := bytes.Repeat([]byte{0x7E}, 3*1024*1024)
 	for name, content := range map[string][]byte{
-		"small.txt": []byte("small upload"), "big.bin": big, "line\nname": []byte("hostile upload"),
+		"small.txt": []byte("small upload"), "big.bin": big, "line\rname": []byte("hostile upload"),
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	preflight, err := localtransfer.PreflightUploadSources(ctx, h.Session, container, "up/", localtransfer.SourcesByBaseName(
-		[]string{filepath.Join(dir, "small.txt"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "line\nname")}))
+		[]string{filepath.Join(dir, "small.txt"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "line\rname")}))
 	if err != nil || preflight.Rejected() {
 		t.Fatalf("preflight: %v %+v", err, preflight)
 	}
@@ -948,6 +948,9 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	}
 	if report.Done != 3 || len(report.Failures) != 0 || report.NativeRouted != 1 {
 		t.Fatalf("upload report = %+v (failures %+v)", report, report.Failures)
+	}
+	if body, err := h.conn.ObjectGetString(ctx, container, "up/line\rname"); err != nil || body != "hostile upload" {
+		t.Fatalf("native upload bytes = %q, error %v", body, err)
 	}
 	d, err := h.Session.ObjectDetail(ctx, container, "up/big.bin")
 	if err != nil {
@@ -976,7 +979,7 @@ func TestLocalTransferRealSwift(t *testing.T) {
 	if !rejected.Rejected() {
 		t.Fatalf("control-character name did not reject the download: %+v", rejected)
 	}
-	if err := h.Session.DeleteObject(ctx, container, "up/line\nname"); err != nil {
+	if err := h.Session.DeleteObject(ctx, container, "up/line\rname"); err != nil {
 		t.Fatal(err)
 	}
 	downPre, err := localtransfer.PreflightDownload(ctx, h.Session, container, "up/", destDir)
