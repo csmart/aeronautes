@@ -1,14 +1,16 @@
 import { test } from "@playwright/test";
+import { basename } from "node:path";
 import { control } from "../control.ts";
-import { expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
+import { expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, typedDelete, writeFiles } from "../helpers.ts";
 
 // ADR 0074 decision 6: with the retention ceiling at its least, 1,000, a
 // folder of 2,000 objects shows its first 1,000, then the next page shows
 // the rest in their place and, ending the listing exactly, offers no further
 // page, and back to the start shows the first again (found by the operator:
 // first the list stopped at the ceiling with nothing to press, then a second
-// page that ended the listing still offered an empty third).
-test("page a folder past the retention ceiling and back", async ({ page }, info) => {
+// page that ended the listing still offered an empty third). Then the
+// folder is deleted by its prefix.
+test("page a folder past the retention ceiling and back, and delete it", async ({ page }, info) => {
   test.skip(info.project.name !== "mock", "a thousand uploads are driven against the mock only");
   test.setTimeout(300_000);
   const container = await ownContainer(info.project.name, "ui-paging");
@@ -56,4 +58,19 @@ test("page a folder past the retention ceiling and back", async ({ page }, info)
   } finally {
     await retention("100000", "100,000");
   }
+
+  // The prefix's deletion lists the folder itself, past the store's page of
+  // 1,000 names and the window's ceiling, and must take all 2,000 and only
+  // them: a folder whose name starts as this one's does and an object at the
+  // container's top stay.
+  const kept = [`${basename(folder)}x/file00.bin`, "top.bin"];
+  for (const name of kept) await control.put(info.project.name, container, name, "a neighbour that stays");
+  await openContainer(page, info.project.name, container);
+  await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: new RegExp(`^${basename(folder)}/ `) }).click();
+  await page.getByRole("button", { name: "Delete prefix…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete" });
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByText(/^2000 objects · /)).toBeVisible();
+  await typedDelete(page, "Delete prefix");
+  expect((await control.names(info.project.name, container)).sort()).toEqual(kept.sort());
 });
