@@ -104,6 +104,16 @@ test("set a container's TempURL key and rotate it to the second slot", async ({ 
   await expect(headers).not.toContainText(/X-Container-Meta-Temp-Url-Key:/i);
   await expect(headers).not.toContainText(first);
   await expect(headers).not.toContainText(second);
+
+  // The container editor sends the whole form, which shows no key, so a
+  // save of another setting must leave the key where it is.
+  await page.getByRole("button", { name: "Configure container" }).click();
+  await page.getByLabel("Allowed origins").fill("https://journey.example");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("button", { name: "Configure container" })).toBeEnabled();
+  await openContainer(page, "mock", container);
+  await expect(keys.getByRole("button", { name: "Replace Temp-URL-Key-2…" })).toBeVisible();
+  await expect(await openRawHeaders(page)).toContainText("X-Container-Meta-Access-Control-Allow-Origin: https://journey.example");
 });
 
 // Test plan steps 12b and 19c: allowed CORS origins are read back over a
