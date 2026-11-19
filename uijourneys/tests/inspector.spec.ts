@@ -42,7 +42,8 @@ test("read the account's cards and every pane's raw headers", async ({ page }, i
   await connect(page, target);
   // Every target reports what the account holds under each storage policy
   // its containers use; the mock's containers use "standard".
-  await expect(card(page, "Storage policies").locator(".kv").first()).toContainText(/ · \d[\d,]* objects? · \d[\d,]* containers?$/);
+  // Counts are shortened on a large account ("2.1K objects").
+  await expect(card(page, "Storage policies").locator(".kv").first()).toContainText(/ · [\d.,]+[KMG]? objects? · [\d.,]+[KMG]? containers?\s*$/);
   const accountHeaders = await openRawHeaders(page);
   await expect(accountHeaders).toContainText(/X-Account-Container-Count: \d/i);
 
@@ -132,6 +133,9 @@ test("give a container CORS origins and keep its badge across a switch", async (
   // The mock has one account, so its second bookmark is a second name for
   // it; with the clouds each switches to the other.
   const other = target === "mock" ? await secondMockBookmark(page) : await account(target === "ceph" ? "swift" : "ceph");
+  // A cloud's bookmark is made in Go when its account is first opened,
+  // which can be after this page loaded its rail.
+  await page.reload();
   const rail = page.getByRole("navigation", { name: "Bookmarks" });
   await rail.getByRole("button", { name: other, exact: true }).click();
   await expect(page.getByText(`connected to ${other}`, { exact: true })).toBeVisible();
