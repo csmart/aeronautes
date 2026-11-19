@@ -65,17 +65,6 @@ export function delimiterView(
   return out;
 }
 
-/** Deep view: every real object under the prefix, markers included (§14). */
-export function deepView(
-  objects: FixtureObject[],
-  prefix: string,
-): ObjectEntry[] {
-  return [...objects]
-    .filter((o) => o.name.startsWith(prefix))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map(toObjectEntry);
-}
-
 /** Breadcrumb segments for a prefix path: "a/b/" → ["a/", "a/b/"]. */
 export function breadcrumbs(prefix: string): { label: string; prefix: string }[] {
   const crumbs: { label: string; prefix: string }[] = [];

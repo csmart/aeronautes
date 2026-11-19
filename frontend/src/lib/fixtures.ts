@@ -113,10 +113,3 @@ export const objectMetaFixture: Record<string, Record<string, string>> = {
   },
   "normal/hello.txt": { Origin: "fixture" },
 };
-
-/** The three saved endpoints on the rail. */
-export const bookmarksFixture = [
-  { id: "prod-au", label: "Prod AU", active: true },
-  { id: "dr-eu", label: "DR EU", active: false },
-  { id: "dev-saio", label: "Dev SAIO", active: false },
-];
