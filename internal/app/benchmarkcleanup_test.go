@@ -26,8 +26,10 @@ type benchmarkCleanupFixture struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	cache   string
+	objects int
 	mu      sync.Mutex
 	wire    []string
+	batches [][]string
 }
 
 func newBenchmarkCleanupFixture(t *testing.T, fault string, barrier *swifttest.HTTPResponseBarrier) *benchmarkCleanupFixture {
@@ -38,7 +40,10 @@ func newBenchmarkCleanupFixture(t *testing.T, fault string, barrier *swifttest.H
 	}
 	h := newHarnessWithInfo(t, info)
 	_, cache := deletionAttemptTestCache(t)
-	f := &benchmarkCleanupFixture{h: h, done: make(chan struct{}), cache: cache}
+	f := &benchmarkCleanupFixture{h: h, done: make(chan struct{}), cache: cache, objects: 4}
+	if fault == "chunked" || fault == "bulk_chunk_failure" {
+		f.objects = 8
+	}
 	bulkCalls := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -46,6 +51,12 @@ func newBenchmarkCleanupFixture(t *testing.T, fault string, barrier *swifttest.H
 		bulk := r.Method == http.MethodPost && r.URL.Query().Has("bulk-delete")
 		if bulk {
 			bulkCalls++
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read bulk request: %v", err)
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+			f.batches = append(f.batches, strings.Split(strings.TrimSuffix(string(body), "\n"), "\n"))
 		}
 		firstBulk := bulk && bulkCalls == 1
 		f.mu.Unlock()
@@ -59,7 +70,7 @@ func newBenchmarkCleanupFixture(t *testing.T, fault string, barrier *swifttest.H
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		if firstBulk && (fault == "bulk_no_effect" || fault == "bulk_lost_effect") {
+		if firstBulk && (fault == "bulk_no_effect" || fault == "bulk_lost_effect" || fault == "bulk_chunk_failure") {
 			if fault == "bulk_lost_effect" {
 				h.mock.ServeHTTP(httptest.NewRecorder(), r)
 			}
@@ -112,7 +123,7 @@ func (f *benchmarkCleanupFixture) start(t *testing.T) {
 	f.h.transfer.runner.register(job.ID, cancel)
 	go func() {
 		defer close(f.done)
-		f.service.runBenchmark(ctx, job.ID, bookmark, session, caps, cleanupBenchmarkContainer, 4, []int{1})
+		f.service.runBenchmark(ctx, job.ID, bookmark, session, caps, cleanupBenchmarkContainer, f.objects, []int{1})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -130,7 +141,7 @@ func (f *benchmarkCleanupFixture) join(t *testing.T) {
 }
 
 func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
-	for _, fault := range []string{"native_only", "head_failure", "upload_lost_effect", "native_failure", "bulk_no_effect", "bulk_lost_effect", "foreign_name"} {
+	for _, fault := range []string{"native_only", "chunked", "head_failure", "upload_lost_effect", "native_failure", "bulk_no_effect", "bulk_lost_effect", "bulk_chunk_failure", "foreign_name"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newBenchmarkCleanupFixture(t, fault, nil)
 			f.start(t)
@@ -140,7 +151,7 @@ func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantState := "partial"
-			if fault == "native_only" {
+			if fault == "native_only" || fault == "chunked" {
 				wantState = "complete"
 			} else if fault == "head_failure" || fault == "upload_lost_effect" {
 				wantState = "failed"
@@ -152,12 +163,18 @@ func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
 			if err != nil || (latest != nil) != (wantState == "complete") {
 				t.Errorf("recommendation = %+v %v", latest, err)
 			}
-			if fault == "native_only" && job.Counters.ObjectsCopied != job.Counters.ObjectsPlanned {
-				t.Errorf("native fallback lost completed operations: %+v", job.Counters)
+			if wantState == "complete" && job.Counters.ObjectsCopied != job.Counters.ObjectsPlanned {
+				t.Errorf("completed benchmark lost operations: %+v", job.Counters)
 			}
 			f.mu.Lock()
 			requests := append([]string(nil), f.wire...)
+			batches := append([][]string(nil), f.batches...)
 			f.mu.Unlock()
+			for _, batch := range batches {
+				if len(batch) > 2 {
+					t.Errorf("bulk request exceeds advertised limit: %v", batch)
+				}
+			}
 			bulkCalls, containerDeletes := 0, 0
 			deletionStarted := false
 			for _, request := range requests {
@@ -180,6 +197,12 @@ func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
 			if strings.HasPrefix(fault, "bulk_") && (bulkCalls != 1 || containerDeletes != 0) {
 				t.Errorf("unresolved batch reached more deletion: %v", requests)
 			}
+			if fault == "chunked" && (bulkCalls != 2 || containerDeletes != 1) {
+				t.Errorf("healthy run did not finish both bounded batches: %v", requests)
+			}
+			if fault == "native_only" && bulkCalls != 0 {
+				t.Errorf("native fallback issued a bulk request: %v", requests)
+			}
 			if fault == "native_failure" {
 				deletes := 0
 				for _, request := range requests {
@@ -194,6 +217,13 @@ func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
 			session, err := f.h.transfer.connections.SessionFor(t.Context(), f.h.bookmarkID())
 			if err != nil {
 				t.Fatal(err)
+			}
+			if fault == "bulk_chunk_failure" {
+				for _, name := range []string{"bench/000006", "bench/000007"} {
+					if _, err := session.ObjectDetail(t.Context(), cleanupBenchmarkContainer, name); err != nil {
+						t.Errorf("later batch did not survive the first failure: %s: %v", name, err)
+					}
+				}
 			}
 			if fault == "foreign_name" {
 				body, _, err := session.OpenObject(t.Context(), cleanupBenchmarkContainer, "leave-me")
@@ -220,6 +250,8 @@ func TestBenchmarkCleanupOwnsOnlyItsIssuedNames(t *testing.T) {
 				wantNames := []string{"bench/000002", "bench/000003"}
 				if fault == "native_failure" {
 					wantNames = []string{"bench/000000"}
+				} else if fault == "bulk_chunk_failure" {
+					wantNames = []string{"bench/000004", "bench/000005"}
 				}
 				if len(attempts) != len(wantNames) {
 					t.Fatalf("attempt records = %+v, want %v", attempts, wantNames)

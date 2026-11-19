@@ -39,9 +39,9 @@ type BulkDeleteResult struct {
 	// is the service's spelling of a container-prefixed path, not an
 	// object name, and not necessarily the bytes this client sent.
 	Errors [][2]string
-	// Failures are those rows resolved to requested names, in reply
-	// order and preserving repeats, so a caller can see exactly what the
-	// reply said about names it asked about.
+	// Failures resolve valid rows to requested names, in reply order.
+	// Repeated identities invalidate the reply; their raw rows remain in
+	// Errors, while each identity appears here only once.
 	Failures []BulkDeleteFailure
 	// MalformedRows are rows whose shape is not the documented pair,
 	// retained whole rather than truncated, so the evidence of a bad
