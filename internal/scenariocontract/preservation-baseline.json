@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "reportSchemaVersion": 3,
   "identity": {
-    "commit": "8089391c23f2431539b869544682cd418d46c2e4",
+    "commit": "1aec384fe64c0d4fc5ad89b66a0dbe1f4c9cb48a",
     "go_version": "go1.27.4",
-    "run_id": "44051411474",
-    "run_attempt": "1"
+    "run_attempt": "1",
+    "run_id": "44594774396"
   },
-  "contractHash": "d943816d615bf15e",
+  "contractHash": "ce9a48de1f419432",
   "actions": [
     {
       "action": "AppService.About",
@@ -208,6 +208,13 @@
     },
     {
       "action": "DeleteService.PreviewDelete",
+      "kind": "read",
+      "required": [
+        "happy"
+      ]
+    },
+    {
+      "action": "DeleteService.PreviewSelectedDelete",
       "kind": "read",
       "required": [
         "happy"
@@ -682,6 +689,10 @@
       "scenario": "refusal"
     },
     {
+      "action": "DeleteService.PreviewSelectedDelete",
+      "scenario": "happy"
+    },
+    {
       "action": "DeleteService.StartDelete",
       "scenario": "cancel"
     },
@@ -931,10 +942,10 @@
     }
   ],
   "evidence": {
-    "reference": "docs/experiments/2026-11-17-removal-baseline.md",
-    "mainReportSHA256": "e35cfad1d2ba63b2afa28d8833e57007e78c9c4c6f90d5639f36acaaf2bb3a1d",
-    "mainReceiptSHA256": "ec3bb054fee658099dd51adcc64c1d4af6b78c7ba6f1e6b311a4d5fe07eacd76",
-    "heavyReportSHA256": "ecd09aed1502b12491e7deb981761df1133e1f41146216dc2a3f12956ae90e68",
-    "heavyReceiptSHA256": "16ceca2bdb2cc4fd4818b7d6d0436ed6d41643a8296d987ef0d8c6b07ca64aac"
+    "reference": "docs/experiments/2026-11-20-selected-preview-baseline.md",
+    "mainReportSHA256": "e679c75aa91979de1f1c33ea2c1db04122cfa86e6153425f99320f7c33bf2224",
+    "mainReceiptSHA256": "212bdf43832e4b6dc04a1addddda5ad7e836872265f367c695459efb102d1264",
+    "heavyReportSHA256": "eb105bf2b69593e8d7b3c9fa71b722344214fbf123a1982557402e718e3840a5",
+    "heavyReceiptSHA256": "282e4dbe817e1c1296296971ccf1e978cf9d583b0a803df68940bdd17ec1c364"
   }
 }
