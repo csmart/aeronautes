@@ -17,6 +17,7 @@ The audit trail keeps a deleted bookmark's id as plain text and labels it unavai
 1. **A bookmark with finished jobs can be deleted.**
    Its complete, partial, cancelled and failed jobs stay in the job history with everything they recorded: their route, counts, items and errors.
    Their link to the deleted bookmark is cleared, so they show no bookmark and the drawer's account filter lists them under all accounts only.
+   Such a copy job is not re-run: re-running it is refused in words, since it has no bookmark to run against, and a new copy is started instead.
 2. **A running, queued or paused job still refuses the deletion**, with ADR 0015's words naming how many jobs use it.
 3. **The bookmark's benchmark result goes with it**: it describes the deleted bookmark's endpoint and nothing else reads it.
 4. **The database does it, in the deletion's own transaction**: a trigger before a bookmark's deletion clears the finished jobs' links and removes its benchmark result.
@@ -31,5 +32,5 @@ The credential cleanup after a deletion (ADR 0076).
 
 ## Required proof (tier 2)
 
-Go: a bookmark whose finished upload and copy name it as source and destination is deleted; the jobs remain with their records and no bookmark; a running job still refuses the deletion with ADR 0015's words; a benchmark result goes with its bookmark.
+Go: a bookmark whose complete, partial, failed and cancelled jobs name it as source and destination is deleted; the jobs remain with their records and no bookmark; a queued job still refuses the deletion with ADR 0015's words; a benchmark result goes with its bookmark; re-running a copy that lost its bookmark is refused in words.
 Journey, on the mock: a second bookmark runs a job and is deleted from its editor; it leaves the rail and the job stays in the history.

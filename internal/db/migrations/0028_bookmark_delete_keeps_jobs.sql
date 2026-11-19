@@ -3,6 +3,8 @@
 -- transaction. The jobs table is not rebuilt to change its references,
 -- because other tables reference jobs. A job that is not finished keeps
 -- its link, so a deletion that slipped past ADR 0015's refusal still fails.
+-- The finished states are the same four as jobs.Terminal and the refusal
+-- in jobs.Store.ActiveForBookmark; a new state changes all three.
 CREATE TRIGGER bookmark_delete_keeps_finished_jobs
 BEFORE DELETE ON bookmarks
 BEGIN

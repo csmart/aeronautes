@@ -1241,6 +1241,11 @@ func (s *TransferService) RerunJob(ctx context.Context, jobID string) (string, e
 	if job.Type != jobs.TypeCopy {
 		return "", fmt.Errorf("re-run supports copy jobs; a %s needs its own dialog (destructive halves keep their typed confirmation)", job.Type)
 	}
+	// A job whose bookmark was deleted keeps its record but no bookmark to
+	// run against (ADR 0128).
+	if job.SourceBookmarkID == "" || job.DestBookmarkID == "" {
+		return "", fmt.Errorf("job %s cannot be re-run: a bookmark it used was deleted; start a new copy instead", jobID)
+	}
 	if err := s.checkRerunItems(ctx, jobID); err != nil {
 		return "", err
 	}
