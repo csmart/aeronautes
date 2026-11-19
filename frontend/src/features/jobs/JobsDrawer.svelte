@@ -11,6 +11,7 @@
   import { v1Offers } from "../../lib/v1.svelte";
   import JobHistory from "./JobHistory.svelte";
   import JobItems from "./JobItems.svelte";
+  import { stateWords } from "./jobState";
 
   let { browser }: { browser: BrowserState } = $props();
   const id = $props.id();
@@ -383,11 +384,11 @@
       ? view.rows.map((row) => `${row.key}=${row.value}`).join(", ")
       : view.kind === "defaults" ? "defaults" : "not recorded";
     const lines = [
-      `${operationLabel(job.type)}, ${job.state} (job ${job.id})`,
+      `${operationLabel(job.type)}, ${stateWords(job)} (job ${job.id})`,
       `${job.source} → ${job.destination}`,
       `accounts: ${accountsOf(job) || "none recorded"}`,
       `started: ${job.startedAt || "not started"}; finished: ${job.finishedAt || "not finished"}`,
-      `objects: ${c.objectsCopied} of ${c.objectsPlanned}, verified ${c.objectsVerified}, failed ${c.objectsFailed}, deleted ${c.objectsDeleted}`,
+      `objects: ${c.objectsCopied} of ${c.objectsPlanned}, verified ${c.objectsVerified}, failed ${c.objectsFailed}, incomplete ${c.objectsIncomplete ?? 0}, deleted ${c.objectsDeleted}`,
       `bytes: ${c.bytesCopied} of ${c.bytesPlanned}; overwrites ${c.overwrites}, refused ${c.overwritesRefused}`,
       `engine: ${job.engine}`,
       `settings: ${settings}`,
@@ -661,7 +662,7 @@
               <div class="job" id="{id}-job-{job.id}">
                 <span class="operation-state">
                   <span class="operation">{operationLabel(job.type)}</span>
-                  <span class="badge {job.state}">{job.state}</span>
+                  <span class="badge {job.state}">{stateWords(job)}</span>
                 </span>
                 <span class="route type-mono" title="{job.source}{selectedNote(job)} → {job.destination}">
                   {job.source}{selectedNote(job)} → {job.destination}
@@ -683,6 +684,9 @@
                     {/if}
                     {#if job.counters.objectsSame > 0}
                       · {job.counters.objectsSame} already the same
+                    {/if}
+                    {#if (job.counters.objectsIncomplete ?? 0) > 0}
+                      · {job.counters.objectsIncomplete} incomplete
                     {/if}
                     {#if job.counters.objectsFailed > 0}
                       · <em class="bad">{job.counters.objectsFailed} failed</em>

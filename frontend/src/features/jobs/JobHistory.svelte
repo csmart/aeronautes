@@ -3,6 +3,7 @@
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { JobDTO, JobHistoryDTO } from "../../lib/api";
   import JobItems from "./JobItems.svelte";
+  import { stateWords } from "./jobState";
 
   let { browser }: { browser: BrowserState } = $props();
   let page = $state<(JobHistoryDTO & { jobs: JobDTO[] }) | null>(null);
@@ -61,7 +62,7 @@
         {#each page.jobs as job (job.id)}
           <article class="history-job">
             <button class="history-details" aria-expanded={expanded === job.id} onclick={() => (expanded = expanded === job.id ? null : job.id)}>
-              {job.type} · {job.state} when page loaded · {job.createdAt} · {job.id}
+              {job.type} · {stateWords(job)} when page loaded · {job.createdAt} · {job.id}
             </button>
             <p><code>{quoted(job.source)}{job.selectedMembers ? ` (${job.selectedMembers} selected)` : ""} → {quoted(job.destination)}</code></p>
             {#if job.error}<p>{job.error}</p>{/if}

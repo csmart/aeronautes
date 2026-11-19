@@ -176,6 +176,10 @@ type ItemTotals struct {
 	Issued    int64
 	Deleted   int64
 	Unsettled int64
+	// Incomplete is the part of Failed whose execution was stopped by a
+	// cancellation, the operator's or a quit, rather than refused or broken
+	// (ADR 0129 decision 1).
+	Incomplete int64
 }
 
 func (l ItemLocation) valid() bool {

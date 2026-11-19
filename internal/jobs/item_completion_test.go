@@ -345,3 +345,33 @@ func TestItemFinishDoesNotReplaceTerminalDiagnostic(t *testing.T) {
 		t.Fatalf("failed diagnostic path changed intents: %d %v", count, err)
 	}
 }
+
+// ADR 0129 decision 1: a name a cancellation stopped is incomplete, not
+// failed. Its item still counts in Failed, so the job is never complete,
+// and the job's counts report it apart from a real failure.
+func TestItemCompletionCountsAStoppedNameIncomplete(t *testing.T) {
+	s, bookmark := newStore(t)
+	job := recordedJob(t, s, TypeUpload)
+	stopped, broken := transferIntent(bookmark, "stopped-name"), transferIntent(bookmark, "broken-name")
+	if err := s.AdmitItems(t.Context(), job.ID, []ItemIntent{stopped, broken}); err != nil {
+		t.Fatal(err)
+	}
+	for key, code := range map[string]ItemCode{stopped.Key: CodeCancelled, broken.Key: CodeUnknown} {
+		problem := itemProblem(ItemFailed, StageEngine, code)
+		problem.Effect = EffectUnresolved
+		if err := s.RecordExecution(t.Context(), job.ID, key, problem); err != nil {
+			t.Fatal(err)
+		}
+	}
+	totals, err := s.ReadItemTotals(t.Context(), job.ID)
+	if err != nil || totals.Failed != 2 || totals.Incomplete != 1 {
+		t.Fatalf("totals = %+v %v, want two failed executions of which one incomplete", totals, err)
+	}
+	if err := s.FinishFromItems(t.Context(), job.ID, itemCompletion(job, StatePartial), audit.NewStore(s.db)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(t.Context(), job.ID)
+	if err != nil || got.Counters.ObjectsFailed != 1 || got.Counters.ObjectsIncomplete != 1 {
+		t.Fatalf("counters = %+v %v, want one failed and one incomplete", got.Counters, err)
+	}
+}

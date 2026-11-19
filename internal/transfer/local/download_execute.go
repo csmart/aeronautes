@@ -332,7 +332,7 @@ func (d *downloadRun) engineBatch(ctx context.Context, src *swiftcontrol.Session
 		return d.stopped
 	}
 	var cancelled error
-	if err == nil && downloadEngineCancelled(ctx, result) {
+	if err == nil && engineCancelled(ctx, result) {
 		cancelled = ctx.Err()
 	}
 	if err == nil {
@@ -408,7 +408,7 @@ func downloadBatches(names []string, items map[string]DownloadItem) [][]string {
 	return batches
 }
 
-func downloadEngineCancelled(ctx context.Context, result *rclone.Result) bool {
+func engineCancelled(ctx context.Context, result *rclone.Result) bool {
 	// A concurrent cancellation must not conceal an independent engine
 	// failure or incomplete log when selecting the terminal job state.
 	if !errors.Is(ctx.Err(), context.Canceled) || result == nil || !result.Cancelled ||

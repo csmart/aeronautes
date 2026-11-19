@@ -9,6 +9,12 @@ export interface Counters {
     "objectsCopied": number;
     "objectsVerified": number;
     "objectsFailed": number;
+
+    /**
+     * ObjectsIncomplete counts the names a cancellation stopped part-way,
+     * which ObjectsFailed does not include (ADR 0129).
+     */
+    "objectsIncomplete"?: number;
     "bytesPlanned": number;
     "bytesCopied": number;
 
