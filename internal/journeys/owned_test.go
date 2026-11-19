@@ -61,6 +61,49 @@ func TestATakenNameIsNeverDeleted(t *testing.T) {
 	}
 }
 
+// A container given another record's exact name follows the same rule: a
+// name already taken, or one that is not a journey's, is never created,
+// recorded or deleted, and a free one is the run's like any other.
+func TestAnExactNameIsTheRunsOnlyWhenItCreatedIt(t *testing.T) {
+	mock, session := mockSession(t)
+	ctx := context.Background()
+	owned, err := NewOwned(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := ContainerPrefix + "taken-elsewhere"
+	mock.AddContainer(taken, "standard")
+	mock.AddContainer("not-a-journey", "standard")
+	if _, err := owned.CreateNamedContainer(ctx, taken); !errors.Is(err, swiftcontrol.ErrAlreadyExists) {
+		t.Fatalf("creating over an existing container = %v, want it refused", err)
+	}
+	sent := len(mock.RequestLog())
+	if _, err := owned.CreateNamedContainer(ctx, "not-a-journey"); err == nil {
+		t.Fatal("a name outside the journey prefix was accepted")
+	}
+	if len(mock.RequestLog()) != sent {
+		t.Fatal("the refused name still sent a request")
+	}
+	shared := ContainerPrefix + "shared-0123456789abcdef"
+	if _, err := owned.CreateNamedContainer(ctx, shared); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owned.Names(ctx, shared); err != nil {
+		t.Fatalf("the run's own exact name was not recorded: %v", err)
+	}
+	if failures := owned.Teardown(ctx); len(failures) != 0 {
+		t.Fatal(failures)
+	}
+	for _, kept := range []string{taken, "not-a-journey"} {
+		if sent := destructive(mock, kept); len(sent) != 0 {
+			t.Fatalf("a container this run did not create was sent %v", sent)
+		}
+	}
+	if _, err := session.ContainerDetail(ctx, shared); !swiftcontrol.IsNotFound(err) {
+		t.Errorf("%s survived teardown: %v", shared, err)
+	}
+}
+
 // A sidecar that already exists stops the step and is never deleted, while
 // the run's own container and a sidecar its step created are removed.
 func TestTeardownRemovesOnlyWhatTheRunCreated(t *testing.T) {

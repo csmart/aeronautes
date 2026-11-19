@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/textproto"
 	"slices"
+	"strings"
 
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -48,7 +49,18 @@ func NewOwned(session *swiftcontrol.Session) (*Owned, error) {
 // A name that is already taken is an error and is not recorded, so nothing
 // this run does will ever write to or delete it.
 func (o *Owned) CreateContainer(ctx context.Context, label string) (string, error) {
-	name := ContainerPrefix + label + "-" + o.suffix
+	return o.CreateNamedContainer(ctx, ContainerPrefix+label+"-"+o.suffix)
+}
+
+// CreateNamedContainer creates a container of exactly this name and records
+// it, under the same rule as CreateContainer. It lets a journey give its
+// container on a second account the name another account's record chose,
+// to check that the same name on two accounts stays two containers. The
+// name must still be a journey's, so nothing outside the prefix is made.
+func (o *Owned) CreateNamedContainer(ctx context.Context, name string) (string, error) {
+	if !strings.HasPrefix(name, ContainerPrefix) {
+		return "", fmt.Errorf("container %q does not start with %q", name, ContainerPrefix)
+	}
 	if _, err := o.session.CreateContainer(ctx, swiftcontrol.ContainerCreateRequest{Name: name}); err != nil {
 		return "", err
 	}
