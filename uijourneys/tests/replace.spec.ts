@@ -149,6 +149,18 @@ test.describe.serial("replace", () => {
     const refused = await settle(page, copy);
     expect(refused.state).toBe("partial");
     expect(refused.details).toContain("1 overwrite refused");
+    // The job's own record of the refused name says why it was left.
+    await page.getByRole("button", { name: /jobs & changes/ }).click();
+    // "Show in jobs" opened the job's details already.
+    const details = page.getByRole("button", { name: `Item details for job ${refused.id}`, exact: true });
+    if ((await details.getAttribute("aria-expanded")) !== "true") await details.click();
+    const records = page.getByRole("region", { name: "Retained item records" });
+    await expect(records.getByText("Last observed job state: partial.")).toBeVisible();
+    await expect(records.locator(".totals div", { hasText: /^Refused/ }).locator("dd")).toHaveText("1");
+    const record = records.locator("article.item-record", { hasText: `${name}/file00.bin` });
+    await expect(record).toHaveCount(1);
+    await expect(record.locator("p.observation", { hasText: "Execution:" })).toHaveText(/^\s*Execution:\s+refused · effects: not attempted\s+· planning: unsupported\s*$/);
+    await page.getByRole("button", { name: /▾ hide/ }).click();
     expect(await downloadObject(page, target, copies, name, "file00.bin"), "after the refused overwrite").toBe(copied);
 
     await openContainer(page, target, container);
@@ -308,9 +320,9 @@ async function downloadObject(page: Page, target: string, container: string, fol
   return digestOf(join(into, file));
 }
 
-// settle is finish for a job that may end partial: its state and the text
-// of its details as the drawer shows them.
-async function settle(page: Page, dialog: Locator): Promise<{ state: string; details: string }> {
+// settle is finish for a job that may end partial: its id, its state and
+// the text of its details as the drawer shows them.
+async function settle(page: Page, dialog: Locator): Promise<{ id: string; state: string; details: string }> {
   const started = await dialog.getByText(/^Job \S+ started\.$/).textContent();
   const id = started!.split(" ")[1];
   await dialog.getByRole("button", { name: "Show in jobs" }).click();
@@ -320,7 +332,7 @@ async function settle(page: Page, dialog: Locator): Promise<{ state: string; det
   const state = (await ended.textContent())!;
   const details = await row.innerText();
   await page.getByRole("button", { name: /▾ hide/ }).click();
-  return { state, details };
+  return { id, state, details };
 }
 
 function filesUnder(dir: string): string[] {
