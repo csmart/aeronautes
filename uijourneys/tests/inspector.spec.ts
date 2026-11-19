@@ -136,7 +136,7 @@ test("give a container CORS origins and keep its badge across a switch", async (
   await expect(await openRawHeaders(page)).toContainText(`X-Container-Meta-Access-Control-Allow-Origin: ${origin}`);
   await page.getByRole("button", { name: "Configure container" }).click();
   await expect(page.getByLabel("Allowed origins")).toHaveValue(origin);
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const badge = containerRow(page, container).getByText("cors", { exact: true });
   await expect(badge).toHaveAttribute("title", /^CORS configured · observed \S/);
 

@@ -52,7 +52,7 @@ test("an object's and a folder's context menus", async ({ page }, info) => {
   await sameAsToolbar(page, file, "file00.bin", "Download object…", download, download.getByRole("button", { name: "Close" }));
   await sameAsToolbar(page, file, "file00.bin", "Copy object…", copy, copy.getByRole("button", { name: "Close" }).first());
   const objectDelete = page.getByRole("alertdialog", { name: "Delete object" });
-  await sameAsToolbar(page, file, "file00.bin", "Delete object…", objectDelete, objectDelete.getByRole("button", { name: "Cancel" }));
+  await sameAsToolbar(page, file, "file00.bin", "Delete object…", objectDelete, objectDelete.getByRole("button", { name: "Cancel", exact: true }));
 
   await expectMenu(page, inner, "inner/", ["Open", "Download folder…", "Copy folder…", "Copy name", "Delete prefix…"]);
   await sameAsToolbar(page, inner, "inner/", "Download folder…", download, download.getByRole("button", { name: "Close" }));
@@ -183,7 +183,7 @@ test("back up the settings with no key, and restore a bookmark without one", asy
     await expect(tile.getByRole("img", { name: "No saved key" })).toBeVisible();
     await tile.click();
     await expect(page.getByLabel("API key")).toHaveValue("");
-    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
   } finally {
     await removeBookmark(page, name);
   }

@@ -164,7 +164,7 @@ async function cancelIfRunning(page: Page, id: string): Promise<void> {
   await openDrawer(page);
   const row = jobRow(page, id);
   if (/^(complete|partial|cancelled|failed)$/.test((await badge(row).textContent()) ?? "")) return;
-  await row.getByRole("button", { name: "Cancel" }).click();
+  await row.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(badge(row)).toHaveText(/^(complete|partial|cancelled|failed)$/, { timeout: 2 * 60 * 1000 });
 }
 
