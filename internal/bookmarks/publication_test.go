@@ -752,8 +752,16 @@ func (d *lostCommitReply) Reader() *sql.DB {
 }
 
 func TestLostPublicationResponseRevalidatesSelection(t *testing.T) {
-	for _, withKey := range []bool{false, true} {
-		t.Run(fmt.Sprint("replacement-key=", withKey), func(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		withKey            bool
+		clearVerifyFailure bool
+	}{
+		{name: "unchanged key"},
+		{name: "replacement key", withKey: true},
+		{name: "independent verification update", withKey: true, clearVerifyFailure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			st, d, _ := newTestStore(t)
 			before, err := st.Save(t.Context(), sample(), []byte("original"))
 			if err != nil {
@@ -761,8 +769,25 @@ func TestLostPublicationResponseRevalidatesSelection(t *testing.T) {
 			}
 			at := 1
 			var key []byte
-			if withKey {
+			if tc.withKey {
 				at, key = 2, []byte("replacement")
+			}
+			if tc.clearVerifyFailure {
+				if err := st.SetVerifyFailure(t.Context(), before.ID, "import could not verify"); err != nil {
+					t.Fatal(err)
+				}
+				before, err = st.Get(t.Context(), before.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				base := st.secrets
+				st.secrets = hookedSecrets{SecretStore: base, put: func(ctx context.Context, name string, value []byte) error {
+					if err := base.Put(ctx, name, value); err != nil {
+						return err
+					}
+					return st.SetVerifyFailure(ctx, before.ID, "")
+				}}
+				at++
 			}
 			st.db = &lostCommitReply{DB: d, at: at}
 			proposed := before
@@ -771,9 +796,13 @@ func TestLostPublicationResponseRevalidatesSelection(t *testing.T) {
 			if err != nil || saved.DisplayName != "committed" {
 				t.Fatalf("committed Save reported failure: %+v, %v", saved, err)
 			}
+			current, err := st.Get(t.Context(), before.ID)
+			if err != nil || current.DisplayName != "committed" || current.VerifyFailure != "" {
+				t.Fatalf("published bookmark or verification status lost: %+v, %v", current, err)
+			}
 			config, _, err := st.ConnectionConfig(t.Context(), before.ID)
 			want := "original"
-			if withKey {
+			if tc.withKey {
 				want = "replacement"
 			}
 			if err != nil || config.APIKey != want {
