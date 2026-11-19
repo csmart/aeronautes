@@ -192,7 +192,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
-      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+      - run: node scripts/wails.mjs install
       - name: build and verify Windows source identity
         shell: pwsh
         run: |

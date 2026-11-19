@@ -9,8 +9,6 @@
 # `go install` drops wails3 into $HOME/go/bin (default GOBIN).
 export PATH := $(HOME)/go/bin:$(PATH)
 
-WAILS3_VERSION := v3.1.0
-
 .PHONY: all tools build run dev test test-go test-frontend test-integration uijourneys \
 	verify-swift-source test-swift-core test-secret-service \
 	rpm deb package spike rclone-matrix clean oracle journeys
@@ -19,7 +17,7 @@ all: build
 
 ## tools: install the pinned wails3 CLI
 tools:
-	go install github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION)
+	node scripts/wails.mjs install
 
 ## build: production binary (frontend + bindings + go) -> bin/aeronautes
 build:

@@ -60,8 +60,8 @@ jobs:
           shellcheck -x scripts/*.sh
       - name: wails pins agree with the go module
         run: |
-          ./scripts/wails-version-coherence-test.sh
-          ./scripts/wails-version-coherence.sh
+          node scripts/wails.test.mjs
+          node scripts/wails.mjs check
       - name: Verify patched Swift source and checker refusals
         run: make verify-swift-source
       - name: Test Swift diagnostic collection
@@ -98,7 +98,7 @@ jobs:
         run: CGO_ENABLED=0 go build ./internal/...
       - name: bindings drift gate
         run: |
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+          node scripts/wails.mjs install
           ~/go/bin/wails3 task common:generate:bindings
           # git diff alone does not see a newly generated file, so status
           # is read too: changed, removed and untracked files all count.
