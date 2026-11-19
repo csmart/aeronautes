@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,7 @@ type Harness struct {
 	database    *db.DB
 	jobStore    *jobs.Store
 	statePath   string
+	stopJobs    func() bool
 
 	Bookmarks *app.BookmarkService
 	Browse    *app.BrowseService
@@ -147,11 +149,25 @@ func newHarness(t *testing.T, cfg harnessConfig) *Harness {
 		Settings:  settings,
 		Evidence:  ev,
 	}
+	h.stopJobs = sync.OnceValue(func() bool {
+		// Test contexts are already cancelled in Cleanup. Let admitted jobs
+		// finish their own cancellation records before removing their inputs.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := runner.Shutdown(ctx); err != nil {
+			t.Errorf("harness job shutdown: %v", err)
+			return false
+		}
+		return true
+	})
 
 	// Checked db close: a close/durability error fails the test (so its
 	// coverage claims are not credited by the reconciler) rather than being
 	// silently ignored.
 	t.Cleanup(func() {
+		if !h.stopJobs() {
+			return
+		}
 		if err := database.Close(); err != nil {
 			t.Errorf("harness db close: %v", err)
 		}
@@ -816,6 +832,11 @@ func (h *Harness) SeedSLO(a *Account, container, name, manifestJSON string) {
 // calls non-empty is listed and emptied again, a bounded number of times,
 // rather than left for the residue sweep to report (F42).
 func (h *Harness) purge(a *Account, container string) {
+	// These cleanups are registered after the constructor's DB cleanup,
+	// so the first purge must join the runner itself.
+	if !h.stopJobs() {
+		return
+	}
 	for round := 0; round < 5; round++ {
 		if names, err := a.Oracle.ListObjects(container); err == nil {
 			for _, name := range names {
