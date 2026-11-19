@@ -471,7 +471,7 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 	}
 	edit.Meta["Camera"] = "sony-fx6"
 
-	result, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "", edit)
+	result, err := h.mutate.UpdateObjectMetadata(ctx, before.Scope, "fixtures", "normal/hello.txt", "", edit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,8 +485,17 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 		t.Errorf("TransIDs = %v", result.TransIDs)
 	}
 
+	edit.Meta["Camera"] = "nikon-z9"
+	result, err = h.mutate.UpdateObjectMetadata(ctx, result.ObjectAfter.Scope, "fixtures", "normal/hello.txt", result.ObjectAfter.EditableFingerprint, edit)
+	if err != nil || result.Outcome != "applied" || result.ObjectAfter == nil {
+		t.Fatalf("second save from the returned view: %+v, %v", result, err)
+	}
+	if result.ObjectAfter.Meta["Camera"] != "nikon-z9" || result.ObjectAfter.Scope != before.Scope {
+		t.Fatalf("second save returned an unusable view: %+v", result.ObjectAfter)
+	}
+
 	// A stale-fingerprint attempt records a conflict.
-	stale, err := h.mutate.UpdateObjectMetadata(ctx, h.portrait(), "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
+	stale, err := h.mutate.UpdateObjectMetadata(ctx, result.ObjectAfter.Scope, "fixtures", "normal/hello.txt", "not-the-fingerprint", edit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,11 +507,11 @@ func TestMutateObjectMetadataWithAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("audit events = %d, want 2", len(events))
+	if len(events) != 3 {
+		t.Fatalf("audit events = %d, want 3", len(events))
 	}
-	if events[0].Result != "conflict" || events[1].Result != "applied" {
-		t.Errorf("audit results = %q, %q", events[0].Result, events[1].Result)
+	if events[0].Result != "conflict" || events[1].Result != "applied" || events[2].Result != "applied" {
+		t.Errorf("audit results = %q, %q, %q", events[0].Result, events[1].Result, events[2].Result)
 	}
 	if events[1].Operation != "object.metadata.update" || events[1].Resource != "fixtures/normal/hello.txt" {
 		t.Errorf("audit event = %+v", events[1])
