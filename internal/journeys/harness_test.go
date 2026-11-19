@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +55,7 @@ type world struct {
 	jobs      *app.JobService
 	settings  *app.SettingsService
 	accounts  map[string]*account
+	stopJobs  func() bool
 }
 
 // picker stands in for the native file dialogs; a step sets what it returns.
@@ -126,7 +128,6 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { database.Close() })
 	store := bookmarks.NewStore(database, secrets.NewSessionStore())
 	connections := app.NewConnections(store)
 	app.WireRememberedSettings(connections, database)
@@ -157,6 +158,25 @@ func newWorld(t *testing.T) *world {
 		settings:  settings,
 		accounts:  map[string]*account{},
 	}
+	w.stopJobs = sync.OnceValue(func() bool {
+		// Cleanup outlives the test context; jobs must relinquish the owned
+		// names before either account's teardown starts deleting them.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := runner.Shutdown(ctx); err != nil {
+			t.Errorf("journey job shutdown: %v", err)
+			return false
+		}
+		return true
+	})
+	t.Cleanup(func() {
+		if !w.stopJobs() {
+			return
+		}
+		if err := database.Close(); err != nil {
+			t.Errorf("journey db close: %v", err)
+		}
+	})
 	for _, b := range realcloud.Backends {
 		w.accounts[b.Label] = w.connect(b.Label, clouds[b.Label])
 	}
@@ -183,6 +203,9 @@ func (w *world) connect(label string, c realcloud.Cloud) *account {
 	// Registered before anything is created, so a failure at any later step
 	// still removes what the run made, on a context of its own.
 	w.t.Cleanup(func() {
+		if !w.stopJobs() {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		for _, err := range owned.Teardown(ctx) {
