@@ -25,7 +25,7 @@ export function DismissInterrupted(jobIDs: string[] | null): $CancellablePromise
 }
 
 /**
- * Get returns one job bound to the named bookmark (ADR 0059).
+ * Get binds a job to its bookmark, or to detached terminal history (ADR 0128).
  */
 export function Get(bookmarkID: string, jobID: string): $CancellablePromise<$models.JobDTO | null> {
     return $Call.ByID(3943386922, bookmarkID, jobID);
