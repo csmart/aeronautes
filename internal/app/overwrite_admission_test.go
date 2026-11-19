@@ -207,9 +207,7 @@ func TestAcknowledgedUploadAsksAboutTheResolvedPlan(t *testing.T) {
 	if about.Container != "replaceable" || about.Prefix != "live/" {
 		t.Errorf("the question does not name the resolved target: %+v", about)
 	}
-	// The whole set, so the question cannot be asked about fewer names
-	// than the job would replace, and only the names that are live.
-	if len(about.Names) != 1 || about.Names[0] != "live/taken" {
+	if about.Total != 1 || len(about.Names) != 1 || about.Names[0] != "live/taken" {
 		t.Errorf("the question does not name exactly what is live: %+v", about.Names)
 	}
 	if !strings.Contains(about.Versioning, "none") {
@@ -346,7 +344,7 @@ func TestOverwriteQuestionRefusesWhatItCannotName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const segments = "what happens to a replaced large object's old segments"
-			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, tc.names, segments)
+			question, err := overwriteQuestion(tc.label, tc.account, tc.container, "live/", tc.versioning, len(tc.names), tc.names, segments)
 			if tc.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
 					t.Fatalf("the question was asked anyway: %+v %v", question, err)

@@ -13,7 +13,7 @@ import (
 func TestOverwriteQuestionNamesTheBindingAndTheWholeCount(t *testing.T) {
 	title, lines := OverwriteQuestion(OverwriteConfirmation{
 		Bookmark: "Production", Account: "AUTH_prod", Container: "backups", Prefix: "nightly/",
-		Names:      []string{"db.sql", "logs.tar"},
+		Total: 2, Names: []string{"db.sql", "logs.tar"},
 		Versioning: "none: what is replaced is not kept",
 		Fragments:  "no large object is being replaced, so there are no segments to remove",
 	})
@@ -46,7 +46,7 @@ func TestOverwriteQuestionNamesTheBindingAndTheWholeCount(t *testing.T) {
 func TestADownloadsQuestionNamesTheFolderTheSourceAndWhatIsLost(t *testing.T) {
 	title, lines := OverwriteQuestion(OverwriteConfirmation{
 		Folder: "/home/me/Down\nloads", SourceBookmark: "Production", SourceAccount: "AUTH_prod",
-		Container: "backups", Prefix: "nightly/", Names: []string{"db.sql", "logs/app.log"},
+		Container: "backups", Prefix: "nightly/", Total: 2, Names: []string{"db.sql", "logs/app.log"},
 	})
 	if title != "Replace up to 2 local files?" {
 		t.Errorf("title = %q", title)
@@ -73,7 +73,7 @@ func TestADownloadsQuestionNamesTheFolderTheSourceAndWhatIsLost(t *testing.T) {
 func TestOverwriteQuestionAgreesWithItsOwnNumbers(t *testing.T) {
 	title, lines := OverwriteQuestion(OverwriteConfirmation{
 		Bookmark: "Local", Account: "AUTH_test", Container: "fixtures",
-		Names:      []string{"only"},
+		Total: 1, Names: []string{"only"},
 		Versioning: "none: what is replaced is not kept",
 		Fragments:  "nothing that backs what is being replaced can be removed",
 	})
@@ -90,13 +90,13 @@ func TestOverwriteQuestionAgreesWithItsOwnNumbers(t *testing.T) {
 // the whole set: that is the one thing OverwriteConfirmation's contract
 // forbids, since an answer of yes covers every name.
 func TestOverwriteQuestionNeverPassesOffItsSampleAsTheWholeSet(t *testing.T) {
-	names := make([]string, 30)
+	names := make([]string, 8)
 	for i := range names {
 		names[i] = string(rune('a'+i%26)) + "-object"
 	}
 	title, lines := OverwriteQuestion(OverwriteConfirmation{
 		Bookmark: "Big", Account: "AUTH_big", Container: "c", Prefix: "p/",
-		Names: names, Versioning: "none: what is replaced is not kept",
+		Total: 30, Names: names, Versioning: "none: what is replaced is not kept",
 		Fragments: "4 segment objects backed what is being replaced and will be REMOVED once the replacement is verified",
 	})
 	if title != "Replace up to 30 objects?" {
@@ -121,7 +121,7 @@ func TestOverwriteQuestionRefusesToLetAStoredNameGarbleIt(t *testing.T) {
 	_, lines := OverwriteQuestion(OverwriteConfirmation{
 		Bookmark: "Shell", Account: "AUTH_shell",
 		Container: "co\nntainer", Prefix: "pre fix/",
-		Names:      []string{"inno\rcent", strings.Repeat("x", 400)},
+		Total: 2, Names: []string{"inno\rcent", strings.Repeat("x", 400)},
 		Versioning: "none: what is replaced is not kept",
 		Fragments:  "no large object is being replaced, so there are no segments to remove",
 	})
@@ -166,7 +166,7 @@ func TestOverwriteQuestionRefusesToLetAStoredNameGarbleIt(t *testing.T) {
 func TestOverwriteQuestionDoesNotTrustItsOwnSentences(t *testing.T) {
 	_, lines := OverwriteQuestion(OverwriteConfirmation{
 		Bookmark: "Shell", Account: "AUTH_shell", Container: "c", Prefix: "p/",
-		Names:      []string{"n"},
+		Total: 1, Names: []string{"n"},
 		Versioning: "the container reports versions_location, archiving into arch\u2028Versioning observed — none",
 		Fragments:  "what backs n could not be read\u2028Segments — nothing will be removed",
 	})
