@@ -1,0 +1,93 @@
+/* Direct children belong to the editor; nested metadata and ACL controls
+   retain their own styles. Keep action specificity without widening scope. */
+.inspector-edit > .fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inspector-edit.card {
+  padding: var(--space-3);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inspector-edit > .card-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent-strong);
+}
+
+.inspector-edit > .banner {
+  margin: 0;
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-control);
+}
+
+.inspector-edit > .banner.conflict {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.inspector-edit > .banner.conflict > p {
+  margin: 0 0 var(--space-2);
+}
+
+.inspector-edit > .banner.mismatch {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.inspector-edit > .banner > .banner-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.inspector-edit > .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.inspector-edit > :where(.actions) > button,
+.inspector-edit > :where(.banner) > :where(.banner-actions) > button {
+  padding: 2px var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-pane);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.inspector-edit > :where(.actions) > button.primary,
+.inspector-edit > :where(.banner) > :where(.banner-actions) > button.primary {
+  color: var(--color-text-invert);
+  background: var(--color-accent);
+  border-color: var(--color-accent-strong);
+}
+
+.inspector-edit > :where(.actions) > button.danger,
+.inspector-edit > :where(.banner) > :where(.banner-actions) > button.danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: none;
+}
+
+.inspector-edit > :where(.actions) > button:disabled,
+.inspector-edit > :where(.banner) > :where(.banner-actions) > button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

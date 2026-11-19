@@ -5,6 +5,7 @@
   capability-gated: modes the cluster is KNOWN to reject are disabled; an
   unknown /info leaves everything enabled with a note. -->
 <script lang="ts">
+  import "./editPanel.css";
   import { onDestroy } from "svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import AclEditor from "./AclEditor.svelte";
@@ -168,7 +169,7 @@
   }
 </script>
 
-<section class="card">
+<section class="card inspector-edit">
   <h3 class="card-title">Configure container</h3>
 
   <fieldset class="fields" aria-label="Container configuration" disabled={saving || !currentBaseline}>
@@ -327,34 +328,6 @@
 </section>
 
 <style>
-  .fields {
-    border: 0;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .card {
-    padding: var(--space-3);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-accent-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .card-title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: var(--weight-semibold);
-    color: var(--color-accent-strong);
-  }
-
   /* The pane is narrow, so each section is a heading over one field per
     row, and a rule separates the sections (operator, 0.5.0 test run). */
   .sub {
@@ -440,65 +413,5 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--color-warning);
-  }
-
-  .banner {
-    margin: 0;
-    padding: var(--space-2);
-    font-size: var(--text-sm);
-    border-radius: var(--radius-control);
-  }
-
-  .banner.conflict {
-    color: var(--color-warning);
-    background: var(--color-warning-soft);
-  }
-
-  .banner.conflict p {
-    margin: 0 0 var(--space-2);
-  }
-
-  .banner.mismatch {
-    color: var(--color-danger);
-    background: var(--color-danger-soft);
-  }
-
-  .banner-actions {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
-
-  button {
-    padding: 2px var(--space-3);
-    font: inherit;
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    background: var(--color-bg-pane);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    cursor: pointer;
-  }
-
-  button.primary {
-    color: var(--color-text-invert);
-    background: var(--color-accent);
-    border-color: var(--color-accent-strong);
-  }
-
-  button.danger {
-    color: var(--color-danger);
-    border-color: var(--color-danger);
-    background: none;
-  }
-
-  button:disabled {
-    opacity: 0.6;
-    cursor: default;
   }
 </style>
