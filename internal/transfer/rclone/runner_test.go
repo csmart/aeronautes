@@ -443,6 +443,30 @@ func TestPrefixFromEventOnThePinnedEnginesOwnLines(t *testing.T) {
 	}
 }
 
+func TestPrefixFromEventDecodesQuotedNames(t *testing.T) {
+	for _, tc := range []struct{ container, prefix string }{
+		{`media_segments`, `a"b/run/`},
+		{`media" into "segments`, `a\b/run/`},
+		{"media_segments", "line\nbreak/雪/run/"},
+	} {
+		t.Run(tc.prefix, func(t *testing.T) {
+			event := Event{Msg: fmt.Sprintf("Uploading segment file %q into %q", tc.prefix+"00000000", tc.container)}
+			got, ok := PrefixFromEvent(event)
+			if want := (SegmentPrefix{Container: tc.container, Prefix: tc.prefix}); !ok || got != want {
+				t.Fatalf("captured %+v, %v; want raw names %+v", got, ok, want)
+			}
+		})
+	}
+	for _, msg := range []string{
+		`Uploading segment file "bad\q/run/00000000" into "media_segments"`,
+		`Uploading segment file "file/run/00000000" into "bad\q"`,
+	} {
+		if got, ok := PrefixFromEvent(Event{Msg: msg}); ok {
+			t.Errorf("malformed quoting captured as %+v", got)
+		}
+	}
+}
+
 func TestCancelEscalation(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "got-int")
 	body := fmt.Sprintf(`trap 'touch %q; exit 130' INT
