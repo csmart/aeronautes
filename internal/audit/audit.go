@@ -203,22 +203,7 @@ func (s *Store) List(ctx context.Context, q Query) ([]Event, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := `
-		SELECT id, at, COALESCE(bookmark_id,''), operation, resource, summary, result, COALESCE(transaction_ids_json,'')
-		FROM audit_events WHERE 1=1`
-	var args []any
-	if q.OperationPrefix != "" {
-		query += ` AND operation LIKE ? ESCAPE '\'`
-		args = append(args, likePrefix(q.OperationPrefix))
-	}
-	if q.Result != "" {
-		query += ` AND result = ?`
-		args = append(args, q.Result)
-	}
-	if q.BookmarkID != "" {
-		query += ` AND bookmark_id = ?`
-		args = append(args, q.BookmarkID)
-	}
+	query, args := eventQuery(q)
 	if q.BeforeID > 0 {
 		query += ` AND id < ?`
 		args = append(args, q.BeforeID)
@@ -233,19 +218,9 @@ func (s *Store) List(ctx context.Context, q Query) ([]Event, error) {
 	defer rows.Close()
 	var out []Event
 	for rows.Next() {
-		var e Event
-		var at, result, transIDs string
-		if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
+		e, err := readEvent(rows)
+		if err != nil {
 			return nil, err
-		}
-		if e.At, err = time.Parse(time.RFC3339, at); err != nil {
-			return nil, fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
-		}
-		e.Result = Result(result)
-		if transIDs != "" {
-			if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
-				return nil, fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
-			}
 		}
 		out = append(out, e)
 	}
@@ -260,6 +235,26 @@ func (s *Store) List(ctx context.Context, q Query) ([]Event, error) {
 // serial write lane. It is the §51 export's read; List stays the paged
 // viewer read.
 func (s *Store) ExportTo(ctx context.Context, q Query, fn func(Event) error) error {
+	query, args := eventQuery(q)
+	query += ` ORDER BY id DESC`
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		e, err := readEvent(rows)
+		if err != nil {
+			return err
+		}
+		if err := fn(e); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func eventQuery(q Query) (string, []any) {
 	query := `
 		SELECT id, at, COALESCE(bookmark_id,''), operation, resource, summary, result, COALESCE(transaction_ids_json,'')
 		FROM audit_events WHERE 1=1`
@@ -276,32 +271,27 @@ func (s *Store) ExportTo(ctx context.Context, q Query, fn func(Event) error) err
 		query += ` AND bookmark_id = ?`
 		args = append(args, q.BookmarkID)
 	}
-	query += ` ORDER BY id DESC`
-	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	return query, args
+}
+
+func readEvent(rows *sql.Rows) (Event, error) {
+	var e Event
+	var at, result, transIDs string
+	if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
+		return Event{}, err
+	}
+	parsed, err := time.Parse(time.RFC3339, at)
 	if err != nil {
-		return err
+		return Event{}, fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var e Event
-		var at, result, transIDs string
-		if err := rows.Scan(&e.ID, &at, &e.BookmarkID, &e.Operation, &e.Resource, &e.Summary, &result, &transIDs); err != nil {
-			return err
-		}
-		if e.At, err = time.Parse(time.RFC3339, at); err != nil {
-			return fmt.Errorf("audit event %d: bad timestamp: %w", e.ID, err)
-		}
-		e.Result = Result(result)
-		if transIDs != "" {
-			if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
-				return fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
-			}
-		}
-		if err := fn(e); err != nil {
-			return err
+	e.At = parsed
+	e.Result = Result(result)
+	if transIDs != "" {
+		if err := json.Unmarshal([]byte(transIDs), &e.TransIDs); err != nil {
+			return Event{}, fmt.Errorf("audit event %d: bad transaction ids: %w", e.ID, err)
 		}
 	}
-	return rows.Err()
+	return e, nil
 }
 
 // likePrefix escapes LIKE metacharacters so a prefix filter is a
