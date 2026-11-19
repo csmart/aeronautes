@@ -464,7 +464,10 @@ func (r *Runner) copy(ctx context.Context, remotes []Remote, src, dst string, na
 	} else if strings.HasPrefix(src, "aeronautes_") && strings.HasPrefix(dst, "aeronautes_") {
 		return nil, fmt.Errorf("a copy between stores is never told to compare existing objects (ADR 0122 decision 12)")
 	}
-	args = append(args, "--use-json-log", "-vv", "--stats", "1s", "--files-from-raw", listPath, "--config", configPath)
+	// A name is compared and written as it is spelled: the store keeps the
+	// composed and decomposed forms of a name as two names, and folding
+	// them together loses one (ADR 0122 decision 15).
+	args = append(args, "--use-json-log", "-vv", "--stats", "1s", "--no-unicode-normalization", "--files-from-raw", listPath, "--config", configPath)
 	args = append(args, r.pacingArgs()...)
 	if r.opts.NoGzipEncoding {
 		args = append(args, "--no-gzip-encoding")

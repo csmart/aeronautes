@@ -9,9 +9,7 @@ import {
 // K-TEST-001: names that are hard to carry, through the window. Each is a
 // character a URL, a query string or a form treats as its own (a space,
 // "%", "#", "?", "+"), a non-ASCII name in its decomposed Unicode form, and a
-// long name. The composed form of the same name is left out: the engine
-// compares names after normalising them, as rclone does, so a folder holding
-// both forms uploads only one of them and the job ends partial.
+// long name. The composed form of the same name is its own journey below.
 const questioned = "what?.bin";
 const names = [
   "with space.bin", "100%.bin", "hash#tag.bin", questioned, "a+b.bin", "café".normalize("NFD") + ".bin", `${"long-".repeat(39)}name.bin`,
@@ -92,3 +90,31 @@ async function chooseDownload(page: Page, folder: string, into: string): Promise
   await dialog.getByRole("button", { name: "Choose directory…" }).click();
   return dialog;
 }
+
+// ADR 0122 decision 15 (finding F81): the composed and decomposed forms of
+// one visible name are two names to the store, as to python-swiftclient and
+// S3's tools, so a folder holding both uploads both; the engine is told not
+// to fold them together. A download of the pair is refused before anything
+// is written, since some filesystems would give the two one place.
+test("upload both Unicode forms of one name as two names", async ({ page }, info) => {
+  const target = info.project.name;
+  const container = await ownContainer(target, "ui-two-forms");
+  const folder = localFolder();
+  const forms = ["café".normalize("NFC") + ".bin", "café".normalize("NFD") + ".bin"];
+  expect(forms[0], "the two spellings differ").not.toBe(forms[1]);
+  forms.forEach((name, i) => writeFileSync(join(folder, name), `form ${i}`));
+  expect(readdirSync(folder), "the local folder holds both").toHaveLength(2);
+  const f = basename(folder);
+
+  await openContainer(page, target, container);
+  const details = await uploadFolder(page, folder);
+  expect(details, "the upload wrote both").toMatch(/2\/2 obj/);
+  await expect.poll(async () => (await control.names(target, container)).sort(), lag).toEqual(forms.map((name) => `${f}/${name}`).sort());
+
+  await page.getByRole("button", { name: "Refresh listing" }).click();
+  const refused = await chooseDownload(page, f, localFolder());
+  await expect(refused.getByRole("heading", { name: "Rejected — nothing was written" })).toBeVisible();
+  await expect(refused.getByText(/names collide on filesystems that ignore case or Unicode normalization form/)).toBeVisible();
+  await expect(refused.getByRole("button", { name: "Start download" })).toHaveCount(0);
+  await refused.getByRole("button", { name: "Close" }).first().click();
+});
