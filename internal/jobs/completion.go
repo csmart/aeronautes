@@ -96,9 +96,9 @@ func (s *Store) finish(ctx context.Context, id string, result Completion, trail 
 				// the job kept is replaced by the durable one here.
 				result.Counters.ObjectsCopied = totals.Deleted + totals.Unverified + totals.Failed + totals.Conflicts + totals.Refused
 			}
-			// A name a cancellation stopped is incomplete, not failed
-			// (ADR 0129 decision 1).
-			result.Counters.ObjectsFailed = totals.Failed - totals.Incomplete
+			// The names a cancellation stopped are the incomplete part of the
+			// failed ones, which the window reads apart (ADR 0129 decision 1).
+			result.Counters.ObjectsFailed = totals.Failed
 			result.Counters.ObjectsIncomplete = totals.Incomplete
 			result.Audit.Summary += fmt.Sprintf(" · item outcomes: %d failed names, %d conflicts, %d refusals, %d unresolved, %d unverified, %d with problems",
 				totals.Failed, totals.Conflicts, totals.Refused, totals.Unresolved, totals.Unverified, totals.Problems)

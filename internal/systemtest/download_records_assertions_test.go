@@ -105,7 +105,7 @@ func assertDownloadItemPages(t *testing.T, h *Harness, id string, stored map[str
 	}
 	public, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id)
 	expected := app.JobItemTotalsDTO{Status: "available", Items: want.Items, Planned: want.Planned, Admitted: want.Admitted,
-		Failed: want.Failed, Conflicts: want.Conflicts, Refused: want.Refused, Unresolved: want.Unresolved, Unverified: want.Unverified, Problems: want.Problems}
+		Failed: want.Failed, Incomplete: want.Incomplete, Conflicts: want.Conflicts, Refused: want.Refused, Unresolved: want.Unresolved, Unverified: want.Unverified, Problems: want.Problems}
 	if err != nil || public != expected {
 		t.Fatalf("public download facets differ: %+v %v want=%+v", public, err, expected)
 	}

@@ -140,7 +140,7 @@
       <div><dt>Recorded items</dt><dd>{totals.items}</dd></div>
       <div><dt>Planned</dt><dd>{totals.planned}</dd></div>
       <div><dt>Admitted</dt><dd>{totals.admitted}</dd></div>
-      <div><dt>Failed names</dt><dd>{totals.failed}</dd></div>
+      <div><dt>Failed names</dt><dd>{totals.failed - (totals.incomplete ?? 0)}</dd></div>
       <div><dt>Incomplete</dt><dd>{totals.incomplete ?? 0}</dd></div>
       <div><dt>Conflicts</dt><dd>{totals.conflicts}</dd></div>
       <div><dt>Refused</dt><dd>{totals.refused}</dd></div>

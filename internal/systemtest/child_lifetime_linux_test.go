@@ -766,19 +766,23 @@ func lifetimeAssertRecords(t *testing.T, result lifetimeResult, mode, id, contai
 	t.Helper()
 	killed := mode == "parent_kill" || mode == "stopped_child_parent_kill"
 	wantState := "cancelled"
-	wantCounters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: size, ObjectsFailed: 1}
-	wantTotals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Failed: 1, Unresolved: 1, Problems: 1}
+	// The file a cancellation stopped is the incomplete part of the failed
+	// names (ADR 0129).
+	wantCounters := jobs.Counters{ObjectsPlanned: 1, BytesPlanned: size, ObjectsFailed: 1, ObjectsIncomplete: 1}
+	wantTotals := jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Failed: 1, Unresolved: 1, Problems: 1, Incomplete: 1}
 	if mode == "complete" {
 		wantState = "complete"
 		wantCounters.ObjectsCopied = 1
 		wantCounters.ObjectsVerified = 1
 		wantCounters.BytesCopied = size
 		wantCounters.ObjectsFailed = 0
+		wantCounters.ObjectsIncomplete = 0
 		wantTotals = jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1}
 	}
 	if killed {
 		wantState = "failed"
 		wantCounters.ObjectsFailed = 0
+		wantCounters.ObjectsIncomplete = 0
 		wantTotals = jobs.ItemTotals{Items: 1, Planned: 1, Admitted: 1, Unresolved: 1}
 	}
 	after := result.After

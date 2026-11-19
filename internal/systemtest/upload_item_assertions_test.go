@@ -192,7 +192,7 @@ func assertUploadItemPages(t *testing.T, h *Harness, id string, stored map[strin
 	}
 	public, err := h.Jobs.ItemTotals(t.Context(), h.Primary.BookmarkID, id)
 	wantPublic := app.JobItemTotalsDTO{Status: "available", Items: want.Items, Planned: want.Planned, Admitted: want.Admitted,
-		Failed: want.Failed, Conflicts: want.Conflicts, Refused: want.Refused, Unresolved: want.Unresolved, Unverified: want.Unverified, Problems: want.Problems}
+		Failed: want.Failed, Incomplete: want.Incomplete, Conflicts: want.Conflicts, Refused: want.Refused, Unresolved: want.Unresolved, Unverified: want.Unverified, Problems: want.Problems}
 	if err != nil || public != wantPublic {
 		t.Fatalf("public upload facets differ: %+v %v want=%+v", public, err, wantPublic)
 	}
