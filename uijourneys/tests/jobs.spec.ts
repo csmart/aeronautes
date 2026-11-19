@@ -485,4 +485,3 @@ async function expectOneLine(paragraph: Locator): Promise<void> {
   });
   expect(height, "drawn on one line").toBeLessThan(line * 1.6);
 }
-
