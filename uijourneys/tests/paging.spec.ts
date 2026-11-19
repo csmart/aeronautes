@@ -37,7 +37,10 @@ test("page a folder past the retention ceiling and back, and delete it", async (
   };
   await retention("1000", "1,000");
   try {
-    await page.getByRole("button", { name: "Refresh listing" }).click();
+    // A fresh page: the one that started the upload re-reads the open view
+    // when it sees the job end, which can land just after a page change and
+    // put the list back on its first rows (finding F83).
+    await openContainer(page, info.project.name, container);
     await openFolder(page, folder);
     const foot = page.locator(".pane-foot");
     await expect(foot.getByText(/1,000 rows loaded, the retention ceiling/)).toBeVisible();
