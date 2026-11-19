@@ -16,27 +16,41 @@ import { expect, forgetAccounts, localFolder, openContainer, ownContainer } from
 // on an account, which would leave a real cloud's containers behind, so
 // these journeys run only in a mock-only run.
 test.describe.serial("a run that ends with a job running", () => {
+  // Whether this test restarted the application, so its key is put back
+  // however the test ends; a keyless mock bookmark would fail every journey
+  // after it.
+  let restarted = false;
   test.beforeEach(async ({}, info) => {
     test.skip(info.project.name !== "mock" || !!process.env.AERONAUTES_CLOUDS, "restarting is driven in a mock-only run");
     test.setTimeout(300_000);
+    restarted = false;
+  });
+  test.afterEach(async ({ page }) => {
+    if (restarted) await giveTheMockItsKey(page);
   });
 
   test("quitting cancels the running job and keeps its record", async ({ page }) => {
     const container = await startLongUpload(page, "ui-quit");
     const before = await control.started();
+    restarted = true;
     await control.quit();
     await reopen(page, before);
     await page.getByRole("button", { name: /jobs & changes/ }).click();
     const row = page.locator("div.job").filter({ hasText: `→ ${container}/` });
     await expect(row.getByText("cancelled", { exact: true })).toBeVisible();
+    // The notice is read once, when the page loads; reloading and waiting
+    // for the job list again makes its absence a read, not a race.
+    await page.reload();
+    await page.getByRole("button", { name: /jobs & changes/ }).click();
+    await expect(row.getByText("cancelled", { exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "Interrupted jobs from a previous run" })).toHaveCount(0);
     await page.getByRole("button", { name: /▾ hide/ }).click();
-    await giveTheMockItsKey(page);
   });
 
   test("a run ended with no shutdown is disclosed at the next start", async ({ page }) => {
     const container = await startLongUpload(page, "ui-crash");
     const before = await control.started();
+    restarted = true;
     await control.crash();
     await reopen(page, before);
     await page.getByRole("button", { name: /jobs & changes/ }).click();
@@ -52,19 +66,21 @@ test.describe.serial("a run that ends with a job running", () => {
     const history = page.getByRole("region", { name: "Job history" });
     await expect(history.getByRole("article").filter({ hasText: `"${container}/"` })).toHaveCount(1);
     await page.getByRole("button", { name: /▾ hide/ }).click();
-    await giveTheMockItsKey(page);
   });
 });
 
-// startLongUpload starts an upload of enough files that it is still
-// running when the run is ended, and returns its container.
+// startLongUpload starts an upload that is still running when the run is
+// ended, and returns its container: a job on the mock finishes in moments,
+// so a bandwidth limit holds a 2 MiB file for about a minute.
 async function startLongUpload(page: Page, name: string): Promise<string> {
   const container = await ownContainer("mock", name);
   const folder = localFolder();
-  for (let i = 0; i < 2000; i++) writeFileSync(join(folder, `${String(i).padStart(4, "0")}.txt`), `${i}`);
+  writeFileSync(join(folder, "slow.bin"), Buffer.alloc(2 << 20, 7));
   await openContainer(page, "mock", container);
   await page.getByRole("button", { name: "Upload…" }).click();
   const upload = page.getByRole("dialog", { name: "Upload" });
+  await upload.getByText("Per-job settings").click();
+  await upload.getByLabel("Bandwidth").fill("32k");
   await control.pickFolder(folder);
   await upload.getByRole("button", { name: "Choose folder…" }).click();
   await upload.getByRole("button", { name: "Start upload" }).click();
@@ -88,6 +104,10 @@ async function reopen(page: Page, before: string): Promise<void> {
 // its bookmark records as saved, so the bookmark is given the key again in
 // its editor, as later journeys expect it to connect.
 async function giveTheMockItsKey(page: Page): Promise<void> {
+  await expect(async () => {
+    await page.goto("/");
+    await expect(page.getByRole("navigation", { name: "Bookmarks" })).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 60_000 });
   const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name: "journey mock", exact: true });
   await page.getByRole("button", { name: "Edit journey mock" }).click();
   await page.getByLabel("API key").fill("testing");

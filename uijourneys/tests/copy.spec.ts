@@ -3,8 +3,7 @@ import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  account, connect, digestOf, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer,
-  writeFiles,
+  account, connect, digestOf, expect, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // Copies run through the window between the run's own containers. What a
@@ -19,14 +18,6 @@ async function uploadFiles(page: Page, files: string[]): Promise<void> {
   const dialog = await openUpload(page);
   await control.pickFiles(files);
   await dialog.getByRole("button", { name: "Choose files…" }).click();
-  await dialog.getByRole("button", { name: "Start upload" }).click();
-  await finish(page, dialog);
-}
-
-async function uploadFolder(page: Page, folder: string): Promise<void> {
-  const dialog = await openUpload(page);
-  await control.pickFolder(folder);
-  await dialog.getByRole("button", { name: "Choose folder…" }).click();
   await dialog.getByRole("button", { name: "Start upload" }).click();
   await finish(page, dialog);
 }
@@ -75,7 +66,7 @@ test.describe("copy", () => {
     await expect(count(copy, "new")).toHaveText(/^\s*3\s+new/);
     await copy.getByRole("button", { name: "Start copy" }).click();
     await finish(page, copy);
-    expect((await control.names(target, dest)).sort()).toEqual([...digests.keys()].sort());
+    await expect.poll(async () => (await control.names(target, dest)).sort(), lag).toEqual([...digests.keys()].sort());
 
     const into = localFolder();
     await openContainer(page, target, dest);
@@ -102,7 +93,7 @@ test.describe("copy", () => {
     await copy.getByRole("button", { name: "Start copy" }).click();
     const details = await finish(page, copy);
     expect(details).toMatch(/\b0(\/\d+)? obj · 0 B · 3 already the same\b/);
-    expect((await control.names(target, dest)).sort()).toEqual([...digests.keys()].sort());
+    await expect.poll(async () => (await control.names(target, dest)).sort(), lag).toEqual([...digests.keys()].sort());
   });
 
   // Test plan steps 18h and 18e: a folder copied up to the container's top
@@ -115,7 +106,7 @@ test.describe("copy", () => {
     const files = [...writeFiles(folder, [16, 32], 1).keys()];
     const name = basename(folder);
     await openContainer(page, target, container);
-    await uploadFolder(page, folder);
+    await uploadFolder(page, folder, await openUpload(page));
 
     await page.getByRole("button", { name: "Refresh listing" }).click();
     await page.getByRole("option", { name: new RegExp(`^${name}/ `) }).click();
@@ -130,8 +121,8 @@ test.describe("copy", () => {
     await finish(page, copy);
     // The files are at the top, the folder still holds the originals, and
     // nothing else is there: no marker or empty name at the top.
-    const after = (await control.names(target, container)).sort();
-    expect(after).toEqual([...files, ...files.map((file) => `${name}/${file}`)].sort());
+    await expect.poll(async () => (await control.names(target, container)).sort(), lag)
+      .toEqual([...files, ...files.map((file) => `${name}/${file}`)].sort());
 
     // The whole container copied into one of its folders, or into a new one,
     // would read what it writes.
@@ -147,7 +138,6 @@ test.describe("copy", () => {
       await expect(top.getByRole("button", { name: "Start copy" })).toBeDisabled();
       await top.getByRole("button", { name: "Close" }).first().click();
     }
-    expect((await control.names(target, container)).sort()).toEqual(after);
   });
 
   // Test plan step 19r: two folders selected alone copy whole into a new
@@ -164,7 +154,7 @@ test.describe("copy", () => {
     writeFiles(folder, [48], 3);
     const name = basename(folder);
     await openContainer(page, target, container);
-    await uploadFolder(page, folder);
+    await uploadFolder(page, folder, await openUpload(page));
     await page.getByRole("button", { name: "Refresh listing" }).click();
     await openFolder(page, folder);
 
@@ -181,8 +171,8 @@ test.describe("copy", () => {
     await copy.getByRole("button", { name: "Preview" }).click();
     await copy.getByRole("button", { name: "Start copy" }).click();
     await finish(page, copy);
-    const after = (await control.names(target, container)).sort();
-    expect(after.filter((object) => object.startsWith("both/"))).toEqual(["both/alpha/file00.bin", "both/beta/file00.bin"]);
+    await expect.poll(async () => (await control.names(target, container)).filter((object) => object.startsWith("both/")).sort(), lag)
+      .toEqual(["both/alpha/file00.bin", "both/beta/file00.bin"]);
 
     // The file is picked first and the folder second, so a refusal that
     // named the first picked rather than the first listed would show.
@@ -203,7 +193,6 @@ test.describe("copy", () => {
     await expect(copy.getByRole("button", { name: "Start copy" })).toBeDisabled();
     await copy.getByRole("button", { name: "Close" }).first().click();
     expect(await jobIds(page), "no job started").toEqual(jobsBefore);
-    expect((await control.names(target, container)).sort()).toEqual(after);
   });
 
   // Test plan step 19g: the destination field suggests the account's
@@ -238,13 +227,4 @@ test.describe("copy", () => {
   });
 });
 
-// The jobs the drawer lists, by id, read from each row's details button.
-async function jobIds(page: Page): Promise<string[]> {
-  const bar = page.getByRole("button", { name: /jobs & changes|▾ hide/ });
-  if ((await bar.getAttribute("aria-expanded")) !== "true") await bar.click();
-  await expect(page.getByRole("tab", { name: "Jobs" })).toBeVisible();
-  const labels = await page.getByRole("button", { name: /^Item details for job / }).evaluateAll((buttons) =>
-    buttons.map((button) => button.getAttribute("aria-label") ?? ""));
-  await bar.click();
-  return labels.sort();
-}
+

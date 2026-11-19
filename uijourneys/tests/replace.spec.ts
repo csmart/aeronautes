@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { control } from "../control.ts";
 import {
-  account, digestOf, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, writeFiles,
+  account, digestOf, escapeRegExp, expect, finish, jobIds, lag, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, writeFiles,
 } from "../helpers.ts";
 
 // Replacing what is already there, through the window (ADR 0081, ADR 0122
@@ -16,7 +16,7 @@ import {
 const nativeNote = "This question comes from the application, not from the page.";
 const declined = "the replacement was not confirmed; nothing was written";
 // A pattern matches the page's raw text, where a sentence can break across lines.
-const words = (sentence: string) => new RegExp(escaped(sentence).replaceAll(" ", "\\s+"));
+const words = (sentence: string) => new RegExp(escapeRegExp(sentence).replaceAll(" ", "\\s+"));
 
 test.describe.serial("replace", () => {
   let container = "";
@@ -33,7 +33,7 @@ test.describe.serial("replace", () => {
     const target = info.project.name;
     container = await ownContainer(target, "ui-replace");
     copies = await ownContainer(target, "ui-replace-to");
-    binding = `${escaped(await account(target))} \\(${target === "mock" ? "AUTH_test" : "[^()]+"}\\)`;
+    binding = `${escapeRegExp(await account(target))} \\(${target === "mock" ? "AUTH_test" : "[^()]+"}\\)`;
     folder = localFolder();
     name = basename(folder);
     for (const [file, digest] of writeFiles(folder, [16, 32], 1)) digests.set(file, digest);
@@ -63,11 +63,11 @@ test.describe.serial("replace", () => {
     const [question] = await overwriteQuestions();
     expect(question.title).toBe("Replace up to 3 objects?");
     const lines = question.text.split("\n");
-    expect(lines[0]).toMatch(new RegExp(`^3 objects already in ${escaped(container)} may be REPLACED in ${binding}\\.$`));
+    expect(lines[0]).toMatch(new RegExp(`^3 objects already in ${escapeRegExp(container)} may be REPLACED in ${binding}\\.$`));
     expect(lines[1]).toBe(`Replacing — ${[...digests.keys()].map((file) => `${name}/${file}`).join(", ")}`);
     expect(lines[2]).toMatch(/^Compared — each one is replaced only when it differs, as rclone copy decides: /);
     expect(lines[3]).toBe("Versioning observed — none: what is replaced is not kept");
-    expect(lines[4]).toMatch(new RegExp(`^Segments — where a large object is replaced, the transfer engine REMOVES its old segments in ${escaped(container)}_segments `));
+    expect(lines[4]).toMatch(new RegExp(`^Segments — where a large object is replaced, the transfer engine REMOVES its old segments in ${escapeRegExp(container)}_segments `));
     expect(lines[5]).toBe(nativeNote);
 
     // The changed file's bytes are read back by the download journey below.
@@ -88,7 +88,8 @@ test.describe.serial("replace", () => {
     const copy = await previewCopy(page, copies);
     await copy.getByRole("button", { name: "Start copy" }).click();
     await finish(page, copy);
-    expect((await control.names(info.project.name, copies)).sort()).toEqual([...digests.keys()].map((file) => `${name}/${file}`).sort());
+    await expect.poll(async () => (await control.names(info.project.name, copies)).sort(), lag)
+      .toEqual([...digests.keys()].map((file) => `${name}/${file}`).sort());
   });
 
   // 0.1.0 step 2a-iii.
@@ -118,10 +119,10 @@ test.describe.serial("replace", () => {
     const [question] = await overwriteQuestions();
     expect(question.title).toBe("Replace up to 1 object?");
     const lines = question.text.split("\n");
-    expect(lines[0]).toMatch(new RegExp(`^1 object already in ${escaped(`${container}/${name}/`)} may be REPLACED in ${binding}\\.$`));
+    expect(lines[0]).toMatch(new RegExp(`^1 object already in ${escapeRegExp(`${container}/${name}/`)} may be REPLACED in ${binding}\\.$`));
     expect(lines[1]).toBe(`Replacing — ${name}/file00.bin`);
     expect(lines[3]).toBe("Versioning observed — none: what is replaced is not kept");
-    expect(lines[4]).toMatch(new RegExp(`^Segments — where a large object is replaced, the transfer engine REMOVES its old segments under ${escaped(`${name}/`)} in ${escaped(container)}_segments `));
+    expect(lines[4]).toMatch(new RegExp(`^Segments — where a large object is replaced, the transfer engine REMOVES its old segments under ${escapeRegExp(`${name}/`)} in ${escapeRegExp(container)}_segments `));
     expect(lines[5]).toBe(nativeNote);
     expect(await downloadObject(page, target, container, name, "file00.bin"), "after declining").toBe(digests.get("file00.bin"));
 
@@ -151,7 +152,7 @@ test.describe.serial("replace", () => {
     expect(await downloadObject(page, target, copies, name, "file00.bin"), "after the refused overwrite").toBe(copied);
 
     await openContainer(page, target, container);
-    const jobs = await jobCount(page);
+    const jobs = await jobIds(page);
     copy = await previewCopy(page, copies);
     await copy.getByRole("button", { name: "Replace existing objects…" }).click();
     await expect(copy.getByText(words("This copy will REPLACE what still differs at the destination."))).toBeVisible();
@@ -164,13 +165,13 @@ test.describe.serial("replace", () => {
     const [question] = await overwriteQuestions();
     expect(question.title).toBe("Replace 1 object?");
     const lines = question.text.split("\n");
-    expect(lines[0]).toMatch(new RegExp(`^1 object already in ${escaped(copies)} in ${binding} will be REPLACED by a copy from ${binding}\\.$`));
+    expect(lines[0]).toMatch(new RegExp(`^1 object already in ${escapeRegExp(copies)} in ${binding} will be REPLACED by a copy from ${binding}\\.$`));
     expect(lines[1]).toBe(`Replacing — ${name}/file00.bin`);
     expect(lines[2]).toBe("Versioning observed — none: what is replaced is not kept");
     expect(lines[3]).toMatch(/^Segments — /);
     expect(lines[4]).toBe(nativeNote);
     await copy.getByRole("button", { name: "Close" }).first().click();
-    expect(await jobCount(page), "jobs after declining").toBe(jobs);
+    expect(await jobIds(page), "jobs after declining").toEqual(jobs);
     expect(await downloadObject(page, target, copies, name, "file00.bin"), "after declining").toBe(copied);
 
     await openContainer(page, target, container);
@@ -216,7 +217,7 @@ test.describe.serial("replace", () => {
     const [question] = await overwriteQuestions();
     expect(question.title).toBe("Replace up to 3 local files?");
     const lines = question.text.split("\n");
-    expect(lines[0]).toMatch(new RegExp(`^3 files already in the folder ${escaped(into)} may be REPLACED by the objects of ${escaped(container)} in ${binding}\\.$`));
+    expect(lines[0]).toMatch(new RegExp(`^3 files already in the folder ${escapeRegExp(into)} may be REPLACED by the objects of ${escapeRegExp(container)} in ${binding}\\.$`));
     expect(lines[1]).toBe(`Replacing — ${[...digests.keys()].map((file) => `${name}/${file}`).join(", ")}`);
     expect(lines[2]).toMatch(/^Compared — each one is replaced only when it differs, as rclone copy decides: /);
     expect(lines[3]).toBe("A replaced file is gone: it is not kept or moved to the trash.");
@@ -322,17 +323,6 @@ async function settle(page: Page, dialog: Locator): Promise<{ state: string; det
   return { state, details };
 }
 
-// The jobs the drawer lists. Every journey here has run a job before it
-// counts, so an empty list is one still loading.
-async function jobCount(page: Page): Promise<number> {
-  await page.getByRole("button", { name: /▸ jobs & changes/ }).click();
-  const rows = page.locator("div.job");
-  await expect(rows.first()).toBeVisible();
-  const count = await rows.count();
-  await page.getByRole("button", { name: /▾ hide/ }).click();
-  return count;
-}
-
 function filesUnder(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
@@ -340,6 +330,3 @@ function filesUnder(dir: string): string[] {
     .sort();
 }
 
-function escaped(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

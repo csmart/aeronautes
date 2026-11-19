@@ -1,7 +1,7 @@
 // The runner's side of the control listener (ADR 0112 decision 2): it
 // scripts the native dialogs, opens the run's accounts and containers, and
 // tears them down. The token is read from the environment and never printed.
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 async function call(path: string, body: object): Promise<any> {
@@ -14,6 +14,20 @@ async function call(path: string, body: object): Promise<any> {
     throw new Error(`control ${path} answered ${response.status}: ${await response.text()}`);
   }
   return response.json();
+}
+
+// endRun marks that the journey asked for the application to stop, which
+// the runner reads to start it again, and takes the mark back if the stop
+// was not accepted, so a later crash nobody asked for is not hidden.
+async function endRun(path: string): Promise<void> {
+  const mark = join(process.env.AERONAUTES_PRIVATE!, "restart");
+  writeFileSync(mark, "");
+  try {
+    await call(path, {});
+  } catch (error) {
+    rmSync(mark, { force: true });
+    throw error;
+  }
 }
 
 export const control = {
@@ -36,17 +50,11 @@ export const control = {
   // again over the same state, ports and token. A restarted application
   // holds no saved key and has forgotten what the run created, so only a
   // mock-only run uses this and crash below.
-  quit: () => {
-    writeFileSync(join(process.env.AERONAUTES_PRIVATE!, "restart"), "");
-    return call("/quit", {});
-  },
+  quit: () => endRun("/quit"),
   // When this start of the application began, which tells it from the next.
   started: async (): Promise<string> => (await call("/started", {})).started,
   // Stops the application with no shutdown, as a crash does; the runner
   // starts it again as after quit.
-  crash: () => {
-    writeFileSync(join(process.env.AERONAUTES_PRIVATE!, "restart"), "");
-    return call("/crash", {});
-  },
+  crash: () => endRun("/crash"),
   teardown: (): Promise<{ failures: number }> => call("/teardown", {}),
 };
