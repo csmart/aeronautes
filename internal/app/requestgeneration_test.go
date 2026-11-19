@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -279,14 +278,15 @@ func TestBookmarkChangeAllowsAdmittedReadButRefusesReopen(t *testing.T) {
 	if err != nil || string(data) != "contents" {
 		t.Fatalf("already admitted read was lost: %q, %v", data, err)
 	}
-	seeker, ok := body.(interface {
-		Seek(context.Context, int64, int) (int64, error)
-	})
-	if !ok {
-		t.Fatal("native stream no longer exposes its contextual seek")
+	if err := body.Close(); err != nil {
+		t.Fatal(err)
 	}
 	before := h.mock.Requests()
-	if _, err := seeker.Seek(t.Context(), 0, io.SeekStart); err == nil {
+	reopened, _, err := session.OpenObject(t.Context(), "media", "file")
+	if reopened != nil {
+		t.Cleanup(func() { reopened.Close() })
+	}
+	if err == nil {
 		t.Error("deleted session reopened the object stream")
 	}
 	if h.mock.Requests() != before {
