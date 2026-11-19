@@ -5,6 +5,8 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -329,5 +331,35 @@ func TestADownloadRecordThatCannotBeKeptStopsTheRun(t *testing.T) {
 	})
 	if !errors.Is(err, lost) || len(engine.dsts) != 0 {
 		t.Fatalf("run ended %v after %d engine runs, want the lost record and none", err, len(engine.dsts))
+	}
+}
+
+func TestNativeDownloadRefusesAPartialLargeObject(t *testing.T) {
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	http.DefaultTransport = downloadAdmissionTransport(func(r *http.Request) (*http.Response, error) {
+		response, err := original.RoundTrip(r)
+		if err == nil && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/media/object") {
+			if err := response.Body.Close(); err != nil {
+				return nil, err
+			}
+			response.StatusCode = http.StatusPartialContent
+			response.Header.Set("Content-Range", "bytes 0-2/12")
+			response.Header.Set("Content-Length", "3")
+			response.Header.Set("X-Static-Large-Object", "True")
+			response.ContentLength = 3
+			response.Body = io.NopCloser(strings.NewReader("abc"))
+		}
+		return response, err
+	})
+	source, mock := session(t)
+	seed(mock, "media", "object", "whole object")
+	dest := t.TempDir()
+	result := nativeDownload(t.Context(), source, "media", DownloadItem{Name: "object", RelPath: "object", Size: 12}, testDestination(t, dest), false)
+	if result.Result != transfercopy.ResultFailed {
+		t.Fatalf("partial source accepted: %+v", result)
+	}
+	if got := folderNames(t, dest); len(got) != 0 {
+		t.Fatalf("partial download left files: %v", got)
 	}
 }

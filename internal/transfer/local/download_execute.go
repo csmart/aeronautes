@@ -557,7 +557,7 @@ func nativeDownload(ctx context.Context, src *swiftcontrol.Session, container st
 		err = file.Sync()
 	}
 	// A body shorter or longer than the store said, or not matching its
-	// tag, is reported when it is closed, so both ends close before the
+	// tag, is reported while reading or closing, so both ends close before the
 	// file gets its name.
 	if err = errors.Join(err, file.Close(), body.Close()); err != nil {
 		return downloadFailed(transfercopy.EffectNotAttempted, transfercopy.StageSourceRead, transfercopy.CodeIO, "native-get", err)
