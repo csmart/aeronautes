@@ -41,6 +41,8 @@ func copyLargeObjects(t *testing.T, h *Harness) {
 	t.Cleanup(func() { h.purge(h.Secondary, segments) })
 	// Two sources cut at the chunk size, one dynamic and one static, over
 	// the same three segments, and one plain source larger than a chunk.
+	// The plain source also has a quoted name: the engine logs its segment
+	// path with Go quoting, while the durable record must keep the raw name.
 	// Each has headers the engine does not copy, among them an encoding its
 	// bytes are not in: an engine that decoded what it carried would fail on
 	// them or change them.
@@ -55,17 +57,17 @@ func copyLargeObjects(t *testing.T, h *Harness) {
 	dynamic["X-Object-Manifest"] = parts + "/cut/"
 	h.Seed(h.Primary, src, "scope/cut-alike.dlo", nil, dynamic)
 	h.rawPutQuery(h.Primary, "/"+src+"/scope/cut-alike.slo", "multipart-manifest=put", []byte("["+strings.Join(static, ",")+"]"), carried)
-	h.Seed(h.Primary, src, "scope/plain-large.bin", []byte(strings.Repeat("abcdefg", 160000)), carried)
-	names := map[string]int{"cut-alike.dlo": 3, "cut-alike.slo": 3, "plain-large.bin": 2}
+	h.Seed(h.Primary, src, "scope/plain-\"large.bin", []byte(strings.Repeat("abcdefg", 160000)), carried)
+	names := map[string]int{"cut-alike.dlo": 3, "cut-alike.slo": 3, "plain-\"large.bin": 2}
 	srcBefore, dstBefore := h.SnapshotNamespace(h.Primary), h.SnapshotNamespace(h.Secondary)
 	source := srcBefore.Containers[src].Objects
-	if source["scope/cut-alike.dlo"].Class != "dlo" || source["scope/cut-alike.slo"].Class != "slo" || source["scope/plain-large.bin"].Class != "plain" {
+	if source["scope/cut-alike.dlo"].Class != "dlo" || source["scope/cut-alike.slo"].Class != "slo" || source["scope/plain-\"large.bin"].Class != "plain" {
 		t.Fatalf("the source fixture is not the three kinds the case needs: %+v", source)
 	}
-	if h.MockPrimary == nil && source["scope/plain-large.bin"].ContentEncoding != "gzip" {
+	if h.MockPrimary == nil && source["scope/plain-\"large.bin"].ContentEncoding != "gzip" {
 		// The in-process store keeps neither the encoding nor the
 		// disposition, so only the owned Swift can show they are carried.
-		t.Fatalf("the source was not seeded with its encoding: %+v", source["scope/plain-large.bin"])
+		t.Fatalf("the source was not seeded with its encoding: %+v", source["scope/plain-\"large.bin"])
 	}
 	trace := copyCompletionProxy(t, h, h.Secondary, "")
 	storage, err := url.Parse(h.Secondary.storageURL)
@@ -153,7 +155,7 @@ func copyLargeObjects(t *testing.T, h *Harness) {
 			results[item.Key] = item.Execution.Result
 		}
 	}
-	if want := map[string]jobs.ItemResult{"cut-alike.dlo": jobs.ItemSame, "cut-alike.slo": jobs.ItemSame, "plain-large.bin": jobs.ItemRefused}; !reflect.DeepEqual(results, want) {
+	if want := map[string]jobs.ItemResult{"cut-alike.dlo": jobs.ItemSame, "cut-alike.slo": jobs.ItemSame, "plain-\"large.bin": jobs.ItemRefused}; !reflect.DeepEqual(results, want) {
 		t.Fatalf("the second copy recorded %v, want %v", results, want)
 	}
 	if sent := trace.writeSnapshot()[sentBefore:]; len(sent) != 0 {
@@ -166,13 +168,13 @@ func copyLargeObjects(t *testing.T, h *Harness) {
 	// copy, removes that copy's segments.
 	confirmer := &serviceConfirmer{yes: true}
 	app.WireOverwriteConfirmer(h.Transfer, confirmer)
-	replaced := arrived.Containers[dst].Objects["scope/plain-large.bin"]
+	replaced := arrived.Containers[dst].Objects["scope/plain-\"large.bin"]
 	request.AcknowledgeOverwrite = true
 	third := run(request)
 	if third.Job.State != "complete" || third.Job.Counters.ObjectsCopied != 1 || third.Job.Counters.Overwrites != 1 || third.Job.Counters.OverwritesRefused != 0 {
 		t.Fatalf("the acknowledged copy = %s %+v (%s)", third.Job.State, third.Job.Counters, third.Job.Error)
 	}
-	if asked := confirmer.questions(); len(asked) != 1 || !reflect.DeepEqual(asked[0].Names, []string{"plain-large.bin"}) {
+	if asked := confirmer.questions(); len(asked) != 1 || !reflect.DeepEqual(asked[0].Names, []string{"plain-\"large.bin"}) {
 		t.Fatalf("the operator was asked %+v, want one question about the name that differs", asked)
 	}
 	for _, segment := range replaced.Segments {
@@ -180,8 +182,8 @@ func copyLargeObjects(t *testing.T, h *Harness) {
 			t.Errorf("a segment of the replaced copy answers %d (%v), want it gone: %s", status, err, segment.Name)
 		}
 	}
-	now := h.SnapshotNamespace(h.Secondary).Containers[dst].Objects["scope/plain-large.bin"]
-	if want := source["scope/plain-large.bin"]; now.Class != "dlo" || now.Digest != want.Digest || now.Size != want.Size || now.Manifest == replaced.Manifest || now.Meta["Team"] != "ops" {
+	now := h.SnapshotNamespace(h.Secondary).Containers[dst].Objects["scope/plain-\"large.bin"]
+	if want := source["scope/plain-\"large.bin"]; now.Class != "dlo" || now.Digest != want.Digest || now.Size != want.Size || now.Manifest == replaced.Manifest || now.Meta["Team"] != "ops" {
 		t.Fatalf("the replacement is %+v, want the source's bytes under a new segment path", now)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -278,12 +279,21 @@ func PrefixFromEvent(event Event) (SegmentPrefix, bool) {
 	if m == nil {
 		return SegmentPrefix{}, false
 	}
-	name := m[1]
+	// The pinned engine logs both names with %q. Keep raw identities here;
+	// leaving escapes in a prefix points metadata at different objects.
+	name, err := strconv.Unquote(m[1])
+	if err != nil {
+		return SegmentPrefix{}, false
+	}
+	container, err := strconv.Unquote(m[2])
+	if err != nil {
+		return SegmentPrefix{}, false
+	}
 	slash := strings.LastIndex(name, "/")
 	if slash <= 0 {
 		return SegmentPrefix{}, false
 	}
-	return SegmentPrefix{Container: m[2], Prefix: name[:slash+1]}, true
+	return SegmentPrefix{Container: container, Prefix: name[:slash+1]}, true
 }
 
 // CopiedObject reports the object a child log line says the engine wrote:
@@ -571,7 +581,7 @@ func buildEnvironment(workDir string, remotes []Remote) (configPath string, env 
 }
 
 // segmentPattern matches the §26.4 capture line at -vv.
-var segmentPattern = regexp.MustCompile(`Uploading segment file "(.+)" into "(.+)"`)
+var segmentPattern = regexp.MustCompile(`^Uploading segment file ("(?:[^"\\]|\\.)*") into ("(?:[^"\\]|\\.)*")$`)
 
 const maxCollectedErrors = 50
 
