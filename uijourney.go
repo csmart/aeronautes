@@ -270,6 +270,8 @@ func (c *journeyControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply, err = c.account(ctx, request.Label, request.AuthURL)
 	case "/container":
 		reply, err = c.container(ctx, request.Label, request.Name, request.Segmented)
+	case "/same-name":
+		reply, err = c.namedContainer(ctx, request.Label, request.Name)
 	case "/names":
 		reply, err = c.names(ctx, request.Label, request.Container)
 	case "/put":
@@ -401,6 +403,23 @@ func (c *journeyControl) container(ctx context.Context, label, name string, segm
 		if err := owned.ClaimSidecar(ctx, created); err != nil {
 			return nil, err
 		}
+	}
+	return map[string]string{"container": created}, nil
+}
+
+// namedContainer creates a container the run owns under the exact name
+// another account's container was given, so a journey holds one name on
+// two accounts. A name already taken there is refused and not recorded.
+func (c *journeyControl) namedContainer(ctx context.Context, label, name string) (any, error) {
+	c.mu.Lock()
+	owned := c.accounts[label].owned
+	c.mu.Unlock()
+	if owned == nil {
+		return nil, fmt.Errorf("no account %q is open", label)
+	}
+	created, err := owned.CreateNamedContainer(ctx, name)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]string{"container": created}, nil
 }

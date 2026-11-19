@@ -39,6 +39,11 @@ export const control = {
   account: (label: string): Promise<{ bookmark?: string }> => call("/account", { label, authUrl: process.env.AERONAUTES_MOCK }),
   container: (label: string, name: string, segmented = false): Promise<{ container: string }> =>
     call("/container", { label, name, segmented }),
+  // Creates a container of exactly the name another account's container
+  // was given, so a journey can hold the same name on two accounts. It is
+  // refused, as any create is, where that name is already taken.
+  sameNameAs: (label: string, name: string): Promise<{ container: string }> =>
+    call("/same-name", { label, name }),
   // What one of the run's own containers holds, as the run's own session
   // lists it: the read a deletion is checked against.
   names: async (label: string, container: string): Promise<string[]> => (await call("/names", { label, container })).names,
