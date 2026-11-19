@@ -1526,12 +1526,7 @@ func TestTLSRealSwift(t *testing.T) {
 		t.Fatalf("copied object: %+v %v", d, err)
 	}
 
-	// Without the CA the child fails TLS — never a silent fallback.
-	badRemotes := []rclone.Remote{
-		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: filepath.Join(t.TempDir(), "missing-but-forces-config.pem")},
-		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: filepath.Join(t.TempDir(), "missing-but-forces-config.pem")},
-	}
-	_ = badRemotes // an unreadable CA path: rclone fails the transfer
+	// One child cannot apply different trust to its two remotes.
 	untrusted, err := runner.Copy(ctx, []rclone.Remote{
 		{Name: "aeronautes_src", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken(), CACertFile: caFile},
 		{Name: "aeronautes_dst", StorageURL: caSession.StorageURL(), Token: caSession.AuthToken()},
