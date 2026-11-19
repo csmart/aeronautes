@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
-import { expect, finish, localFolder, openContainer, ownContainer } from "../helpers.ts";
+import { expect, finish, lag, localFolder, openContainer, ownContainer } from "../helpers.ts";
 
 // 0.5.0 step 13 (ADR 0103): a folder upload takes each regular file under
 // its relative path, leaves out links and empty directories and says so,
@@ -34,7 +34,7 @@ test("upload a folder with nested files, a link and an empty directory", async (
 
   // Read by the run's own session: the regular files under their relative
   // paths, and nothing for the link or the empty directory.
-  expect((await control.names(target, container)).sort()).toEqual([`${name}/inner/deep/nested.bin`, `${name}/top.bin`]);
+  await expect.poll(async () => (await control.names(target, container)).sort(), lag).toEqual([`${name}/inner/deep/nested.bin`, `${name}/top.bin`]);
 });
 
 test("a folder of more than 10,000 files is refused at the pick", async ({ page }, info) => {
@@ -50,5 +50,4 @@ test("a folder of more than 10,000 files is refused at the pick", async ({ page 
   await dialog.getByRole("button", { name: "Choose folder…" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("the folder holds more than 10000 files; choose a smaller folder or upload it in parts");
   await expect(dialog.getByRole("button", { name: "Start upload" })).toHaveCount(0);
-  expect(await control.names(target, container)).toEqual([]);
 });

@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  connect, digestOf, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, typedDelete, writeFiles,
+  addMockBookmark, connect, deleteBookmark, digestOf, escapeRegExp, expect, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, ownContainer, sha256, typedDelete, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // The jobs drawer, the job limits in Settings and the per-job settings,
@@ -33,18 +33,9 @@ async function manyObjects(page: Page, target: string): Promise<Many> {
   writeFileSync(join(folder, big), body);
   digests.set(big, sha256(body));
   await openContainer(page, target, container);
-  await upload(page, folder);
+  await uploadFolder(page, folder);
   many = { target, container, folder, digests };
   return many;
-}
-
-async function upload(page: Page, folder: string): Promise<string> {
-  await page.getByRole("button", { name: "Upload…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Upload" });
-  await control.pickFolder(folder);
-  await dialog.getByRole("button", { name: "Choose folder…" }).click();
-  await dialog.getByRole("button", { name: "Start upload" }).click();
-  return finish(page, dialog);
 }
 
 // startDownload downloads the open container into a folder, slowed by a
@@ -82,12 +73,6 @@ async function openDrawer(page: Page): Promise<void> {
   const bar = page.getByRole("button", { name: /jobs & changes$|▾ hide$/ });
   if ((await bar.getAttribute("aria-expanded")) !== "true") await bar.click();
   await expect(page.getByRole("tab", { name: "Jobs" })).toBeVisible();
-}
-
-async function listedJobs(page: Page): Promise<string[]> {
-  await openDrawer(page);
-  return page.getByRole("button", { name: /^Item details for job / }).evaluateAll((buttons) =>
-    buttons.map((button) => (button.getAttribute("aria-label") ?? "").replace("Item details for job ", "")));
 }
 
 async function cancel(page: Page, id: string): Promise<void> {
@@ -147,27 +132,6 @@ async function restoreLimits(page: Page, target: string, before: Limits): Promis
   await setLimits(page, before);
 }
 
-// The bookmark editor is driven against the mock only; a second bookmark
-// of the mock's one account opens a session of its own.
-async function addMockBookmark(page: Page, name: string): Promise<void> {
-  await page.getByTitle("Add bookmark", { exact: true }).click();
-  await page.getByLabel("Display name").fill(name);
-  await page.getByLabel("Auth URL").fill(process.env.AERONAUTES_MOCK!);
-  await page.getByLabel("Username").fill("test:tester");
-  await page.getByLabel("API key").fill("testing");
-  await page.getByRole("button", { name: "Save & connect" }).click();
-  await expect(page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
-}
-
-async function deleteBookmark(page: Page, name: string): Promise<void> {
-  await page.goto("/");
-  const rail = page.getByRole("navigation", { name: "Bookmarks" });
-  await rail.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
-  await page.getByRole("button", { name: "Delete…" }).click();
-  await page.getByRole("button", { name: "Really delete" }).click();
-  await expect(rail.getByRole("button", { name, exact: true })).toHaveCount(0);
-}
-
 function expectDigests(dir: string, digests: Map<string, string>): void {
   for (const [name, digest] of digests) expect(digestOf(join(dir, name)), name).toBe(digest);
 }
@@ -183,7 +147,7 @@ test.describe("jobs", () => {
     const first = localFolder();
     writeFiles(first, [16], 1);
     await openContainer(page, target, source);
-    await upload(page, first);
+    await uploadFolder(page, first);
 
     await openContainer(page, target, source);
     await page.getByRole("button", { name: "Copy container…" }).click();
@@ -203,21 +167,22 @@ test.describe("jobs", () => {
       const second = localFolder();
       writeFiles(second, [32], 2);
       await openContainer(page, target, source);
-      await upload(page, second);
+      await uploadFolder(page, second);
 
       await openDrawer(page);
       await expect(badge(jobRow(page, running))).toHaveText("running");
       await expect(jobRow(page, running).getByRole("button", { name: `Pause job ${running}` })).toBeVisible();
       await expect(jobRow(page, running).getByRole("button", { name: "Re-run" })).toHaveCount(0);
-      const before = await listedJobs(page);
+      const before = await jobIds(page);
       await jobRow(page, copied).getByRole("button", { name: "Re-run" }).click();
-      await expect.poll(async () => (await listedJobs(page)).length).toBe(before.length + 1);
-      const rerun = (await listedJobs(page)).filter((id) => !before.includes(id));
+      await expect.poll(async () => (await jobIds(page)).filter((id) => !before.includes(id))).toHaveLength(1);
+      const rerun = (await jobIds(page)).filter((id) => !before.includes(id));
       expect(rerun, "one fresh job").toHaveLength(1);
       expect(rerun[0]).not.toBe(copied);
       await expect(badge(jobRow(page, rerun[0]))).toHaveText("complete", { timeout: 2 * 60 * 1000 });
       await expect(badge(jobRow(page, copied))).toHaveText("complete");
-      expect((await control.names(target, dest)).sort()).toEqual([`${basename(first)}/file00.bin`, `${basename(second)}/file00.bin`].sort());
+      await expect.poll(async () => (await control.names(target, dest)).sort(), lag)
+        .toEqual([`${basename(first)}/file00.bin`, `${basename(second)}/file00.bin`].sort());
     } finally {
       await cancelAll(page, [running]);
     }
@@ -258,12 +223,12 @@ test.describe("jobs", () => {
       await openDrawer(page);
       await expect(badge(jobRow(page, started[0]))).toHaveText("running");
       await expect(badge(jobRow(page, started[1]))).toHaveText("queued");
-      const jobs = await listedJobs(page);
+      const jobs = await jobIds(page);
       const third = await startDownload(page, localFolder());
       await expect(third.getByRole("alert")).toHaveText(
         "the job queue is full: 1 running and 1 waiting; wait for one to finish or cancel one");
       await third.getByRole("button", { name: "Close" }).first().click();
-      expect(await listedJobs(page), "the refused start made no job").toEqual(jobs);
+      expect(await jobIds(page), "the refused start made no job").toEqual(jobs);
 
       // Cancelling the waiting job makes room for one more.
       await cancel(page, started[1]);
@@ -328,7 +293,7 @@ test.describe("jobs", () => {
       await openContainer(page, target, source);
       const folder = localFolder();
       writeFiles(folder, [16], 1);
-      await upload(page, folder);
+      await uploadFolder(page, folder);
 
       await openDrawer(page);
       await page.locator(".tabs .filter select").selectOption({ label: other });
@@ -345,6 +310,7 @@ test.describe("jobs", () => {
       await expect(page.getByRole("button", { name: `Item details for job ${id}`, exact: true })).toHaveAttribute("aria-expanded", "true");
       await expect(badge(jobRow(page, id))).toHaveText("complete", { timeout: 2 * 60 * 1000 });
     } finally {
+      await page.goto("/");
       await deleteBookmark(page, other);
     }
   });
@@ -489,7 +455,7 @@ test.describe("jobs", () => {
     const folder = localFolder();
     const names = [...writeFiles(folder, [16, 32, 64], 1).keys()];
     await openContainer(page, target, container);
-    await upload(page, folder);
+    await uploadFolder(page, folder);
     const before = await setLimits(page, { cap: "1" });
     try {
       await addMockBookmark(page, capped);
@@ -501,6 +467,7 @@ test.describe("jobs", () => {
         await expect(inspector(page).getByRole("button", { name: "Copy ETag" })).toBeVisible();
       }
     } finally {
+      await page.goto("/");
       await deleteBookmark(page, capped);
       await restoreLimits(page, target, before);
     }
@@ -519,6 +486,3 @@ async function expectOneLine(paragraph: Locator): Promise<void> {
   expect(height, "drawn on one line").toBeLessThan(line * 1.6);
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

@@ -2,7 +2,9 @@ import { test, type Locator, type Page } from "@playwright/test";
 import { randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { control } from "../control.ts";
-import { account, connect, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
+import {
+  account, addMockBookmark, connect, expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles,
+} from "../helpers.ts";
 
 // Test plan step 11a. Account metadata is written only on the mock: a real
 // account's edit has to carry every key someone else set, which layer 1
@@ -38,24 +40,27 @@ test("read the account's cards and every pane's raw headers", async ({ page }, i
   const target = info.project.name;
   const container = await ownContainer(target, "ui-raw");
   await connect(page, target);
-  // The mock's account reports no per-policy headers, so it shows no
-  // policies card.
-  if (target !== "mock") {
-    await expect(card(page, "Storage policies").locator(".kv").first()).toContainText(/ · \d[\d,]* objects? · \d[\d,]* containers?$/);
-  }
+  // Every target reports what the account holds under each storage policy
+  // its containers use; the mock's containers use "standard".
+  await expect(card(page, "Storage policies").locator(".kv").first()).toContainText(/ · \d[\d,]* objects? · \d[\d,]* containers?$/);
   const accountHeaders = await openRawHeaders(page);
   await expect(accountHeaders).toContainText(/X-Account-Container-Count: \d/i);
 
   if (target === "mock") {
     const secret = randomBytes(16).toString("hex");
     await setKey(page, "Temp-URL-Key", secret);
-    await connect(page, target);
-    const headers = await openRawHeaders(page);
-    await expect(headers).toContainText(/X-Account-Meta-Temp-Url-Key: \[redacted\]/i);
-    await expect(headers).not.toContainText(secret);
-    await inspector(page).getByRole("button", { name: "Clear Temp-URL-Key…" }).click();
-    await inspector(page).getByRole("button", { name: "Clear key" }).click();
-    await expect(inspector(page).getByRole("button", { name: "Set Temp-URL-Key…" })).toBeVisible();
+    try {
+      await connect(page, target);
+      const headers = await openRawHeaders(page);
+      await expect(headers).toContainText(/X-Account-Meta-Temp-Url-Key: \[redacted\]/i);
+      await expect(headers).not.toContainText(secret);
+    } finally {
+      // The mock's account is shared by every journey after this one.
+      await connect(page, target);
+      await inspector(page).getByRole("button", { name: "Clear Temp-URL-Key…" }).click();
+      await inspector(page).getByRole("button", { name: "Clear key" }).click();
+      await expect(inspector(page).getByRole("button", { name: "Set Temp-URL-Key…" })).toBeVisible();
+    }
   }
 
   await openContainer(page, target, container);
@@ -186,13 +191,7 @@ async function secondMockBookmark(page: Page): Promise<string> {
   const name = "journey mock second";
   const rail = page.getByRole("navigation", { name: "Bookmarks" });
   if (await rail.getByRole("button", { name, exact: true }).count() === 0) {
-    await rail.getByTitle("Add bookmark").click();
-    await page.getByLabel("Display name").fill(name);
-    await page.getByLabel("Auth URL").fill(process.env.AERONAUTES_MOCK!);
-    await page.getByLabel("Username").fill("test:tester");
-    await page.getByLabel("API key").fill("testing");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(rail.getByRole("button", { name, exact: true })).toBeVisible();
+    await addMockBookmark(page, name, { key: "testing", connect: false });
   }
   return name;
 }

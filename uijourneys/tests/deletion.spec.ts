@@ -1,12 +1,13 @@
 import { test, type Locator, type Page } from "@playwright/test";
 import { basename } from "node:path";
 import { control } from "../control.ts";
-import { expect, finish, inspector, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, writeFiles } from "../helpers.ts";
+import {
+  expect, finish, inspector, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, writeFiles,
+} from "../helpers.ts";
 
 // What each deletion leaves is read by the run's own session, which lists
-// the containers the run made. A listing can lag the deletes on a real
-// store, so each is asked again within a bound.
-const lag = { timeout: 3 * 60 * 1000 };
+// the containers the run made, within the bound a real store's listing can
+// lag (lag in helpers.ts).
 // Three chunks at the upload's chunk size, so the file uploads in three
 // segments.
 const large = 3 << 20;
@@ -100,7 +101,7 @@ test("refuse the wrong words for each container deletion, and empty a container"
   await actions.getByRole("button", { name: "Empty container…" }).click();
   const dialog = await expectRefused(page, "Empty container", [container, `delete ${container}`]);
   // Nothing so far was deleted.
-  expect(await control.names(target, container)).toHaveLength(3);
+  await expect.poll(async () => (await control.names(target, container)).length, lag).toBe(3);
 
   await expect(dialog.getByText(/^3 objects · /)).toBeVisible();
   const confirm = dialog.getByLabel(/to arm/);

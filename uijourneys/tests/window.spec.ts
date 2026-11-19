@@ -4,7 +4,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
-import { connect, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, writeFiles } from "../helpers.ts";
+import {
+  addMockBookmark, connect, deleteBookmark, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, uploadFolder, writeFiles,
+} from "../helpers.ts";
 
 // Test plan steps 17 and 18b: the status bar names the bookmark, and the
 // About link and dialog name the build. The revision the dialog shows is
@@ -38,6 +40,7 @@ test("an object's and a folder's context menus", async ({ page }, info) => {
   mkdirSync(join(folder, "inner"));
   writeFiles(join(folder, "inner"), [32], 2);
   await uploadFolder(page, folder);
+  await page.getByRole("button", { name: "Refresh listing" }).click();
   await openFolder(page, basename(folder));
 
   const file = objectRow(page, "file00.bin");
@@ -75,6 +78,7 @@ test("find a name by part of it, and count a folder", async ({ page }, info) => 
   const folder = localFolder();
   writeFiles(folder, [16, 16, 16], 1);
   await uploadFolder(page, folder);
+  await page.getByRole("button", { name: "Refresh listing" }).click();
   const name = basename(folder);
 
   await openFolder(page, name);
@@ -102,7 +106,7 @@ test("find a name by part of it, and count a folder", async ({ page }, info) => 
 test("the public mark, and the list's height beside it", async ({ page }, info) => {
   const target = info.project.name;
   const open = await ownContainer(target, "ui-public");
-  const closed = await ownContainer(target, "ui-private");
+  const closed = await ownContainer(target, "ui-beside-public");
   for (const container of [closed, open]) {
     await openContainer(page, target, container);
     await page.getByRole("button", { name: "New folder…" }).click();
@@ -151,36 +155,38 @@ test("back up the settings with no key, and restore a bookmark without one", asy
   const key = `journey-key-${randomBytes(12).toString("hex")}`;
   const name = "journey backup";
   await connect(page, "mock");
-  await saveBookmark(page, name, key);
+  await addMockBookmark(page, name, { key, connect: false });
+  try {
+    const into = localFolder();
+    const settings = await openSettings(page);
+    await control.asked();
+    await control.pickFolder(into);
+    await settings.getByRole("button", { name: "Back up settings…" }).click();
+    await expect(settings.getByText(/^Backed up settings and \d+ bookmarks? to /)).toBeVisible();
+    expect(await control.asked()).toEqual([{ kind: "pick folder", title: "Choose a folder to save the settings backup", text: "" }]);
+    const files = readdirSync(into);
+    expect(files).toHaveLength(1);
+    const backup = join(into, files[0]);
+    const text = readFileSync(backup, "utf8");
+    expect(text, "the backup holds the bookmark").toContain(`"${name}"`);
+    expect(text.includes(key), "the backup holds the bookmark's key").toBe(false);
+    await settings.getByRole("button", { name: "Close settings" }).click();
 
-  const into = localFolder();
-  const settings = await openSettings(page);
-  await control.asked();
-  await control.pickFolder(into);
-  await settings.getByRole("button", { name: "Back up settings…" }).click();
-  await expect(settings.getByText(/^Backed up settings and \d+ bookmarks? to /)).toBeVisible();
-  expect(await control.asked()).toEqual([{ kind: "pick folder", title: "Choose a folder to save the settings backup", text: "" }]);
-  const files = readdirSync(into);
-  expect(files).toHaveLength(1);
-  const backup = join(into, files[0]);
-  const text = readFileSync(backup, "utf8");
-  expect(text, "the backup holds the bookmark").toContain(`"${name}"`);
-  expect(text.includes(key), "the backup holds the bookmark's key").toBe(false);
-  await settings.getByRole("button", { name: "Close settings" }).click();
+    await deleteBookmark(page, name);
+    const again = await openSettings(page);
+    await control.pickFiles([backup]);
+    await again.getByRole("button", { name: "Restore settings…" }).click();
+    await expect(again.getByRole("status").filter({ hasText: /^Restored/ })).toBeVisible();
+    await again.getByRole("button", { name: "Close settings" }).click();
 
-  await deleteBookmark(page, name);
-  const again = await openSettings(page);
-  await control.pickFiles([backup]);
-  await again.getByRole("button", { name: "Restore settings…" }).click();
-  await expect(again.getByRole("status").filter({ hasText: /^Restored/ })).toBeVisible();
-  await again.getByRole("button", { name: "Close settings" }).click();
-
-  const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name, exact: true });
-  await expect(tile.getByRole("img", { name: "No saved key" })).toBeVisible();
-  await tile.click();
-  await expect(page.getByLabel("API key")).toHaveValue("");
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await deleteBookmark(page, name);
+    const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name, exact: true });
+    await expect(tile.getByRole("img", { name: "No saved key" })).toBeVisible();
+    await tile.click();
+    await expect(page.getByLabel("API key")).toHaveValue("");
+    await page.getByRole("button", { name: "Cancel" }).click();
+  } finally {
+    await removeBookmark(page, name);
+  }
 });
 
 // Test plan step 19a, on the mock: the run's application keeps its
@@ -188,6 +194,9 @@ test("back up the settings with no key, and restore a bookmark without one", asy
 // A changed setting is in settings.json as JSON, and neither file holds the
 // key of a bookmark saved meanwhile. The mock's own key, "testing", is an
 // ordinary word, so a key no file could hold by chance is saved instead.
+// This build keeps keys in memory, never in a keyring, so the check is that
+// no key is written into the bookmark's own record; the keyring is a person
+// step in the test plan.
 test("the settings file and the database hold no key", async ({ page }, info) => {
   test.skip(info.project.name !== "mock", "bookmarks are made in the editor on the mock only");
   const state = join(process.env.AERONAUTES_PRIVATE!, "state");
@@ -196,37 +205,35 @@ test("the settings file and the database hold no key", async ({ page }, info) =>
   const key = `journey-key-${randomBytes(12).toString("hex")}`;
   const name = "journey files";
   await connect(page, "mock");
-  await saveBookmark(page, name, key);
+  await addMockBookmark(page, name, { key, connect: false });
+  let settings = await openSettings(page);
+  const before = await settings.getByLabel("Queue depth").inputValue();
+  try {
+    const queue = settings.getByLabel("Queue depth");
+    await queue.fill("7");
+    await queue.press("Tab");
+    await expect(settings.getByText("7 waiting at most")).toBeVisible();
+    await expect.poll(() => JSON.parse(readFileSync(settingsFile, "utf8")).maxQueuedJobs).toBe(7);
 
-  const settings = await openSettings(page);
-  const queue = settings.getByLabel("Queue depth");
-  await queue.fill("7");
-  await queue.press("Tab");
-  await expect(settings.getByText("7 waiting at most")).toBeVisible();
-  await expect.poll(() => JSON.parse(readFileSync(settingsFile, "utf8")).maxQueuedJobs).toBe(7);
+    expect(existsSync(database), "the database").toBe(true);
+    for (const file of [settingsFile, database, `${database}-wal`]) {
+      if (!existsSync(file)) continue;
+      expect(readFileSync(file).includes(key), `${basename(file)} holds the key`).toBe(false);
+    }
 
-  expect(existsSync(database), "the database").toBe(true);
-  for (const file of [settingsFile, database, `${database}-wal`]) {
-    if (!existsSync(file)) continue;
-    expect(readFileSync(file).includes(key), `${basename(file)} holds the key`).toBe(false);
+    await settings.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    // Later journeys share these settings and this rail.
+    await page.goto("/");
+    settings = await openSettings(page);
+    const queue = settings.getByLabel("Queue depth");
+    await queue.fill(before);
+    await queue.press("Tab");
+    await expect(settings.getByText(`${before} waiting at most`)).toBeVisible();
+    await settings.getByRole("button", { name: "Close settings" }).click();
+    await removeBookmark(page, name);
   }
-
-  await queue.fill("16");
-  await queue.press("Tab");
-  await expect(settings.getByText("16 waiting at most")).toBeVisible();
-  await settings.getByRole("button", { name: "Close settings" }).click();
-  await deleteBookmark(page, name);
 });
-
-async function uploadFolder(page: Page, folder: string) {
-  await page.getByRole("button", { name: "Upload…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Upload" });
-  await control.pickFolder(folder);
-  await dialog.getByRole("button", { name: "Choose folder…" }).click();
-  await dialog.getByRole("button", { name: "Start upload" }).click();
-  await finish(page, dialog);
-  await page.getByRole("button", { name: "Refresh listing" }).click();
-}
 
 function menuOf(page: Page, row: string): Locator {
   return page.getByRole("menu", { name: `Actions for ${row}` });
@@ -276,23 +283,13 @@ async function openSettings(page: Page): Promise<Locator> {
   return dialog;
 }
 
-// saveBookmark saves a bookmark of the mock's account with the given key
-// without connecting, so the key need not be the mock's.
-async function saveBookmark(page: Page, name: string, key: string) {
+
+// removeBookmark deletes the journey's bookmark if it is still on the rail,
+// from a fresh page, whatever state a failure left the window in.
+async function removeBookmark(page: Page, name: string) {
+  await page.goto("/");
   const rail = page.getByRole("navigation", { name: "Bookmarks" });
-  await rail.getByTitle("Add bookmark").click();
-  await page.getByLabel("Display name").fill(name);
-  await page.getByLabel("Auth URL").fill(process.env.AERONAUTES_MOCK!);
-  await page.getByLabel("Username").fill("test:tester");
-  await page.getByLabel("API key").fill(key);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(rail.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(rail).toBeVisible();
+  if (await rail.getByRole("button", { name, exact: true }).count()) await deleteBookmark(page, name);
 }
 
-async function deleteBookmark(page: Page, name: string) {
-  const rail = page.getByRole("navigation", { name: "Bookmarks" });
-  await rail.getByRole("button", { name: `Edit ${name}` }).click();
-  await page.getByRole("button", { name: "Delete…" }).click();
-  await page.getByRole("button", { name: "Really delete" }).click();
-  await expect(rail.getByRole("button", { name, exact: true })).toHaveCount(0);
-}
