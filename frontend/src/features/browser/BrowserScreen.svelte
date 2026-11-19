@@ -25,7 +25,7 @@
   import { BrowserState } from "./browserState.svelte";
   import { openSelectionDelete } from "./selectionDelete";
   import { activeModal } from "../../lib/trapFocus";
-  import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
+  import { applyEnabledCapabilities } from "../../lib/v1.svelte";
 
   const browser = new BrowserState(liveApi);
 
@@ -374,29 +374,28 @@
 
 
 
-{#if v1Offers.copy && browser.transferOpen}
+{#if browser.transferOpen}
   <TransferDialog {browser} onClose={() => (browser.transferOpen = false)} />
 {/if}
 
-{#if (v1Offers.download && browser.localTransfer === "download")
-  || (v1Offers.upload && browser.localTransfer === "upload")}
+{#if browser.localTransfer !== null}
   <LocalTransferDialog
     {browser}
-    mode={browser.localTransfer === "upload" ? "upload" : "download"}
+    mode={browser.localTransfer}
     onClose={() => (browser.localTransfer = null)}
   />
 {/if}
 
-{#if v1Offers.bulkDelete && browser.deleteOpen}
+{#if browser.deleteOpen}
   <DeleteDialog {browser} onClose={() => (browser.deleteOpen = null)} />
 {/if}
-{#if browser.objectDelete && ((browser.objectDelete.kind === "object" && v1Offers.objectDelete) || (browser.objectDelete.kind === "marker" && v1Offers.markerDelete))}
+{#if browser.objectDelete?.kind === "object" || browser.objectDelete?.kind === "marker"}
   <ObjectDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
 {/if}
-{#if browser.objectDelete?.kind === "manifest" && v1Offers.manifestDelete}
+{#if browser.objectDelete?.kind === "manifest"}
   <ManifestDeleteDialog {browser} onClose={() => browser.closeObjectDelete()} />
 {/if}
-{#if v1Offers.objectDelete && browser.selectedDelete}
+{#if browser.selectedDelete}
   <SelectedDeleteDialog {browser} onClose={() => browser.closeSelectedDelete()} />
 {/if}
 

@@ -723,7 +723,7 @@
                     <button class="cancel" disabled={!canCancel(job.id)} onclick={() => cancel(job.id)}>
                       {cancelLabel(job.id)}
                     </button>
-                  {:else if v1Offers.rerun && job.type === "copy"}
+                  {:else if job.type === "copy"}
                     <button
                       class="rerun"
                       title="Start a fresh Copy after checking retained item records for unresolved effects and unverified copies; the new job replans the current scope"

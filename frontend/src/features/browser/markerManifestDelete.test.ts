@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { Api, ContainerSettingsDTO, MutationResultDTO, ObjectDetailDTO } from "../../lib/api";
-import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import Inspector from "../inspector/Inspector.svelte";
@@ -15,14 +14,12 @@ import BrowserScreen from "./BrowserScreen.svelte";
 const api = vi.hoisted(() => ({} as Api));
 vi.mock("../../lib/api", () => ({ liveApi: api }));
 
-const shipped = { ...v1Offers };
 const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
   for (const component of [...mounted].reverse()) await unmount(component);
   mounted.clear();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
-  Object.assign(v1Offers, shipped);
 });
 
 async function settle() {
@@ -280,7 +277,6 @@ describe("links have no deletion flow", () => {
   // every affordance, the Delete key included, and the inspector says why.
   it("a link to a marker opens nothing and the inspector explains", async () => {
     const f = await state("folder-marker/");
-    applyEnabledCapabilities(["Marker and manifest deletion"]);
     const pd = f.browser.prefixDetail!;
     f.browser.prefixDetail = { ...pd, selfObject: { ...pd.selfObject!, followedSymlink: true } };
     expect(f.browser.deletableSelectionKind()).toBeNull();
@@ -295,7 +291,6 @@ describe("links have no deletion flow", () => {
 
   it("a followed link to a manifest opens nothing and the inspector explains", async () => {
     const f = await state("external-dlo");
-    applyEnabledCapabilities(["Marker and manifest deletion"]);
     const detail = f.browser.objectDetail!;
     f.browser.objectDetail = { ...detail, followedSymlink: true };
     expect(f.browser.deletableSelectionKind()).toBeNull();

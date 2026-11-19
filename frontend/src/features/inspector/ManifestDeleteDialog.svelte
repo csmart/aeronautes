@@ -13,7 +13,6 @@
   import { onMount, onDestroy, untrack } from "svelte";
   import type { BrowserState } from "../browser/browserState.svelte";
   import type { ContainerSettingsDTO, SegmentOwnershipDTO } from "../../lib/api";
-  import { v1Offers } from "../../lib/v1.svelte";
   import { versioningSentence, whySegmentsStay } from "./versioningSentence";
 
   let { browser, onClose }: { browser: BrowserState; onClose: () => void } = $props();
@@ -37,7 +36,7 @@
   // once the container is known to keep none, and the Go side refuses it
   // otherwise (ADR 0120 decision 4).
   const whyKept = $derived(whySegmentsStay(facts));
-  const offerSegments = $derived(v1Offers.bulkDelete && whyKept === null);
+  const offerSegments = $derived(whyKept === null);
   // What the operator chose for the option, null until they choose; until
   // then it is ticked, by the operator's decision (ADR 0120 decision 3).
   let segmentsChosen: boolean | null = $state(null);
@@ -208,7 +207,7 @@
             disabled={segmentsBusy || !current}
           />
         {/if}
-      {:else if v1Offers.bulkDelete && whyKept}
+      {:else if whyKept}
         <p class="keeps">Its segments cannot be deleted with it here: {whyKept}</p>
       {/if}
       {#if op.error}

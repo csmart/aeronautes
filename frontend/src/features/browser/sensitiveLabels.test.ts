@@ -20,8 +20,6 @@ afterEach(async () => {
   states.clear();
   document.body.innerHTML = "";
   v1Offers.benchmark = false;
-  v1Offers.manifestDelete = false;
-  v1Offers.bulkDelete = false;
   vi.restoreAllMocks();
 });
 
@@ -290,7 +288,6 @@ async function manifest() {
   const f = await fixture();
   f.browser.select(f.browser.entries.findIndex((entry) => entry.name === "external-dlo"));
   await settle();
-  v1Offers.manifestDelete = true; v1Offers.bulkDelete = true;
   f.api.checkSegmentOwnership = vi.fn().mockResolvedValue({
     class: "dlo", target: "backing/old/", proven: false, segments: 3, inlineEntries: 0,
   });

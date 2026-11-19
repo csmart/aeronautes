@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount, type Component } from "svelte";
-import { applyEnabledCapabilities, v1Offers } from "../../lib/v1.svelte";
 import { BrowserState } from "./browserState.svelte";
 import { newFakeApi } from "./fakeApi";
 import WorkingList from "./WorkingList.svelte";
@@ -17,14 +16,12 @@ const named = "This container is named like a segment store.";
 const known = "This container is a segment store.";
 const consequence = "Objects here may be segments of larger objects, and deleting one can break the object it belongs to.";
 
-const shipped = { ...v1Offers };
 const mounted = new Set<ReturnType<typeof mount>>();
 afterEach(async () => {
   for (const component of [...mounted].reverse()) await unmount(component);
   mounted.clear();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
-  Object.assign(v1Offers, shipped);
 });
 
 async function settle() {
@@ -108,7 +105,6 @@ describe("the delete confirmations' caution", () => {
       return show(ManifestDeleteDialog, f.root, { browser: f.browser, onClose: vi.fn() });
     }],
     ["selected set", async (f) => {
-      applyEnabledCapabilities(["Object deletion"]);
       f.browser.select(f.index("empty-object"));
       f.browser.toggleRow(f.index("external-slo"));
       await settle();
