@@ -70,26 +70,9 @@ func (s *AuditService) ExportAudit(ctx context.Context, q AuditQueryDTO) (*Expor
 		return nil, err
 	}
 	base := "aeronautes-audit-" + time.Now().UTC().Format("20060102T150405Z")
-	// Reserve a unique temporary file to write into; O_EXCL also refuses
-	// to follow a symlink planted at the name.
-	var file *os.File
-	var partPath string
-	for attempt := 0; ; attempt++ {
-		partName := base + ".jsonl.part"
-		if attempt > 0 {
-			partName = fmt.Sprintf("%s-%d.jsonl.part", base, attempt)
-		}
-		partPath = filepath.Join(dir, partName)
-		file, err = os.OpenFile(partPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-		if attempt >= 1024 {
-			return nil, fmt.Errorf("could not create a new export file in the chosen folder")
-		}
+	file, partPath, err := createExclusivePart(dir, base, ".jsonl")
+	if err != nil {
+		return nil, err
 	}
 	// Until linkPublish succeeds, remove the partial output on any error
 	// so nothing half-written is left; a .part that survives a failed

@@ -232,7 +232,7 @@ func createExclusivePart(dir, base, ext string) (*os.File, string, error) {
 			return nil, "", err
 		}
 	}
-	return nil, "", fmt.Errorf("could not create a new backup file in the chosen folder")
+	return nil, "", fmt.Errorf("could not create a new file in the chosen folder")
 }
 
 // ImportSettings restores the operator's configuration from a backup file
