@@ -1,5 +1,5 @@
 import { test, type Locator, type Page } from "@playwright/test";
-import { connect, expect, openContainer, ownContainer } from "../helpers.ts";
+import { connect, expect, openContainer, ownContainer, typedDelete } from "../helpers.ts";
 
 // ADR 0117 through the window, on every target: a container named like a
 // segment store sits behind the "Possible backstage" heading, and its
@@ -52,6 +52,48 @@ test("refresh the container list after a change made elsewhere", async ({ page }
   await expect(row).toBeHidden();
   await refreshUntilListed(page, row);
 });
+
+// Test plan C5 as far as a browser can take it: coming back to the window
+// re-reads the container list once it is more than 30 seconds old, so a
+// container made elsewhere, here by the run's own session, is listed and
+// one deleted elsewhere, here in a second window, leaves the list, without
+// anything pressed. The page's clock is moved on rather than waited out,
+// and the window's focus event is fired as the browser fires it when the
+// window is clicked back into; another application taking the focus needs
+// a person.
+test("coming back to the window after 30 seconds lists a change made elsewhere", async ({ page, context }, info) => {
+  await page.clock.install();
+  await connect(page, info.project.name);
+  const container = await ownContainer(info.project.name, "ui-return");
+  const row = page.getByRole("button", { name: new RegExp(`^${container} `) });
+  const comeBack = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  // A list read moments ago is kept.
+  await comeBack();
+  await page.waitForTimeout(1000);
+  await expect(row).toBeHidden();
+  await returnUntil(page, comeBack, () => expect(row).toBeVisible({ timeout: 2000 }));
+
+  const other = await context.newPage();
+  await openContainer(other, info.project.name, container);
+  await other.getByRole("button", { name: "Delete container…" }).click();
+  await typedDelete(other, "Delete container");
+  await other.close();
+  await expect(row).toBeVisible();
+  await returnUntil(page, comeBack, () => expect(row).toBeHidden({ timeout: 2000 }));
+});
+
+// returnUntil moves the page's clock past the 30 seconds and comes back to
+// the window until the list shows what is expected, since a store's
+// container listing can lag a change. The page's clock also runs on in
+// real time, so the tries stop well within 30 real seconds, or the list
+// would be old enough without the clock being moved.
+async function returnUntil(page: Page, comeBack: () => Promise<unknown>, listed: () => Promise<void>) {
+  await expect(async () => {
+    await page.clock.fastForward("00:31");
+    await comeBack();
+    await listed();
+  }).toPass({ timeout: 12_000 });
+}
 
 // The column's Scan reads every loaded container's settings, one request
 // each. In the All view every loaded container has a row, so the count the
