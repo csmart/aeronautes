@@ -65,6 +65,51 @@ function saved(id: string, displayName: string, extra: Partial<BookmarkDTO> = {}
 // row cannot be ticked, the save sends the choice with verification on by
 // default, and a row that did not verify offers its editor.
 describe("import bookmarks dialog", () => {
+  it.each([
+    ["resume", "success"], ["resume", "error"],
+    ["replacement", "success"], ["replacement", "error"],
+  ])("ignores an old poll's %s lifecycle / %s reply", async (lifecycle, reply) => {
+    vi.useFakeTimers();
+    const api = newFakeApi();
+    let token = "old";
+    api.previewImport = async () => ({ ...preview, token });
+    api.saveImport = async (token) => ({ token, done: false, outcomes: [] });
+    let resolve!: (value: ImportResult) => void;
+    let reject!: (reason: Error) => void;
+    const held = new Promise<ImportResult>((yes, no) => { resolve = yes; reject = no; });
+    const status = vi.fn<(token: string) => Promise<ImportResult>>()
+      .mockImplementationOnce(() => held)
+      .mockImplementation(async (token) => ({ token, done: true, outcomes: [] }));
+    api.importStatus = status;
+    const changed = vi.fn();
+    const imports = new ImportState(api, changed);
+    await imports.pick();
+    await imports.save();
+    vi.advanceTimersByTime(500);
+    expect(status).toHaveBeenCalledExactlyOnceWith("old");
+    imports.stop();
+    if (lifecycle === "replacement") {
+      token = "new";
+      await imports.pick();
+      await imports.save();
+    } else {
+      imports.resume();
+    }
+    const pending = imports.result;
+    const changes = changed.mock.calls.length;
+    if (reply === "success") resolve({ token: "old", done: true, outcomes: [] });
+    else reject(new Error("old poll failed"));
+    await settle();
+    expect(imports.result).toEqual(pending);
+    expect(imports.error).toBeNull();
+    expect(changed).toHaveBeenCalledTimes(changes);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(status).toHaveBeenLastCalledWith(token);
+    expect(imports.result).toEqual({ token, done: true, outcomes: [] });
+    expect(changed).toHaveBeenCalledTimes(changes + 1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("imports the ticked rows, follows the verification and offers an edit for a failure", async () => {
     vi.useFakeTimers();
     const api = newFakeApi();
