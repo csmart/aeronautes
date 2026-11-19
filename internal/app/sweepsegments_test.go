@@ -226,6 +226,17 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 			putManifest(h, "media", "scope/in/big", "["+part+"}]")
 			h.mock.SetManifestReadFault("media", "scope/in/big", "partial")
 		}, "its manifest could not be read"},
+		"an unreadable static object's headers": {func(t *testing.T, h *harness) {
+			putManifest(h, "media", "scope/in/big", "["+part+"}]")
+			h.mock.FailNextObjectHEADs(1)
+		}, "its headers could not be read"},
+		"a row whose type cannot be read": {func(t *testing.T, h *harness) {
+			h.mock.PutObject("media", "scope/in/big", swifttest.Object{})
+			h.mock.FailNextObjectHEADs(1)
+		}, "its headers could not be read"},
+		"a listed object that is already gone": {func(t *testing.T, h *harness) {
+			h.mock.StaleListingRows = map[string][]string{"media": {"scope/in/big"}}
+		}, "the object was not found"},
 		"a ranged manifest response": {func(t *testing.T, h *harness) {
 			putManifest(h, "media", "scope/in/big", "["+part+"}]")
 			h.mock.SetManifestReadFault("media", "scope/in/big", "ranged")
@@ -281,7 +292,7 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 				t.Fatal(err)
 			}
 			job := awaitTerminal(t, h, jobID)
-			if job.State != "partial" || !strings.Contains(job.Error, "the segments of 1 large object(s) were left") || !strings.Contains(job.Error, tc.reason) {
+			if job.State != "partial" || !strings.Contains(job.Error, "segment cleanup was incomplete for 1 object(s)") || !strings.Contains(job.Error, tc.reason) {
 				t.Fatalf("job = %+v", job)
 			}
 			if stillReadable(t, h, "media", "scope/in/big") {
@@ -289,6 +300,9 @@ func TestSweepWithSegmentsLeavesWhatItCannotBound(t *testing.T) {
 			}
 			if deletes := deletesUnder(h, "media_segments"); len(deletes) != 0 {
 				t.Fatalf("segment DELETEs = %v, want none", deletes)
+			}
+			if !stillReadable(t, h, "media_segments", "big/0001") {
+				t.Fatal("a segment was lost when its membership could not be established")
 			}
 			if !stillReadable(t, h, "media", "scope/neighbour") {
 				t.Fatal("an object outside the scope was deleted")
@@ -452,6 +466,26 @@ func TestSweepWithSegmentsDeletesSegmentsAStaticAndADynamicManifestShare(t *test
 // left; the job is partial, and a container deletion that did not delete
 // everything it was asked leaves the container standing.
 func TestSweepWithSegmentsKeepsTheContainerWhenASegmentWasNotDeleted(t *testing.T) {
+	t.Run("unreadable manifest", func(t *testing.T) {
+		h, service, bookmark := deleteHarness(t)
+		putSLO(h, "unreadable", "big.slo", "unreadable_segments", "big/0001=contents")
+		h.mock.FailNextObjectHEADs(1)
+		jobID, err := service.StartDelete(t.Context(), withSegments(bookmark, "unreadable", "", ModeDeleteContainer))
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := awaitTerminal(t, h, jobID)
+		if job.State != "partial" || containerDeleted(h.mock.RequestLog(), "unreadable") {
+			t.Fatalf("unreadable segment membership did not retain the container: %+v", job)
+		}
+		if !stillReadable(t, h, "unreadable_segments", "big/0001") || stillReadable(t, h, "unreadable", "big.slo") {
+			t.Fatal("the manifest must be deleted by name and its segment left")
+		}
+		if _, err := h.transfer.connections.sessions[bookmark].session.ContainerDetail(t.Context(), "unreadable"); err != nil {
+			t.Fatalf("the retained container cannot be read: %v", err)
+		}
+	})
+
 	h, service, bookmark := deleteHarness(t)
 	ctx := context.Background()
 	putSLO(h, "media", "big.slo", "media_segments", "big.slo/0001=0123456789", "big.slo/0002=abcdefghij")
