@@ -14,10 +14,10 @@ import (
 )
 
 func TestBulkDeletePublicDiagnosticsWithholdProviderText(t *testing.T) {
-	const secret = "synthetic-reflected-credential"
+	const secret = "1234567890123456789"
 	for _, test := range []struct {
 		name, status string
-		deleted      int
+		deleted      int64
 		rows         [][]string
 		valid        bool
 	}{
@@ -28,6 +28,8 @@ func TestBulkDeletePublicDiagnosticsWithholdProviderText(t *testing.T) {
 		{"invalid_overall", secret, 1, nil, false},
 		{"unsupported_overall", "201 " + secret, 1, nil, false},
 		{"unexplained_failure", "500 " + secret, 1, nil, false},
+		{"excessive_count", "200 OK", 1234567890123456789, nil, false},
+		{"negative_count", "200 OK", -1234567890123456789, nil, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

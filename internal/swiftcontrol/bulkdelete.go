@@ -270,14 +270,14 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	}
 	if result.Deleted < 0 || result.NotFound < 0 {
 		result.Anomalies = append(result.Anomalies,
-			fmt.Sprintf("the reply reports negative counts: %d deleted and %d not found", result.Deleted, result.NotFound))
+			"the reply reports negative deleted or not-found counts")
 	}
 	// Cardinality must reconcile: every requested name is deleted, not
 	// found, or individually errored — an undercounted 200 cannot pass
 	// as success (K-DEL-002).
 	if accounted := result.Deleted + result.NotFound + distinct; accounted != int64(len(names)) {
 		result.Anomalies = append(result.Anomalies,
-			fmt.Sprintf("the reply accounts for %d of %d requested names", accounted, len(names)))
+			fmt.Sprintf("the reply accounts for a different number of names than the %d requested", len(names)))
 	}
 	// The middleware reports overall failure through Response Status
 	// while still returning 200 on the wire; a status that is not the
