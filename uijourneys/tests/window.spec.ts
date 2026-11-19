@@ -292,4 +292,3 @@ async function removeBookmark(page: Page, name: string) {
   await expect(rail).toBeVisible();
   if (await rail.getByRole("button", { name, exact: true }).count()) await deleteBookmark(page, name);
 }
-

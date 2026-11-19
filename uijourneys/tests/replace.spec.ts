@@ -341,4 +341,3 @@ function filesUnder(dir: string): string[] {
     .map((entry) => relative(dir, join(entry.parentPath, entry.name)))
     .sort();
 }
-
