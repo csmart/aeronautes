@@ -68,8 +68,17 @@ async function cancel(page: Page, id: string): Promise<void> {
   await expect(badge(page, id)).toHaveText(/^(complete|partial|cancelled|cancelled, incomplete|failed)$/, { timeout: 2 * 60 * 1000 });
 }
 
+// Store visibility can precede the engine's answer (F80). Wait for that
+// answer before testing a cancellation with confirmed partial progress.
+async function acknowledgedPartway(page: Page, id: string): Promise<void> {
+  await openDrawer(page);
+  const row = page.locator("div.job", { has: page.getByRole("button", { name: `Item details for job ${id}`, exact: true }) });
+  await expect(row.locator(".counts")).toContainText(/2\/3\s+obj/);
+  await expect(badge(page, id)).toHaveText("running");
+}
+
 // expectCancelledPartway checks that a job cancelled after some of its files
-// landed reads as cancelled and incomplete, not as a failure (ADR 0129): the
+// were confirmed reads as cancelled and incomplete, not as a failure (ADR 0129): the
 // file it was writing is counted incomplete and nothing is counted failed.
 async function expectCancelledPartway(page: Page, id: string): Promise<void> {
   await expect(badge(page, id)).toHaveText("cancelled, incomplete");
@@ -90,9 +99,9 @@ test.describe("cancelled jobs", () => {
 
   // What a cancelled upload wrote is whole: each object it left has its
   // file's bytes, read back by a download, and it left nothing else. It is
-  // cancelled once the small files are in the store and the big one is still
-  // being sent, so the job wrote something and reads "cancelled,
-  // incomplete": a transfer reads plain "cancelled" only when nothing landed.
+  // cancelled once the engine confirms the small files and the big one is
+  // still being sent, so the job reads "cancelled, incomplete"; plain
+  // "cancelled" can mean no write was confirmed even when the store has bytes.
   test("a cancelled upload leaves only whole objects", async ({ page }, info) => {
     const target = info.project.name;
     const container = await ownContainer(target, "ui-stopped-upload");
@@ -101,6 +110,7 @@ test.describe("cancelled jobs", () => {
     await openContainer(page, target, container);
     const id = await startSlowUpload(page, folder);
     await expect.poll(async () => (await control.names(target, container)).length).toBe(2);
+    await acknowledgedPartway(page, id);
     await cancel(page, id);
     await expectCancelledPartway(page, id);
 
@@ -142,6 +152,7 @@ test.describe("cancelled jobs", () => {
     const id = await started(dialog);
     // Cancelled once the small files are written and the big one is not.
     await expect.poll(() => filesIn(into).filter((path) => !path.endsWith(".partial")).length).toBe(2);
+    await acknowledgedPartway(page, id);
     await cancel(page, id);
     await expectCancelledPartway(page, id);
 
