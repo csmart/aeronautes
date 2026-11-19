@@ -56,7 +56,7 @@ Root, nested and pre-existing directory markers keep their exact nonempty remote
 They preserve existing directories and collateral files, require no selected-object body GETs, and retain the complete record/audit facts across orderly reopening.
 Local-history rerun remains refused.
 
-Existing [native closure](../../internal/systemtest/download_close_test.go), [engine-stage](../../internal/systemtest/download_stage_test.go) and [local-completion](../../internal/systemtest/local_completion_test.go) regressions now also assert the new version-one records and facets.
+Existing [native closure](../../internal/systemtest/download_close_test.go), [engine-stage](https://github.com/csmart/aeronautes/blob/4feaaeacb0f7093e47ed8d7c37bcd08d6305be2e/internal/systemtest/download_stage_test.go) and [local-completion](../../internal/systemtest/local_completion_test.go) regressions now also assert the new version-one records and facets.
 Their existing real effects, closure/cleanup faults, retained foreign entries and audit assertions remain in place.
 The [captured-root cases](../../internal/systemtest/download_root_guard_test.go) replace the former unrecorded-history expectation with exact available version-one records, preserving original-root, source-content, collateral and rerun-refusal checks.
 The [queued Copy cases](../../internal/systemtest/copy_completion_test.go) also inspect the exact admitted history of the download holding their runner slot.

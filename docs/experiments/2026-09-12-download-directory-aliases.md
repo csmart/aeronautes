@@ -116,7 +116,7 @@ A case-insensitive filesystem cannot be mounted in this container, so native tar
 
 For the DESIGN sequence, one paragraph after the deletion request authority paragraph:
 
-> The [directory alias admission](experiments/2026-09-12-download-directory-aliases.md) delivered in PRNN admits directory names that differ only by case or Unicode normalization form, whether spelled as markers or implied by files, because rsync, scp and the pinned engine copy directory names as given and let the target filesystem decide.
+> The [directory alias admission](https://github.com/csmart/aeronautes/blob/0a4226c7f735e26e907e91d8c8de84af11078b33/docs/experiments/2026-09-12-download-directory-aliases.md) delivered in PRNN admits directory names that differ only by case or Unicode normalization form, whether spelled as markers or implied by files, because rsync, scp and the pinned engine copy directory names as given and let the target filesystem decide.
 > A file whose ancestor has more than one planned spelling is routed natively on every platform, because the pinned engine keys directory entries by their NFC form everywhere and by their lowercase form on case-insensitive hosts and ignores the second spelling as a duplicate, which both providers witnessed as a partial job before the change.
 > File twins and file-versus-directory pairs stay refused at both boundaries, so no bytes are lost when a case-insensitive target merges the spellings into one directory.
 > Native target-filesystem acceptance remains open under DS-06 and P19.
