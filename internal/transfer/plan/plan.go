@@ -111,7 +111,7 @@ type Summary struct {
 // and "//" components are silently dropped (exit 0); "." or ".." path
 // segments are silently skipped by --files-from-raw and silently
 // RENAMED to fullwidth dots (U+FF0E) by traversal — both measured on
-// v1.74.3 against real Swift; a newline cannot ride any rclone list
+// v1.74.3 against real Swift; CR or LF cannot ride a raw rclone list
 // (--files-from0 does not exist); and a name containing a rune the
 // engine reserves as a substitute or a quote is decoded to another
 // spelling, so a raw list entry matches nothing and is silently not
@@ -120,7 +120,7 @@ type Summary struct {
 // can make a safe relative name unsafe.
 func RcloneUnsafe(name string) bool {
 	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
-		strings.Contains(name, "//") || strings.Contains(name, "\n") {
+		strings.Contains(name, "//") || strings.ContainsAny(name, "\r\n") {
 		return true
 	}
 	for _, segment := range strings.Split(name, "/") {

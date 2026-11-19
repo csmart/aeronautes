@@ -32,6 +32,7 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	// sentinel on the source.
 	plain := []byte("cross-account plain payload")
 	h.Seed(h.Primary, srcC, "plain.txt", plain, map[string]string{"Content-Type": "text/plain", "X-Object-Meta-Team": "ops"})
+	h.Seed(h.Primary, srcC, "line\rbreak", []byte("native carriage return"), nil)
 	segA, segB := bytes.Repeat([]byte("X"), 1024), bytes.Repeat([]byte("Y"), 512)
 	h.Seed(h.Primary, srcSegs, "dlo/0", segA, nil)
 	h.Seed(h.Primary, srcSegs, "dlo/1", segB, nil)
@@ -69,7 +70,7 @@ func TestCopyCrossAccountPreservesLogicalContent(t *testing.T) {
 	// does NOT assert class preservation (DLO-copied-as-DLO) or ordered
 	// per-segment/metadata fidelity — that stronger contract is deferred
 	// verification work (codex W-07/W-12), not claimed here (grok #3).
-	copied := []string{"plain.txt", "big.bin", "manifest.slo", "sentinel.txt", ".aeronautes/stage/earlier-job/left.txt"}
+	copied := []string{"plain.txt", "line\rbreak", "big.bin", "manifest.slo", "sentinel.txt", ".aeronautes/stage/earlier-job/left.txt"}
 	sb, db := srcBefore.Containers[srcC].Objects, dstAfter.Containers[dstC].Objects
 	for _, name := range copied {
 		if db[name].Digest != sb[name].Digest || db[name].Size != sb[name].Size {
