@@ -2,12 +2,62 @@ package swiftcontrol
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ncw/swift/v2"
 )
+
+func TestBulkDeletePublicDiagnosticsWithholdProviderText(t *testing.T) {
+	const secret = "synthetic-reflected-credential"
+	for _, test := range []struct {
+		name, status string
+		deleted      int
+		rows         [][]string
+		valid        bool
+	}{
+		{"failure_reason", "400 " + secret, 0, [][]string{{"/media/a", "403 " + secret}}, true},
+		{"invalid_status", "200 OK", 0, [][]string{{"/media/a", secret}}, false},
+		{"duplicate", "400 Bad Request", 0, [][]string{{"/media/a", "403 " + secret}, {"/media/a", "503 " + secret}}, false},
+		{"unmatched_path", "400 Bad Request", 0, [][]string{{"/media/" + secret, "403 Forbidden"}}, false},
+		{"invalid_overall", secret, 1, nil, false},
+		{"unsupported_overall", "201 " + secret, 1, nil, false},
+		{"unexplained_failure", "500 " + secret, 1, nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.URL.Path, "/auth/") {
+					w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
+					w.Header().Set("X-Auth-Token", secret)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"Number Deleted": test.deleted, "Number Not Found": 0,
+					"Response Status": test.status, "Errors": test.rows,
+				}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			result, err := mustSession(t, server.URL).BulkDelete(t.Context(), "media", []string{"a"})
+			if result == nil || result.Validated != test.valid || (err == nil) != test.valid {
+				t.Fatalf("reply validation changed: %+v %v", result, err)
+			}
+			if strings.Contains(fmt.Sprint(err, result.Anomalies, result.Failures), secret) {
+				t.Fatalf("public diagnostics exposed provider text: %v %+v %+v", err, result.Anomalies, result.Failures)
+			}
+			if test.valid && (result.Deleted != 0 || len(result.Failures) != 1 || result.Failures[0] != (BulkDeleteFailure{Name: "a", Status: "403 Forbidden"})) {
+				t.Fatalf("the reported failure lost its identity or status: %+v", result)
+			}
+		})
+	}
+}
 
 func TestNormalizePublicHTTPMessages(t *testing.T) {
 	cases := []struct {
