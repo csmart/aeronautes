@@ -67,7 +67,7 @@ test("a refused key reaches no log, no export and no page", async ({ page }, inf
     await rail.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
     await expect(page.getByLabel(/^API key/)).toHaveValue("");
     const html = await page.content();
-    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
     const kept = [logFile, `${logFile}.1`].filter((file) => existsSync(file));
     const places: [string, string][] = [

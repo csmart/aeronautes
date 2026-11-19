@@ -30,7 +30,7 @@ test("make a Keystone v3 bookmark in the editor, and refuse a URL with no v3", a
     await refused.getByRole("button", { name: "Save & connect" }).click();
     await expect(refused.getByRole("alert")).toContainText(
       `the Identity URL ${mock}/identity does not offer Keystone v3 at the same address`);
-    await refused.getByRole("button", { name: "Cancel" }).click();
+    await refused.getByRole("button", { name: "Cancel", exact: true }).click();
   } finally {
     await cleanUp(page, made);
   }
@@ -76,7 +76,7 @@ test("a bookmark whose store is unreachable is refused promptly", async ({ page 
     await editor.getByRole("button", { name: "Save & connect" }).click();
     await expect(editor.getByRole("alert")).toContainText("connection refused", { timeout: 15_000 });
     await expect(editor.getByRole("button", { name: "Save & connect" })).toBeEnabled();
-    await editor.getByRole("button", { name: "Cancel" }).click();
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
   } finally {
     await cleanUp(page, [name]);
   }

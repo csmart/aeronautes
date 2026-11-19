@@ -82,5 +82,5 @@ async function signInWithNoAnswer(page: Page): Promise<void> {
   await editor.getByLabel(/^API key/).fill("testing");
   await editor.getByRole("button", { name: "Verify" }).click();
   await expect(editor.getByRole("alert")).toBeVisible({ timeout: 2 * 60 * 1000 });
-  await editor.getByRole("button", { name: "Cancel" }).click();
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
 }
