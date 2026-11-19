@@ -159,10 +159,12 @@ type openAccount struct {
 }
 
 // pick is one scripted picker answer: files for a file pick, dir for a
-// folder pick.
+// folder pick, or cancel for a person closing the chooser, which the native
+// picker answers with nothing chosen and no error.
 type pick struct {
-	Files []string `json:"files"`
-	Dir   string   `json:"dir"`
+	Files  []string `json:"files"`
+	Dir    string   `json:"dir"`
+	Cancel bool     `json:"cancel"`
 }
 
 type scriptedPicker struct{}
@@ -170,6 +172,9 @@ type scriptedPicker struct{}
 func (scriptedPicker) PickFiles(title string) ([]string, error) {
 	control.record("pick files", title, "")
 	next, err := control.nextPick()
+	if err == nil && next.Cancel {
+		return nil, nil
+	}
 	if err != nil || next.Files == nil {
 		return nil, errors.Join(err, errors.New("the UI journey scripted no file pick"))
 	}
@@ -179,6 +184,9 @@ func (scriptedPicker) PickFiles(title string) ([]string, error) {
 func (scriptedPicker) PickDirectory(title string) (string, error) {
 	control.record("pick folder", title, "")
 	next, err := control.nextPick()
+	if err == nil && next.Cancel {
+		return "", nil
+	}
 	if err != nil || next.Dir == "" {
 		return "", errors.Join(err, errors.New("the UI journey scripted no folder pick"))
 	}

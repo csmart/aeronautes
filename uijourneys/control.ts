@@ -33,6 +33,8 @@ async function endRun(path: string): Promise<void> {
 export const control = {
   pickFolder: (dir: string) => call("/pick", { dir }),
   pickFiles: (files: string[]) => call("/pick", { files }),
+  // The next chooser, of either kind, is closed with nothing chosen.
+  cancelPick: () => call("/pick", { cancel: true }),
   answer: (question: "overwrite" | "public", answer: boolean) => call("/confirm", { question, answer }),
   account: (label: string): Promise<{ bookmark?: string }> => call("/account", { label, authUrl: process.env.AERONAUTES_MOCK }),
   container: (label: string, name: string, segmented = false): Promise<{ container: string }> =>
