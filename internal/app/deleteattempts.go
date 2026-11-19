@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"unicode/utf8"
-
-	"github.com/csmart/aeronautes/internal/deletion"
 )
 
-func retainDeletionAttempts(attempts []deletion.UnindexedAttempt) (string, error) {
+type deletionAttempt struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+func retainDeletionAttempts(attempts []deletionAttempt) (string, error) {
 	if len(attempts) == 0 {
 		return "", nil
 	}
@@ -39,7 +42,7 @@ func retainDeletionAttempts(attempts []deletion.UnindexedAttempt) (string, error
 
 // This owns the file through close, including after an encode or flush
 // error: an accepted buffer does not establish that evidence was retained.
-func writeDeletionAttempts(file *os.File, attempts []deletion.UnindexedAttempt) error {
+func writeDeletionAttempts(file *os.File, attempts []deletionAttempt) error {
 	writer := bufio.NewWriter(file)
 	encoder := json.NewEncoder(writer)
 	var problem error

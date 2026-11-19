@@ -16,7 +16,6 @@ import (
 	"github.com/csmart/aeronautes/internal/applog"
 	"github.com/csmart/aeronautes/internal/audit"
 	"github.com/csmart/aeronautes/internal/db"
-	"github.com/csmart/aeronautes/internal/deletion"
 	"github.com/csmart/aeronautes/internal/jobs"
 	"github.com/csmart/aeronautes/internal/swiftcontrol"
 )
@@ -35,6 +34,15 @@ type BenchmarkService struct {
 	// objects/concurrency are test-tunable; zero means the defaults.
 	objects       int
 	concurrencies []int
+}
+
+const benchmarkObjectLimit = 200
+
+type benchmarkObject struct {
+	name         string
+	putIssued    bool
+	deleteIssued bool
+	deleteErr    error
 }
 
 // NewBenchmarkService wires the service.
@@ -139,8 +147,8 @@ func (s *BenchmarkService) StartBenchmark(ctx context.Context, req BenchmarkRequ
 	container := "aeronautes-benchmark-" + hex.EncodeToString(raw[:])
 
 	objects := s.objects
-	if objects <= 0 {
-		objects = 200
+	if objects <= 0 || objects > benchmarkObjectLimit {
+		objects = benchmarkObjectLimit
 	}
 	concurrencies := s.concurrencies
 	if len(concurrencies) == 0 {
@@ -174,6 +182,8 @@ func accountSuffix(storageURL string) string {
 
 // timed runs n operations at the given concurrency and returns ops/s.
 func timed(ctx context.Context, n, concurrency int, op func(i int) error) (float64, error) {
+	admission, stop := context.WithCancel(ctx)
+	defer stop()
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -187,10 +197,17 @@ func timed(ctx context.Context, n, concurrency int, op func(i int) error) (float
 		go func() {
 			defer wg.Done()
 			for i := range queue {
+				mu.Lock()
+				admitted := firstErr == nil && admission.Err() == nil
+				mu.Unlock()
+				if !admitted {
+					return
+				}
 				if err := op(i); err != nil {
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = err
+						stop()
 					}
 					mu.Unlock()
 				}
@@ -198,10 +215,13 @@ func timed(ctx context.Context, n, concurrency int, op func(i int) error) (float
 		}()
 	}
 	for i := 0; i < n; i++ {
-		if ctx.Err() != nil {
+		if admission.Err() != nil {
 			break
 		}
-		queue <- i
+		select {
+		case queue <- i:
+		case <-admission.Done():
+		}
 	}
 	close(queue)
 	wg.Wait()
@@ -224,14 +244,31 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 
 	background := context.WithoutCancel(ctx)
 	counters := jobs.Counters{}
+	workload := make([]benchmarkObject, objects)
+	for i := range workload {
+		workload[i].name = fmt.Sprintf("bench/%06d", i)
+	}
 	finish := func(state jobs.State, message string) {
+		var unresolved []deletionAttempt
+		for _, object := range workload {
+			if object.deleteErr != nil {
+				unresolved = append(unresolved, deletionAttempt{Name: object.name, Detail: object.deleteErr.Error()})
+			}
+		}
+		if len(unresolved) != 0 {
+			state = jobs.StatePartial
+			message += fmt.Sprintf("; unresolved deletion outcomes: %d; benchmark container retained", len(unresolved))
+			path, err := retainDeletionAttempts(unresolved)
+			if err != nil {
+				message += "; issued identities could not all be retained: " + err.Error()
+			} else {
+				message += "; unresolved deletion attempts: " + path
+			}
+		}
 		// Deregister before the terminal state is visible — a terminal
 		// benchmark must not stay cancel-addressable (review F-11).
 		s.runner.release(jobID)
 		summary := "job " + jobID
-		if counters.DeletionAccountingIncomplete {
-			summary += "; deletion accounting incomplete"
-		}
 		if err := s.jobs.Finish(background, jobID, jobs.Completion{
 			State: state, Counters: counters, Error: message,
 			Audit: audit.Event{BookmarkID: bookmarkID, Operation: "benchmark." + string(state),
@@ -240,26 +277,36 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 			applog.Errorf("job %s: finish benchmark: %v", jobID, err)
 		}
 	}
-	fail := func(stage string, err error, result *deletion.Result) {
-		reason := stage + ": " + err.Error()
-		// A failed accounting store is not permission for a fresh index
-		// and another destructive sweep, even in benchmark cleanup.
-		if !errors.Is(err, deletion.ErrIdentityAccounting) && (result == nil || !result.AccountingIncomplete) {
-			var cleanupErr error
-			result, cleanupErr = deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{})
-			if cleanupErr != nil {
-				reason += "; cleanup: " + cleanupErr.Error()
-				err = errors.Join(err, cleanupErr)
-			}
-			if !errors.Is(cleanupErr, deletion.ErrIdentityAccounting) && (result == nil || !result.AccountingIncomplete) {
-				if containerErr := session.DeleteContainer(background, container); containerErr != nil {
-					reason += "; container cleanup: " + containerErr.Error()
-				}
+	deleteOne := func(deleteCtx context.Context, i int) error {
+		object := &workload[i]
+		if !object.putIssued || object.deleteIssued {
+			return nil
+		}
+		object.deleteIssued = true
+		object.deleteErr = session.DeleteObject(deleteCtx, container, object.name)
+		if swiftcontrol.IsNotFound(object.deleteErr) {
+			object.deleteErr = nil
+		}
+		return object.deleteErr
+	}
+	cleanup := func() error {
+		for _, object := range workload {
+			if object.deleteErr != nil {
+				return errors.New("an issued deletion is unresolved")
 			}
 		}
-		if result != nil && result.AccountingIncomplete {
-			counters.DeletionAccountingIncomplete = true
-			finish(jobs.StatePartial, reason+"; "+incompleteDeletionReason(result))
+		// A listing cannot grant ownership, even inside this container.
+		if _, err := timed(background, len(workload), 8, func(i int) error {
+			return deleteOne(background, i)
+		}); err != nil {
+			return err
+		}
+		return session.DeleteContainer(background, container)
+	}
+	fail := func(stage string, err error) {
+		reason := stage + ": " + err.Error()
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			finish(jobs.StatePartial, reason+"; cleanup: "+cleanupErr.Error())
 			return
 		}
 		if errors.Is(err, context.Canceled) {
@@ -287,7 +334,6 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 		_ = s.jobs.UpdateCounters(background, jobID, counters)
 	}
 	payload := bytes.Repeat([]byte{0x42}, 8*1024)
-	name := func(i int) string { return fmt.Sprintf("bench/%06d", i) }
 	var phases []BenchmarkPhaseDTO
 	record := func(phase string, concurrency int, ops float64) {
 		phases = append(phases, BenchmarkPhaseDTO{Phase: phase, Concurrency: concurrency, OpsPerSec: ops})
@@ -299,11 +345,13 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	for _, c := range concurrencies {
 		base := total
 		ops, err := timed(ctx, objects/len(concurrencies), c, func(i int) error {
-			_, err := session.PutObject(ctx, container, name(base+i), bytes.NewReader(payload), "application/octet-stream", nil)
+			object := &workload[base+i]
+			object.putIssued = true
+			_, err := session.PutObject(ctx, container, object.name, bytes.NewReader(payload), "application/octet-stream", nil)
 			return err
 		})
 		if err != nil {
-			fail("upload", err, nil)
+			fail("upload", err)
 			return
 		}
 		total += objects / len(concurrencies)
@@ -319,25 +367,25 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	listed := 0
 	for entry, err := range session.Objects(ctx, container, swiftcontrol.ObjectListOptions{Deep: true, PageSize: 1000}) {
 		if err != nil {
-			fail("listing", err, nil)
+			fail("listing", err)
 			return
 		}
 		if _, ok := entry.(swiftcontrol.ObjectEntry); ok {
 			listed++
 		}
 	}
-	record("listing", 1, float64(listed)/maxFloat(time.Since(listStart).Seconds(), 1e-6))
+	record("listing", 1, float64(listed)/max(time.Since(listStart).Seconds(), 1e-6))
 	bump(listed)
 
 	// HEAD at each concurrency.
 	bestHead, bestHeadOps := concurrencies[0], 0.0
 	for _, c := range concurrencies {
 		ops, err := timed(ctx, total, c, func(i int) error {
-			_, err := session.ObjectDetail(ctx, container, name(i%total))
+			_, err := session.ObjectDetail(ctx, container, workload[i].name)
 			return err
 		})
 		if err != nil {
-			fail("head", err, nil)
+			fail("head", err)
 			return
 		}
 		record("head", c, ops)
@@ -347,48 +395,32 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 		bump(total)
 	}
 
-	// Native DELETE (half) at the best concurrency, bulk for the rest.
-	half := total / 2
-	ops, err := timed(ctx, half, bestHead, func(i int) error {
-		return session.DeleteObject(ctx, container, name(i))
+	nativeCount := total
+	bulkSize := min(capabilities.BulkDeleteMaxDeletes(), 1000)
+	if bulkSize > 0 {
+		nativeCount = total / 2
+	}
+	ops, err := timed(ctx, nativeCount, bestHead, func(i int) error {
+		return deleteOne(ctx, i)
 	})
 	if err != nil {
-		fail("delete", err, nil)
+		fail("delete", err)
 		return
 	}
 	record("delete", bestHead, ops)
-	bump(half)
-	if capabilities.BulkDeleteMaxDeletes() > 0 {
-		var names []string
-		for i := half; i < total; i++ {
-			names = append(names, name(i))
-		}
+	bump(nativeCount)
+	if bulkSize > 0 {
 		bulkStart := time.Now()
-		result, err := deletion.DeleteNames(ctx, session, capabilities, container, names, deletion.Options{})
-		if err != nil {
-			fail("bulk-delete", err, result)
+		if err := deleteBenchmarkBatches(ctx, session, container, workload[nativeCount:total], bulkSize); err != nil {
+			fail("bulk-delete", err)
 			return
 		}
-		if result.Failed != 0 || result.Unresolved != 0 || result.Remaining != 0 {
-			finish(jobs.StatePartial, fmt.Sprintf("bulk-delete incomplete: %d failed names, %d unresolved names, %d sampled names still present; benchmark container retained",
-				result.Failed, result.Unresolved, result.Remaining))
-			return
-		}
-		record("bulk-delete", 1, float64(len(names))/maxFloat(time.Since(bulkStart).Seconds(), 1e-6))
-		bump(len(names))
-	} else {
-		if result, err := deletion.DeletePrefix(ctx, session, capabilities, container, "", deletion.Options{ForceParallel: true}); err != nil {
-			fail("cleanup-delete", err, result)
-			return
-		}
+		record("bulk-delete", 1, float64(total-nativeCount)/max(time.Since(bulkStart).Seconds(), 1e-6))
+		bump(total - nativeCount)
 	}
 
 	// Cleanup: the container must be gone.
-	if result, err := deletion.DeletePrefix(background, session, capabilities, container, "", deletion.Options{}); err != nil {
-		fail("cleanup", err, result)
-		return
-	}
-	if err := session.DeleteContainer(background, container); err != nil {
+	if err := cleanup(); err != nil {
 		finish(jobs.StatePartial, "benchmark container could not be removed: "+err.Error())
 		return
 	}
@@ -416,9 +448,34 @@ func (s *BenchmarkService) runBenchmark(ctx context.Context, jobID, bookmarkID s
 	finish(jobs.StateComplete, "")
 }
 
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
+func deleteBenchmarkBatches(ctx context.Context, session *swiftcontrol.Session, container string, objects []benchmarkObject, size int) error {
+	for start := 0; start < len(objects); start += size {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		batch := objects[start:min(start+size, len(objects))]
+		names := make([]string, len(batch))
+		for i := range batch {
+			batch[i].deleteIssued = true
+			names[i] = batch[i].name
+		}
+		result, err := session.BulkDelete(ctx, container, names)
+		if err != nil {
+			for i := range batch {
+				batch[i].deleteErr = err
+			}
+			return err
+		}
+		for i := range batch {
+			for _, failure := range result.Failures {
+				if batch[i].name == failure.Name {
+					batch[i].deleteErr = errors.New(failure.Status)
+				}
+			}
+		}
+		if len(result.Failures) != 0 {
+			return fmt.Errorf("bulk-delete reported %d failed names", len(result.Failures))
+		}
 	}
-	return b
+	return nil
 }
