@@ -618,8 +618,8 @@ func (s *TransferService) StartCopy(ctx context.Context, req CopyRequestDTO) (st
 	if err != nil {
 		return "", fmt.Errorf("transfer engine: %w", err)
 	}
-	chunkBytes, known := engineChunkBytes(effective.ChunkSize)
-	if !known {
+	chunkBytes, err := ParseSize(effective.ChunkSize)
+	if err != nil || chunkBytes <= 0 {
 		return "", fmt.Errorf("transfer engine: the chunk size %q is not a size", effective.ChunkSize)
 	}
 

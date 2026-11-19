@@ -32,6 +32,7 @@ func TestUploadPreviewNamesLargeObjectPlacement(t *testing.T) {
 		// below shares its size and chunk and differs only by route.
 		{name: "native_route_never_segments", file: "big\nname", size: 2 * mi, chunk: "1Mi", want: ""},
 		{name: "engine_route_segments_same_size", file: "asset", size: 2 * mi, chunk: "1Mi", want: "slo"},
+		{name: "suffixless_chunk_segments_at_same_threshold", file: "asset", size: 2 * mi, chunk: "1024", want: "slo"},
 		// Finding 2: the pinned rclone reads a suffixless chunk as KiB, so
 		// "1048576" is 1Gi to the engine and a 2Mi file is below it.
 		{name: "suffixless_chunk_is_kib_to_engine", file: "asset", size: 2 * mi, chunk: "1048576", want: ""},

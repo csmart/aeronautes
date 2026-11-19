@@ -51,7 +51,7 @@ func (s TransferSettingsDTO) withDefaults() TransferSettingsDTO {
 }
 
 // sizePattern is rclone's SizeSuffix grammar, conservatively: digits
-// with an optional binary/decimal suffix.
+// with an optional size suffix.
 var sizePattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?([bBkKMGTP]|[KMGTP]i)?$`)
 
 // Validate enforces the typed surface (inputs are hostile, ADR 0011).
@@ -130,15 +130,15 @@ func effectiveJSONWithProfile(profile Profile, s TransferSettingsDTO, origins ma
 	return string(encoded)
 }
 
-// ParseSize converts the SizeSuffix grammar to bytes (K-XFER-004: the
-// chunk knob is CAPPED against the destination's advertised
-// max_file_size, not just syntax-checked).
+// ParseSize shares the engine's SizeSuffix units with admission and native
+// execution, including KiB for a bare number, so a setting cannot pass a
+// limit using a smaller size than the engine will use (K-XFER-004).
 func ParseSize(v string) (int64, error) {
 	if !sizePattern.MatchString(v) {
 		return 0, fmt.Errorf("%q is not a size", v)
 	}
 	multipliers := map[string]float64{
-		"": 1, "b": 1, "B": 1,
+		"": 1024, "b": 1, "B": 1,
 		"k": 1024, "K": 1024, "Ki": 1024,
 		"M": 1 << 20, "Mi": 1 << 20,
 		"G": 1 << 30, "Gi": 1 << 30,
