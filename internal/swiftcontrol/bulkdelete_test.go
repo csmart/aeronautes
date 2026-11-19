@@ -224,14 +224,17 @@ func TestBulkDeleteClassifiesTheReply(t *testing.T) {
 	// refused again after the one re-auth and retry is unauthorized, a client
 	// refusal is not a server error, and only a 5xx is.
 	ctx := context.Background()
+	const secret = "synthetic-bulk-credential"
 	serve := func(status int) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, "/auth/") {
 				w.Header().Set("X-Storage-Url", "http://"+r.Host+"/v1/AUTH_test")
-				w.Header().Set("X-Auth-Token", "tok")
+				w.Header().Set("X-Auth-Token", secret)
 				return
 			}
+			w.Header().Set("X-Trans-Id", "txbulk")
 			w.WriteHeader(status)
+			fmt.Fprint(w, "provider reflected "+r.Header.Get("X-Auth-Token"))
 		}))
 	}
 	for _, c := range []struct {
@@ -240,7 +243,9 @@ func TestBulkDeleteClassifiesTheReply(t *testing.T) {
 	}{
 		{http.StatusUnauthorized, KindUnauthorized},
 		{http.StatusBadRequest, KindUnknown},
+		{http.StatusForbidden, KindForbidden},
 		{http.StatusServiceUnavailable, KindServer},
+		{599, KindServer},
 	} {
 		srv := serve(c.status)
 		_, err := mustSession(t, srv.URL).BulkDelete(ctx, "c", []string{"a"})
@@ -248,6 +253,13 @@ func TestBulkDeleteClassifiesTheReply(t *testing.T) {
 		var se *SwiftError
 		if !errors.As(err, &se) || se.Kind != c.wantKind || se.HTTPStatus != c.status {
 			t.Fatalf("HTTP %d: err = %v, want kind %s carrying that status", c.status, err, c.wantKind)
+		}
+		message := http.StatusText(c.status)
+		if message == "" {
+			message = "Swift request failed"
+		}
+		if se.Message != message || se.TransID != "txbulk" || strings.Contains(err.Error(), secret) {
+			t.Errorf("HTTP %d: provider text escaped the boundary or transaction was lost: %v", c.status, err)
 		}
 	}
 }

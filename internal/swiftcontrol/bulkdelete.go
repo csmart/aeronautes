@@ -22,7 +22,8 @@ type BulkDeleteFailure struct {
 	// Name is the requested object name, spelled exactly as the caller
 	// gave it.
 	Name string
-	// Status is the per-item status the reply reported.
+	// Status keeps the reported code with a local reason phrase, because
+	// provider phrases can reflect credentials into a job's failure message.
 	Status string
 }
 
@@ -116,16 +117,6 @@ func statusCode(status string) (int, bool) {
 	return code, true
 }
 
-// failureStatus reports whether a per-item status is a well formed
-// status that denotes a failure. A row is authoritative about a name
-// only when it says something went wrong: a missing, malformed or
-// success-valued status does not become a disposition merely because
-// the path matched.
-func failureStatus(status string) bool {
-	code, ok := statusCode(status)
-	return ok && code >= 400
-}
-
 // BulkDelete issues one Swift bulk-delete (§31.2 BulkDelete executor):
 // an account-level POST ?bulk-delete whose text/plain body lists one
 // URL-encoded "/container/object" per line. Deletion is manifest-only
@@ -182,8 +173,12 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		// a refused token is unauthorized and a client refusal is not a
 		// server error.
 		kind, retryable := classifyStatus(resp.StatusCode)
+		message := http.StatusText(resp.StatusCode)
+		if message == "" {
+			message = "Swift request failed"
+		}
 		return nil, &SwiftError{Kind: kind, HTTPStatus: resp.StatusCode, Retryable: retryable,
-			Message: fmt.Sprintf("bulk-delete: %s", strings.TrimSpace(string(payload)))}
+			Message: message, TransID: transIDOf(resp.Header)}
 	}
 
 	var decoded struct {
@@ -237,7 +232,7 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	// Arithmetic alone accepted replies that named the wrong names, so
 	// membership, uniqueness, status shape and counts are all checked,
 	// and any violation makes the whole reply untrusted (K-DEL-002).
-	seen := make(map[string]string, len(decoded.Errors))
+	seen := make(map[string]bool, len(decoded.Errors))
 	distinct := int64(0)
 	for _, row := range shaped {
 		// The row is resolved to the bytes it names and matched against
@@ -249,22 +244,27 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 		if !ok {
 			result.UnmatchedPaths = append(result.UnmatchedPaths, row[0])
 			result.Anomalies = append(result.Anomalies,
-				fmt.Sprintf("a row names %q, which this request did not send", row[0]))
+				"a row names an object this request did not send")
 			continue
 		}
-		if !failureStatus(row[1]) {
+		code, wellFormed := statusCode(row[1])
+		if !wellFormed || code < 400 {
 			result.Anomalies = append(result.Anomalies,
-				fmt.Sprintf("the row for %q carries status %q, which does not denote a failure", name, row[1]))
+				fmt.Sprintf("the row for %q carries a status that does not denote a failure", name))
 			continue
 		}
-		if previous, repeated := seen[name]; repeated {
+		if seen[name] {
 			result.Anomalies = append(result.Anomalies,
-				fmt.Sprintf("the reply names %q more than once, first as %q and again as %q", name, previous, row[1]))
+				fmt.Sprintf("the reply names %q more than once", name))
 			continue
 		}
-		seen[name] = row[1]
+		seen[name] = true
 		distinct++
-		result.Failures = append(result.Failures, BulkDeleteFailure{Name: name, Status: row[1]})
+		status := strconv.Itoa(code)
+		if reason := http.StatusText(code); reason != "" {
+			status += " " + reason
+		}
+		result.Failures = append(result.Failures, BulkDeleteFailure{Name: name, Status: status})
 	}
 	if result.Deleted < 0 || result.NotFound < 0 {
 		result.Anomalies = append(result.Anomalies,
@@ -291,17 +291,17 @@ func (s *Session) BulkDelete(ctx context.Context, container string, names []stri
 	switch {
 	case !wellFormed:
 		result.Anomalies = append(result.Anomalies,
-			fmt.Sprintf("the reply carries overall status %q, which is not a status", decoded.ResponseStatus))
+			"the reply carries a malformed overall status")
 	case overall == http.StatusOK:
 		// The documented success.
 	case overall >= 400 && distinct > 0:
 		// A failure the reply itself explains.
 	case overall >= 400:
 		result.Anomalies = append(result.Anomalies,
-			fmt.Sprintf("the reply carries overall status %q with no row explaining it", decoded.ResponseStatus))
+			fmt.Sprintf("the reply carries overall status %d with no row explaining it", overall))
 	default:
 		result.Anomalies = append(result.Anomalies,
-			fmt.Sprintf("the reply carries overall status %q, which is not a bulk-delete outcome", decoded.ResponseStatus))
+			fmt.Sprintf("the reply carries overall status %d, which is not a bulk-delete outcome", overall))
 	}
 	result.Validated = len(result.Anomalies) == 0
 	if !result.Validated {
