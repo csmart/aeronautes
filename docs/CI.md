@@ -38,25 +38,23 @@ macOS and Windows build only for a tag, or when the dispatch ticks "Also build m
 
 ## Non-blocking checks
 
-The separate `realcloud-oracle.yml` workflow runs the real-cloud oracles against genuine OpenStack backends on each pull request.
-It drives `go test -tags realcloud -run 'TestKeystoneV3Oracle|TestLegacyVersioningOracle' ./internal/swiftcontrol/`.
+Real-cloud oracles, service journeys and browser journeys run locally with test-account credentials.
+Do not store cloud credentials in GitHub or run these real-cloud tests on hosted runners: a compromised credential could incur charges on the test account.
+GitHub uses disposable mocks and containerised Swift instead.
+The local oracle drives `go test -tags realcloud -run 'TestKeystoneV3Oracle|TestLegacyVersioningOracle' ./internal/swiftcontrol/`.
 The required Go job vets that build tag on every run, so the oracle's tests stay compiled although they execute only where credentials are supplied.
 The first authenticates through the product's own v3 path and does a full create, upload, read and delete round-trip on each configured cloud.
 Its companion, `TestKeystoneV3OracleDiscoversFromTheRoot`, which the same pattern selects, connects through the Identity service's root URL and checks that version discovery reaches the same storage endpoint as the `/v3` URL ([ADR 0113](adr/0113-keystone-discovery-and-ids.md)).
 The second sets each legacy versioning mode on a fresh container through the container editor's route, overwrites and deletes an object through the product's delete protocol, and asserts that the name and the archive hold what the [27 October record](experiments/2026-10-27-delete-under-versioning.md) measured on the fixture; a backend whose `/info` does not allow a mode skips it.
 Run it locally from the repo root with `make oracle CLOUDS=/path/to/clouds.yaml`, or set `OS_CLIENT_CONFIG_FILE` and run `make oracle`; `make oracle CLOUD=ceph` runs a single backend.
 A selected path that does not exist is an error rather than a fallback, so a typo cannot direct the run at another account's clouds.yaml.
-It is deliberately its own workflow rather than a job in `ci.yml`, so the required workflow's job set, and every gate that counts those jobs, is unchanged.
-It is not a required check and is not pinned in the ruleset, so `master-ruleset.json` is unchanged too.
-The real Keystone endpoints are an external dependency, so an outage or an expired credential must never block a merge.
-It reports its own status and skips green when its secret is absent, so fork pull requests, which receive no secrets, and a repository without the secret configured both pass it without contacting any cloud.
-The job reads a `clouds.yaml` from the `ORACLE_CLOUDS_YAML` repository secret, writes it to a temporary file for the run, and removes it with the runner.
-Populate the secret with `gh secret set ORACLE_CLOUDS_YAML --repo <owner>/<repo> < ci-clouds.yaml` from a `clouds.yaml` holding the backend-named `aeronautes-ceph` and `aeronautes-swift` entries.
+Use a local `clouds.yaml` holding the backend-named `aeronautes-ceph` and `aeronautes-swift` entries.
+Run `make journeys CLOUDS=/path/to/clouds.yaml` and `make uijourneys CLOUDS=/path/to/clouds.yaml` for the service and browser suites; [the journey guide](journeys.md) describes their fixtures and evidence.
+These runs are release evidence, not hosted required checks; an unavailable cloud or expired credential does not block an ordinary merge.
 The test keeps passwords, tokens and account identifiers (username, project) out of its output, and prints no auth endpoint, region or storage host either, so a log does not name the provider.
 A failure prints the kind of error, its HTTP status and the Go types in its chain, never the error's text, because a transport or certificate error can name a host no configured value predicts.
 A run is labelled by its backend, and a clouds.yaml key or path, which can each be named for a provider, is used only to find the entry.
 Nothing a server returned as text is printed either: a body that is not the one written, which could be a proxy's sign-in page, is reported by its length and digest, and entity tags, content types and versioning flags are reported only by whether they match.
-Rotate the credential by re-running `gh secret set`.
 
 
 ## Merge procedure
