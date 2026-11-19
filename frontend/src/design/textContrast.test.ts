@@ -25,6 +25,13 @@ for (const [path, source] of Object.entries(components)) {
   styles[path.split("/").at(-1)!] = rules(source.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "");
 }
 
+const sharedStyles = import.meta.glob<string>("../features/**/*.css", {
+  query: "?raw", import: "default", eager: true,
+});
+for (const [path, source] of Object.entries(sharedStyles)) {
+  styles[path.split("/").at(-1)!] = rules(source);
+}
+
 function declarations(source: Rule[], selector: string): Declarations {
   const matched = source.filter((rule) => rule.selector.split(",").map((s) => s.trim()).includes(selector));
   expect(matched, `missing production selector ${selector}`).not.toHaveLength(0);
@@ -61,6 +68,7 @@ type Pair = [name: string, file: string, foreground: string, background: string,
 
 // Background owners come from the component markup, including transparent
 // controls inside a differently coloured parent. These are not all token pairs.
+const editorAction = ".inspector-edit > :where(.banner) > :where(.banner-actions) > button";
 const pairs: Pair[] = [
   ["body text", "app.css", "body", "body"],
   ["pane text", "app.css", "body", ".pane", "WorkingList.svelte"],
@@ -88,12 +96,12 @@ const pairs: Pair[] = [
   ["object delete label", "ObjectDeleteDialog.svelte", ".danger", ".danger"],
   ["selected delete label", "SelectedDeleteDialog.svelte", ".danger", ".danger"],
   ["delete label", "DeleteDialog.svelte", "footer .danger", "footer .danger"],
-  ["editor warning", "MetadataEditor.svelte", ".warn", ".card", "ObjectEditPanel.svelte"],
+  ["editor warning", "MetadataEditor.svelte", ".warn", ".inspector-edit.card", "editPanel.css"],
   ["dialog warning", "TransferDialog.svelte", ".warn", ".dialog"],
   ["dialog success", "TransferDialog.svelte", ".started", ".dialog"],
   ["editor success", "BookmarkEditor.svelte", ".verified", ".verified"],
   ["inspector error", "Inspector.svelte", ".error", ".pane"],
-  ["editor error", "MetadataEditor.svelte", ".dup", ".card", "ObjectEditPanel.svelte"],
+  ["editor error", "MetadataEditor.svelte", ".dup", ".inspector-edit.card", "editPanel.css"],
   ["dialog error", "TransferDialog.svelte", ".error", ".dialog"],
   ["ACL remove", "AclEditor.svelte", ".x", ".chip"],
   ["hovered ACL remove", "AclEditor.svelte", ".x:hover", ".chip"],
@@ -103,12 +111,8 @@ const pairs: Pair[] = [
   ["insecure bookmark warning", "BookmarkRail.svelte", ".insecure-flag", ".rail"],
   ["hovered insecure bookmark warning", "BookmarkRail.svelte", ".insecure-flag", ".bookmark:hover"],
   ["selected insecure bookmark warning", "BookmarkRail.svelte", ".insecure-flag", ".bookmark.active"],
-  ["object conflict force action", "ObjectEditPanel.svelte", "button.danger", ".banner.conflict"],
-  ["container conflict force action", "ContainerEditPanel.svelte", "button.danger", ".banner.conflict"],
-  ["account conflict force action", "AccountEditPanel.svelte", "button.danger", ".banner.conflict"],
-  ["object reload action", "ObjectEditPanel.svelte", "button", "button"],
-  ["container reload action", "ContainerEditPanel.svelte", "button", "button"],
-  ["account reload action", "AccountEditPanel.svelte", "button", "button"],
+  ["editor conflict force action", "editPanel.css", `${editorAction}.danger`, ".inspector-edit > .banner.conflict"],
+  ["editor reload action", "editPanel.css", editorAction, editorAction],
 ];
 
 // Every current inset or semantic soft-fill rule has an explicit text owner.
@@ -134,10 +138,8 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["ContainerColumn.svelte", ".setting-badge.danger"],
   ["ContainerColumn.svelte", ".setting-badge.warning"],
   ["WorkingList.svelte", ".mark.danger"],
-  ["ContainerEditPanel.svelte", ".banner.conflict"],
-  ["ContainerEditPanel.svelte", ".banner.mismatch"],
-  ["AccountEditPanel.svelte", ".banner.conflict"],
-  ["AccountEditPanel.svelte", ".banner.mismatch"],
+  ["editPanel.css", ".inspector-edit > .banner.conflict"],
+  ["editPanel.css", ".inspector-edit > .banner.mismatch"],
   ["TempUrlKeys.svelte", ".banner.conflict"],
   ["TempUrlKeys.svelte", ".banner.mismatch"],
   ["Inspector.svelte", ".raw"],
@@ -150,8 +152,6 @@ const softSurfaces: [file: string, selector: string, foreground?: string][] = [
   ["MetadataEditor.svelte", ".chip.added"],
   ["MetadataEditor.svelte", ".chip.changed"],
   ["MetadataEditor.svelte", ".chip.removed"],
-  ["ObjectEditPanel.svelte", ".banner.conflict"],
-  ["ObjectEditPanel.svelte", ".banner.mismatch"],
   ["JobsDrawer.svelte", ".badge.applied, .badge.complete"],
   ["JobsDrawer.svelte", ".badge.conflict, .badge.verify_mismatch, .badge.partial, .badge.cancelled"],
   ["JobsDrawer.svelte", ".badge.failed"],
@@ -195,9 +195,7 @@ describe("production theme and surface inventory", () => {
     ["AclEditor.svelte", ".x"],
     ["ContainerColumn.svelte", ".mode"],
     ["BookmarkRail.svelte", ".badge.plus"],
-    ["ObjectEditPanel.svelte", "button.danger"],
-    ["ContainerEditPanel.svelte", "button.danger"],
-    ["AccountEditPanel.svelte", "button.danger"],
+    ["editPanel.css", `${editorAction}.danger`],
   ])("retains the checked transparent override in %s %s", (file, selector) => {
     expect(style(file, selector).background).toMatch(/^(none|transparent)$/);
   });
