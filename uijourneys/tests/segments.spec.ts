@@ -163,6 +163,20 @@ test.describe.serial("segments where versions are kept", () => {
     await expect.poll(() => versions(target, `${folder}file01.bin`), lag).toBe(2);
     expect((await control.names(target, sidecar)).sort()).toEqual(segments);
 
+    // While the owner still exists, the archive starts with segments
+    // unticked: its versions may share those segments with a live object.
+    const archived = (await control.names(target, archive)).sort();
+    await openContainer(page, target, archive);
+    await page.getByRole("button", { name: "Delete container…" }).click();
+    const archiveDialog = page.getByRole("dialog", { name: "Delete" });
+    await archiveDialog.getByRole("button", { name: "Preview" }).click();
+    await expect(archiveDialog.getByText(`This container is the versions archive of ${live}:`, { exact: false })).toBeVisible();
+    await expect(archiveDialog.getByRole("checkbox", { name: "Also delete the segments of large objects" })).not.toBeChecked();
+    await expect(archiveDialog.getByText(/It starts unticked here: an archived version/)).toBeVisible();
+    await archiveDialog.getByRole("button", { name: "Close", exact: true }).first().click();
+    expect((await control.names(target, archive)).sort()).toEqual(archived);
+    expect((await control.names(target, sidecar)).sort()).toEqual(segments);
+
     // Deleting the container is not offered the option either. What it held
     // goes to the archive, the container goes, and every segment stays.
     await openContainer(page, target, live);
