@@ -19,7 +19,7 @@ rm -rf "$ART" && mkdir -p "$ART"
 say() { printf '\nsmoke: %s\n' "$*"; }
 fail() { printf '\nsmoke: FAIL: %s\n' "$*"; exit 1; }
 
-for tool in Xvfb xdotool import curl python3; do
+for tool in Xvfb xdotool xclip import curl python3; do
   command -v "$tool" >/dev/null || fail "$tool is required"
 done
 [ -x bin/aeronautes ] || fail "bin/aeronautes missing — run 'make build' first"
@@ -204,13 +204,25 @@ switch_case ignored "mirror, upload" \
 
 say "starting the app for the journey"
 wait_no_window 30 || fail "a window from the switch cases never went away"
-start_app "$ART/app.log"
+start_app "$ART/app.log" AERONAUTES_LOG_FILE="$STATE_DIR/native.log"
 APP_GROUP="$APP_LAST_GROUP"
 printf 'case=journey state=%s group=%s\n' "$STATE_DIR" "$APP_GROUP" \
   >>"$ART/switch-launches.txt"
 
 X() { DISPLAY=:98 xdotool "$@"; }
 shot() { DISPLAY=:98 import -window root "$ART/$1.png"; }
+# The browser build has no clipboard. Read the native selection through
+# a second client instead of accepting the page's "Copied" acknowledgement.
+clipboard_is() {
+  local value
+  for _ in $(seq 1 10); do
+    if value=$(timeout 2 env DISPLAY=:98 xclip -selection clipboard -out 2>/dev/null) && [ "$value" = "$1" ]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
 # wire_saw <pattern> <seconds>: the mock's request log is the truth —
 # a UI step only counts when its wire effect appears.
 wire_saw() {
@@ -271,4 +283,30 @@ shot 02-browse
 n=$(curl -s "$U/smoke-src?format=json" -H "X-Auth-Token: $TOK" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 [ "$n" = "3" ] || fail "smoke-src listing has $n of 3 objects"
 
-say "PASS — browse landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
+say "copy an object name to the native clipboard"
+X mousemove 420 230 click 3
+sleep 1
+X key --delay 100 Down Down Return
+clipboard_is "alpha.txt" || fail "Copy name did not reach the native clipboard"
+wire_saw 'HEAD /v1/AUTH_test/smoke-src/alpha.txt$' 5 || fail "the selected object's details were not read"
+shot 03-object-clipboard
+
+# The menu returns focus to the list; tab through the two object actions,
+# Size and Content type to copy ETag without depending on text wrapping.
+X key --delay 100 Tab Tab Tab Tab Tab Return
+etag=$(python3 -c 'import hashlib; print(hashlib.md5(b"payload-alpha.txt", usedforsecurity=False).hexdigest())')
+clipboard_is "$etag" || fail "Copy ETag did not copy the known payload's checksum"
+shot 04-etag-clipboard
+
+say "copy the log path from native settings"
+X mousemove 24 669 click 1
+sleep 1
+X key Tab
+X type --delay 30 "Keep a log file"
+X key --delay 100 Tab Tab Return
+clipboard_is "$STATE_DIR/native.log" || fail "Settings did not copy the active log file's path"
+[ -s "$STATE_DIR/native.log" ] || fail "the named native log file has no session output"
+shot 05-log-path-clipboard
+X key Escape
+
+say "PASS — browse and native clipboard landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"

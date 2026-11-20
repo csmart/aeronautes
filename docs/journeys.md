@@ -54,6 +54,7 @@ It does not measure performance.
 - Run locally: `make uijourneys [CLOUDS=/path/to/clouds.yaml]`. Without `CLOUDS` it runs against the mock only.
 - The required CI smoke job runs the complete mock browser suite after the native desktop smoke.
   CI refuses `CLOUDS` and focused tests; real-cloud journeys remain local only.
+  The separate native smoke reads the X11 clipboard after Copy name, Copy ETag and the Settings log-path action; the browser build itself still has no clipboard.
 - It needs Go, Node with npm, python3, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
   The build it makes runs in a browser, so it needs no C compiler and none of the desktop's GTK or WebKitGTK packages.
   When a build step fails, for want of one of these or otherwise, the run says so and names the `build.log` in its private directory.
