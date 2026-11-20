@@ -340,10 +340,22 @@ func (c *journeyControl) account(ctx context.Context, label, authURL string) (an
 		return map[string]string{"bookmark": open.bookmark}, nil
 	}
 	var config swiftcontrol.Config
-	var cloud realcloud.Cloud
 	switch label {
 	case "mock":
 		config = swiftcontrol.Config{AuthURL: authURL, Username: "test:tester", APIKey: "testing"}
+	case "saio":
+		endpoint := os.Getenv("AERONAUTES_SAIO_AUTH_URL")
+		if endpoint == "" {
+			return nil, errors.New("no SAIO endpoint configured")
+		}
+		user, key := os.Getenv("AERONAUTES_SAIO_USER"), os.Getenv("AERONAUTES_SAIO_KEY")
+		if user == "" {
+			user = "test:tester"
+		}
+		if key == "" {
+			key = "testing"
+		}
+		config = swiftcontrol.Config{AuthVersion: 1, AuthURL: endpoint, Username: user, APIKey: key}
 	case "ceph", "swift":
 		path, err := realcloud.ResolveCloudsPath()
 		if err == nil && path == "" {
@@ -356,7 +368,8 @@ func (c *journeyControl) account(ctx context.Context, label, authURL string) (an
 		if err != nil {
 			return nil, err
 		}
-		if cloud, err = realcloud.LoadCloud(raw, realcloud.SelectBackends(label)[0].Cloud); err != nil {
+		cloud, err := realcloud.LoadCloud(raw, realcloud.SelectBackends(label)[0].Cloud)
+		if err != nil {
 			return nil, err
 		}
 		config = swiftcontrol.Config{AuthVersion: 3, AuthURL: cloud.AuthURL, Username: cloud.Username, APIKey: cloud.Password,
@@ -378,10 +391,10 @@ func (c *journeyControl) account(ctx context.Context, label, authURL string) (an
 	open = openAccount{owned: owned}
 	if label != "mock" {
 		saved, err := c.bookmarks.Save(ctx, app.BookmarkDTO{
-			DisplayName: "journey " + label, AuthVersion: 3, AuthURL: cloud.AuthURL, Username: cloud.Username,
-			UserDomain: cloud.UserDomain, ProjectName: cloud.ProjectName, ProjectDomain: cloud.ProjectDomain, Region: cloud.Region,
+			DisplayName: "journey " + label, AuthVersion: config.AuthVersion, AuthURL: config.AuthURL, Username: config.Username,
+			UserDomain: config.UserDomain, ProjectName: config.ProjectName, ProjectDomain: config.ProjectDomain, Region: config.Region,
 			TLSMode: "system",
-		}, cloud.Password)
+		}, config.APIKey)
 		if err != nil {
 			return nil, err
 		}

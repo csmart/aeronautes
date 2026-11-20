@@ -107,13 +107,13 @@ test.describe.serial("segments where versions are kept", () => {
 
   test.beforeEach(({}, info) => {
     test.skip(
-      info.project.name !== "swift",
-      "only the Swift cloud keeps versions: the mock shows a mode and archives nothing, and the Ceph cloud offers none",
+      info.project.name !== "swift" && info.project.name !== "saio",
+      "only Swift and SAIO keep versions: the mock shows a mode and archives nothing, and the Ceph cloud offers none",
     );
   });
 
   test.beforeAll(async ({}, info) => {
-    if (info.project.name !== "swift") return;
+    if (info.project.name !== "swift" && info.project.name !== "saio") return;
     live = await ownContainer(info.project.name, "ui-history", true);
     archive = await ownContainer(info.project.name, "ui-archive");
   });

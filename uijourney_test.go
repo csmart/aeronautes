@@ -136,3 +136,12 @@ func TestJourneyControlReopeningAnAccountKeepsWhatItOwns(t *testing.T) {
 		t.Fatalf("teardown never deleted %s, created before the account was asked for again", created)
 	}
 }
+
+func TestJourneyControlSAIORequiresItsOwnEndpoint(t *testing.T) {
+	t.Setenv("AERONAUTES_SAIO_AUTH_URL", "")
+	var c journeyControl
+	_, err := c.account(context.Background(), "saio", "http://unused.invalid/auth/v1.0")
+	if err == nil || !strings.Contains(err.Error(), "no SAIO endpoint configured") {
+		t.Fatalf("an unconfigured SAIO account = %v, want endpoint refusal", err)
+	}
+}

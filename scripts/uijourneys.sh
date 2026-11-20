@@ -2,7 +2,8 @@
 # UI journeys (ADR 0112): build the application in Wails server mode with the
 # uijourney stand-ins, run it on loopback with its state in a fresh directory,
 # and drive the real frontend from Chromium with Playwright, against the mock
-# and, locally when CLOUDS names a clouds.yaml, the two real clouds.
+# and optionally an existing local SAIO or, when CLOUDS names a clouds.yaml,
+# the two real clouds.
 #
 # Everything that could name a provider, a host or an account goes to one
 # private directory under the user cache directory; the output names only
@@ -96,5 +97,7 @@ uijourneys/node_modules/.bin/playwright install chromium >>"$private/build.log" 
 
 AERONAUTES_UI="http://$ui" AERONAUTES_CONTROL="http://$controller" AERONAUTES_CONTROL_TOKEN="$token" \
 	AERONAUTES_MOCK="http://127.0.0.1:$mock_port/auth/v1.0" AERONAUTES_CLOUDS="${CLOUDS:+1}" \
-	AERONAUTES_PRIVATE="$private" \
+	AERONAUTES_PRIVATE="$private" AERONAUTES_SAIO="${AERONAUTES_SAIO_AUTH_URL:+1}" \
+	env -u AERONAUTES_SAIO_AUTH_URL -u AERONAUTES_SAIO_USER -u AERONAUTES_SAIO_KEY \
+	-u AERONAUTES_SAIO_USER2 -u AERONAUTES_SAIO_KEY2 \
 	uijourneys/node_modules/.bin/playwright test --config uijourneys/playwright.config.ts "$@"

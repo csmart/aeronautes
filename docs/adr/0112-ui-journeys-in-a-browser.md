@@ -51,7 +51,8 @@ What server mode cannot do is show a native dialog: the file and folder pickers 
 
 The operator wants practical GUI coverage to be complete while provider credentials and runs stay local.
 The mock cannot prove version archives or quota enforcement, while the existing local SAIO offers those behaviours without a billable account.
-The following extension is planned; no SAIO browser target is implemented at this record's introduction.
+The optional SAIO target and the existing archive journeys are implemented.
+Quota and version-setting widget coverage follows separately.
 
 8. **An optional existing local SAIO target, using the same suite.**
    Setting `AERONAUTES_SAIO_AUTH_URL` opts into the `saio` browser project alongside the mock; selecting `--project=saio` runs that project alone.

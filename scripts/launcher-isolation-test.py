@@ -23,6 +23,38 @@ def command(source, prefix):
 
 
 class LauncherIsolation(unittest.TestCase):
+    def test_browser_child_does_not_inherit_saio_credentials(self):
+        source = (SCRIPTS / "uijourneys.sh").read_text()
+        launch = command(source, 'AERONAUTES_UI=')
+        variables = ["AERONAUTES_SAIO_AUTH_URL", "AERONAUTES_SAIO_USER",
+                     "AERONAUTES_SAIO_KEY", "AERONAUTES_SAIO_USER2", "AERONAUTES_SAIO_KEY2"]
+        for selected in (True, False):
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                browser = root / "uijourneys/node_modules/.bin/playwright"
+                browser.parent.mkdir(parents=True)
+                # Observe only variable presence; even a failing check need not
+                # print a credential inherited from the parent environment.
+                browser.write_text(
+                    "#!/usr/bin/env python3\nimport json,os\n"
+                    f"print(json.dumps({{k: k in os.environ for k in {variables!r}}}"
+                    " | {'selected': os.environ.get('AERONAUTES_SAIO') == '1'}))\n"
+                )
+                browser.chmod(0o700)
+                env = dict(os.environ, **dict.fromkeys(variables, "fixture-only"))
+                env["AERONAUTES_SAIO_AUTH_URL"] = "http://fixture.invalid/auth/v1.0" if selected else ""
+                program = '''
+set -euo pipefail
+ui=127.0.0.1:1; controller=127.0.0.1:2; token=fixture-only
+mock_port=3; private=unused; CLOUDS=
+''' + launch
+                result = subprocess.run(["bash", "-c", program], cwd=root, env=env,
+                                        text=True, capture_output=True, timeout=10, check=True)
+                observed = json.loads(result.stdout)
+                for variable in variables:
+                    self.assertFalse(observed[variable], f"browser inherited {variable}")
+                self.assertEqual(observed["selected"], selected)
+
     def test_keyring_waits_for_its_session_bus(self):
         source = (SCRIPTS / "smoke.sh").read_text()
         start = source.index('app_start "$ART/dbus.log"')
