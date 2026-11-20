@@ -1,9 +1,11 @@
 # Screenshots
 
-Real captures of the built application against real containerized Swift
-(the SAIO, two accounts), taken headless at 1280×800 with the E2E rig.
-These replace the retired draft mockups — the pixels here are the
-product, not direction.
+The main README uses `06-inspector-dlo-0.5.0.png`, a desktop capture supplied during preparation for 0.5.0 on 20 November 2026.
+It shows the current container browser, DLO inspector, segment table and metadata controls.
+The capture retains its original dimensions and development-build label.
+
+The numbered captures below are historical development screenshots against containerised Swift (SAIO, two accounts), taken headless at 1280×800 with the E2E rig.
+They record earlier behaviour and are not a feature list for the current release: Mirror is unavailable in 0.5.0, and Copy now follows the store and transfer engine's outcomes rather than the old staging protocol.
 
 - `01-browser.png` — four-pane browser: bookmarks, containers with
   backstage classification, working list, object HEAD detail.
@@ -16,5 +18,5 @@ product, not direction.
 - `05-jobs-drawer.png` — the jobs drawer after a completed cross-account
   copy, with the active-job budget and benchmark controls.
 
-Regenerate with the smoke/E2E tooling (`scripts/smoke.sh` shows the
-pattern); keep 1280×800 for consistency.
+For automated captures, the smoke/E2E tooling (`scripts/smoke.sh`) shows the pattern.
+Keep the capture's date and provenance explicit when adding or replacing screenshots.

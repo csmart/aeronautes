@@ -10,10 +10,35 @@ features to move bulk data as fast as the target cluster can safely handle.
 The mantra: **the inspector is the product; transfers are a first-class superpower; performance and
 beauty are features.**
 
-![Browser and inspector](docs/assets/screenshots/02-inspector-dlo.png)
+![Container browser and dynamic large object inspector](docs/assets/screenshots/06-inspector-dlo-0.5.0.png)
 
-*The DLO inspector against real Swift: logical vs listed size, the exact manifest and its segment table.
-More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
+*The current browser and DLO inspector: logical versus listed size, the exact manifest and its segment table.
+Captured during preparation for 0.5.0; [earlier screenshots](docs/assets/screenshots/) record previous development stages.*
+
+## Download and install
+
+Get [Aeronautes 0.5.0 from GitHub Releases](https://github.com/csmart/aeronautes/releases/tag/v0.5.0).
+The repository and its downloads are private; sign in with an account that has repository access.
+Choose `amd64` for x86-64/Intel/AMD or `arm64` for ARM64/aarch64, including Apple Silicon.
+
+| Platform | Available downloads | Install or run |
+| --- | --- | --- |
+| Fedora Linux | RPM for amd64 and arm64 | `sudo dnf install ./<downloaded-file>.rpm` |
+| Ubuntu 24.04 | DEB for amd64 and arm64 | `sudo apt install ./<downloaded-file>.deb` |
+| Other Linux with GTK 4 and WebKitGTK 6 | tar.gz for amd64 and arm64 | Extract and run `./aeronautes`, keeping `rclone` beside it. |
+| Windows | Portable ZIP for amd64 and arm64 | Extract the whole ZIP and run `aeronautes.exe`, keeping `rclone.exe` beside it. |
+| macOS | App-bundle ZIP for Intel and Apple Silicon | Extract and move `aeronautes.app` to Applications. |
+
+All builds are **unsigned**, and macOS builds are **not notarised**.
+Windows SmartScreen and macOS Gatekeeper may warn or block launch.
+Linux is the reference platform; Windows and macOS bundles are available for testing while their native acceptance remains incomplete.
+There is no Windows MSI/EXE installer or macOS DMG/PKG installer in this release.
+**Use dedicated test accounts and containers first:** the [valuable-data hold and remaining acceptance checks](#before-trusting-a-release-against-production) still apply.
+
+The Linux packages install the application in `/usr/local/bin`, its verified rclone in `/usr/local/libexec/aeronautes`, and an application-menu entry.
+They install the GTK 4 and WebKitGTK 6 dependencies; tarball users must supply those libraries separately.
+Every bundle includes rclone v1.74.3, its licence notices and a build identity; the release also provides SHA256 checksums and per-platform provenance records.
+Run `aeronautes --version` to inspect the version and source revision, and `aeronautes --engine` to verify the resolved transfer engine.
 
 ## What it is
 
@@ -21,12 +46,12 @@ More in [`docs/assets/screenshots/`](docs/assets/screenshots/).*
   storage policies, ACLs, versioning, quotas — not a file-manager metaphor. TempURL key slots are
   set and cleared from the inspector (key values are never shown), and CORS and staticweb are
   edited as typed fields over their metadata rows.
-- **v1 scope**: browse, inspect, download, upload of files and folders, copy between containers and accounts, deletion of an object, a selection, a prefix or a container, object, container and account metadata read and write, container creation and prefix-marker creation, and pause and resume of an upload, download or copy, with up to four jobs running at once (two by default).
+- **0.5.0 scope**: browse, inspect, download, upload of files and folders, copy between containers and accounts, deletion of an object, a selection, a prefix or a container, object, container and account metadata read and write, container creation and prefix-marker creation, and pause and resume of an upload, download or copy, with up to four jobs running at once (two by default).
   Mirror execution and benchmarks are refused in this build under [ADR 0052](docs/adr/0052-v1-capability-gate.md), whose decisions 9 and 11 to 14 record when upload, object deletion, copy, marker and manifest deletion and bulk deletion each joined that scope.
 - **Safety-first**: heuristics never authorize destruction; object-metadata edits never silently drop keys.
-- **Cross-platform** desktop app — Linux, macOS, and Windows on both **x86_64 and aarch64** (six
-  build targets); v1 supports Linux only, and the macOS and Windows builds are development
-  builds until their own acceptance runs are done.
+- **Bookmarks and settings**: TempAuth v1 and Keystone v3, import from rclone.conf or clouds.yaml with secure.yaml, system-keyring credentials, configuration backup and restore without credentials, and searchable settings with diagnostics.
+- **Cross-platform builds** for Linux, macOS and Windows on **x86_64 and aarch64**.
+  Linux remains the supported release scope; downloadable Windows and macOS builds do not establish completed native acceptance.
 
 ## What it is not
 
@@ -44,7 +69,7 @@ future option, ADR 0006).
 - [`docs/DESIGN.md`](docs/DESIGN.md) — authoritative product + engineering design (66 sections).
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — compact normative requirement IDs for phase gates.
 - [`docs/adr/`](docs/adr/) — architecture decision records, numbered from 0001; each states its own status.
-- [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the app against containerized Swift.
+- [`docs/assets/screenshots/`](docs/assets/screenshots/) — the current app and historical development captures.
 - [`docs/rclone.md`](docs/rclone.md) — the exact pinned-rclone flag surface and measured behaviours.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — the six-target release pipeline (unsigned for now, on purpose).
 - [`docs/CI.md`](docs/CI.md) — required PR checks, merge rules and coverage artifacts.
@@ -84,7 +109,11 @@ Swift and transfer rules belong in their Go domain packages; use `internal/syste
 Window behaviour belongs in the lowest owning Svelte component's tests, while [browser journeys and their coverage table](docs/journeys.md) describe what an operator can do end to end.
 Keep each rule at its owning layer, preserve meaningful failure cases and independent byte checks, and avoid tests that only repeat a scripted fake's answer.
 Build the frontend before running Go tests because the application embeds `frontend/dist`; `make build` above does this.
-Use `make test` for the local Go and frontend suites, and `make uijourneys` for mock browser journeys; real-cloud journeys require the separately documented disposable fixtures and credentials.
+Use `make test` for the local Go and frontend suites, and `make uijourneys` for mock browser journeys.
+Required CI runs the full mock browser suite alongside native Linux smoke and containerised-Swift integration.
+With an existing local SAIO, `AERONAUTES_SAIO_AUTH_URL=http://127.0.0.1:8080/auth/v1.0 make uijourneys` adds its supported browser journeys.
+Real-cloud browser journeys (`make uijourneys CLOUDS=/path/to/clouds.yaml`), service journeys (`make journeys CLOUDS=/path/to/clouds.yaml`) and oracles (`make oracle CLOUDS=/path/to/clouds.yaml`) run locally with dedicated test fixtures.
+Keep provider credentials out of GitHub; local SAIO and mock runs do not replace representative-provider acceptance.
 The [CI guide](docs/CI.md) explains the required race, real-Swift, frontend and desktop smoke checks; native and representative-deployment acceptance remains in the [release test plan](docs/audits/2026-11-11/0.5.0-test-plan.md).
 
 ## Quickstart
@@ -94,7 +123,8 @@ The [CI guide](docs/CI.md) explains the required race, real-Swift, frontend and 
    installation resolved. A source checkout has no bundled engine: put the official pinned binary
    on `PATH` (`scripts/fetch-rclone.sh linux amd64 <dir>`) — any other version is refused, and
    transfers are then disabled while browsing still works.
-2. Launch `bin/aeronautes`, click **Add**, and create a bookmark: display name and either TempAuth
+2. Launch Aeronautes from the application menu, the extracted bundle or `bin/aeronautes` after a source build.
+   Click **Add**, and create a bookmark: display name and either TempAuth
    v1 (auth URL `https://cluster/auth/v1.0`, `account:user`, API key) or Keystone v3 (identity
    URL, user, password, project, their domains, and the region, which a Keystone v3 bookmark always needs).
    The key or password goes to the OS keychain; if none is reachable the app says so and keeps
@@ -106,7 +136,7 @@ The [CI guide](docs/CI.md) explains the required race, real-Swift, frontend and 
 4. Browse: containers on the left (with backstage classification), objects in the middle
    (server-side prefix + Find in container), authoritative HEAD detail on the right.
 5. Download: open a container and use **Download**, with collision preflight before any write.
-   Download and Copy act on what is selected, the chosen objects, one object or one folder, or else on the folder or container you are browsing, and their labels say which.
+   Download and Copy act on the selected objects and whole folders, one object, or the folder or container you are browsing, and their labels say which.
    Follow the job in the jobs drawer — progress, throughput, cancel and audit trail.
    Its **Job history** tab pages through older retained jobs; expand a job to inspect every saved item, its exact quoted locations and separate execution and verification observations.
    Missing records, uncaptured history and unavailable reads are shown explicitly; an active job's records are incomplete, and the displayed issue counts can overlap.
@@ -116,7 +146,7 @@ The [CI guide](docs/CI.md) explains the required race, real-Swift, frontend and 
    Uploads, copies and the deletion of a selection, a prefix, a container or a manifest with its segments run as jobs in the drawer; deleting one object, marker or manifest is done at once and its result is shown in the dialog and the audit trail.
    Every deletion, and every replacement of an existing object, is confirmed before it runs.
 
-Mirror execution and benchmarks are unavailable in v1.
+Mirror execution and benchmarks are unavailable in 0.5.0.
 Their controls are hidden and requests to them are refused.
 
 ### Where Aeronautes keeps its files
@@ -128,7 +158,8 @@ On Linux Aeronautes follows the XDG Base Directory Specification ([ADR 0109](doc
 - **Bookmarks, jobs, recovery records and the audit trail**: `~/.local/share/aeronautes/aeronautes.sqlite` (under `$XDG_DATA_HOME`), with its `-wal` and `-shm` files, the single-instance lock, and custom CA certificates in `ca/` beside it.
 - **Working files of deletions**: `~/.cache/aeronautes/` (under `$XDG_CACHE_HOME`).
 - **Keys and passwords**: the OS keychain, or the session only when none is reachable; never either file above.
-- **Log**: only where `AERONAUTES_LOG_FILE` names.
+- **Log**: when enabled in Settings → Diagnostics, `~/.local/state/aeronautes/aeronautes.log` (under `$XDG_STATE_HOME`).
+  `AERONAUTES_LOG_FILE` overrides the file location at launch; Diagnostics shows the effective location and level.
 
 Setting `AERONAUTES_STATE_DIR` to an existing directory puts the settings file and the database in it instead, for development and tests.
 Development builds before 0.5.0 kept everything in `~/.local/state/aeronautes/state.sqlite`, which this release does not read.

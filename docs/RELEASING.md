@@ -4,8 +4,11 @@
 
 The build matrix covers Linux, macOS and Windows on x86_64 and aarch64.
 `.github/workflows/release.yml` builds all six on matched native runners for a tag, or when a manual dispatch requests all platforms; ordinary manual dispatches build Linux only.
-Linux is the accepted release scope: publication requires the Linux jobs and attaches their RPM, deb and tarball artifacts for both architectures.
-macOS and Windows remain development workflow artifacts until their own native acceptance runs are complete.
+Linux remains the supported release scope.
+For 0.5.0 the operator authorised downloadable unsigned bundles for all six targets on 20 November 2026; Windows and macOS remain testing targets without completed native acceptance.
+The workflow drafts the release with Linux RPM, deb and tarball artifacts for both architectures.
+Before publishing 0.5.0, also require the Windows and macOS build jobs to pass, download their ZIPs and provenance records from that same tagged run, verify them, and attach them to the draft.
+Windows ZIPs are portable applications, and macOS ZIPs contain app bundles; neither is a dedicated installer.
 The webview links via CGO, so these tasks do not cross-compile between operating systems.
 
 ## Signing status: UNSIGNED, on purpose
@@ -68,14 +71,17 @@ The [fixture evidence and platform limits](experiments/2026-09-09-release-identi
 ## Release steps
 
 The first release is 0.5.0, by the operator's decision of 11 November 2026, which replaces the earlier plan to cut 0.1.0 first (finish line decision 19).
-It is cut only after the operator has run the [0.5.0 test plan](audits/2026-11-11/0.5.0-test-plan.md) against the release candidate and recorded its results; the [0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md) was never run and is carried into it.
+The [0.5.0 test plan](audits/2026-11-11/0.5.0-test-plan.md) carries forward the [0.1.0 test plan](audits/2026-09-24/0.1.0-test-plan.md), which was never run.
+On 20 November the operator authorised tagging and publishing 0.5.0 with the remaining desktop and representative-provider acceptance explicitly incomplete.
+This publication decision does not mark those checks passed or lift the valuable-data hold.
+The normal acceptance sequence below remains the reference for subsequent releases; 0.5.0 records that exception in its published notes.
 
 1. `make test` and `make test-integration` (SAIO running) are green.
 2. `scripts/smoke.sh` passes headless — CI runs it on every push/PR too.
 3. A release-workflow dispatch on the commit to be tagged builds the candidate packages; the operator runs the test plan against them and records the results; a failed step blocks the tag.
 4. Write the release notes as `docs/releases/vX.Y.Z.md` on that commit, then tag `vX.Y.Z` and push the tag.
    CI builds the six unsigned artifacts, and its `publish` job drafts a GitHub release titled with the tag, carrying the Linux rpm, deb and tarball for both architectures with their provenance files, and the notes.
-   macOS and Windows builds stay workflow artifacts: they are development builds without acceptance (finish line decision 1).
+   For 0.5.0, attach the additional Windows and macOS bundles as described above, retaining their testing status in the release notes.
 5. Check the draft: every file is present, and each file's SHA256 matches its provenance record; then publish it.
 6. Before announcing the release, record the representative real-cloud browser and service journeys from section A of the test plan, run locally with the test accounts.
    The mock and local SAIO runs do not replace that §57.4 release evidence; the remaining host checks are in section C.
