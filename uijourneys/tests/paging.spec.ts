@@ -1,7 +1,33 @@
 import { test } from "@playwright/test";
 import { basename } from "node:path";
 import { control } from "../control.ts";
-import { expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, typedDelete, writeFiles } from "../helpers.ts";
+import { connect, expect, finish, localFolder, objectRow, openContainer, openFolder, ownContainer, typedDelete, writeFiles } from "../helpers.ts";
+
+test("append a container page without losing the open container", async ({ page }, info) => {
+  test.skip(info.project.name !== "mock", "a thousand containers are created on the mock only");
+  const names: string[] = [];
+  // Sort after ordinary journey containers so this fixture cannot push
+  // another journey's container out of its first page, whatever runs next.
+  for (let i = 0; i < 1001; i++) {
+    names.push(await ownContainer("mock", `zz-ui-pages-${String(i).padStart(4, "0")}`));
+  }
+  await connect(page, "mock");
+  await page.getByRole("tab", { name: "All" }).click();
+  const column = page.getByRole("tabpanel");
+  const row = (name: string) => column.getByRole("button", { name: new RegExp(`^${name} `) });
+  await expect(column.getByRole("button", { name: / objects$/ })).toHaveCount(1000);
+  await row(names[0]).click();
+  const path = page.getByRole("navigation", { name: "Path" });
+  await expect(path.getByRole("button", { name: names[0], exact: true })).toBeVisible();
+  await expect(row(names.at(-1)!)).toHaveCount(0);
+  await column.getByRole("button", { name: "Load more…", exact: true }).click();
+  await expect(column.getByRole("button", { name: /^aeronautes-journey-zz-ui-pages-/ })).toHaveCount(names.length);
+  await expect(column.getByRole("button", { name: "Load more…", exact: true })).toHaveCount(0);
+  await expect(row(names[0])).toHaveClass(/selected/);
+  await expect(path.getByRole("button", { name: names[0], exact: true })).toBeVisible();
+  await row(names.at(-1)!).click();
+  await expect(path.getByRole("button", { name: names.at(-1)!, exact: true })).toBeVisible();
+});
 
 // ADR 0074 decision 6: with the retention ceiling at its least, 1,000, a
 // folder of 2,000 objects shows its first 1,000, then the next page shows
