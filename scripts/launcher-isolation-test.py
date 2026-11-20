@@ -16,7 +16,8 @@ def command(source, prefix):
     lines = source.splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith(prefix))
     end = start
-    while lines[end].endswith("\\"):
+    while lines[end].endswith("\\") or (
+            prefix.endswith("=(") and not lines[end].endswith(")")):
         end += 1
     return "\n".join(lines[start:end + 1])
 
@@ -76,6 +77,10 @@ ss() { printf '%s' "$PROBE_SOCKETS"; return "$SOCKET_STATUS"; }
                     "'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME']}))\n"
                 )
                 executable.chmod(0o700)
+                # Preserve env on either side of the wrapper without opening a bus.
+                wrapper = private / "dbus-run-session"
+                wrapper.write_text('#!/bin/sh\nif [ "$1" = -- ]; then shift; fi\nexec "$@"\n')
+                wrapper.chmod(0o700)
                 source = (SCRIPTS / f"{launcher}.sh").read_text()
                 if launcher == "uijourneys":
                     start = source.index("start_app() {")
@@ -86,7 +91,8 @@ ss() { printf '%s' "$PROBE_SOCKETS"; return "$SOCKET_STATUS"; }
                 else:
                     start = source.index("start_app() {")
                     end = source.index("\n}", start) + 2
-                    launch = (command(source, "APP_ENV=(") + "\n"
+                    launch = (command(source, "SESSION_ENV=(") + "\n"
+                              + command(source, "APP_ENV=(") + "\n"
                               + source[start:end] + '\nstart_app "$APP_LOG"')
                 # app_start owns processes, not paths; intercept only that
                 # external launch to observe the environment of its child.
@@ -97,12 +103,13 @@ APP_LOG="$private/stdout"; XVFB_DISPLAY=:97; BIN=unused
 APP_WRAPPER=(dbus-run-session)
 app_start() {
     shift
-    local -a args=()
-    while [ "$1" != dbus-run-session ]; do args+=("$1"); shift; done
-    "${args[@]}" "$FIXTURE"
+    local -a args=("$@")
+    args[${#args[@]}-1]="$FIXTURE"
+    "${args[@]}"
 }
 """ + launch
                 env = dict(os.environ, FIXTURE=str(executable),
+                           PATH=f"{private}:{os.environ['PATH']}",
                            AERONAUTES_STATE_DIR=str(root / "outside-state"),
                            AERONAUTES_LOG_FILE=str(root / "outside.log"))
                 result = subprocess.run(["bash", "-c", program, "launcher", str(private)],
@@ -110,7 +117,7 @@ app_start() {
                                         timeout=10, check=True)
                 observed = json.loads(result.stdout)
                 for name, value in observed.items():
-                    if launcher != "uijourneys" and not name.startswith("AERONAUTES_"):
+                    if launcher == "webview-spike" and not name.startswith("AERONAUTES_"):
                         continue
                     with self.subTest(variable=name):
                         if name == "AERONAUTES_LOG_FILE" or (
