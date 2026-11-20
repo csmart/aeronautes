@@ -250,7 +250,7 @@ Confidence: high frontend-only; remote existing-data impact unconfirmed.
 
 ## Capability and suitability assessment
 
-The product has a clear audience: Swift/SwiftStack operators who need to inspect control-plane semantics and move bulk data between accounts while understanding DLO/SLO consequences.
+The product has a clear audience: operators of OpenStack Swift and compatible implementations who need to inspect control-plane semantics and move bulk data between accounts while understanding DLO/SLO consequences.
 That focus is coherent and more valuable than adding unrelated protocol compatibility or a generic file-manager appearance.
 The current shell provides a credible working foundation, but its interaction identity races and missing operation coverage prevent treating it as a finished operator workbench for valuable data.
 The broader existing W-* architecture blockers remain material even when individual UI paths work.

@@ -139,7 +139,7 @@ func TestReauthReplayOn401(t *testing.T) {
 	}
 }
 
-// TestStorageURLOverrideSurvivesReauth covers the §9.2 SwiftStack quirk:
+// TestStorageURLOverrideSurvivesReauth covers the §9.2 endpoint override:
 // the override must direct every request, including ones replayed after a
 // mid-session re-authentication that hands back a different storage URL.
 func TestStorageURLOverrideSurvivesReauth(t *testing.T) {

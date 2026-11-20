@@ -1,7 +1,7 @@
 # AGENTS.md — start here
 
 **Aeronautes** ("air sailor" — a genus of swifts) is a beautiful, performance-first **desktop
-operator workbench for OpenStack Swift / SwiftStack**: it makes Swift's control-plane semantics
+operator workbench for the OpenStack Swift API and compatible implementations**: it makes Swift's control-plane semantics
 understandable and safe, and uses rclone + native Swift to move bulk data as fast as the target
 cluster can safely handle.
 

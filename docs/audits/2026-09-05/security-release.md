@@ -410,7 +410,7 @@ It should support the defined safety contracts; a broader harness redesign that 
 
 ## Untested limits
 
-This domain audit did not run real desktop windows, macOS or Windows binaries, native keychain/portal dialogs, a physical power-loss experiment, signing/notarization, installer upgrade tests, a real production SwiftStack account, broad fuzzing, or penetration testing against a deployed app.
+This domain audit did not run real desktop windows, macOS or Windows binaries, native keychain/portal dialogs, a physical power-loss experiment, signing/notarization, installer upgrade tests, a real production Swift account, broad fuzzing, or penetration testing against a deployed app.
 It did not scan real user secrets or inspect private keychain contents.
 The companion audit documents cover the full application baseline, UI, data safety, harness breadth and completed local SAIO run.
 This report deliberately distinguishes direct reproductions from source-derived risks, public advisory inventory, and unresolved product decisions.

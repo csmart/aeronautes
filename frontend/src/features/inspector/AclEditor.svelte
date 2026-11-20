@@ -1,4 +1,4 @@
-<!-- SwiftStack-style ACL editor (§19): the ACL string as structured
+<!-- Swift ACL editor (§19): the ACL string as structured
   entry chips with add/remove, and a raw mode showing the exact string —
   both edit the same value; nothing is reinterpreted. -->
 <script lang="ts">

@@ -59,12 +59,12 @@ Full commands, versions, preserved probe sources, advisory scope, and environmen
 The initial nested SAIO container could not unpack under the available UID/GID mappings.
 Local review then identified an accessible host SAIO; the complete two-account suite and Linux pinned-engine measurement lane passed there.
 Its matrix reports observations rather than failing on behavioural differences, so a successful exit is not a complete compatibility gate.
-No native GUI, screen-reader, macOS/Windows runtime, representative SwiftStack deployment, physical power-loss, or full release-artifact validation was completed here.
+No native GUI, screen-reader, macOS/Windows runtime, representative Swift deployment, physical power-loss, or full release-artifact validation was completed here.
 The completed local run reproduced DESIGN's historical 8/102 system count and retained the remaining gaps explicitly.
 
 ## Product suitability and feature coverage
 
-The product fits experienced Swift/SwiftStack operators who need to understand object identity, large-object backing data, ACLs, policies, metadata, and cross-account data movement.
+The product fits experienced operators of OpenStack Swift and compatible implementations who need to understand object identity, large-object backing data, ACLs, policies, metadata, and cross-account data movement.
 Keeping Swift semantics visible is appropriate for this audience.
 The largest product risk is the gap between an operator's selected/reviewed scope and the eventual mutation, followed by incomplete verification and recovery evidence.
 Visual polish and transfer speed cannot compensate for that gap.

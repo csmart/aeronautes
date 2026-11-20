@@ -16,5 +16,5 @@
 // test infrastructure on throwaway containers, deliberately outside the
 // application's mutation rules (§28.6 binds the product, §57.3 requires
 // the CRUD exercise). Local Swift proves Swift semantics; the real
-// SwiftStack target remains the §57.4 release gate.
+// Swift deployment remains the §57.4 release gate.
 package integration
