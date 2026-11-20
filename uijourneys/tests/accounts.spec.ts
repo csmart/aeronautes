@@ -18,8 +18,8 @@ test.beforeEach(({}, info) => {
 // ADR 0113: an Identity URL ending in v3 is the token endpoint's base, and
 // one that does not is asked for its versions, whose v3 link is used only
 // at the same address. The mock answers /v3/auth/tokens for its one user
-// and serves no version document, so the second URL is refused in words.
-test("make a Keystone v3 bookmark in the editor, and refuse a URL with no v3", async ({ page }) => {
+// and serves a version document at its root, but none at /identity.
+test("connect by Keystone root URL and IDs, and refuse wrong IDs or no v3", async ({ page }) => {
   const mock = new URL(process.env.AERONAUTES_MOCK!).origin;
   const made: string[] = [];
   try {
@@ -27,6 +27,35 @@ test("make a Keystone v3 bookmark in the editor, and refuse a URL with no v3", a
     made.push("journey keystone");
     await editor.getByRole("button", { name: "Save & connect" }).click();
     await expectConnected(page, "journey keystone");
+
+    const byID = await startKeystoneBookmark(page, "journey keystone IDs", mock);
+    made.push("journey keystone IDs");
+    await byID.getByLabel("Username", { exact: true }).fill("");
+    await byID.getByLabel("Project", { exact: true }).fill("");
+    await byID.getByLabel(/^User ID /).fill("wrong-user");
+    await byID.getByLabel(/^Project ID /).fill("project-test");
+    await byID.getByRole("button", { name: "Verify", exact: true }).click();
+    await expect(byID.getByRole("alert")).toContainText("401");
+    await byID.getByLabel(/^User ID /).fill("user-test");
+    await byID.getByLabel(/^Project ID /).fill("wrong-project");
+    await byID.getByRole("button", { name: "Verify", exact: true }).click();
+    await expect(byID.getByRole("alert")).toContainText("401");
+    await byID.getByLabel(/^Project ID /).fill("project-test");
+    await byID.getByRole("button", { name: "Save & connect" }).click();
+    await expectConnected(page, "journey keystone IDs");
+
+    // Read persisted fields from a fresh page: the bookmark must keep the
+    // operator's URL rather than replace it with the discovered endpoint.
+    await loadRail(page);
+    await page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name: "journey keystone IDs", exact: true }).click();
+    await expectConnected(page, "journey keystone IDs");
+    const saved = await editBookmark(page, "journey keystone IDs");
+    await expect(saved.getByLabel(/^Identity URL/)).toHaveValue(mock);
+    await expect(saved.getByLabel(/^User ID /)).toHaveValue("user-test");
+    await expect(saved.getByLabel(/^Project ID /)).toHaveValue("project-test");
+    await expect(saved.getByLabel("Username", { exact: true })).toHaveValue("");
+    await expect(saved.getByLabel("Project", { exact: true })).toHaveValue("");
+    await saved.getByRole("button", { name: "Cancel", exact: true }).click();
 
     const refused = await startKeystoneBookmark(page, "journey keystone no v3", `${mock}/identity`);
     made.push("journey keystone no v3");
