@@ -63,6 +63,7 @@ It does not measure performance.
 - The required CI smoke job runs the complete mock browser suite after the native desktop smoke.
   CI refuses `CLOUDS` and focused tests; real-cloud journeys remain local only.
   The separate native smoke reads the X11 clipboard after Copy name, Copy ETag and the Settings log-path action; the browser build itself still has no clipboard.
+  On GTK4/X11 it also dismisses the real public-read question with Escape and a graceful window-close request, requires each dialog to disappear and the editor to open another, and independently checks that no container POST occurred and its read ACL stayed empty.
   That smoke also checks an actual private GNOME keyring: one saved item, reconnection after restart without entering the key, then no item or recorded cleanup work after bookmark deletion.
 - It needs Go, Node with npm, python3, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
   The build it makes runs in a browser, so it needs no C compiler and none of the desktop's GTK or WebKitGTK packages.

@@ -19,10 +19,38 @@ rm -rf "$ART" && mkdir -p "$ART"
 say() { printf '\nsmoke: %s\n' "$*"; }
 fail() { printf '\nsmoke: FAIL: %s\n' "$*"; exit 1; }
 
-for tool in Xvfb xdotool xclip import curl python3 dbus-daemon gdbus gnome-keyring-daemon; do
+for tool in Xvfb xdotool xclip import curl python3 cc dbus-daemon gdbus gnome-keyring-daemon; do
   command -v "$tool" >/dev/null || fail "$tool is required"
 done
 [ -x bin/aeronautes ] || fail "bin/aeronautes missing — run 'make build' first"
+
+# Ubuntu's xdotool has no windowquit; windowclose destroys the window.
+# Send the window manager's graceful request, only to a child of our app.
+cc -Wall -Wextra -Werror -x c -o "$ART/request-close" - -lX11 <<'C'
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <stdlib.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 2;
+    Display *display = XOpenDisplay(NULL);
+    if (!display) return 2;
+    Window window = strtoul(argv[1], NULL, 0), parent = 0;
+    if (!XGetTransientForHint(display, window, &parent) || parent != strtoul(argv[2], NULL, 0)) {
+        XCloseDisplay(display);
+        return 3;
+    }
+    XEvent event = {0};
+    event.xclient.type = ClientMessage;
+    event.xclient.window = window;
+    event.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", False);
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", False);
+    int sent = XSendEvent(display, window, False, NoEventMask, &event);
+    XSync(display, False);
+    XCloseDisplay(display);
+    return sent ? 0 : 1;
+}
+C
 
 # Before anything is launched: this driver's process handling is what makes
 # every later "it started" and "it is gone" mean something.
@@ -365,6 +393,70 @@ clipboard_is "$STATE_DIR/native.log" || fail "Settings did not copy the active l
 shot 05-log-path-clipboard
 X key Escape
 
+say "refuse a native question with Escape and a window-close request"
+NATIVE_PID=$(X getwindowpid "$WIN")
+if DISPLAY=:98 "$ART/request-close" "$WIN" "$WIN"; then
+  fail "the close helper accepted the main window as its own dialog"
+fi
+question_window() {
+  local found
+  for _ in $(seq 1 30); do
+    found=$(X search --onlyvisible --pid "$NATIVE_PID" | awk -v main="$WIN" '$0 != main' || true)
+    if [[ "$found" =~ ^[0-9]+$ ]]; then printf '%s\n' "$found"; return 0; fi
+    sleep 0.2
+  done
+  return 1
+}
+X mousemove 160 195 click 1
+sleep 1
+X mousemove 1010 85 click 1
+sleep 1
+X key --delay 100 Tab space
+# Tab through the offered fields to the acknowledgement. This scrolls the
+# narrow inspector naturally without depending on the warning's wrapping.
+X key --delay 100 Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab space Tab Tab Return
+QUESTION=$(question_window) || { shot question-missing; fail "the native public-read question did not open"; }
+posts_before=$(grep -c 'POST /v1/AUTH_test/smoke-src$' "$ART/mockswift.log" || true)
+for dismissal in escape close; do
+  sleep 0.3
+  shot "question-$dismissal"
+  if [ "$dismissal" = escape ]; then
+    X windowfocus --sync "$QUESTION"
+    X key Escape
+  else
+    DISPLAY=:98 "$ART/request-close" "$QUESTION" "$WIN"
+  fi
+  closed=""
+  for _ in $(seq 1 30); do
+    if ! X search --onlyvisible --pid "$NATIVE_PID" | grep -qx "$QUESTION"; then closed=yes; break; fi
+    sleep 0.2
+  done
+  [ -n "$closed" ] || fail "native $dismissal left the question open"
+  sleep 1
+  # Opening it again proves the previous answer returned and Save is usable.
+  # Cycle focus back into the webview after GTK's modal surface loses it.
+  X windowfocus --sync "$WIN"
+  X key --delay 100 Tab shift+Tab Return
+  QUESTION=$(question_window) || { shot question-not-returned; fail "the native $dismissal did not return to a usable editor"; }
+  posts_after=$(grep -c 'POST /v1/AUTH_test/smoke-src$' "$ART/mockswift.log" || true)
+  [ "$posts_after" = "$posts_before" ] || fail "native $dismissal sent a container write"
+  printf 'dismissal=%s posts_before=%s posts_after=%s\n' "$dismissal" "$posts_before" "$posts_after" \
+    >> "$ART/native-refusals.txt"
+  curl -fsSI "$U/smoke-src" -H "X-Auth-Token: $TOK" > "$ART/question-$dismissal.headers"
+  python3 - "$ART/question-$dismissal.headers" <<'PY' || fail "native $dismissal made the container public"
+import sys
+from pathlib import Path
+for line in Path(sys.argv[1]).read_text().splitlines():
+    name, separator, value = line.partition(":")
+    if separator and name.lower() == "x-container-read" and value.strip():
+        sys.exit(1)
+PY
+done
+X windowfocus --sync "$QUESTION"
+X key Return
+sleep 1
+X windowfocus --sync "$WIN"
+
 say "refresh containers when native focus returns"
 X windowfocus --sync 0
 reads_before=$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")
@@ -435,4 +527,4 @@ done
 [ -n "$cleared" ] || fail "bookmark deletion left its keyring item or recorded cleanup work"
 shot 09-keyring-deleted
 
-say "PASS — browse, clipboard, focus refresh and GNOME keyring lifecycle landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
+say "PASS — browse, native refusals, clipboard, focus refresh and GNOME keyring lifecycle landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
