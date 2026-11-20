@@ -16,11 +16,14 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 | Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting, browsing and copying to the native clipboard; full mock browser journeys through the real frontend and Go services |
 | CI — all required jobs passed | Every preceding job completed with `success` |
 
-The native smoke proves desktop startup, connection, listing, X11 clipboard delivery and refresh on returning focus; it does not run a transfer.
+The native smoke proves desktop startup, connection, listing, X11 clipboard delivery, refresh on returning focus and the GNOME keyring lifecycle; it does not run a transfer.
 It reads Copy name, Copy ETag and the Settings log-path action through an independent `xclip` client, comparing them with the known fixture name, payload checksum and active log-file path.
-The log file must also hold session output.
+The copied log path must name an opened file; the startup cases separately require their expected diagnostics in the configured log file, since a healthy browsing session may be silent.
 It takes X input focus away, creates a container through another client, waits past thirty seconds and returns focus; a new account read and opening the new row prove the refresh reached the window.
 This is X11 evidence, not a Wayland or other operating-system run.
+The desktop application and secret service use a private HOME, XDG directories, D-Bus and GNOME keyring, all removed after the run.
+An independent Secret Service client observes item paths only: saving creates one key, a restarted app reconnects without re-entering it, and deleting the bookmark removes the item and its recorded cleanup work.
+This tests GNOME Secret Service; other desktop keyrings retain the release plan's host check.
 The same required job then runs all mock [browser journeys](journeys.md), including transfers and independent byte checks, with no cloud credentials.
 Browser journeys substitute the native dialogs and secret store; they do not prove native clipboard, keyring or dialog behaviour.
 They run serially without retries, and a focused `test.only` fails CI rather than silently reducing coverage.

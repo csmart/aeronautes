@@ -19,7 +19,7 @@ rm -rf "$ART" && mkdir -p "$ART"
 say() { printf '\nsmoke: %s\n' "$*"; }
 fail() { printf '\nsmoke: FAIL: %s\n' "$*"; exit 1; }
 
-for tool in Xvfb xdotool xclip import curl python3; do
+for tool in Xvfb xdotool xclip import curl python3 dbus-daemon gdbus gnome-keyring-daemon; do
   command -v "$tool" >/dev/null || fail "$tool is required"
 done
 [ -x bin/aeronautes ] || fail "bin/aeronautes missing — run 'make build' first"
@@ -41,6 +41,47 @@ cleanup() { rm -rf "$STATE_DIR"; }
 # including when it is interrupted, since bash runs an EXIT trap even when a
 # signal kills the shell.
 app_install_traps cleanup
+
+# Neither the app nor its secret service may use the caller's desktop state.
+# Keep build caches outside this environment, and the keyring outside artifacts.
+mkdir -p "$STATE_DIR"/{home,config,data,state,cache,runtime}
+chmod 700 "$STATE_DIR/runtime"
+SESSION_ENV=(HOME="$STATE_DIR/home" XDG_CONFIG_HOME="$STATE_DIR/config"
+  XDG_DATA_HOME="$STATE_DIR/data" XDG_STATE_HOME="$STATE_DIR/state"
+  XDG_CACHE_HOME="$STATE_DIR/cache" XDG_RUNTIME_DIR="$STATE_DIR/runtime"
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/session-bus" GNOME_KEYRING_CONTROL=)
+say "starting a private session bus and GNOME keyring"
+app_start "$ART/dbus.log" env "${SESSION_ENV[@]}" \
+  dbus-daemon --session --nofork --address="unix:path=$STATE_DIR/session-bus"
+printf '%s' 'owned-native-keyring-fixture' > "$STATE_DIR/home/unlock-password"
+# Background commands otherwise lose stdin; attach it in the child that execs
+# the daemon so it creates an unlocked login collection without a desktop prompt.
+# shellcheck disable=SC2016
+app_start "$ART/keyring.log" env "${SESSION_ENV[@]}" bash -c \
+  'exec gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory "$XDG_RUNTIME_DIR/keyring" < "$HOME/unlock-password"'
+keyring_call() {
+  local method="$1"; shift
+  timeout 5 env "${SESSION_ENV[@]}" gdbus call --session --dest org.freedesktop.secrets \
+    --object-path /org/freedesktop/secrets --method "org.freedesktop.Secret.Service.$method" "$@"
+}
+keyring_ready=""
+for _ in $(seq 1 10); do
+  if timeout 5 env "${SESSION_ENV[@]}" gdbus call --session --dest org.freedesktop.DBus \
+      --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.freedesktop.secrets \
+      | grep -q '(true,)' \
+    && keyring_call ReadAlias default | grep -q "'/org/freedesktop/secrets/collection/login'"; then
+    keyring_ready=yes; break
+  fi
+  sleep 1
+done
+[ -n "$keyring_ready" ] || fail "the private persistent keyring did not open"
+# Search returns paths, never values. Count locked items too: a locked key
+# still exists and cannot pass the deletion assertion.
+keyring_count_is() {
+  keyring_call SearchItems "{'service': 'aeronautes'}" \
+    | python3 -c 'import re,sys; sys.exit(len(re.findall(r"/org/freedesktop/secrets/collection/[^\x27 ]+", sys.stdin.read())) != int(sys.argv[1]))' "$1"
+}
+keyring_count_is 0 || fail "the private keyring is not empty"
 
 # The cluster and the display are launched and stopped exactly like the app.
 # They are single processes today, but owning them the same way is what makes a
@@ -64,16 +105,16 @@ say "starting Xvfb"
 app_start "$ART/xvfb.log" Xvfb :98 -screen 0 1280x800x24
 sleep 1
 
-# Some containers have no session bus, so the webview aborts before any window
-# exists; SMOKE_APP_WRAPPER="dbus-run-session --" gives such a host a private
-# one. WebKit's own sandbox is turned off by exporting
+# The wrapper remains available for host launch requirements; the private
+# desktop environment is applied after it. WebKit's sandbox is turned off by
+# exporting
 # WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1, which this script does NOT set:
 # the caller does, and CI already does exactly that because its runner denies
 # the user namespaces bubblewrap needs. The artifact records the effective value
 # either way, because that variable weakens the webview's confinement and a
 # reader of these artifacts should not have to guess whether it was on.
 read -r -a APP_WRAPPER <<<"${SMOKE_APP_WRAPPER:-}"
-APP_ENV=(AERONAUTES_STATE_DIR="$STATE_DIR" DISPLAY=:98 WAYLAND_DISPLAY=)
+APP_ENV=("${SESSION_ENV[@]}" AERONAUTES_STATE_DIR="$STATE_DIR" DISPLAY=:98 WAYLAND_DISPLAY=)
 printf 'wrapper=%s WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=%s\n' \
   "${SMOKE_APP_WRAPPER:-<none>}" "${WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS:-<unset>}" \
   >"$ART/launch-environment.txt"
@@ -82,7 +123,7 @@ printf 'wrapper=%s WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=%s\n' \
 # its own owned group. Sets APP_LAST_GROUP; never call it in a subshell.
 start_app() {
   local log="$1"; shift
-  app_start "$log" env -u AERONAUTES_LOG_FILE "${APP_ENV[@]}" "$@" "${APP_WRAPPER[@]}" ./bin/aeronautes
+  app_start "$log" "${APP_WRAPPER[@]}" env -u AERONAUTES_LOG_FILE "${APP_ENV[@]}" "$@" ./bin/aeronautes
 }
 
 # log_saw <file> <pattern> <seconds>: wait for a line to appear in a log. The
@@ -143,7 +184,7 @@ switch_case() {
   # waits for is its own.
   wait_no_window 30 || fail "a window from an earlier case never went away"
   state=$(mktemp -d "$PWD/$ART/state-$label.XXXXXX")
-  start_app "$log" AERONAUTES_ENABLE="$spec" AERONAUTES_STATE_DIR="$state"
+  start_app "$log" AERONAUTES_ENABLE="$spec" AERONAUTES_STATE_DIR="$state" AERONAUTES_LOG_FILE="$state/session.log"
   local group="$APP_LAST_GROUP"
   printf 'case=%s spec=%q state=%s group=%s\n' "$label" "$spec" "$state" "$group" \
     >>"$ART/switch-launches.txt"
@@ -157,6 +198,7 @@ switch_case() {
     local want
     for want in "$@"; do
       log_saw "$log" "$want" 20 || failure="no log line: $want"
+      log_saw "$state/session.log" "$want" 5 || failure="no configured-file log line: $want"
     done
   fi
   # Confirmed gone before the next case: it holds a window, a state lock and a
@@ -265,6 +307,7 @@ for attempt in 1 2 3; do
   shot "retry-connect-$attempt"
 done
 [ -n "$connected" ] || fail "never connected after 3 attempts"
+keyring_count_is 1 || fail "the bookmark key was not saved in the private keyring"
 sleep 1
 shot 01-connected
 
@@ -305,7 +348,9 @@ X key Tab
 X type --delay 30 "Keep a log file"
 X key --delay 100 Tab Tab Return
 clipboard_is "$STATE_DIR/native.log" || fail "Settings did not copy the active log file's path"
-[ -s "$STATE_DIR/native.log" ] || fail "the named native log file has no session output"
+# A healthy session can be silent; the startup cases above separately prove
+# that a configured file receives the diagnostics the app actually emits.
+[ -f "$STATE_DIR/native.log" ] || fail "the named native log file was not opened"
 shot 05-log-path-clipboard
 X key Escape
 
@@ -334,4 +379,49 @@ X mousemove 160 195 click 1
 wire_saw 'GET /v1/AUTH_test/smoke-return' 10 || fail "the refreshed container was not shown"
 shot 06-focus-return
 
-say "PASS — browse, native clipboard and focus refresh landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
+say "reconnect after restart using the saved key"
+app_stop "$APP_GROUP" 20 || fail "the journey app did not stop"
+wait_no_window 30 || fail "the stopped journey window remains"
+reads_before=$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")
+start_app "$ART/restarted-app.log" AERONAUTES_LOG_FILE="$STATE_DIR/native.log"
+APP_GROUP="$APP_LAST_GROUP"
+WIN=$(timeout 30 env DISPLAY=:98 xdotool search --sync --onlyvisible --name "Aeronautes" | head -1) \
+  || fail "the restarted app window never appeared"
+X windowfocus --sync "$WIN"
+sleep 2
+X mousemove 42 75 click 1
+reconnected=""
+for _ in $(seq 1 10); do
+  if [ "$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")" -gt "$reads_before" ]; then
+    reconnected=yes; break
+  fi
+  sleep 1
+done
+[ -n "$reconnected" ] || fail "the restarted app did not reconnect with its saved key"
+keyring_count_is 1 || fail "restart changed the saved key count"
+shot 07-keyring-reconnect
+X key --delay 100 Tab Return
+sleep 1
+shot 08-keyring-editor
+
+say "delete the bookmark and its actual keyring item"
+X mousemove 470 684 click 1
+sleep 1
+X click 1
+cleared=""
+for _ in $(seq 1 10); do
+  if keyring_count_is 0 && timeout 5 python3 - "$STATE_DIR/aeronautes.sqlite" <<'PY'
+import pathlib, sqlite3, sys
+with sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri() + "?mode=ro", uri=True, timeout=3) as db:
+    counts = db.execute("SELECT (SELECT COUNT(*) FROM bookmarks), (SELECT COUNT(*) FROM credential_work)").fetchone()
+sys.exit(counts != (0, 0))
+PY
+  then
+    cleared=yes; break
+  fi
+  sleep 1
+done
+[ -n "$cleared" ] || fail "bookmark deletion left its keyring item or recorded cleanup work"
+shot 09-keyring-deleted
+
+say "PASS — browse, clipboard, focus refresh and GNOME keyring lifecycle landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"

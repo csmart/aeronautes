@@ -55,6 +55,7 @@ It does not measure performance.
 - The required CI smoke job runs the complete mock browser suite after the native desktop smoke.
   CI refuses `CLOUDS` and focused tests; real-cloud journeys remain local only.
   The separate native smoke reads the X11 clipboard after Copy name, Copy ETag and the Settings log-path action; the browser build itself still has no clipboard.
+  That smoke also checks an actual private GNOME keyring: one saved item, reconnection after restart without entering the key, then no item or recorded cleanup work after bookmark deletion.
 - It needs Go, Node with npm, python3, the pinned rclone on `PATH` (as layer 1 does) and network access to fetch Playwright's Chromium on the first run.
   The build it makes runs in a browser, so it needs no C compiler and none of the desktop's GTK or WebKitGTK packages.
   When a build step fails, for want of one of these or otherwise, the run says so and names the `build.log` in its private directory.
@@ -200,7 +201,8 @@ Where a row says "not yet" and layer 1 runs the same service against the real cl
 | Settings | the default profile reaches the upload dialog | start the upload dialog at the default profile | a fresh upload dialog's Profile is balanced |
 | Settings | connection cap 1 (mock only) | browse and inspect under a connection cap of one | a session opened under the cap lists the container and inspects each object |
 | Window | welcome at the minimum 960 × 600 window size; keyboard focus and dismissal | import clouds.yaml from the welcome dialog using its keyboard controls (mock only) | controls fit; Tab and Shift+Tab stay inside the modal; Escape dismisses it for this window; Enter opens import; a fresh page offers welcome again |
-| Window | credential status; use of the rest of the application by keyboard alone | not yet | |
+| Window | credential status after key changes and bookmark deletion | change a bookmark's user: a wrong one is refused, the right one connects | zero recorded cleanup counts after deletion, Refresh, the warning that counts cannot prove erasure, and Escape dismissal; actual GNOME keyring contents are checked separately by the native smoke |
+| Window | use of the rest of the application by keyboard alone | not yet | |
 | Jobs | the benchmark | not offered in this release (v1Offers.benchmark is off); tested in Go | |
 | Recent changes | search the audit trail and "Export log…" | edit the account's metadata and find the write in Recent changes (mock only) | a fresh bookmark attributes one known write; bookmark, operation-prefix and result filters select it, empty searches recover, and actual JSONL exports contain zero or exactly that applied account event under the selected filters |
 | Window | the status bar's bookmark, the About link and the About dialog | the status bar and the About dialog | "connected to" and the bookmark; the version line's twelve characters and its hover text are the checkout's revision |
