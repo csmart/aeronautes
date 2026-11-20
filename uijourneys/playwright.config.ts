@@ -5,7 +5,8 @@ import { defineConfig } from "@playwright/test";
 // failure keeps a screenshot and the page's text in the private directory,
 // and the private reporter keeps failures out of the output (ADR 0112
 // decision 7).
-const targets = ["mock", ...(process.env.AERONAUTES_CLOUDS ? ["ceph", "swift"] : [])];
+const targets = ["mock", ...(process.env.AERONAUTES_SAIO ? ["saio"] : []),
+  ...(process.env.AERONAUTES_CLOUDS ? ["ceph", "swift"] : [])];
 
 export default defineConfig({
   testDir: "tests",

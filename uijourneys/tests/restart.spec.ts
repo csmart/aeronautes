@@ -16,7 +16,7 @@ import {
 // keeps the job's record.
 //
 // A restart loses the session's keys and the run's record of what it made
-// on an account, which would leave a real cloud's containers behind, so
+// on an account, which would leave a cloud's or SAIO's containers behind, so
 // these journeys run only in a mock-only run.
 
 // Whether this test restarted the application, so its key is put back
@@ -24,7 +24,8 @@ import {
 // after it.
 let restarted = false;
 test.beforeEach(async ({}, info) => {
-  test.skip(info.project.name !== "mock" || !!process.env.AERONAUTES_CLOUDS, "restarting is driven in a mock-only run");
+  test.skip(info.project.name !== "mock" || !!process.env.AERONAUTES_CLOUDS || !!process.env.AERONAUTES_SAIO,
+    "restarting is driven in a mock-only run");
   test.setTimeout(300_000);
   restarted = false;
 });
