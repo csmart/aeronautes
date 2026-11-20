@@ -53,6 +53,17 @@ SESSION_ENV=(HOME="$STATE_DIR/home" XDG_CONFIG_HOME="$STATE_DIR/config"
 say "starting a private session bus and GNOME keyring"
 app_start "$ART/dbus.log" env "${SESSION_ENV[@]}" \
   dbus-daemon --session --nofork --address="unix:path=$STATE_DIR/session-bus"
+# Owning the process group does not mean the bus accepts clients yet.
+# The keyring does not reconnect if its first connection beats the socket.
+bus_ready=""
+for _ in $(seq 1 10); do
+  if timeout 5 env "${SESSION_ENV[@]}" gdbus call --session --dest org.freedesktop.DBus \
+      --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
+    bus_ready=yes; break
+  fi
+  sleep 1
+done
+[ -n "$bus_ready" ] || fail "the private session bus did not become ready"
 printf '%s' 'owned-native-keyring-fixture' > "$STATE_DIR/home/unlock-password"
 # Background commands otherwise lose stdin; attach it in the child that execs
 # the daemon so it creates an unlocked login collection without a desktop prompt.
