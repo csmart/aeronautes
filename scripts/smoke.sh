@@ -6,8 +6,8 @@
 # 2026 (decision 14).
 # Upload returned to the release on 16 October 2026 but, like download, needs
 # a native picker this harness cannot operate, so neither is driven here. Screenshots
-# and logs go to smoke-artifacts/. The §57.4 smoke against real SwiftStack
-# infrastructure remains a manual operator step.
+# and logs go to smoke-artifacts/. The §57.4 representative-cloud journeys
+# run locally with test accounts as separate release evidence.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

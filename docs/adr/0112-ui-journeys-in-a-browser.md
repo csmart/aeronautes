@@ -71,5 +71,6 @@ Quota and version-setting widgets are also exercised against that fixture, inclu
 - Default build: the `uijourney` stand-ins are absent (a test that fails if the desktop seams are not the ones wired).
 - The control listener refuses a request without the token and a picker or confirmation with nothing scripted.
 - Journeys, on the mock and both real clouds: create a bookmark and connect (mock only); browse a container; upload a folder with a segmented file and see the large-object disclosure; upload a name again with the overwrite confirmation acknowledged; download it back; edit object metadata; make a container public with the confirmation and private again; delete objects, a prefix and the container through the typed confirmations; switch between the two clouds.
-- The 0.5.0 tag waits for these journeys only. The copy matrix, container and account metadata beyond the public-read step, and the settings backup follow later and do not hold the tag.
+- The initial journey scope has since expanded to copy, container and account metadata, and settings backup; the [coverage table](../journeys.md#what-the-browser-journeys-cover) records the current assertions and target limits.
+  The [0.5.0 test plan](../audits/2026-11-11/0.5.0-test-plan.md) records the candidate's automated and desktop acceptance gates.
 - The `uijourney` build refuses a non-loopback `WAILS_SERVER_HOST`, and the startup line carries only the two ports and the token.
