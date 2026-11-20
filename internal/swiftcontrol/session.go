@@ -30,8 +30,8 @@ type Config struct {
 	// APIKey is the durable auth key (X-Auth-Key).
 	APIKey string
 	// StorageURLOverride, when set, replaces the storage URL returned by
-	// auth — a classic SwiftStack deployment quirk (§9.2). It must survive
-	// re-authentication, not just the first Authenticate.
+	// auth for deployments with a different access endpoint (§9.2).
+	// It must survive re-authentication, not just the first Authenticate.
 	StorageURLOverride string
 	// TLS is this bookmark's TLS policy (§12.3).
 	TLS TLSConfig

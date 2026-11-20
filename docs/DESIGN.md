@@ -7,7 +7,7 @@
 **Binary / repo id:** `aeronautes`  
 **App ID:** `io.csmart.aeronautes`  
 **GitHub:** `csmart/aeronautes`  
-**Primary target:** OpenStack Swift / SwiftStack operators  
+**Primary target:** operators of OpenStack Swift and compatible implementations<br>
 **Primary platform:** Linux (reference/first-polish)  
 **Required targets:** Linux, Windows, macOS — each on **x86_64 and aarch64** (six targets, all required; see §61.0)
 
@@ -32,7 +32,7 @@ Generic transfer tools are already good at moving bytes.
 What is missing is an operator UI that understands the things that make Swift operationally powerful, subtle, and occasionally dangerous:
 
 - account, container, and object metadata;
-- SwiftStack / TempAuth v1 authentication;
+- TempAuth v1 authentication;
 - container ACLs;
 - storage policies;
 - quotas;
@@ -601,9 +601,14 @@ An Identity URL that is not the v3 endpoint is asked once per session which vers
 Bookmarks can be imported from an rclone.conf or a clouds.yaml: Go reads the file and keeps each secret for the secret store, a source Aeronautes cannot reproduce exactly is skipped with its reason, and a bookmark that does not verify after import is kept and flagged until it connects ([ADR 0114](adr/0114-importing-bookmarks.md)).
 Keystone v2, the other v3 methods and any Keystone management UI are not v1 goals.
 
-**Pin the auth target to a real cluster.** "SwiftStack" as a commercial product was discontinued after Nvidia's 2020 acquisition; "SwiftStack-compatible" here means the legacy/OpenStack Swift lineage those deployments run, and "SwiftStack v1 auth" is TempAuth-v1-style auth. Because there is no shipping SwiftStack release to certify against, the concrete auth flow, `/info` behaviour, and versioning model (§21) must be pinned to the **actual cluster the user operates**, and the "SwiftStack release gate" in §57.4 means "a representative instance of that real deployment", not a vendor product.
+**Pin compatibility to a real deployment.**
+Aeronautes targets the OpenStack Swift API and compatible implementations.
+The concrete auth flow, `/info` behaviour and versioning model (§21) must be checked against the actual deployment the user operates.
+The release gate in §57.4 therefore uses a representative instance of that deployment.
 
-**Auth variants still live inside "v1".** Even TempAuth-v1 has sharp edges to handle explicitly: `account:user` identities (not email addresses), reseller/admin identities, a returned storage URL that differs from any `storage_url_override`, and http/https or hostname mismatches between the auth response and the configured endpoint (a classic SwiftStack footgun). Treat these as first-class bookmark/auth cases, not surprises.
+**Auth variants still live inside "v1".**
+Even TempAuth-v1 has sharp edges to handle explicitly: `account:user` identities (not email addresses), reseller/admin identities, a returned storage URL that differs from any `storage_url_override`, and http/https or hostname mismatches between the auth response and the configured endpoint.
+Treat these as first-class bookmark/auth cases, not surprises.
 
 ---
 
@@ -668,7 +673,7 @@ Bookmark
   display_name
 
   protocol_profile
-    SwiftStackV1
+    TempAuthV1
     KeystoneV3                 # password method, project scope (ADR 0100)
 
   auth_url
@@ -1130,17 +1135,17 @@ The container edit path shares this shape and is not yet qualified.
 
 ## 19. ACL model
 
-v1 UI targets SwiftStack/Auth-v1 semantics first.
+v1 UI targets Swift/TempAuth-v1 semantics first.
 
 Use:
 
 ```text
 AclDialect
-  SwiftStackV1
+  TempAuthV1
   GenericRaw
 ```
 
-Structured editor should understand useful SwiftStack-style principals and public read/listing semantics, while always showing the exact generated header value.
+Structured editor should understand useful TempAuth-style principals and public read/listing semantics, while always showing the exact generated header value.
 
 ### 19.1 Presets
 
@@ -1182,7 +1187,7 @@ Existing container inspector:
 
 ## 21. Versioning
 
-Initial UI supports the versioning model relevant to the target SwiftStack environment.
+Initial UI supports the versioning model relevant to the target Swift environment.
 
 Represent it as a typed capability/profile, not as assumptions scattered through UI code.
 
@@ -1489,7 +1494,7 @@ This matches the "authenticate once" model, keeps the durable secret out of the 
 So for long jobs Aeronautes splits work into bounded file batches and starts a **fresh child per batch** with a fresh token, and/or requires the remaining token lifetime to exceed the time to move the batch's largest object at a conservative throughput floor.
 Since 24 September 2026 the download route batches its engine-routed names the way the copy executor does, 500 names or 64 GiB of planned bytes per child, and settles each batch before the next child starts ([ADR 0074](adr/0074-workload-bounds.md) decision 3).
 Since 16 November 2026 a download writes each file straight into the chosen folder, with no stage and no placing step ([ADR 0122](adr/0122-the-stores-answer-is-the-result.md) decision 5).
-Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target SwiftStack cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below.
+Token lifetime is established in priority order: **(1)** a server-provided expiry — stock TempAuth returns `X-Auth-Token-Expires` as delta-seconds remaining (observed against upstream SAIO 2.38; the adapter's own v1 authenticator captures it, tolerating absolute-epoch variants), but the target Swift cluster's auth may not (confirming *that* remains seam-spike item 1, §60); **(2)** a conservative per-bookmark configured lifetime; **(3)** a bounded maximum child duration plus the failure-driven reauth→reconcile fallback below.
 One consequence must be surfaced honestly: a **single object too large to move within the assumed lifetime at the floor rate** (multi-TiB over a slow link) is outside the supported envelope — the planner MUST fail such a job at preflight with a clear explanation (object size × measured link speed vs token lifetime), never mid-flight.
 *Fallback — failure-driven:* if a token does expire in flight, the child's requests fail with an auth error and, after a **small** bounded retry budget (so control returns quickly rather than looping), the child exits; Aeronautes then re-authenticates with the durable key it still holds, reconciles partial destination state, and spawns a new rclone process.
 On restart, Aeronautes rebuilds the work set from **unverified** objects only (§28.4): a *completed, verified* object is simply absent from the new set — Aeronautes does **not** rely on rclone's skip-identical, which is unsafe for `Unknown` objects and is bypassed by the `--ignore-times` selected-set contract.
@@ -1622,7 +1627,7 @@ All saved bookmarks can be source or destination.
 Examples:
 
 ```text
-SwiftStack Prod → SwiftStack DR
+Swift Prod → Swift DR
 Swift cluster A → Swift cluster B
 Swift account A → Swift account B
 local → Swift
@@ -2125,7 +2130,7 @@ All high-volume operations must:
 - expose throughput and progress;
 - respond to 429 / Retry-After;
 - adapt to latency/failures;
-- be benchmarked against representative SwiftStack infrastructure;
+- be benchmarked against representative Swift infrastructure;
 - prefer the fastest safe execution engine.
 
 Performance work is not deferred until "after correctness".
@@ -2940,13 +2945,11 @@ Use tiny large-object thresholds in tests.
 
 A containerized-Swift (SAIO-style) integration job is added to `.github/workflows/ci.yml` when Phase 1 starts, so this layer runs in CI and not only on developer machines.
 
-### 57.4 Real SwiftStack release gate
+### 57.4 Representative Swift deployment release gate
 
-Because the product claims SwiftStack/Auth-v1-first support, a release smoke test should hit a representative SwiftStack-compatible environment.
+A release smoke test should exercise the supported Swift API operations and authentication methods against a representative deployment.
+Local Swift proves protocol behaviour; compatibility claims also need evidence from the target implementation.
 
-Local Swift proves Swift semantics.
-
-It does not fully prove the target deployment.
 
 ---
 
@@ -3112,7 +3115,7 @@ Feed the results back into §25, §26.2, §26.4, §27.4, §27.5, and §28.4/§28
 
 Deliver:
 
-- SwiftStack v1 auth;
+- TempAuth v1 auth;
 - `/info`;
 - account HEAD;
 - container listing;
@@ -3155,7 +3158,7 @@ Deliver:
 - semantic diff;
 - DLO-preserving metadata update;
 - post-write verification;
-- structured SwiftStack ACL editor + raw mode;
+- structured Swift ACL editor + raw mode;
 - create container;
 - storage-policy picker;
 - marker create/delete;
@@ -3363,7 +3366,7 @@ Potential v1.x/v2 features:
 
 An operator can:
 
-1. save multiple SwiftStack v1 bookmarks;
+1. save multiple TempAuth v1 bookmarks;
 2. browse containers without loading the whole account namespace;
 3. browse very large containers page by page;
 4. navigate marker-backed and implied prefixes;
@@ -3529,7 +3532,7 @@ in the same commit whenever implementation experience changes a design decision.
 
 The first real vertical proof is:
 
-> Launch Aeronautes on Linux → choose a saved SwiftStack v1 bookmark → authenticate → browse containers and prefixes in the intended UI → select an object → inspect a real HEAD response.
+> Launch Aeronautes on Linux → choose a saved TempAuth v1 bookmark → authenticate → browse containers and prefixes in the intended UI → select an object → inspect a real HEAD response.
 
 Once that is stable, proceed phase-by-phase.
 
@@ -3544,7 +3547,7 @@ dependency forces it.
    levels with pagination, the §14.3 encoding suite against real Swift, object HEAD, DLO logical
    size, marker-at-subdir paging. `ci.yml` gains the containerized-Swift job (§57.3). This is the
    Phase 1 gate artifact ("real cluster browsed without rclone"); §57.4 still applies to the real
-   SwiftStack target.
+   Swift target.
 2. **Container HEAD detail** — adapter: storage policy, read/write ACLs, container-versioning
    headers surfaced as a typed *display* profile (Off / Versions-Location / History-Location —
    the §21 behavioural pin remains an owner decision and is not built here), quota, CORS and
@@ -3598,7 +3601,7 @@ metadata edit" — are exactly the kind of claim only a real server settles.
    removed keys), conflict surfacing with re-fetch, save + verify status. The §4.5 vocabulary
    rules apply to every label. Verified live headless.
 7. **Container & ACL editor UI** — create-container dialog with policy picker, capability-gated
-   configuration (quotas, versioning per pin), the structured SwiftStack ACL editor with raw
+   configuration (quotas, versioning per pin), the structured Swift ACL editor with raw
    mode, marker create/delete on prefixes, and a minimal audit-trail view (§50) so mutations are
    visibly accounted for.
 
@@ -3797,7 +3800,7 @@ packaging must not misrepresent artifacts as signed.
    the §57.4 real-endpoint smoke checklist that remains the owner's to run).
 8. **Release smoke script** — the scripted end-to-end pass against the mock cluster (launch,
    connect, browse, copy, mirror preview, destructive preview) as `scripts/smoke.sh`, runnable
-   headless; §57.4 against real SwiftStack stays a manual owner step, stated in the docs.
+   headless; §57.4 against real Swift stays a manual owner step, stated in the docs.
 
 Gate: TLS works against real Swift under both trust modes with per-bookmark scoping; a fresh
 clone builds unsigned artifacts for the six targets in CI configuration; migrations upgrade
@@ -3810,7 +3813,7 @@ unsigned CI matrix is in place with the local Linux rpm path verified; the stepw
 suite upgrades every historical schema; and `scripts/smoke.sh` passes headless — the real
 binary against the in-repo mock cluster, ending with a real engine copy proven landed
 server-side. Signing remains skipped and labelled per the owner decision. The §57.4 smoke
-against real SwiftStack infrastructure remains the owner's manual step.
+against real Swift infrastructure remains the owner's manual step.
 
 ### 65.7 Eighth milestone — post-release engineering
 

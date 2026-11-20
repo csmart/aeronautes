@@ -170,7 +170,7 @@ Public maintainer advisory spot checks and the zero-open-alert GitHub Dependabot
 
 ## What remains unverified
 
-- Uncovered two-account scenarios and representative SwiftStack semantics, including the complete supported version/archive contract; the existing local SAIO suite and one Linux engine measurement lane now ran, while all-six-engine and full safety-contract validation remain open.
+- Uncovered two-account scenarios and representative Swift semantics, including the complete supported version/archive contract; the existing local SAIO suite and one Linux engine measurement lane now ran, while all-six-engine and full safety-contract validation remain open.
 - Native Linux GUI interaction, native macOS/Windows operation, all six packaged artifacts, screen readers, picker/keychain/portal integration, install/upgrade/rollback.
 - Large-namespace memory/throughput/fairness measurements, long-duration token expiry/load/soak tests, broad fuzzing and a deployed-app penetration test.
 - Actual child/parent kill and restart experiments across platforms, OS/power-loss experiments, and complete recovery/audit/local-filesystem snapshots.

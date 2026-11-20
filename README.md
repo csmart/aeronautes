@@ -3,7 +3,7 @@
 [![CI](https://github.com/csmart/aeronautes/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/csmart/aeronautes/actions/workflows/ci.yml?query=branch%3Amaster+event%3Apush)
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
-**desktop operator workbench for OpenStack Swift / SwiftStack**.
+**desktop operator workbench for the OpenStack Swift API and compatible implementations**.
 It makes Swift's control-plane semantics explicit and uses rclone and native Swift features to move bulk data.
 
 > **Open-source software, no warranty.**
@@ -179,7 +179,7 @@ The view refreshes after bookmark changes and reports unavailable state explicit
 Deleting a bookmark removes its saved configuration and cached connection; it does not revoke every previously held session, and outside the Linux case above it does not prove physical key removal.
 These remaining [credential lifetime and recovery gates](docs/adr/0015-credential-bindings.md) must close before that hold is lifted.
 
-The [representative deployment smoke](docs/DESIGN.md#574-real-swiftstack-release-gate) remains a **manual operator step**.
+The [representative deployment smoke](docs/DESIGN.md#574-representative-swift-deployment-release-gate) remains a **manual operator step**.
 Use dedicated test accounts and containers, known fixture contents and a scratch download directory on the actual deployment.
 Connect over TLS, browse a large fixture container and inspect known objects.
 Download a small selection and compare its contents independently, then edit and read back object and container metadata on those fixtures.
@@ -200,7 +200,7 @@ WebKitGTK 6 and is served via Flatpak later (§6.6).
 
 ## Who it's for
 
-OpenStack Swift / SwiftStack operators managing large namespaces: browsing, inspecting, downloading, uploading, copying between containers and accounts, deleting and editing metadata.
+Operators of OpenStack Swift and compatible implementations managing large namespaces: browsing, inspecting, downloading, uploading, copying between containers and accounts, deleting and editing metadata.
 Mirroring one scope onto another, which deletes what the source does not have, remains outside the current v1 scope.
 
 ## Licence

@@ -142,7 +142,7 @@ The first two decide the release after v1 and are recorded here so the trail sta
 
 31. The plan is delivered through the Linux half of 0.7.0, and Keystone joins 0.5.0.
     On the [road to 1.0.0](../2026-10-27/road-to-1.0.0.md): "great, let's continue getting all those things done and merged up to 0.7.0 as I don't have windows or mac yet, but I want a COMPLETE LInux release done".
-    On Keystone, after first saying it was out and asking whether it was cheap: "keystong needs to be IN for 1.0.0, it's a question of where we add it" and "yeah, just add keystone into 0.5.0, thanks", with the reason that the SwiftStack clusters the product is built for do not use it while "peple on lInux can try it on other swift installations".
+    On Keystone, after first saying it was out and asking whether it was cheap: "keystong needs to be IN for 1.0.0, it's a question of where we add it" and "yeah, just add keystone into 0.5.0, thanks", with the reason that the original target deployments used TempAuth while "peple on lInux can try it on other swift installations".
     The author's reading: the sequence 0.2.0 to 0.6.0 and the Linux items of 0.7.0 are authorised for delivery; macOS and Windows acceptance wait for hardware and the platform narrowing of decision 1 stands until then; Keystone authentication is in 1.0.0 as part of 0.5.0; the plan's other decisions (mirror, signing keys, the Wails pin, the benchmark and back-off, the vault, the Linux formats) remain open and are taken in the data-safe direction until given.
 
 32. Delivery authority for the Linux release: "you have permission to commit, run, build, test push, merge and do anything you need to, in order to get us to this Linux 1.0.0 release . go ahead".

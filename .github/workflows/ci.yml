@@ -168,7 +168,7 @@ jobs:
   # Integration against a real containerized Swift (§57.3): the adapter is
   # driven end to end over the §58 canonical fixtures — auth, listings, the
   # §14.3 encoding suite, HEAD/DLO/SLO semantics. This is the Phase 1 gate
-  # artifact; the real SwiftStack target remains the §57.4 release check.
+  # artifact; the representative Swift deployment remains the §57.4 release check.
   saio_tests:
     name: Swift tests — ${{ matrix.lane }}
     strategy:
