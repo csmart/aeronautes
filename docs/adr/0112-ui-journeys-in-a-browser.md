@@ -47,6 +47,22 @@ What server mode cannot do is show a native dialog: the file and folder pickers 
 - The stand-ins are the one place the UI journeys differ from the shipped application, and they replace only what has no browser equivalent.
 - Native dialogs themselves stay untested by this suite, as they were.
 
+## Local Swift fixture extension — 20 November 2026
+
+The operator wants practical GUI coverage to be complete while provider credentials and runs stay local.
+The mock cannot prove version archives or quota enforcement, while the existing local SAIO offers those behaviours without a billable account.
+The following extension is planned; no SAIO browser target is implemented at this record's introduction.
+
+8. **An optional existing local SAIO target, using the same suite.**
+   Setting `AERONAUTES_SAIO_AUTH_URL` opts into the `saio` browser project alongside the mock; selecting `--project=saio` runs that project alone.
+   Go reads this endpoint and the existing integration variables `AERONAUTES_SAIO_USER` and `AERONAUTES_SAIO_KEY`, with the integration fixture's defaults `test:tester` and `testing`, and saves a TempAuth bookmark without sending its key to the page.
+   A request for this target without its endpoint fails; there is no fallback to a provider account or clouds.yaml.
+   It uses the existing owned-container record and teardown, never starts, restarts or recreates SAIO, and never clears the account as a whole.
+   Application restart/crash journeys remain limited to mock-only runs, since restarting loses the control listener's ownership record.
+   The existing version-archive journeys also run on SAIO, and new quota and version-setting journeys use the actual store rather than adding those semantics to the mock.
+   Output may use the target label `saio` under decision 7's same private-evidence rules; native substitutions remain unchanged.
+   This adds no hosted job and does not replace the representative-cloud release gate or authorise provider credentials in GitHub.
+
 ## Tests
 
 - Default build: the `uijourney` stand-ins are absent (a test that fails if the desktop seams are not the ones wired).
