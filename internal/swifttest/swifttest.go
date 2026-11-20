@@ -232,6 +232,11 @@ type Server struct {
 	// V3UserID, when set, is a user ID the mock Keystone accepts in place
 	// of the username, for tests of a user named by ID.
 	V3UserID string
+	// V3ProjectName and V3ProjectID, when either is set before serving,
+	// restrict the accepted project scope. Browser ID journeys need a
+	// missing or wrong project to fail rather than be silently ignored.
+	V3ProjectName string
+	V3ProjectID   string
 
 	mu          sync.Mutex
 	containers  map[string]*Container
@@ -518,6 +523,12 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 					} `json:"user"`
 				} `json:"password"`
 			} `json:"identity"`
+			Scope struct {
+				Project struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"project"`
+			} `json:"scope"`
 		} `json:"auth"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -526,7 +537,13 @@ func (s *Server) handleV3Auth(w http.ResponseWriter, r *http.Request) {
 	}
 	user := body.Auth.Identity.Password.User
 	named := user.Name == s.user || (s.V3UserID != "" && user.ID == s.V3UserID)
-	if !named || user.Password != s.currentKey() {
+	project := body.Auth.Scope.Project
+	scoped := true
+	if s.V3ProjectName != "" || s.V3ProjectID != "" {
+		scoped = (s.V3ProjectName != "" && project.Name == s.V3ProjectName) ||
+			(s.V3ProjectID != "" && project.ID == s.V3ProjectID)
+	}
+	if !named || !scoped || user.Password != s.currentKey() {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
