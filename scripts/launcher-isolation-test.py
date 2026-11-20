@@ -23,6 +23,47 @@ def command(source, prefix):
 
 
 class LauncherIsolation(unittest.TestCase):
+    def test_keyring_waits_for_its_session_bus(self):
+        source = (SCRIPTS / "smoke.sh").read_text()
+        start = source.index('app_start "$ART/dbus.log"')
+        startup = source[start:source.index("\nkeyring_call()", start)]
+        for available in (True, False):
+            with self.subTest(available=available), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "home").mkdir()
+                # A live process can still refuse the first RPC. The keyring
+                # stand-in rejects a start before any successful bus response.
+                probe = root / "gdbus"
+                probe.write_text('''#!/bin/sh
+if [ "$BUS_AVAILABLE" = no ]; then exit 1; fi
+if [ ! -e "$BUS_FIXTURE/attempted" ]; then
+    touch "$BUS_FIXTURE/attempted"
+    exit 1
+fi
+touch "$BUS_FIXTURE/ready"
+''')
+                probe.chmod(0o700)
+                program = '''
+set -euo pipefail
+STATE_DIR="$1"; ART="$STATE_DIR"; SESSION_ENV=()
+fail() { exit 1; }
+sleep() { :; }
+app_start() {
+    if [ "$1" = "$ART/keyring.log" ]; then
+        test -e "$STATE_DIR/ready" || exit 93
+        touch "$STATE_DIR/keyring-started"
+    fi
+}
+''' + startup
+                env = dict(os.environ, BUS_FIXTURE=str(root),
+                           BUS_AVAILABLE="yes" if available else "no",
+                           PATH=f"{root}:{os.environ['PATH']}")
+                result = subprocess.run(["bash", "-c", program, "startup", str(root)],
+                                        env=env, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0 if available else 1,
+                                 result.stdout + result.stderr)
+                self.assertEqual((root / "keyring-started").exists(), available)
+
     def test_ci_refuses_cloud_credentials_before_building(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
