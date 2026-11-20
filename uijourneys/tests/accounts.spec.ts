@@ -66,6 +66,17 @@ test("change a bookmark's user: a wrong one is refused, the right one connects",
   } finally {
     await cleanUp(page, [name]);
   }
+  // The browser's session store can prove the recorded cleanup status;
+  // the separate native smoke observes the actual GNOME keyring item.
+  await page.getByRole("button", { name: "key cleanup", exact: true }).click();
+  const cleanup = page.getByRole("dialog", { name: "Credential cleanup", exact: true });
+  await expect(cleanup.locator("dd")).toHaveText(["0", "0", "0", "0"]);
+  await expect(cleanup).toContainText("No pending credential cleanup is recorded.");
+  await expect(cleanup).toContainText("cannot confirm which keys still exist");
+  await cleanup.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(cleanup.locator("dd")).toHaveText(["0", "0", "0", "0"]);
+  await page.keyboard.press("Escape");
+  await expect(cleanup).toHaveCount(0);
 });
 
 // A store nobody answers at is refused in plain words, promptly: the
