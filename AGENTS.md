@@ -1,12 +1,11 @@
 # AGENTS.md — start here
 
-**Aeronautes** ("air sailor" — a genus of swifts) is a beautiful, performance-first **desktop
-operator workbench for the OpenStack Swift API and compatible implementations**: it makes Swift's control-plane semantics
-understandable and safe, and uses rclone + native Swift to move bulk data as fast as the target
-cluster can safely handle.
+**Aeronautes** ("air sailor" — a genus of swifts) is a desktop operator workbench for the OpenStack Swift API and compatible implementations.
+It makes Swift's control-plane semantics explicit and uses a pinned rclone subprocess and native Swift requests to move data.
 
-**Status: implementation in progress.** The design is locked. Your job is to build it — commit by
-commit, phase by phase, following the design.
+**Current release line: 0.5.0.**
+The application is implemented; new work maintains and extends the current behaviour rather than restarting the original phase plan.
+The early release is not recommended for production or valuable data; the [release notes](docs/releases/v0.5.0.md) and [release guide](docs/RELEASING.md) state its limits and outstanding acceptance.
 
 ## Read these first (authoritative)
 
@@ -15,15 +14,17 @@ commit, phase by phase, following the design.
    an ADR) before changing code**.
 2. [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — the hard constraints as stable IDs (`K-*`) with a
    phase→ID gate table. Phase gates verify these.
-3. [`docs/assets/screenshots/`](docs/assets/screenshots/) — real captures of the built app
-   against containerized Swift (the retired draft mockups' §4.5 corrections remain normative).
-   Do **not** copy labels/fields from them; §4.5 is authoritative. They are visual direction only.
+3. [`docs/adr/`](docs/adr/) — read the current decisions for the area being changed, especially ADR 0122 for transfer and deletion outcomes.
+   Earlier DESIGN phase lists and dated observations can describe superseded behaviour; check the current callers and accepted amendments.
+4. [`docs/CI.md`](docs/CI.md) and [`docs/journeys.md`](docs/journeys.md) — required checks, protected merges and the GUI coverage catalogue.
+5. [`docs/assets/screenshots/`](docs/assets/screenshots/) — the current app and historical captures, labelled in the gallery.
+   Do not copy old controls or labels into new work; DESIGN §4.5 and the current behaviour contract govern the UI.
 
 ## Non-negotiable invariants (see the sections for the full rules)
 
 - **The store's answer is the result (ADR 0122).**
   By the operator's decision of 16 November 2026 the application does not guard against another program writing to the same names: it sends a request, and what the store or the transfer engine answers is the outcome.
-  Where a step of that record has been carried out it replaces the staging, fixed-point and verifying-read rules: deletions, uploads, copies and downloads; the removal of what no longer has a caller follows.
+  ADR 0122 replaces the staging, fixed-point and verifying-read rules for deletions, uploads, copies and downloads; do not restore those retired paths from an earlier design passage.
   A deletion sends each name's DELETE and reads nothing before or after it.
 - **The rclone boundary.** rclone is never given `sync`, `purge` or `delete`.
   For an upload and for a copy it writes each object at its name, over what is there once the operator confirmed the replacement, and it removes a replaced large object's old segments only under the destination folder and only where the gateway lets it (ADR 0122 decisions 3 and 4).
@@ -107,46 +108,47 @@ Name avoidable complexity, indirection or test bloat as a review finding, and sa
   Extend an existing case or table before adding a file, and keep fakes at external boundaries.
 - **A test that fails now and then is a finding.**
   Find whether the store lagged or the product is wrong and fix that; never retry until green.
-- **Keep the manual test plan for what automation cannot see:** native dialogs, the desktop window, installation and how things look.
+- **Keep the manual test plan for gaps automation has not covered.**
+  The [0.5.0 plan](docs/audits/2026-11-11/0.5.0-test-plan.md) accepts native automation for the specific dialog, clipboard, focus and keyring backends it exercises; other desktops, installation and visual acceptance still need their own evidence.
 
-## Stack & targets
+## Stack and targets
 
-Go core · `github.com/ncw/swift/v2` (wrapped) · **Wails v3** (beta, chosen — §6.6) · Svelte 5 + TS ·
-pinned rclone subprocess · SQLite (pure-Go driver recommended, §51) · OS keychain / opt-in vault.
-Must build and run on **{Linux, Windows, macOS} × {x86_64, aarch64}** — six targets (§61.0). Linux is
-the reference/first-polish platform. App id: `io.csmart.aeronautes`.
+Go core · `github.com/ncw/swift/v2` (wrapped) · Wails v3 · Svelte 5 + TypeScript · pinned rclone subprocess · SQLite through `modernc.org/sqlite` · OS keychain, with an explicit session-only fallback.
+The encrypted vault remains a proposal (ADR 0006), not an available credential store.
+Use the dependency pins in `go.mod`, the frontend lockfile and `internal/transfer/rclone/manifest.txt`; `go.mod` sets the Go language floor, while CI uses the current patch release.
+
+The build matrix is **{Linux, Windows, macOS} × {x86_64, aarch64}** (§61.0).
+Linux is the supported reference platform; Windows and macOS downloads are testing bundles without completed native desktop acceptance.
+All 0.5.0 downloads are unsigned, and macOS builds are not notarised.
+App ID: `io.csmart.aeronautes`.
 
 ## Where to start
 
-- **First milestone = the §65 commit sequence** (Go core: SQLite, SecretStore, `ncw/swift/v2`
-  adapter, v1 auth, `/info`, account HEAD, listings — then the Wails v3 + Svelte 5 shell, design
-  tokens, static browser/inspector, bookmarks, live wiring). One component per commit, each with
-  its tests.
-
-  **Current state (2026-08-30): Phases 0–7 are complete and the §65.9 adversarial-review fixes
-  are in** — browse/inspect/mutate, cross-account Copy with stage-only engine writes and a durable
-  commit protocol, executable Mirror with fresh delete membership, local up/download behind one
-  cross-platform namespace policy, the destructive-job family with exact accounting, evidence-gated
-  segment cleanup, TLS trust identities, and release hardening. Gate evidence lives in
-  `DESIGN.md` §65.x status blocks; items §65.9 defers are named in §65.10, not implied done.
-  Requirements not yet met are marked in `docs/REQUIREMENTS.md` context: adaptive concurrency (K-PERF-003), plan tokens, the six-platform materialization matrix, vault (ADR 0006).
-  New work follows the frozen [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and the risk-based evidence and review rules in DESIGN §65.12.
-  Name the behaviour oracle and keep changes atomic; review a new or changed locked contract before dependent code.
-  Safety changes retain catching system regressions and independent reproduction; ordinary UI and prose use the lighter tiers without weakening required CI.
-  The preceding dated capability list is historical: Copy replaces an existing destination only when the operator confirmed it (ADR 0122), and Mirror refuses every start, its comparison preview kept in the backend but not offered in the release's dialog.
-- **CI is live** (`.github/workflows/ci.yml`): Go, frontend, containerized-Swift integration, headless smoke and their aggregate gate are required checks on master through PRs.
-  The six-target release matrix builds unsigned artifacts on dispatch/tag (§61.0).
-- **Highest-value early task: the disposable Phase-0 rclone-seam experiment** (§60) — it runs in
-  parallel with Phases 1–4 (start with token-lifetime and `override.*` TLS, the cheapest assumptions
-  to falsify) and must finish before the Phase-5 transfer abstraction freezes. It will invalidate
-  something.
-- **The Tier-1 Linux baseline is named** (§6.6, K-PLAT-002): Fedora current stable (first-class) +
-  Ubuntu current LTS native; EL-family via Flatpak; EL8 unsupported. The Phase-0 webview spike
-  confirms it.
-- **Owner decisions**: the versioning model is pinned (§21 — upstream Swift master;
-  `versioned_writes` container versioning is the behavioural target, `object_versioning`
-  display-only) and so is rclone (§26.3 — `v1.74.3`, Fedora current). Still open: ADR 0006 (vault, before
-  bookmarks persist secrets to a vault); 0007 is Accepted from seam-spike evidence (docs/rclone.md).
+- **Trace the current operation before changing it.**
+  The application browses and edits Swift state, uploads, downloads and copies data, and performs confirmed deletions with per-object job records.
+  It supports TempAuth v1 and Keystone v3, bookmark import, configuration backup and restore, and diagnostics.
+  Transfer and deletion outcomes follow ADR 0122; Copy replaces an existing destination only after confirmation.
+- **Preserve the roadmap without exposing unfinished features.**
+  Mirror is planned in ADR 0086; every execution start remains refused, and its backend comparison preview is preserved but not offered in the release dialog.
+  Benchmarks and the vault also remain unavailable.
+  New work follows the [Linux finish line](docs/audits/2026-09-05/linux-finish-line.md) and DESIGN §65.12: name the behaviour oracle, keep changes atomic and review a changed locked contract before dependent code.
+- **Build from a fresh checkout using the [README](README.md#building-on-fedora).**
+  `make tools` installs the pinned Wails CLI; `make build` builds the frontend, bindings and application.
+  Go builds and tests include the root package, which embeds `frontend/dist`; build that frontend first, including in a new worktree.
+  Put the verified official rclone pin on `PATH` for transfers and mock transfer tests; the README's [quickstart](README.md#quickstart) explains the fetch command.
+- **Use the existing test entry points.**
+  `make test` runs the Go race and frontend suites; `make uijourneys` runs mock browser journeys with no cloud configuration.
+  `make test-integration` exercises the adapter against an existing SAIO; the [CI guide](docs/CI.md) describes the wider two-account system suite, required environment and longer package timeouts.
+  Never restart or recreate a shared Swift fixture as part of a test run.
+  Provider oracles and browser/service journeys run locally with dedicated test accounts; keep their credentials out of GitHub.
+- **Use the real release workflow.**
+  The five required PR checks cover Go, frontend, real Swift integration, native Linux smoke with browser journeys, and the aggregate gate.
+  Verify the resulting master pipeline after the protected merge.
+  Follow [RELEASING](docs/RELEASING.md) for the tagged six-target build, provenance checks and publication; a successful build is not native desktop or provider acceptance.
+- **Keep platform and protocol limits explicit.**
+  Fedora current stable is the Tier-1 reference, Ubuntu current LTS is the native DEB target, and EL-family support is planned through Flatpak; EL8 is unsupported (§6.6, K-PLAT-002).
+  Container versioning through `versioned_writes` is the behavioural target; `object_versioning` is display-only (§21).
+  The original milestones and seam experiments are recorded in DESIGN §§60 and 65 and `docs/rclone.md`; do not treat completed experiments as new tasks.
 
 ## Code style — plain and simple
 
@@ -183,10 +185,9 @@ docs and commit messages the same way as code — plain and clear, no filler.
 
 ## Working conventions
 
-- Follow the phase plan in §60; each phase has a Gate. Don't skip semantic foundations for a flashy UI.
+- Follow the current accepted decisions and release scope; retain the applicable requirement gates when changing behaviour.
 - **Commits are clean and atomic — one logical change each**, and every commit builds with its tests
-  passing. §65 is the commit-shaped sequence for the first milestone; expand each later phase into a
-  commit sequence the same way before starting it. Never batch a phase into one commit.
+  passing. Use the original §65 sequence as an example of reviewable increments, not a list of work to repeat.
 - **Commit messages are detailed**: a lowercase subject ≤50 chars, then a prose body that explains the
   problem or feature, the fix or implementation approach, and the tests that cover it. No
   `Co-Authored-By` trailer.
