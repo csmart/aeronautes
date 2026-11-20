@@ -4,8 +4,12 @@
 
 **Aeronautes** (a living genus of swifts; “air sailor”) is a beautiful, performance-first
 **desktop operator workbench for OpenStack Swift / SwiftStack**.
-It makes Swift's control-plane semantics understandable and safe, and uses rclone and native Swift
-features to move bulk data as fast as the target cluster can safely handle.
+It makes Swift's control-plane semantics explicit and uses rclone and native Swift features to move bulk data.
+
+> **Open-source software, no warranty.**
+> Aeronautes is licensed under the [Apache License 2.0](LICENSE) and provided "as is", without warranties or conditions of any kind, as set out in that licence.
+> **This early release is not recommended for production or valuable data.**
+> Use dedicated test accounts and disposable containers, keep independent backups, and read the [known limits and remaining acceptance checks](#before-trusting-a-release-against-production) before using it.
 
 The mantra: **the inspector is the product; transfers are a first-class superpower; performance and
 beauty are features.**
