@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  digestOf, expect, finish, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, terminalJobLabel, uploadFolder, writeFiles,
+  digestOf, expect, expectJobAudit, finish, jobIds, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, terminalJobLabel, uploadFolder, writeFiles,
 } from "../helpers.ts";
 
 // A folder is uploaded with a file and a folder inside it, so that one
@@ -19,12 +19,14 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   const nested = writeFiles(join(folder, "inner"), [32], 2);
 
   await openContainer(page, info.project.name, container);
+  const beforeUpload = await jobIds(page);
   await page.getByRole("button", { name: "Upload…" }).click();
   const upload = page.getByRole("dialog", { name: "Upload" });
   await control.pickFolder(folder);
   await upload.getByRole("button", { name: "Choose folder…" }).click();
   await upload.getByRole("button", { name: "Start upload" }).click();
   await finish(page, upload);
+  await expectJobAudit(page, beforeUpload, "transfer.local.complete");
 
   await page.getByRole("button", { name: "Refresh listing" }).click();
   await openFolder(page, folder);
@@ -63,6 +65,7 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await expect(actions.getByRole("button", { name: "Delete selected…" })).toBeVisible();
   expect(await places(), "with two rows selected").toEqual(before);
 
+  const beforeCopy = await jobIds(page);
   await page.getByRole("button", { name: "Copy selected…" }).click();
   const copy = page.getByRole("dialog", { name: "Transfer" });
   await expect(copy.getByRole("group", { name: "Source scope" })).toContainText("1 object and 1 folder selected: file00.bin, inner/");
@@ -71,8 +74,10 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await copy.getByRole("button", { name: "Preview" }).click();
   await copy.getByRole("button", { name: "Start copy" }).click();
   await finish(page, copy);
+  await expectJobAudit(page, beforeCopy, "transfer.copy.complete");
 
   // The download takes the same selection into a local folder.
+  const beforeDownload = await jobIds(page);
   await page.getByRole("button", { name: "Download selected…" }).click();
   const download = page.getByRole("dialog", { name: "Download" });
   await expect(download.getByRole("heading", { name: /Download 1 object and 1 folder from / })).toBeVisible();
@@ -81,6 +86,7 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await download.getByRole("button", { name: "Choose directory…" }).click();
   await download.getByRole("button", { name: "Start download" }).click();
   await finish(page, download);
+  await expectJobAudit(page, beforeDownload, "transfer.local.complete");
   for (const [name, digest] of top) expect(digestOf(join(into, name)), name).toBe(digest);
   for (const [name, digest] of nested) expect(digestOf(join(into, "inner", name)), `inner/${name}`).toBe(digest);
 
@@ -106,6 +112,7 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await page.getByRole("button", { name: "Up one level" }).click();
   await objectRow(page, "file00.bin").click();
   await page.getByRole("listbox", { name: "Objects" }).getByRole("option", { name: /^inner\/ / }).click({ modifiers: ["ControlOrMeta"] });
+  const beforeDelete = await jobIds(page);
   await page.getByRole("button", { name: "Delete selected…" }).click();
   const deletion = page.getByRole("alertdialog", { name: "Delete selected" });
   await expect(deletion.getByRole("heading", { name: "Delete 1 object and 1 folder" })).toBeVisible();
@@ -115,6 +122,7 @@ test("a selection of a file and a folder is copied, downloaded and deleted with 
   await confirm.fill("delete 2");
   await deletion.getByRole("button", { name: "Delete 1 object and 1 folder" }).click();
   await finishSelectedDelete(page, deletion);
+  await expectJobAudit(page, beforeDelete, "delete.selected.complete");
   const originals = [...top.keys()].map((name) => `${basename(folder)}/${name}`)
     .concat([...nested.keys()].map((name) => `${basename(folder)}/inner/${name}`));
   await expect.poll(async () => (await control.names(info.project.name, container)).sort(), lag)

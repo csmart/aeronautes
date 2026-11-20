@@ -107,6 +107,26 @@ export async function jobIds(page: Page): Promise<string[]> {
   return ids;
 }
 
+// Match the new job's identity, not just its kind: a previous job of the
+// same kind must not make a missing or misattributed audit record pass.
+export async function expectJobAudit(page: Page, before: string[], operation: string): Promise<void> {
+  const added = (await jobIds(page)).filter((id) => !before.includes(id));
+  expect(added, "one job started by this action").toHaveLength(1);
+  await page.getByRole("button", { name: /jobs & changes/ }).click();
+  await page.getByRole("tab", { name: "Recent changes" }).click();
+  await page.getByRole("combobox", { name: "Bookmark", exact: true }).selectOption("");
+  await page.getByRole("combobox", { name: "Result", exact: true }).selectOption("");
+  const filter = page.getByRole("textbox", { name: "Operation prefix" });
+  await filter.fill(operation);
+  await filter.press("Tab");
+  const event = page.locator(".event").filter({ hasText: `job ${added[0]}` });
+  await expect(event).toHaveCount(1);
+  await expect(event.locator(".op")).toHaveText(operation);
+  await expect(event.locator(".badge")).toHaveText("applied");
+  await page.getByRole("tab", { name: "Jobs", exact: true }).click();
+  await page.getByRole("button", { name: /▾ hide/ }).click();
+}
+
 // uploadFolder uploads a local folder into the open container and returns
 // the finished job's details. A journey that needs per-job settings opens
 // the dialog itself, as openUpload does, and passes it in.

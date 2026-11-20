@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { basename, join } from "node:path";
 import { control } from "../control.ts";
 import {
-  armDelete, connect, digestOf, expect, expectInside, finish, inspector, lag, localFolder, objectRow, openContainer, openFolder, openUpload,
+  armDelete, connect, digestOf, expect, expectInside, expectJobAudit, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, openUpload,
   ownContainer, typedDelete, writeFiles,
 } from "../helpers.ts";
 
@@ -240,8 +240,10 @@ test.describe.serial("transfer", () => {
     // The folder still holds the segmented file. The option that deletes its
     // segments after its manifest starts ticked (ADR 0120), and the words to
     // type name it.
+    const beforePrefix = await jobIds(page);
     await page.getByRole("button", { name: "Delete prefix…" }).click();
     await typedDelete(page, "Delete prefix", "ticked");
+    await expectJobAudit(page, beforePrefix, "delete.prefix.complete");
     await expect.poll(async () => (await control.names(target, container)).sort(), lag)
       .toEqual(neighbours.filter((name) => !name.startsWith(`${f}/`)).sort());
     await openContainer(page, target, container);
@@ -252,6 +254,7 @@ test.describe.serial("transfer", () => {
     // knows that container was only its own upload's, so it deletes it
     // afterwards.
     const segments = `${container}_segments`;
+    const beforeContainer = await jobIds(page);
     await page.getByRole("button", { name: "Delete container…" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete" });
     await expect(dialog.getByText(`A container named ${segments} exists`)).toBeVisible();
@@ -260,6 +263,7 @@ test.describe.serial("transfer", () => {
     await expect(dialog.getByText(`${segments} still exists`)).toBeVisible();
     await expectInside(dialog);
     await dialog.getByRole("button", { name: "Open that container" }).click();
+    await expectJobAudit(page, beforeContainer, "delete.delete_container.complete");
     await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: segments })).toBeVisible();
 
     // The deletion's preview lists that container afresh and counts what it

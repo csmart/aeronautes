@@ -2,7 +2,7 @@ import { test, type Locator, type Page } from "@playwright/test";
 import { basename } from "node:path";
 import { control } from "../control.ts";
 import {
-  expect, finish, inspector, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, writeFiles,
+  expect, expectJobAudit, finish, inspector, jobIds, lag, localFolder, objectRow, openContainer, openFolder, openUpload, ownContainer, writeFiles,
 } from "../helpers.ts";
 
 // What each deletion leaves is read by the run's own session, which lists
@@ -98,6 +98,7 @@ test("refuse the wrong words for each container deletion, and empty a container"
   await pressBelowTheRows(page);
   await actions.getByRole("button", { name: "Delete container…" }).click();
   await expectRefused(page, "Delete container", [container, `empty ${container}`]);
+  const beforeEmpty = await jobIds(page);
   await actions.getByRole("button", { name: "Empty container…" }).click();
   const dialog = await expectRefused(page, "Empty container", [container, `delete ${container}`]);
   // Nothing so far was deleted.
@@ -110,6 +111,7 @@ test("refuse the wrong words for each container deletion, and empty a container"
   await expect(dialog.getByRole("heading", { name: "Deletion complete" })).toBeVisible({ timeout: 8 * 60 * 1000 });
   await expect(dialog.getByText(`Deleted the contents of container ${container}: 3 objects.`)).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).last().click();
+  await expectJobAudit(page, beforeEmpty, "delete.empty.complete");
   await expect.poll(() => control.names(target, container), lag).toEqual([]);
 
   // Staying in the container, its counts follow without a refresh.
@@ -170,6 +172,7 @@ test("delete a large object with its segments from Backstage", async ({ page }, 
   const folder = basename(await uploadFolder(page, [large]));
   await expect.poll(async () => (await control.names(target, sidecar)).length, lag).toBe(3);
 
+  const beforeSegments = await jobIds(page);
   await page.getByRole("tab", { name: "Backstage" }).click();
   await page.getByRole("button", { name: new RegExp(`^${container} `) }).click();
   await openFolder(page, folder);
@@ -187,6 +190,7 @@ test("delete a large object with its segments from Backstage", async ({ page }, 
   await name.fill(`${folder}/file00.bin`);
   await button.click();
   await expect(dialog).toHaveCount(0);
+  await expectJobAudit(page, beforeSegments, "segments.delete.complete");
 
   await expect.poll(() => control.names(target, sidecar), lag).toEqual([]);
   await expect.poll(() => control.names(target, container), lag).toEqual([]);
