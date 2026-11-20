@@ -58,6 +58,8 @@ It does not measure performance.
   The Playwright child receives only a boolean target selector, with the SAIO endpoint and credentials removed from its environment.
   The runner never starts, restarts or recreates SAIO.
   Restart/crash journeys are disabled across any run with SAIO or clouds configured, including its mock project, so the application's ownership record survives until teardown.
+  The CORS bookmark-switch journey uses the disposable mock as SAIO's other account.
+  Cloud accounts require the launcher's explicit `CLOUDS` selection; a local-only run never discovers an inherited cloud configuration.
 - The required CI smoke job runs the complete mock browser suite after the native desktop smoke.
   CI refuses `CLOUDS` and focused tests; real-cloud journeys remain local only.
   The separate native smoke reads the X11 clipboard after Copy name, Copy ETag and the Settings log-path action; the browser build itself still has no clipboard.

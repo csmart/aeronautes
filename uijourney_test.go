@@ -137,11 +137,21 @@ func TestJourneyControlReopeningAnAccountKeepsWhatItOwns(t *testing.T) {
 	}
 }
 
-func TestJourneyControlSAIORequiresItsOwnEndpoint(t *testing.T) {
+func TestJourneyControlAccountsRequireExplicitConfiguration(t *testing.T) {
 	t.Setenv("AERONAUTES_SAIO_AUTH_URL", "")
-	var c journeyControl
-	_, err := c.account(context.Background(), "saio", "http://unused.invalid/auth/v1.0")
-	if err == nil || !strings.Contains(err.Error(), "no SAIO endpoint configured") {
-		t.Fatalf("an unconfigured SAIO account = %v, want endpoint refusal", err)
+	t.Setenv("ORACLE_CLOUDS", "")
+	t.Setenv("OS_CLIENT_CONFIG_FILE", t.TempDir()+"/unselected-clouds.yaml")
+	for _, label := range []string{"saio", "ceph", "swift"} {
+		t.Run(label, func(t *testing.T) {
+			var c journeyControl
+			_, err := c.account(context.Background(), label, "http://unused.invalid/auth/v1.0")
+			want := "no clouds.yaml configured"
+			if label == "saio" {
+				want = "no SAIO endpoint configured"
+			}
+			if err == nil || err.Error() != want {
+				t.Fatalf("an unselected account = %v, want %s", err, want)
+			}
+		})
 	}
 }
