@@ -56,9 +56,11 @@ The following extension is planned; no SAIO browser target is implemented at thi
 8. **An optional existing local SAIO target, using the same suite.**
    Setting `AERONAUTES_SAIO_AUTH_URL` opts into the `saio` browser project alongside the mock; selecting `--project=saio` runs that project alone.
    Go reads this endpoint and the existing integration variables `AERONAUTES_SAIO_USER` and `AERONAUTES_SAIO_KEY`, with the integration fixture's defaults `test:tester` and `testing`, and saves a TempAuth bookmark without sending its key to the page.
+   The Playwright child receives only a boolean SAIO selector; the launcher removes the SAIO endpoint and credential variables from that child's environment, while the Go application retains them.
    A request for this target without its endpoint fails; there is no fallback to a provider account or clouds.yaml.
    It uses the existing owned-container record and teardown, never starts, restarts or recreates SAIO, and never clears the account as a whole.
-   Application restart/crash journeys remain limited to mock-only runs, since restarting loses the control listener's ownership record.
+   Application restart/crash journeys run only on the mock project when both the clouds path and `AERONAUTES_SAIO_AUTH_URL` are absent, since restarting loses the control listener's ownership record.
+   Setting the SAIO endpoint disables those journeys for the whole run, including its mock project; leaving it unset preserves the existing mock-only restart coverage.
    The existing version-archive journeys also run on SAIO, and new quota and version-setting journeys use the actual store rather than adding those semantics to the mock.
    Output may use the target label `saio` under decision 7's same private-evidence rules; native substitutions remain unchanged.
    This adds no hosted job and does not replace the representative-cloud release gate or authorise provider credentials in GitHub.
