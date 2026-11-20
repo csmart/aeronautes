@@ -357,10 +357,12 @@ func (c *journeyControl) account(ctx context.Context, label, authURL string) (an
 		}
 		config = swiftcontrol.Config{AuthVersion: 1, AuthURL: endpoint, Username: user, APIKey: key}
 	case "ceph", "swift":
-		path, err := realcloud.ResolveCloudsPath()
-		if err == nil && path == "" {
-			err = errors.New("no clouds.yaml configured")
+		// An unexpected target must not discover a provider configuration
+		// inherited from the operator's shell during a local-only run.
+		if os.Getenv("ORACLE_CLOUDS") == "" {
+			return nil, errors.New("no clouds.yaml configured")
 		}
+		path, err := realcloud.ResolveCloudsPath()
 		if err != nil {
 			return nil, err
 		}

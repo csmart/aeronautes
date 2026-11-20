@@ -187,9 +187,10 @@ test("give a container CORS origins and keep its badge across a switch", async (
   const badge = containerRow(page, container).getByText("cors", { exact: true });
   await expect(badge).toHaveAttribute("title", /^CORS configured · observed \S/);
 
-  // The mock has one account, so its second bookmark is a second name for
-  // it; with the clouds each switches to the other.
-  const other = target === "mock" ? await secondMockBookmark(page) : await account(target === "ceph" ? "swift" : "ceph");
+  // Local runs switch to the disposable mock; only a cloud run has selected
+  // another provider account. The mock's two bookmarks name one account.
+  const other = target === "mock" || target === "saio"
+    ? await secondMockBookmark(page) : await account(target === "ceph" ? "swift" : "ceph");
   // A cloud's bookmark is made in Go when its account is first opened,
   // which can be after this page loaded its rail.
   await page.reload();
