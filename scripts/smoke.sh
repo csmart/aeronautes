@@ -309,4 +309,29 @@ clipboard_is "$STATE_DIR/native.log" || fail "Settings did not copy the active l
 shot 05-log-path-clipboard
 X key Escape
 
-say "PASS — browse and native clipboard landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
+say "refresh containers when native focus returns"
+X windowfocus --sync 0
+reads_before=$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")
+curl -sf -X PUT "$U/smoke-return" -H "X-Auth-Token: $TOK" -o /dev/null
+# The production shell uses the real clock: crossing its 30-second boundary
+# and restoring X input focus must reach the webview's focus handler.
+sleep 31
+[ "$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")" = "$reads_before" ] \
+  || fail "the account was read before native focus returned"
+X windowfocus --sync "$WIN"
+refreshed=""
+for _ in $(seq 1 10); do
+  if [ "$(grep -c 'GET /v1/AUTH_test$' "$ART/mockswift.log")" -gt "$reads_before" ]; then
+    refreshed=yes; break
+  fi
+  sleep 1
+done
+[ -n "$refreshed" ] || fail "returning native focus did not refresh the container list"
+sleep 1
+# The new container sorts between smoke-out and smoke-src. Opening it proves
+# the refreshed result reached the column, beyond observing a background GET.
+X mousemove 160 195 click 1
+wire_saw 'GET /v1/AUTH_test/smoke-return' 10 || fail "the refreshed container was not shown"
+shot 06-focus-return
+
+say "PASS — browse, native clipboard and focus refresh landed; returned capabilities' tokens are reported as ignored (ADR 0052). artifacts in $ART/"
