@@ -27,6 +27,90 @@ test("the status bar and the About dialog", async ({ page }, info) => {
   await dialog.getByRole("button", { name: "Close" }).click();
 });
 
+test("browse, open menus and create a folder using the keyboard", async ({ page }, info) => {
+  const target = info.project.name;
+  const container = await ownContainer(target, "ui-keyboard");
+  const original = ["folder/alpha.txt", "folder/bravo.txt"];
+  for (const name of original) await control.put(target, container, name, name);
+  const bookmark = await connect(page, target);
+  // Fixture setup ends here. From a fresh page, all interaction is by key;
+  // tabTo observes focus but never sets it through the DOM.
+  await page.reload();
+  const tile = page.getByRole("navigation", { name: "Bookmarks" }).getByRole("button", { name: bookmark, exact: true });
+  await tabTo(page, tile);
+  await page.keyboard.press("Enter");
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
+  const logical = page.getByRole("tab", { name: "Logical", exact: true });
+  await tabTo(page, logical);
+  for (const [key, label] of [["ArrowRight", "All"], ["End", "Backstage"], ["Home", "Logical"]]) {
+    await page.keyboard.press(key);
+    const tab = page.getByRole("tab", { name: label, exact: true });
+    await expect(tab).toBeFocused();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+  }
+  await tabTo(page, page.getByRole("searchbox", { name: "Filter containers" }));
+  await page.keyboard.type(container);
+  await tabTo(page, page.getByRole("button", { name: new RegExp(`^${container} `) }));
+  await page.keyboard.press("Enter");
+  const list = page.getByRole("listbox", { name: "Objects" });
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await page.keyboard.press("ArrowDown");
+  await expect(list.getByRole("option", { selected: true })).toContainText("folder/");
+  await page.keyboard.press("Enter");
+  await expect(objectRow(page, "alpha.txt")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(objectRow(page, "alpha.txt")).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(objectRow(page, "bravo.txt")).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Shift+F10");
+  const menu = menuOf(page, "alpha.txt");
+  await expect(menu.getByRole("menuitem", { name: "Download object…" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Copy object…" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  const copy = page.getByRole("dialog", { name: "Transfer" });
+  await expect(copy).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(copy).toHaveCount(0);
+  await expect(list).toBeFocused();
+  await expect(page.getByRole("group", { name: "Actions" }).getByRole("button", { name: "Delete object…" })).toBeVisible();
+  await page.keyboard.press("Delete");
+  const deletion = page.getByRole("alertdialog", { name: "Delete object" });
+  await expect(deletion).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(deletion).toHaveCount(0);
+  expect((await control.names(target, container)).sort()).toEqual(original);
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: "folder", exact: true })).toHaveCount(0);
+  await tabTo(page, page.getByRole("button", { name: "New folder…" }));
+  await page.keyboard.press("Enter");
+  const create = page.getByRole("dialog", { name: "New folder", exact: true });
+  await expect(create.getByLabel("Name")).toBeFocused();
+  await page.keyboard.type("created-by-keyboard");
+  await page.keyboard.press("Tab");
+  await expect(create.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(create.getByLabel("Name")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(create).toHaveCount(0);
+  await expect.poll(async () => (await control.names(target, container)).sort()).toEqual(["created-by-keyboard/", ...original]);
+  await tabTo(page, page.getByRole("button", { name: "Settings", exact: true }));
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
+});
+
+async function tabTo(page: Page, target: Locator): Promise<void> {
+  await expect(target).toBeVisible();
+  for (let step = 0; step < 80 && !(await target.evaluate((element) => element === document.activeElement)); step++) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+}
+
 // Test plan step 19f: an object's and a folder's menus offer exactly the
 // toolbar's actions for that row, and each opens the dialog the toolbar
 // opens for it. Every dialog is closed unsent. "Copy name" is chosen, but
