@@ -77,6 +77,7 @@ It is cut only after the operator has run the [0.5.0 test plan](audits/2026-11-1
    CI builds the six unsigned artifacts, and its `publish` job drafts a GitHub release titled with the tag, carrying the Linux rpm, deb and tarball for both architectures with their provenance files, and the notes.
    macOS and Windows builds stay workflow artifacts: they are development builds without acceptance (finish line decision 1).
 5. Check the draft: every file is present, and each file's SHA256 matches its provenance record; then publish it.
-6. The §57.4 smoke against real SwiftStack infrastructure is a manual owner step before announcing anything; for 0.5.0 it is step 6 of the test plan.
+6. Before announcing the release, record the representative real-cloud browser and service journeys from section A of the test plan, run locally with the test accounts.
+   The mock and local SAIO runs do not replace that §57.4 release evidence; the remaining host checks are in section C.
 
 Every job of the release workflow builds with the current Go patch release, as CI tests with; `go.mod`'s `go` line is the language floor, not the build toolchain.

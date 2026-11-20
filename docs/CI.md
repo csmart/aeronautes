@@ -16,7 +16,8 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 | Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting, browsing and copying to the native clipboard; full mock browser journeys through the real frontend and Go services |
 | CI — all required jobs passed | Every preceding job completed with `success` |
 
-The native smoke proves desktop startup, connection, listing, X11 clipboard delivery, refresh on returning focus and the GNOME keyring lifecycle; it does not run a transfer.
+The native smoke proves desktop startup, connection, listing, GTK4/X11 question refusal, X11 clipboard delivery, refresh on returning focus and the GNOME keyring lifecycle; it does not run a transfer.
+Escape and a graceful window-close request each dismiss the public-read question, return to a usable editor, send no container POST and leave an independently read empty public ACL.
 It reads Copy name, Copy ETag and the Settings log-path action through an independent `xclip` client, comparing them with the known fixture name, payload checksum and active log-file path.
 The copied log path must name an opened file; the startup cases separately require their expected diagnostics in the configured log file, since a healthy browsing session may be silent.
 It takes X input focus away, creates a container through another client, waits past thirty seconds and returns focus; a new account read and opening the new row prove the refresh reached the window.
