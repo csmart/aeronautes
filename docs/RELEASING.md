@@ -8,6 +8,8 @@ Linux remains the supported release scope.
 For 0.5.0 the operator authorised downloadable unsigned bundles for all six targets on 20 November 2026; Windows and macOS remain testing targets without completed native acceptance.
 The workflow drafts the release with Linux RPM, deb and tarball artifacts for both architectures.
 Before publishing 0.5.0, also require the Windows and macOS build jobs to pass, download their ZIPs and provenance records from that same tagged run, verify them, and attach them to the draft.
+The tag identifies `6c121a16`, whose notes still say Windows and macOS files are not attached; later documentation changes do not alter those tagged notes.
+Replace that obsolete sentence in the draft before publishing: unsigned Windows and macOS bundles are attached for testing, with native acceptance still incomplete.
 Windows ZIPs are portable applications, and macOS ZIPs contain app bundles; neither is a dedicated installer.
 The webview links via CGO, so these tasks do not cross-compile between operating systems.
 
