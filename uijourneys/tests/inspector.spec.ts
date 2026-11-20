@@ -202,6 +202,46 @@ test("give a container CORS origins and keep its badge across a switch", async (
   await expect(badge).toHaveAttribute("title", /^CORS configured · observed \S/);
 });
 
+test("save and clear container quotas and a versions location", async ({ page }, info) => {
+  test.skip(info.project.name !== "saio", "the local Swift fixture offers quotas and version archives");
+  const target = info.project.name;
+  const container = await ownContainer(target, "ui-quota-version");
+  const archive = await ownContainer(target, "ui-quota-archive");
+  // Go owns the store's quota rules. This journey protects the form's
+  // fields and their readback without duplicating enforcement scenarios.
+  for (const enabled of [true, false]) {
+    const bytes = enabled ? "8192" : "0";
+    const count = enabled ? "7" : "0";
+    const mode = enabled ? "versions_location" : "off";
+    await openContainer(page, target, container);
+    await page.getByRole("button", { name: "Configure container" }).click();
+    await page.getByLabel("Quota bytes (0 = none)").fill(bytes);
+    await page.getByLabel("Quota objects (0 = none)").fill(count);
+    await page.getByRole("combobox", { name: "Versioning" }).selectOption(mode);
+    if (enabled) await page.getByLabel("Archive container").fill(archive);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Configure container" })).toBeVisible();
+
+    await openContainer(page, target, container);
+    const headers = await openRawHeaders(page);
+    if (enabled) {
+      await expect(headers).toContainText(/X-Container-Meta-Quota-Bytes: 8192/i);
+      await expect(headers).toContainText(/X-Container-Meta-Quota-Count: 7/i);
+      await expect(headers).toContainText(new RegExp(`X-Versions-Location: ${archive}`, "i"));
+    } else {
+      await expect(headers).not.toContainText(/X-Container-Meta-Quota-(Bytes|Count):/i);
+      await expect(headers).not.toContainText(/X-(Versions|History)-Location:/i);
+    }
+    await page.getByRole("button", { name: "Configure container" }).click();
+    await expect(page.getByLabel("Quota bytes (0 = none)")).toHaveValue(bytes);
+    await expect(page.getByLabel("Quota objects (0 = none)")).toHaveValue(count);
+    await expect(page.getByRole("combobox", { name: "Versioning" })).toHaveValue(mode);
+    if (enabled) await expect(page.getByLabel("Archive container")).toHaveValue(archive);
+    else await expect(page.getByLabel("Archive container")).toHaveCount(0);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+});
+
 // Test plan step 18b, the inspector's half: an ordinary container has no
 // segment classification card, and the TempURL card says in one line what
 // a key does, with the rotation under its own heading.
