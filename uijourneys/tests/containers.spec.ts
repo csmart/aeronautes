@@ -59,8 +59,8 @@ test("refresh the container list after a change made elsewhere", async ({ page }
 // one deleted elsewhere, here in a second window, leaves the list, without
 // anything pressed. The page's clock is moved on rather than waited out,
 // and the window's focus event is fired as the browser fires it when the
-// window is clicked back into; another application taking the focus needs
-// a person.
+// window is clicked back into. The native smoke checks X11 focus delivery;
+// the release plan retains the host check for Wayland.
 test("coming back to the window after 30 seconds lists a change made elsewhere", async ({ page, context }, info) => {
   await page.clock.install();
   await connect(page, info.project.name);

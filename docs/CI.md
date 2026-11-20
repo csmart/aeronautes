@@ -16,10 +16,11 @@ The README status badge shows master push runs so that a green PR cannot hide a 
 | Smoke — headless app against mock Swift | Built desktop application under Xvfb, connecting, browsing and copying to the native clipboard; full mock browser journeys through the real frontend and Go services |
 | CI — all required jobs passed | Every preceding job completed with `success` |
 
-The native smoke proves desktop startup, connection, listing and X11 clipboard delivery; it does not run a transfer.
+The native smoke proves desktop startup, connection, listing, X11 clipboard delivery and refresh on returning focus; it does not run a transfer.
 It reads Copy name, Copy ETag and the Settings log-path action through an independent `xclip` client, comparing them with the known fixture name, payload checksum and active log-file path.
 The log file must also hold session output.
-This is X11 evidence, not a Wayland or other operating-system clipboard run.
+It takes X input focus away, creates a container through another client, waits past thirty seconds and returns focus; a new account read and opening the new row prove the refresh reached the window.
+This is X11 evidence, not a Wayland or other operating-system run.
 The same required job then runs all mock [browser journeys](journeys.md), including transfers and independent byte checks, with no cloud credentials.
 Browser journeys substitute the native dialogs and secret store; they do not prove native clipboard, keyring or dialog behaviour.
 They run serially without retries, and a focused `test.only` fails CI rather than silently reducing coverage.
