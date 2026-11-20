@@ -1,4 +1,4 @@
-import { test, type Locator, type Page } from "@playwright/test";
+import { test, type Locator, type Page, type Request } from "@playwright/test";
 import { connect, expect, openContainer, ownContainer, typedDelete } from "../helpers.ts";
 
 // ADR 0117 through the window, on every target: a container named like a
@@ -99,8 +99,8 @@ async function returnUntil(page: Page, comeBack: () => Promise<unknown>, listed:
 // each. In the All view every loaded container has a row, so the count the
 // scan reaches is compared with the rows, and no row may be left marked as
 // not read.
-test("scan every container in the All view", async ({ page }, info) => {
-  await ownContainer(info.project.name, "ui-scan");
+test("scan every container in the All view, stop and start again", async ({ page }, info) => {
+  const container = await ownContainer(info.project.name, "ui-scan");
   await connect(page, info.project.name);
   await page.getByRole("tab", { name: "All" }).click();
   const rows = page.getByRole("tabpanel").getByRole("button", { name: / objects$/ });
@@ -111,6 +111,39 @@ test("scan every container in the All view", async ({ page }, info) => {
   const scanned = Number(/scanned (\d+)/.exec((await done.textContent())!)![1]);
   expect(scanned, "the scan counted every listed container").toBe(await rows.count());
   await expect(page.getByText("not read", { exact: true })).toHaveCount(0);
+
+  // Hold one real detail request so Stop remains available even on a fast
+  // local store. No reply is fabricated and only this run's name is held.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let held: Request | undefined;
+  await page.route("**/wails/runtime", async (route) => {
+    const args = route.request().postDataJSON()?.args?.args;
+    if (!held && args?.length === 2 && args[1] === container) {
+      held = route.request();
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    await page.getByRole("button", { name: "Scan containers" }).click();
+    await expect.poll(() => !!held).toBe(true);
+    await page.getByRole("button", { name: "Stop the scan" }).click();
+    const stopped = page.getByRole("status").filter({ hasText: /\(stopped\)$/ });
+    await expect(stopped).toBeVisible();
+    await expect(page.getByRole("button", { name: "Scan containers" })).toBeEnabled();
+    const reply = page.waitForResponse((response) => response.request() === held);
+    release();
+    await (await reply).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(stopped).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+  await page.getByRole("button", { name: "Scan containers" }).click();
+  await expect(done).toBeVisible({ timeout: 2 * 60 * 1000 });
+  await expect(done).toContainText(`scanned ${scanned} of ${scanned}`);
 });
 
 // A store's container listing can lag a create, so what the create should
